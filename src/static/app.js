@@ -62,19 +62,20 @@
   // ----- page details (run again after every swap) --------------------------
 
   // Buttons are small cards: while the pointer is over one it tilts toward
-  // it (the side under the pointer dips away), then springs back. Buttons
-  // too small to tilt well just lift a little (CSS, class "flat").
+  // it (the side under the pointer dips away), then springs back. Small
+  // ones get a closer perspective and a steeper angle, or the tilt would
+  // be too faint to read as one.
   function tilt(el) {
     if (el.closest('.quiet-links')) return;
-    var r0 = el.getBoundingClientRect();
-    if (!el.matches('a.row') && (r0.width < 150 || r0.height < 44)) {
-      el.classList.add('flat');
-      return;
-    }
-    var base = el.matches('a.row') ? 3 : el.closest('.answers') ? 10 : 8;
+    var row = el.matches('a.row');
+    var base = row ? 3 : el.closest('.answers') ? 10 : 8;
+    el.addEventListener('pointerenter', function () {
+      var w = el.getBoundingClientRect().width;
+      el.style.setProperty('--persp', (row ? 700 : Math.max(240, Math.min(700, w * 3))).toFixed(0) + 'px');
+    });
     el.addEventListener('pointermove', function (e) {
       var r = el.getBoundingClientRect();
-      var max = base * Math.min(1, r.width / 280);
+      var max = row ? base : base * Math.max(1, Math.min(1.8, 220 / r.width));
       var x = (e.clientX - r.left) / r.width;
       var y = (e.clientY - r.top) / r.height;
       var s = el.style;
@@ -147,6 +148,9 @@
     var page = doc.body.getAttribute('data-page');
     if (page) document.body.setAttribute('data-page', page); else document.body.removeAttribute('data-page');
     main().replaceWith(next);
+    // A card that arrives already turned over never offers "Show answer".
+    var shown = next.querySelector('.study.revealed .reveal');
+    if (shown) shown.hidden = true;
     if (url) history.replaceState(null, '', url.replace(/#.*$/, ''));
     window.scrollTo(0, 0);
     setup(next);

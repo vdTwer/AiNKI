@@ -272,6 +272,16 @@ pub fn urlenc(s: &str) -> String {
     out
 }
 
+/// Changes with every release that changes a stylesheet or script. Added to
+/// their URLs so browsers never pair a new page with a cached old file.
+fn asset_version() -> &'static str {
+    static VERSION: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    VERSION.get_or_init(|| {
+        let all = [CSS, CALM_CSS, THEME_JS, APP_JS].concat();
+        crate::auth::sha256_hex(&all)[..10].to_string()
+    })
+}
+
 /// Where the Calm look may apply; must match static/theme.js.
 const DESKTOP_MEDIA: &str = "(min-width: 60em) and (hover: hover) and (pointer: fine)";
 
@@ -334,11 +344,11 @@ fn page(title: &str, user: Option<&User>, page_kind: Option<&str>, body: Markup)
                 meta name="viewport" content="width=device-width, initial-scale=1";
                 meta name="color-scheme" content="light dark";
                 title { (title) " · AiNKI" }
-                link rel="stylesheet" href="/style.css";
+                link rel="stylesheet" href=(format!("/style.css?v={}", asset_version()));
                 // The Calm look: only on desktops, and only once theme.js
                 // has switched it on. Everything else gets style.css alone.
-                link rel="stylesheet" href="/calm.css" media=(DESKTOP_MEDIA);
-                script src="/theme.js" {}
+                link rel="stylesheet" href=(format!("/calm.css?v={}", asset_version())) media=(DESKTOP_MEDIA);
+                script src=(format!("/theme.js?v={}", asset_version())) {}
                 @if (scale - 1.0).abs() > f64::EPSILON {
                     style { (PreEscaped(format!(":root{{--scale:{scale}}}"))) }
                 }
@@ -357,7 +367,7 @@ fn page(title: &str, user: Option<&User>, page_kind: Option<&str>, body: Markup)
                     }
                 }
                 main { (body) }
-                script src="/app.js" defer {}
+                script src=(format!("/app.js?v={}", asset_version())) defer {}
             }
         }
     }
@@ -675,11 +685,13 @@ async fn home(State(app): State<AppState>, user: WebUser, Flash(msg): Flash) -> 
                                     span.deck-name { (deck_title(&d.deck.name)) }
                                     @if let Some(exam) = &d.deck.exam_date {
                                         span.sub { "Exam on " (exam) }
-                                    } @else if d.due_total() == 0 && d.total > 0 {
-                                        span.sub { "Done for today" }
                                     }
                                 }
-                                span.num.due title="due" { @if due > 0 { (due) span.unit { " due" } } @else { "—" } }
+                                @if d.due_total() == 0 && d.total > 0 {
+                                    span.num.due.done title="Done for today" { span.tick aria-hidden="true" { "✓" } span.unit { " done for today" } }
+                                } @else {
+                                    span.num.due title="due" { @if due > 0 { (due) span.unit { " due" } } @else { "—" } }
+                                }
                                 span.num.new title="new" { @if d.new_today > 0 { span.dot aria-hidden="true" {} (d.new_today) span.unit { " new" } } @else { "—" } }
                                 span.chev aria-hidden="true" { "›" }
                             }

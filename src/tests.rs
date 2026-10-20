@@ -575,9 +575,10 @@ mod http {
         // The base page is the simple look; the hand-drawn one is only a
         // desktop-only stylesheet that theme.js may switch on.
         assert!(html.contains(r#"data-look="calm""#));
-        assert!(html.contains(r#"<link rel="stylesheet" href="/style.css">"#));
-        assert!(html.contains(r#"href="/calm.css" media="(min-width: 60em) and (hover: hover) and (pointer: fine)""#));
-        assert!(html.contains(r#"<script src="/theme.js">"#));
+        assert!(html.contains(r#"<link rel="stylesheet" href="/style.css?v="#));
+        assert!(html.contains(r#"" media="(min-width: 60em) and (hover: hover) and (pointer: fine)""#));
+        assert!(html.contains(r#"href="/calm.css?v="#));
+        assert!(html.contains(r#"<script src="/theme.js?v="#));
         assert!(!html.contains(r#"class="calm""#));
 
         app.update_settings(a.user_id(), "UTC", 4, false, 100, true, "simple").await.unwrap();
