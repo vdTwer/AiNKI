@@ -881,14 +881,16 @@ async fn study(State(app): State<AppState>, user: WebUser, Flash(msg): Flash, Qu
                     @if any_cards {
                         (end_mark())
                         h1 { "All done." }
-                        p.summary {
-                            @if stats.reviews_today > 0 {
-                                (stats.reviews_today) (if stats.reviews_today == 1 { " card" } else { " cards" })
-                                @if minutes >= 1 { " in " (minutes) (if minutes == 1 { " minute" } else { " minutes" }) }
-                                ". "
+                        @if stats.cards_today > 0 {
+                            p.summary {
+                                "Today you went through " (stats.cards_today) (if stats.cards_today == 1 { " card" } else { " cards" })
+                                @if minutes >= 1 { " in about " (minutes) (if minutes == 1 { " minute" } else { " minutes" }) }
+                                "."
                             }
+                        }
+                        p.summary {
                             @if let Some(t) = next {
-                                "The next review is " (when_words(&user.0, t)) "."
+                                "Next cards are due " (when_words(&user.0, t)) "."
                             } @else {
                                 "Nothing else is scheduled yet."
                             }
