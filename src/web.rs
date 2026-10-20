@@ -761,24 +761,6 @@ fn study_foot(deck_name: &str, deck_id: i64, done: i64, total: i64, q_deck: Opti
     }
 }
 
-/// The closing moment of a session (Calm look only): the progress line
-/// draws itself full, folds into a dot, and the dot swells into a check
-/// with a ripple and a few sparks.
-fn end_mark() -> Markup {
-    html! {
-        div.end-mark aria-hidden="true" {
-            div.end-line {}
-            div.end-ring {}
-            div.end-sparks { @for i in 0..8 { span style=(format!("--a:{}deg", i * 45)) {} } }
-            div.end-disc {
-                svg viewBox="0 0 24 24" focusable="false" {
-                    path d="M6.5 12.5 L10.5 16.5 L17.5 8.5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" {}
-                }
-            }
-        }
-    }
-}
-
 fn state_tag(state: CardState) -> Markup {
     let (class, label) = match state {
         CardState::New => ("new", "New"),
@@ -879,7 +861,7 @@ async fn study(State(app): State<AppState>, user: WebUser, Flash(msg): Flash, Qu
                 (flash(&msg))
                 section.session-end {
                     @if any_cards {
-                        (end_mark())
+                        div.end-dot aria-hidden="true" { div {} }
                         h1 { "All done." }
                         @if stats.cards_today > 0 {
                             p.summary {
