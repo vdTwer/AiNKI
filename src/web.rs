@@ -1,7 +1,7 @@
 //! The website: server-rendered HTML, no JavaScript required, high contrast,
 //! no animations, big tap targets. Designed for phones and e-ink readers.
 
-use std::collections::HashMap;
+use std::{collections::HashMap, time::Duration};
 
 use axum::{
     Router,
@@ -23,11 +23,11 @@ use crate::{
     auth::{Access, User},
     error::AppError,
     import, markdown, mcp, media, now, oauth, presets,
+    security::{self, ClientIp, Flash},
     scheduler::{self, CardState, Rating},
     service::{CardFilter, CardInput, PresetInput, fmt_ts},
 };
 
-const COOKIE: &str = "ainki_session";
 const CSS: &str = include_str!("style.css");
 
 pub async fn serve(app: AppState) -> anyhow::Result<()> {
@@ -35,7 +35,7 @@ pub async fn serve(app: AppState) -> anyhow::Result<()> {
     let router = router(app);
     let listener = tokio::net::TcpListener::bind(&bind).await?;
     tracing::info!("AiNKI listening on http://{bind}");
-    axum::serve(listener, router)
+    axum::serve(listener, router.into_make_service_with_connect_info::<std::net::SocketAddr>())
         .with_graceful_shutdown(shutdown_signal())
         .await?;
     Ok(())
@@ -79,23 +79,18 @@ pub fn router(app: AppState) -> Router {
         .route("/oauth/register", post(oauth::register))
         .route("/oauth/token", post(oauth::token))
         .route("/oauth/revoke", post(oauth::revoke))
+        .layer(DefaultBodyLimit::max(64 * 1024))
         .merge(mcp_routes)
         .layer(cors);
-    Router::new()
-        .route("/oauth/authorize", get(oauth::authorize_page).post(oauth::authorize_submit))
-        .route("/offline", get(offline_page))
-        .route("/offline.js", get(offline_js))
-        .route("/sw.js", get(service_worker))
-        .route("/api/offline/queue", get(offline_queue))
-        .route("/api/offline/sync", post(offline_sync))
-        .route("/decks/{id}/share", post(deck_share))
-        .route("/shares/{id}", post(share_action))
+    // Form posts are small; uploads get their own limits below.
+    let small = DefaultBodyLimit::max(256 * 1024);
+    let card_upload = DefaultBodyLimit::max(2 * media::MAX_UPLOAD_BYTES + 256 * 1024);
+    let browser_routes = Router::new()
         .route("/", get(home))
-        .route("/style.css", get(style))
-        .route("/healthz", get(|| async { "ok" }))
         .route("/login", get(login_page).post(login))
         .route("/signup", get(signup_page).post(signup))
         .route("/logout", post(logout))
+        .route("/oauth/authorize", get(oauth::authorize_page).post(oauth::authorize_submit))
         .route("/study", get(study))
         .route("/study/answer", post(study_answer))
         .route("/study/undo", post(study_undo))
@@ -104,8 +99,8 @@ pub fn router(app: AppState) -> Router {
         .route("/decks/{id}/edit", get(deck_edit_page).post(deck_update))
         .route("/decks/{id}/delete", post(deck_delete))
         .route("/decks/{id}/export.csv", get(deck_export))
-        .route("/cards/new", get(card_new_page).post(card_create))
-        .route("/cards/{id}", get(card_page).post(card_update))
+        .route("/decks/{id}/share", post(deck_share))
+        .route("/shares/{id}", post(share_action))
         .route("/cards/{id}/action", post(card_action))
         .route("/presets", get(presets_page).post(preset_create))
         .route("/presets/{id}", get(preset_page).post(preset_update))
@@ -116,11 +111,32 @@ pub fn router(app: AppState) -> Router {
         .route("/settings/reset-params", post(reset_params))
         .route("/tokens", get(tokens_page).post(token_create))
         .route("/tokens/{id}/revoke", post(token_revoke))
-        .route("/import", get(import_page).post(import_upload))
         .route("/stats", get(stats_page))
         .route("/media/{id}", get(media_file))
+        .route("/api/offline/queue", get(offline_queue))
+        .layer(small)
+        .route("/api/offline/sync", post(offline_sync).layer(DefaultBodyLimit::max(2 * 1024 * 1024)))
+        .route("/cards/new", get(card_new_page).post(card_create).layer(card_upload))
+        .route("/cards/{id}", get(card_page).post(card_update).layer(card_upload))
+        .route(
+            "/import",
+            get(import_page)
+                .post(import_upload)
+                .layer(DefaultBodyLimit::max(import::MAX_IMPORT_BYTES + 1024 * 1024)),
+        )
+        .layer(middleware::from_fn_with_state(app.clone(), security::check_origin));
+    let static_routes = Router::new()
+        .route("/style.css", get(style))
+        .route("/offline", get(offline_page))
+        .route("/offline.js", get(offline_js))
+        .route("/sw.js", get(service_worker))
+        .route("/healthz", get(|| async { "ok" }));
+    Router::new()
+        .merge(browser_routes)
+        .merge(static_routes)
         .merge(client_routes)
-        .layer(DefaultBodyLimit::max(import::MAX_IMPORT_BYTES + 1024 * 1024))
+        .layer(middleware::from_fn(security::flash))
+        .layer(middleware::from_fn_with_state(app.clone(), security::headers))
         .layer(tower_http::trace::TraceLayer::new_for_http())
         .with_state(app)
 }
@@ -138,7 +154,7 @@ impl WebUser {
 
 async fn session_from_parts(parts: &Parts, app: &AppState) -> Option<User> {
     let jar = CookieJar::from_headers(&parts.headers);
-    app.session_user(jar.get(COOKIE)?.value()).await.ok().flatten()
+    app.session_user(jar.get(app.config.session_cookie_name())?.value()).await.ok().flatten()
 }
 
 impl axum::extract::OptionalFromRequestParts<AppState> for WebUser {
@@ -197,7 +213,7 @@ impl IntoResponse for WebError {
             html! {
                 h1 { "Sorry" }
                 p.notice { (msg) }
-                p { a.btn href="javascript:history.back()" { "Go back" } " " a.btn href="/" { "Home" } }
+                p { a.btn href="/" { "Home" } }
             },
         );
         (status, body).into_response()
@@ -216,6 +232,21 @@ fn capitalize(s: &str) -> String {
 
 fn redirect(to: impl AsRef<str>) -> Response {
     Redirect::to(to.as_ref()).into_response()
+}
+
+fn flash_cookie(msg: &str) -> Cookie<'static> {
+    // The cookie jar percent-encodes the value.
+    Cookie::build((security::FLASH_COOKIE, msg.to_string()))
+        .path("/")
+        .http_only(true)
+        .same_site(SameSite::Lax)
+        .max_age(time::Duration::seconds(60))
+        .build()
+}
+
+/// Redirect and show `msg` on the next page.
+fn redirect_msg(to: impl AsRef<str>, msg: &str) -> Response {
+    (CookieJar::new().add(flash_cookie(msg)), Redirect::to(to.as_ref())).into_response()
 }
 
 pub fn urlenc(s: &str) -> String {
@@ -291,11 +322,11 @@ fn face(text: &str, image: &Option<String>) -> Markup {
 }
 
 fn session_cookie(app: &AppState, token: String) -> Cookie<'static> {
-    Cookie::build((COOKIE, token))
+    Cookie::build((app.config.session_cookie_name(), token))
         .path("/")
         .http_only(true)
         .same_site(SameSite::Lax)
-        .secure(app.config.secure_cookies)
+        .secure(app.config.secure())
         .max_age(time_days(crate::auth::SESSION_DAYS))
         .build()
 }
@@ -314,16 +345,18 @@ async fn style() -> impl IntoResponse {
     )
 }
 
-#[derive(Deserialize, Default)]
-struct MsgQuery {
-    msg: Option<String>,
-}
-
 // ----- auth pages ---------------------------------------------------------
 
 /// Only same-site paths are allowed as a post-login target.
 fn safe_next(next: Option<&str>) -> Option<&str> {
-    next.filter(|n| n.starts_with('/') && !n.starts_with("//") && !n.starts_with("/\\"))
+    // Browsers ignore tabs/newlines and treat "\" like "/" in URLs, so
+    // "/\t/evil.example" would become "//evil.example".
+    next.filter(|n| {
+        n.starts_with('/')
+            && n.len() < 4096
+            && !n.chars().any(|c| c.is_control() || c.is_whitespace() || c == '\\')
+            && !n.starts_with("//")
+    })
 }
 
 fn auth_form(signup: bool, error: Option<&str>, allow_signup: bool, next: Option<&str>) -> Markup {
@@ -355,7 +388,6 @@ fn auth_form(signup: bool, error: Option<&str>, allow_signup: bool, next: Option
                 @if let Some(n) = next { input type="hidden" name="next" value=(n); }
                 @if signup {
                     input type="hidden" name="timezone" id="tz" value="";
-                    script { (PreEscaped("try{document.getElementById('tz').value=Intl.DateTimeFormat().resolvedOptions().timeZone}catch(e){}")) }
                 }
                 button.btn.primary type="submit" { (title) }
             }
@@ -378,8 +410,13 @@ async fn login_page(State(app): State<AppState>, user: Option<WebUser>, Query(q)
     if user.is_some() {
         return redirect(next.unwrap_or("/"));
     }
-    auth_form(false, None, app.config.allow_signup, next).into_response()
+    auth_form(false, None, app.signup_open().await, next).into_response()
 }
+
+const LOGIN_WINDOW: Duration = Duration::from_secs(15 * 60);
+/// Failed logins allowed per client IP, and per account, per window.
+const LOGIN_FAILURES_PER_IP: u32 = 20;
+const LOGIN_FAILURES_PER_ACCOUNT: u32 = 50;
 
 #[derive(Deserialize)]
 struct LoginForm {
@@ -390,31 +427,62 @@ struct LoginForm {
     next: Option<String>,
 }
 
-async fn login(State(app): State<AppState>, jar: CookieJar, Form(f): Form<LoginForm>) -> Response {
+async fn login(
+    State(app): State<AppState>,
+    ClientIp(ip): ClientIp,
+    jar: CookieJar,
+    Form(f): Form<LoginForm>,
+) -> Response {
     let next = safe_next(f.next.as_deref());
+    let ip_key = format!("login-ip:{ip}");
+    let user_key = format!("login-user:{}", f.username.trim().to_lowercase());
+    if app.limiter.exceeded(&ip_key, LOGIN_FAILURES_PER_IP, LOGIN_WINDOW)
+        || app.limiter.exceeded(&user_key, LOGIN_FAILURES_PER_ACCOUNT, LOGIN_WINDOW)
+    {
+        tracing::warn!("login throttled for {ip} / {}", f.username.trim());
+        let page = auth_form(
+            false,
+            Some("Too many failed attempts. Wait 15 minutes and try again."),
+            app.signup_open().await,
+            next,
+        );
+        return (StatusCode::TOO_MANY_REQUESTS, [(header::RETRY_AFTER, "900")], page).into_response();
+    }
     match app.authenticate(&f.username, &f.password).await {
         Ok(user) => match app.create_session(user.id).await {
             Ok(token) => (jar.add(session_cookie(&app, token)), Redirect::to(next.unwrap_or("/"))).into_response(),
             Err(e) => WebError(e).into_response(),
         },
-        Err(e) => (
-            StatusCode::UNAUTHORIZED,
-            auth_form(false, Some(&capitalize(&e.to_string())), app.config.allow_signup, next),
-        )
-            .into_response(),
+        Err(e) => {
+            app.limiter.hit(&ip_key, LOGIN_WINDOW);
+            app.limiter.hit(&user_key, LOGIN_WINDOW);
+            (
+                StatusCode::UNAUTHORIZED,
+                auth_form(false, Some(&capitalize(&e.to_string())), app.signup_open().await, next),
+            )
+                .into_response()
+        }
     }
 }
 
 async fn signup_page(State(app): State<AppState>, Query(q): Query<NextQuery>) -> Response {
-    if !app.config.allow_signup {
+    if !app.signup_open().await {
         return redirect("/login");
     }
     auth_form(true, None, true, safe_next(q.next.as_deref())).into_response()
 }
 
-async fn signup(State(app): State<AppState>, jar: CookieJar, Form(f): Form<LoginForm>) -> Response {
-    if !app.config.allow_signup {
+async fn signup(
+    State(app): State<AppState>,
+    ClientIp(ip): ClientIp,
+    jar: CookieJar,
+    Form(f): Form<LoginForm>,
+) -> Response {
+    if !app.signup_open().await {
         return redirect("/login");
+    }
+    if app.limiter.check_and_hit(&format!("signup-ip:{ip}"), 10, Duration::from_secs(3600)) {
+        return security::too_many_requests(3600);
     }
     let next = safe_next(f.next.as_deref());
     let result = async {
@@ -425,11 +493,12 @@ async fn signup(State(app): State<AppState>, jar: CookieJar, Form(f): Form<Login
     .await;
     match result {
         Ok((user, token)) => {
-            let welcome = format!(
-                "/?msg={}",
-                urlenc(&format!("Welcome! Your username is {}. Use it to log in.", user.handle()))
-            );
-            (jar.add(session_cookie(&app, token)), Redirect::to(next.unwrap_or(&welcome))).into_response()
+            let welcome = format!("Welcome! Your username is {}. Use it to log in.", user.handle());
+            (
+                jar.add(session_cookie(&app, token)).add(flash_cookie(&welcome)),
+                Redirect::to(next.unwrap_or("/")),
+            )
+                .into_response()
         }
         Err(e) => (
             StatusCode::BAD_REQUEST,
@@ -440,15 +509,16 @@ async fn signup(State(app): State<AppState>, jar: CookieJar, Form(f): Form<Login
 }
 
 async fn logout(State(app): State<AppState>, jar: CookieJar) -> Response {
-    if let Some(c) = jar.get(COOKIE) {
+    let name = app.config.session_cookie_name();
+    if let Some(c) = jar.get(name) {
         let _ = app.delete_session(c.value()).await;
     }
-    (jar.remove(Cookie::build(COOKIE).path("/")), Redirect::to("/login")).into_response()
+    (jar.remove(Cookie::build(name).path("/")), Redirect::to("/login")).into_response()
 }
 
 // ----- home ---------------------------------------------------------------
 
-async fn home(State(app): State<AppState>, user: WebUser, Query(q): Query<MsgQuery>) -> WebResult {
+async fn home(State(app): State<AppState>, user: WebUser, Flash(msg): Flash) -> WebResult {
     let access = user.access();
     let decks = app.deck_summaries(&access).await?;
     let shares = app.incoming_shares(&access).await?;
@@ -458,7 +528,7 @@ async fn home(State(app): State<AppState>, user: WebUser, Query(q): Query<MsgQue
         Some(&user.0),
         Some("home"),
         html! {
-            (flash(&q.msg))
+            (flash(&msg))
             @if total_due > 0 {
                 a.btn.primary.wide href="/study" { "Study all · " (total_due) " due" }
             } @else if !decks.is_empty() {
@@ -528,7 +598,6 @@ struct StudyQuery {
     card: Option<i64>,
     show: Option<u8>,
     t: Option<i64>,
-    msg: Option<String>,
 }
 
 fn study_url(deck: Option<i64>) -> String {
@@ -538,7 +607,7 @@ fn study_url(deck: Option<i64>) -> String {
     }
 }
 
-async fn study(State(app): State<AppState>, user: WebUser, Query(q): Query<StudyQuery>) -> WebResult {
+async fn study(State(app): State<AppState>, user: WebUser, Flash(msg): Flash, Query(q): Query<StudyQuery>) -> WebResult {
     let access = user.access();
     let deck_param = q.deck.map(|d| format!("&deck={d}")).unwrap_or_default();
 
@@ -580,7 +649,6 @@ async fn study(State(app): State<AppState>, user: WebUser, Query(q): Query<Study
                         }
                     }
                 }
-                (shortcuts())
             },
         )
         .into_response());
@@ -593,7 +661,7 @@ async fn study(State(app): State<AppState>, user: WebUser, Query(q): Query<Study
             "Study",
             Some(&user.0),
             html! {
-                (flash(&q.msg))
+                (flash(&msg))
                 h1 { "Done for now" }
                 @if any_cards {
                     p { "Nothing else is due. Come back later." }
@@ -620,7 +688,7 @@ async fn study(State(app): State<AppState>, user: WebUser, Query(q): Query<Study
         "Study",
         Some(&user.0),
         html! {
-            (flash(&q.msg))
+            (flash(&msg))
             p.muted.small.status {
                 span { (sc.deck.name) }
                 span { (state_label) " · " (sc.remaining) " left" }
@@ -636,20 +704,9 @@ async fn study(State(app): State<AppState>, user: WebUser, Query(q): Query<Study
                 }
                 a href=(format!("/cards/{}", card.id)) { "Edit card" }
             }
-            (shortcuts())
         },
     )
     .into_response())
-}
-
-/// Optional keyboard shortcuts for devices with keyboards. Everything works
-/// without it.
-fn shortcuts() -> Markup {
-    html! {
-        script {
-            (PreEscaped(r#"document.addEventListener('keydown',function(e){if(e.target.tagName==='INPUT'||e.target.tagName==='TEXTAREA')return;var k=e.key===' '||e.key==='Enter'?' ':e.key;var el=document.querySelector('[data-key="'+k+'"]');if(!el&&k===' ')el=document.querySelector('[data-key="3"]');if(el){e.preventDefault();el.click();}});"#))
-        }
-    }
 }
 
 #[derive(Deserialize)]
@@ -685,7 +742,7 @@ async fn study_undo(State(app): State<AppState>, user: WebUser, Form(f): Form<De
     let sep = if base.contains('?') { '&' } else { '?' };
     Ok(match restored {
         Some(card) => redirect(format!("{base}{sep}card={}&show=1&t={}", card.id, now())),
-        None => redirect(format!("{base}{sep}msg={}", urlenc("Nothing to undo."))),
+        None => redirect_msg(base, "Nothing to undo."),
     })
 }
 
@@ -743,13 +800,13 @@ struct DeckQuery {
     q: Option<String>,
     state: Option<String>,
     page: Option<i64>,
-    msg: Option<String>,
 }
 
 async fn deck_page(
     State(app): State<AppState>,
     user: WebUser,
     Path(id): Path<i64>,
+    Flash(msg): Flash,
     Query(q): Query<DeckQuery>,
 ) -> WebResult {
     let access = user.access();
@@ -783,7 +840,7 @@ async fn deck_page(
         &d.name,
         Some(&user.0),
         html! {
-            (flash(&q.msg))
+            (flash(&msg))
             h1 { (d.name) }
             @if !d.description.is_empty() { p { (d.description) } }
             dl.stats-inline {
@@ -858,7 +915,7 @@ async fn deck_edit_page(
     State(app): State<AppState>,
     user: WebUser,
     Path(id): Path<i64>,
-    Query(q): Query<MsgQuery>,
+    Flash(msg): Flash,
 ) -> WebResult {
     let access = user.access();
     let deck = app.deck(&access, id).await?;
@@ -868,7 +925,7 @@ async fn deck_edit_page(
         "Edit deck",
         Some(&user.0),
         html! {
-            (flash(&q.msg))
+            (flash(&msg))
             h1 { "Edit deck" }
             form method="post" action=(format!("/decks/{id}/edit")) {
                 label { "Name" input type="text" name="name" required value=(deck.name); }
@@ -927,12 +984,12 @@ async fn deck_update(
         Some(f.exam_date.as_deref().unwrap_or("")),
     )
     .await?;
-    Ok(redirect(format!("/decks/{id}?msg=Saved.")))
+    Ok(redirect_msg(format!("/decks/{id}"), "Saved."))
 }
 
 async fn deck_delete(State(app): State<AppState>, user: WebUser, Path(id): Path<i64>) -> WebResult {
     let n = app.delete_deck(&user.access(), id).await?;
-    Ok(redirect(format!("/?msg={}", urlenc(&format!("Deck deleted ({n} cards).")))))
+    Ok(redirect_msg("/", &format!("Deck deleted ({n} cards).")))
 }
 
 async fn deck_export(State(app): State<AppState>, user: WebUser, Path(id): Path<i64>) -> WebResult {
@@ -1041,10 +1098,9 @@ fn card_form(
 #[derive(Deserialize)]
 struct NewCardQuery {
     deck: Option<i64>,
-    msg: Option<String>,
 }
 
-async fn card_new_page(State(app): State<AppState>, user: WebUser, Query(q): Query<NewCardQuery>) -> WebResult {
+async fn card_new_page(State(app): State<AppState>, user: WebUser, Flash(msg): Flash, Query(q): Query<NewCardQuery>) -> WebResult {
     let decks = app.decks(&user.access()).await?;
     if decks.is_empty() {
         return Ok(redirect("/decks/new"));
@@ -1054,7 +1110,7 @@ async fn card_new_page(State(app): State<AppState>, user: WebUser, Query(q): Que
         "Add card",
         Some(&user.0),
         html! {
-            (flash(&q.msg))
+            (flash(&msg))
             h1 { "Add card" }
             (card_form("/cards/new", &decks, deck, "", "", &None, &None, "Add"))
         },
@@ -1076,14 +1132,14 @@ async fn card_create(State(app): State<AppState>, user: WebUser, mp: Multipart) 
     };
     app.create_card(&access, deck, &f.front, &f.back, front_image, back_image)
         .await?;
-    Ok(redirect(format!("/cards/new?deck={deck}&msg=Added.")))
+    Ok(redirect_msg(format!("/cards/new?deck={deck}"), "Added."))
 }
 
 async fn card_page(
     State(app): State<AppState>,
     user: WebUser,
     Path(id): Path<i64>,
-    Query(q): Query<MsgQuery>,
+    Flash(msg): Flash,
 ) -> WebResult {
     let access = user.access();
     let card = app.card(&access, id).await?;
@@ -1096,7 +1152,7 @@ async fn card_page(
         "Edit card",
         Some(&user.0),
         html! {
-            (flash(&q.msg))
+            (flash(&msg))
             h1 { "Edit card" }
             (card_form(&format!("/cards/{id}"), &decks, Some(card.deck_id), &card.front, &card.back, &card.front_image, &card.back_image, "Save"))
             h2 { "Scheduling" }
@@ -1170,7 +1226,7 @@ async fn card_update(State(app): State<AppState>, user: WebUser, Path(id): Path<
             app.move_card(&access, id, deck).await?;
         }
     }
-    Ok(redirect(format!("/cards/{id}?msg=Saved.")))
+    Ok(redirect_msg(format!("/cards/{id}"), "Saved."))
 }
 
 #[derive(Deserialize)]
@@ -1201,22 +1257,22 @@ async fn card_action(
         "delete" => {
             let card = app.card(&access, id).await?;
             app.delete_card(&access, id).await?;
-            return Ok(redirect(format!("/decks/{}?msg=Card%20deleted.", card.deck_id)));
+            return Ok(redirect_msg(format!("/decks/{}", card.deck_id), "Card deleted."));
         }
         _ => return Err(AppError::bad("unknown action").into()),
     };
-    Ok(redirect(format!("/cards/{id}?msg={}", urlenc(msg))))
+    Ok(redirect_msg(format!("/cards/{id}"), msg))
 }
 
 // ----- presets ------------------------------------------------------------
 
-async fn presets_page(State(app): State<AppState>, user: WebUser, Query(q): Query<MsgQuery>) -> WebResult {
+async fn presets_page(State(app): State<AppState>, user: WebUser, Flash(msg): Flash) -> WebResult {
     let presets = app.list_presets(&user.access()).await?;
     Ok(layout(
         "Presets",
         Some(&user.0),
         html! {
-            (flash(&q.msg))
+            (flash(&msg))
             h1 { "Presets" }
             p {
                 "A preset sets how much you want to remember (desired retention) and your daily limits. "
@@ -1272,7 +1328,7 @@ async fn preset_page(
     State(app): State<AppState>,
     user: WebUser,
     Path(id): Path<i64>,
-    Query(q): Query<MsgQuery>,
+    Flash(msg): Flash,
 ) -> WebResult {
     let access = user.access();
     let p = app.preset(&access, id).await?;
@@ -1287,7 +1343,7 @@ async fn preset_page(
         &p.name,
         Some(&user.0),
         html! {
-            (flash(&q.msg))
+            (flash(&msg))
             h1 { (p.name) }
             @if !decks.is_empty() { p.muted { "Used by: " (decks.join(", ")) } }
             form method="post" action=(format!("/presets/{id}")) {
@@ -1349,17 +1405,17 @@ async fn preset_update(
         },
     )
     .await?;
-    Ok(redirect(format!("/presets/{id}?msg=Saved.")))
+    Ok(redirect_msg(format!("/presets/{id}"), "Saved."))
 }
 
 async fn preset_delete(State(app): State<AppState>, user: WebUser, Path(id): Path<i64>) -> WebResult {
     app.delete_preset(&user.access(), id).await?;
-    Ok(redirect("/presets?msg=Deleted."))
+    Ok(redirect_msg("/presets", "Deleted."))
 }
 
 // ----- settings -----------------------------------------------------------
 
-async fn settings_page(State(app): State<AppState>, user: WebUser, Query(q): Query<MsgQuery>) -> WebResult {
+async fn settings_page(State(app): State<AppState>, user: WebUser, Flash(msg): Flash) -> WebResult {
     let access = user.access();
     let u = &user.0;
     let reviews = app.optimizable_reviews(&access).await?;
@@ -1368,7 +1424,7 @@ async fn settings_page(State(app): State<AppState>, user: WebUser, Query(q): Que
         "Settings",
         Some(u),
         html! {
-            (flash(&q.msg))
+            (flash(&msg))
             h1 { "Settings" }
             p { "Logged in as " strong { (u.handle()) } }
             p.actions {
@@ -1441,7 +1497,7 @@ async fn settings_update(State(app): State<AppState>, user: WebUser, Form(f): Fo
         f.optimize_include_agent.is_some(),
     )
     .await?;
-    Ok(redirect("/settings?msg=Saved."))
+    Ok(redirect_msg("/settings", "Saved."))
 }
 
 #[derive(Deserialize)]
@@ -1459,8 +1515,8 @@ async fn password_update(
     app.change_password(&user.0, &f.current, &f.new).await?;
     let token = app.create_session(user.0.id).await?;
     Ok((
-        jar.add(session_cookie(&app, token)),
-        Redirect::to("/settings?msg=Password%20changed."),
+        jar.add(session_cookie(&app, token)).add(flash_cookie("Password changed.")),
+        Redirect::to("/settings"),
     )
         .into_response())
 }
@@ -1475,12 +1531,12 @@ async fn optimize(State(app): State<AppState>, user: WebUser) -> WebResult {
         Err(AppError::BadRequest(m)) => capitalize(&m),
         Err(e) => return Err(e.into()),
     };
-    Ok(redirect(format!("/settings?msg={}#fsrs", urlenc(&msg))))
+    Ok(redirect_msg("/settings#fsrs", &msg))
 }
 
 async fn reset_params(State(app): State<AppState>, user: WebUser) -> WebResult {
     app.reset_parameters(&user.access()).await?;
-    Ok(redirect("/settings?msg=Using%20default%20parameters.#fsrs"))
+    Ok(redirect_msg("/settings#fsrs", "Using default parameters."))
 }
 
 // ----- tokens -------------------------------------------------------------
@@ -1493,7 +1549,7 @@ async fn tokens_page(
     State(app): State<AppState>,
     user: WebUser,
     headers: HeaderMap,
-    Query(q): Query<MsgQuery>,
+    Flash(msg): Flash,
 ) -> WebResult {
     let access = user.access();
     let tokens = app.list_tokens(user.0.id).await?;
@@ -1505,7 +1561,7 @@ async fn tokens_page(
         "Agent access",
         Some(&user.0),
         html! {
-            (flash(&q.msg))
+            (flash(&msg))
             h1 { "Agent access" }
             h2 { "Connect Claude" }
             ol.prose {
@@ -1628,18 +1684,18 @@ async fn token_create(
 
 async fn token_revoke(State(app): State<AppState>, user: WebUser, Path(id): Path<i64>) -> WebResult {
     app.revoke_token(user.0.id, id).await?;
-    Ok(redirect("/tokens?msg=Access%20removed."))
+    Ok(redirect_msg("/tokens", "Access removed."))
 }
 
 // ----- import -------------------------------------------------------------
 
-async fn import_page(State(app): State<AppState>, user: WebUser, Query(q): Query<MsgQuery>) -> WebResult {
+async fn import_page(State(app): State<AppState>, user: WebUser, Flash(msg): Flash) -> WebResult {
     let decks = app.decks(&user.access()).await?;
     Ok(layout(
         "Import",
         Some(&user.0),
         html! {
-            (flash(&q.msg))
+            (flash(&msg))
             h1 { "Import" }
             h2 { "Anki package" }
             p { "Upload an " code { ".apkg" } " or " code { ".colpkg" } " file. Each card keeps the first two fields of its note, the first image of each side and its review history. Cloze notes become one card per gap." }
@@ -1713,7 +1769,7 @@ async fn import_upload(State(app): State<AppState>, user: WebUser, mut mp: Multi
         msg += &format!(". Skipped {} empty", report.skipped);
     }
     msg.push('.');
-    Ok(redirect(format!("/?msg={}", urlenc(&msg))))
+    Ok(redirect_msg("/", &msg))
 }
 
 // ----- stats --------------------------------------------------------------
@@ -1802,10 +1858,10 @@ async fn deck_share(
     Form(f): Form<ShareForm>,
 ) -> WebResult {
     let share = app.share_deck(&user.access(), id, &f.user).await?;
-    Ok(redirect(format!(
-        "/decks/{id}/edit?msg={}#share",
-        urlenc(&format!("Shared with {}. They'll see it on their home page.", share.to))
-    )))
+    Ok(redirect_msg(
+        format!("/decks/{id}/edit#share"),
+        &format!("Shared with {}. They'll see it on their home page.", share.to),
+    ))
 }
 
 async fn share_action(
@@ -1818,7 +1874,7 @@ async fn share_action(
     match f.action.as_str() {
         "accept" => {
             let deck = app.accept_share(&access, id).await?;
-            Ok(redirect(format!("/decks/{}?msg={}", deck.id, urlenc("Added to your decks."))))
+            Ok(redirect_msg(format!("/decks/{}", deck.id), "Added to your decks."))
         }
         "decline" => {
             app.decline_share(&access, id).await?;

@@ -178,24 +178,37 @@ pub(crate) fn random_hex(bytes: usize) -> String {
 
 pub fn validate_username(name: &str) -> Result<()> {
     let ok_len = (2..=32).contains(&name.chars().count());
+    // ASCII only, so nobody can pose as "kolja" with a look-alike letter.
     let ok_chars = name
         .chars()
-        .all(|c| c.is_alphanumeric() || matches!(c, '_' | '-' | '.'));
+        .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '.'));
     if ok_len && ok_chars {
         Ok(())
     } else {
         Err(AppError::bad(
-            "username must be 2–32 characters: letters, digits, _ - .",
+            "username must be 2–32 characters: a-z, 0-9, _ - .",
         ))
     }
 }
 
+/// Longer passwords are refused so nobody can make Argon2 hash megabytes.
+pub const MAX_PASSWORD_BYTES: usize = 1024;
+
 pub fn validate_password(pw: &str) -> Result<()> {
     if pw.chars().count() < 8 {
         Err(AppError::bad("password must be at least 8 characters"))
+    } else if pw.len() > MAX_PASSWORD_BYTES {
+        Err(AppError::bad("password is too long"))
     } else {
         Ok(())
     }
+}
+
+/// A valid hash of a random password, verified against when the user doesn't
+/// exist so both cases take the same time.
+fn dummy_hash() -> &'static str {
+    static HASH: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    HASH.get_or_init(|| hash_password(&random_hex(16)).unwrap_or_default())
 }
 
 /// Split "name#1234" into its parts.
@@ -220,7 +233,10 @@ impl App {
         } else {
             self.config.default_timezone.clone()
         };
-        let hash = hash_password(password)?;
+        let pw = password.to_string();
+        let hash = tokio::task::spawn_blocking(move || hash_password(&pw))
+            .await
+            .map_err(|e| AppError::Internal(e.into()))??;
 
         let taken: Vec<i64> =
             sqlx::query_scalar("SELECT discriminator FROM users WHERE username = ? COLLATE NOCASE")
@@ -305,14 +321,25 @@ impl App {
     }
 
     pub async fn authenticate(&self, handle: &str, password: &str) -> Result<User> {
+        let wrong = || AppError::bad("wrong username or password");
+        if password.len() > MAX_PASSWORD_BYTES {
+            return Err(wrong());
+        }
         let user = match self.find_user(handle).await {
             Ok(u) => u,
             Err(AppError::NotFound) => {
-                return Err(AppError::bad("wrong username or password"));
+                let pw = password.to_string();
+                let _ = tokio::task::spawn_blocking(move || verify_password(&pw, dummy_hash())).await;
+                return Err(wrong());
             }
             Err(e) => return Err(e),
         };
-        if verify_password(password, &user.password_hash) {
+        let pw = password.to_string();
+        let hash = user.password_hash.clone();
+        let ok = tokio::task::spawn_blocking(move || verify_password(&pw, &hash))
+            .await
+            .unwrap_or(false);
+        if ok {
             Ok(user)
         } else {
             Err(AppError::bad("wrong username or password"))
@@ -331,7 +358,7 @@ impl App {
     }
 
     pub async fn change_password(&self, user: &User, current: &str, new: &str) -> Result<()> {
-        if !verify_password(current, &user.password_hash) {
+        if current.len() > MAX_PASSWORD_BYTES || !verify_password(current, &user.password_hash) {
             return Err(AppError::bad("current password is wrong"));
         }
         self.set_password(user.id, new).await?;
@@ -407,6 +434,8 @@ impl App {
         if name.is_empty() {
             return Err(AppError::bad("give the token a name"));
         }
+        let name: String = name.chars().filter(|c| !c.is_control()).take(100).collect();
+        let name = name.as_str();
         let prefix = if oauth_client_id.is_some() { "oauth".to_string() } else { secret[..12].to_string() };
         let mut tx = self.db.begin().await?;
         let id: i64 = sqlx::query_scalar(

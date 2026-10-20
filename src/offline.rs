@@ -207,7 +207,8 @@ impl App {
                 results.push(result("error", Some("bad client_id".into())));
                 continue;
             }
-            let seen: Option<i64> = sqlx::query_scalar("SELECT id FROM review_log WHERE client_id = ?")
+            let seen: Option<i64> = sqlx::query_scalar("SELECT id FROM review_log WHERE user_id = ? AND client_id = ?")
+                .bind(access.user_id())
                 .bind(&a.client_id)
                 .fetch_optional(&self.db)
                 .await?;

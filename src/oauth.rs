@@ -36,6 +36,7 @@ use crate::{
 pub const ACCESS_TOKEN_SECS: i64 = 3600;
 pub const REFRESH_TOKEN_SECS: i64 = 90 * 86_400;
 const CODE_SECS: i64 = 600;
+const REFRESH_REUSE_GRACE_SECS: i64 = 30;
 
 /// The server's public base URL, e.g. `https://cards.example.com`.
 pub fn base_url(app: &App, headers: &HeaderMap) -> String {
@@ -96,7 +97,8 @@ fn valid_redirect(uri: &str) -> bool {
         "https" => true,
         // Plain http only for apps on the user's own machine.
         "http" => same_loopback(uri, uri),
-        "javascript" | "data" | "file" | "vbscript" => false,
+        "javascript" | "data" | "file" | "vbscript" | "about" | "blob" | "filesystem" | "view-source"
+        | "intent" | "ws" | "wss" | "ftp" => false,
         // Custom schemes for native apps (e.g. com.example.app:/callback).
         s => s.contains('.') || s.chars().all(|c| c.is_ascii_alphanumeric() || c == '+' || c == '-'),
     }
@@ -175,26 +177,119 @@ struct MetadataDocument {
     redirect_uris: Vec<String>,
 }
 
+/// Only addresses on the public internet: never loopback, private,
+/// link-local, carrier-grade NAT, multicast, documentation or reserved ranges.
+fn is_public_ip(ip: std::net::IpAddr) -> bool {
+    use std::net::IpAddr;
+    match ip {
+        IpAddr::V4(v4) => {
+            let o = v4.octets();
+            !(v4.is_loopback()
+                || v4.is_private()
+                || v4.is_link_local()
+                || v4.is_unspecified()
+                || v4.is_multicast()
+                || v4.is_broadcast()
+                || v4.is_documentation()
+                || o[0] == 0
+                || (o[0] == 100 && (o[1] & 0xc0) == 64)
+                || (o[0] == 198 && (o[1] & 0xfe) == 18)
+                || o[0] >= 240
+                || (o[0] == 192 && o[1] == 0 && o[2] == 0))
+        }
+        IpAddr::V6(v6) => {
+            if let Some(v4) = v6.to_ipv4_mapped() {
+                return is_public_ip(IpAddr::V4(v4));
+            }
+            let seg = v6.segments();
+            !(v6.is_loopback()
+                || v6.is_unspecified()
+                || v6.is_multicast()
+                || (seg[0] & 0xfe00) == 0xfc00
+                || (seg[0] & 0xffc0) == 0xfe80
+                || (seg[0] == 0x2001 && seg[1] == 0x0db8)
+                || (seg[0] == 0x64 && seg[1] == 0xff9b)
+                || seg[0] == 0x2002)
+        }
+    }
+}
+
+const MAX_METADATA_BYTES: usize = 64 * 1024;
+
+/// Fetch a client metadata document. The host must resolve only to public
+/// addresses, and the connection is pinned to the checked address so DNS
+/// can't be switched in between (rebinding).
+async fn fetch_metadata_document(url: &str) -> Option<MetadataDocument> {
+    let parsed = reqwest::Url::parse(url).ok()?;
+    if parsed.scheme() != "https"
+        || !parsed.username().is_empty()
+        || parsed.password().is_some()
+        || parsed.port().is_some_and(|p| p != 443)
+        || parsed.path() == "/"
+        || parsed.fragment().is_some()
+    {
+        return None;
+    }
+    let host = parsed.host_str()?.to_string();
+    let addrs: Vec<std::net::SocketAddr> = tokio::time::timeout(
+        std::time::Duration::from_secs(5),
+        tokio::net::lookup_host((host.trim_matches(['[', ']']), 443)),
+    )
+    .await
+    .ok()?
+    .ok()?
+    .collect();
+    if addrs.is_empty() || !addrs.iter().all(|a| is_public_ip(a.ip())) {
+        tracing::warn!("refusing to fetch client metadata from non-public host {host}");
+        return None;
+    }
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(10))
+        .redirect(reqwest::redirect::Policy::none())
+        .resolve(&host, addrs[0])
+        .no_proxy()
+        .build()
+        .ok()?;
+    let mut resp = client.get(parsed).header("Accept", "application/json").send().await.ok()?;
+    if !resp.status().is_success() || resp.content_length().is_some_and(|l| l as usize > MAX_METADATA_BYTES) {
+        return None;
+    }
+    let mut body = Vec::new();
+    while let Some(chunk) = resp.chunk().await.ok()? {
+        body.extend_from_slice(&chunk);
+        if body.len() > MAX_METADATA_BYTES {
+            return None;
+        }
+    }
+    serde_json::from_slice(&body).ok()
+}
+
+/// Compare secrets without leaking how many leading bytes matched.
+fn ct_eq(a: &[u8], b: &[u8]) -> bool {
+    a.len() == b.len() && a.iter().zip(b).fold(0u8, |acc, (x, y)| acc | (x ^ y)) == 0
+}
+
+/// Strip control characters and cap the length of client-supplied names.
+fn clean_name(s: &str) -> String {
+    s.chars().filter(|c| !c.is_control()).take(100).collect::<String>().trim().to_string()
+}
+
 impl App {
     pub async fn register_client(&self, req: RegistrationRequest) -> Result<Value, OAuthError> {
         if req.redirect_uris.is_empty() || req.redirect_uris.len() > 20 {
             return Err(OAuthError::new("invalid_redirect_uri", "give 1 to 20 redirect_uris"));
         }
-        if let Some(bad) = req.redirect_uris.iter().find(|u| !valid_redirect(u)) {
+        if let Some(bad) = req.redirect_uris.iter().find(|u| u.len() > 2000 || !valid_redirect(u)) {
             return Err(OAuthError::new("invalid_redirect_uri", format!("redirect URI not allowed: {bad}")));
         }
         let method = req.token_endpoint_auth_method.as_deref().unwrap_or("none");
         if !matches!(method, "none" | "client_secret_post" | "client_secret_basic") {
             return Err(OAuthError::new("invalid_client_metadata", "unsupported token_endpoint_auth_method"));
         }
-        let name: String = req
-            .client_name
-            .as_deref()
-            .unwrap_or("MCP client")
-            .trim()
-            .chars()
-            .take(100)
-            .collect();
+        let mut name = clean_name(req.client_name.as_deref().unwrap_or(""));
+        if name.is_empty() {
+            name = "MCP client".into();
+        }
         let id = format!("ainki-client-{}", random_hex(16));
         let secret = (method != "none").then(|| random_hex(32));
         sqlx::query(
@@ -239,34 +334,26 @@ impl App {
     }
 
     async fn fetch_client_metadata(&self, url: &str) -> Result<Option<Client>> {
-        let fetched = async {
-            let client = reqwest::Client::builder()
-                .timeout(std::time::Duration::from_secs(10))
-                .redirect(reqwest::redirect::Policy::none())
-                .build()
-                .ok()?;
-            let resp = client.get(url).header("Accept", "application/json").send().await.ok()?;
-            if !resp.status().is_success() {
-                return None;
-            }
-            let bytes = resp.bytes().await.ok()?;
-            if bytes.len() > 64 * 1024 {
-                return None;
-            }
-            serde_json::from_slice::<MetadataDocument>(&bytes).ok()
+        // Anyone can make us fetch a URL here, so bound how often.
+        if self.limiter.check_and_hit("cimd-fetch", 300, std::time::Duration::from_secs(3600)) {
+            tracing::warn!("client metadata fetches throttled");
+            return Ok(None);
         }
-        .await;
+        let fetched = fetch_metadata_document(url).await;
         let Some(doc) = fetched else {
             tracing::warn!("could not fetch OAuth client metadata from {url}");
             return Ok(None);
         };
-        if doc.client_id != url || doc.redirect_uris.is_empty() || !doc.redirect_uris.iter().all(|u| valid_redirect(u)) {
+        if doc.client_id != url
+            || doc.redirect_uris.is_empty()
+            || doc.redirect_uris.len() > 20
+            || !doc.redirect_uris.iter().all(|u| u.len() <= 2000 && valid_redirect(u))
+        {
             tracing::warn!("invalid OAuth client metadata document at {url}");
             return Ok(None);
         }
-        let name = doc.client_name.unwrap_or_else(|| {
-            url.trim_start_matches("https://").split('/').next().unwrap_or(url).to_string()
-        });
+        let host = url.trim_start_matches("https://").split('/').next().unwrap_or(url).to_string();
+        let name = doc.client_name.map(|n| clean_name(&n)).filter(|n| !n.is_empty()).unwrap_or(host);
         sqlx::query(
             "INSERT INTO oauth_clients (id, name, redirect_uris, metadata_url, created_at) VALUES (?, ?, ?, ?, ?)
              ON CONFLICT (id) DO UPDATE SET name = excluded.name, redirect_uris = excluded.redirect_uris,
@@ -324,7 +411,8 @@ impl App {
             .await?
             .ok_or_else(|| OAuthError::new("invalid_client", "unknown client"))?;
         if let Some(hash) = &client.secret_hash {
-            if secret.map(sha256_hex).as_deref() != Some(hash.as_str()) {
+            let given = secret.map(sha256_hex).unwrap_or_default();
+            if !ct_eq(given.as_bytes(), hash.as_bytes()) {
                 return Err(OAuthError::new("invalid_client", "wrong client secret"));
             }
         }
@@ -429,15 +517,43 @@ impl App {
         refresh_token: &str,
     ) -> Result<TokenResponse, OAuthError> {
         let client = self.authenticate_client(client_id, client_secret).await?;
-        // Rotation: the old refresh token is consumed.
+        let hash = sha256_hex(refresh_token);
+        let invalid = || OAuthError::new("invalid_grant", "invalid or expired refresh token");
+        // Rotation: the old refresh token is marked used (kept to spot reuse).
         let row: Option<(i64, i64)> = sqlx::query_as(
-            "DELETE FROM oauth_tokens WHERE token_hash = ? AND kind = 'refresh' RETURNING api_token_id, expires_at",
+            "UPDATE oauth_tokens SET kind = 'refresh_used', used_at = ?
+             WHERE token_hash = ? AND kind = 'refresh' RETURNING api_token_id, expires_at",
         )
-        .bind(sha256_hex(refresh_token))
+        .bind(now())
+        .bind(&hash)
         .fetch_optional(&self.db)
         .await?;
-        let invalid = || OAuthError::new("invalid_grant", "invalid or expired refresh token");
-        let (grant_id, expires_at) = row.ok_or_else(invalid)?;
+        let Some((grant_id, expires_at)) = row else {
+            // A used refresh token coming back means two parties hold it:
+            // the token was probably stolen. End the connection. A quick
+            // retry (e.g. the response got lost) is tolerated.
+            let used: Option<(i64, i64)> = sqlx::query_as(
+                "SELECT api_token_id, used_at FROM oauth_tokens WHERE token_hash = ? AND kind = 'refresh_used'",
+            )
+            .bind(&hash)
+            .fetch_optional(&self.db)
+            .await?;
+            if let Some((grant, used_at)) = used {
+                if now() - used_at > REFRESH_REUSE_GRACE_SECS {
+                    tracing::warn!("refresh token reuse detected; revoking connection {grant}");
+                    sqlx::query("UPDATE api_tokens SET revoked_at = ? WHERE id = ?")
+                        .bind(now())
+                        .bind(grant)
+                        .execute(&self.db)
+                        .await?;
+                    sqlx::query("DELETE FROM oauth_tokens WHERE api_token_id = ?")
+                        .bind(grant)
+                        .execute(&self.db)
+                        .await?;
+                }
+            }
+            return Err(invalid());
+        };
         let owner: Option<Option<String>> = sqlx::query_scalar(
             "SELECT oauth_client_id FROM api_tokens WHERE id = ? AND revoked_at IS NULL",
         )
@@ -516,7 +632,16 @@ pub async fn authorization_server(State(app): State<AppState>, headers: HeaderMa
     }))
 }
 
-pub async fn register(State(app): State<AppState>, Json(req): Json<RegistrationRequest>) -> Response {
+pub async fn register(
+    State(app): State<AppState>,
+    crate::security::ClientIp(ip): crate::security::ClientIp,
+    Json(req): Json<RegistrationRequest>,
+) -> Response {
+    // Registration is open by design (MCP clients register themselves), so
+    // bound how fast one address can fill the table.
+    if app.limiter.check_and_hit(&format!("oauth-register:{ip}"), 30, std::time::Duration::from_secs(3600)) {
+        return crate::security::too_many_requests(3600);
+    }
     match app.register_client(req).await {
         Ok(v) => (StatusCode::CREATED, [(header::CACHE_CONTROL, "no-store")], Json(v)).into_response(),
         Err(e) => e.into_response(),
@@ -565,7 +690,24 @@ fn redirect_with(redirect_uri: &str, params: &[(&str, &str)]) -> Response {
 
 /// Validate the request; returns the client and redirect URI, or the
 /// response to send instead.
-async fn check_authorize(app: &App, p: &AuthorizeParams, user: Option<&crate::auth::User>) -> Result<(Client, String), Response> {
+/// RFC 8707: a client may name the resource it wants a token for. Only this
+/// server's MCP endpoint (or the server itself) is acceptable.
+fn resource_ok(resource: Option<&str>, base: &str) -> bool {
+    match resource {
+        None => true,
+        Some(r) => {
+            let r = r.trim_end_matches('/');
+            r == base || r == format!("{base}/mcp")
+        }
+    }
+}
+
+async fn check_authorize(
+    app: &App,
+    p: &AuthorizeParams,
+    user: Option<&crate::auth::User>,
+    base: &str,
+) -> Result<(Client, String), Response> {
     let Some(client_id) = p.client_id.as_deref() else {
         return Err(authorize_error_page(user, "The request is missing client_id."));
     };
@@ -590,14 +732,24 @@ async fn check_authorize(app: &App, p: &AuthorizeParams, user: Option<&crate::au
     if p.response_type.as_deref() != Some("code") {
         return fail("unsupported_response_type", "only response_type=code is supported");
     }
-    if p.code_challenge.as_deref().is_none_or(|c| c.len() < 43) || p.code_challenge_method.as_deref() != Some("S256") {
+    let challenge_ok = p.code_challenge.as_deref().is_some_and(|c| {
+        (43..=128).contains(&c.len()) && c.chars().all(|ch| ch.is_ascii_alphanumeric() || ch == '-' || ch == '_')
+    });
+    if !challenge_ok || p.code_challenge_method.as_deref() != Some("S256") {
         return fail("invalid_request", "PKCE with S256 is required");
+    }
+    if p.state.as_deref().is_some_and(|st| st.len() > 2048) {
+        return fail("invalid_request", "state is too long");
+    }
+    if !resource_ok(p.resource.as_deref(), base) {
+        return fail("invalid_target", "unknown resource");
     }
     Ok((client, redirect_uri))
 }
 
 pub async fn authorize_page(
     State(app): State<AppState>,
+    headers: HeaderMap,
     Query(p): Query<AuthorizeParams>,
     user: Option<WebUser>,
 ) -> Response {
@@ -605,7 +757,7 @@ pub async fn authorize_page(
         // Log in first, then come back here.
         return Redirect::to(&format!("/login?next={}", urlenc(&authorize_path(&p)))).into_response();
     };
-    let (client, redirect_uri) = match check_authorize(&app, &p, Some(&user)).await {
+    let (client, redirect_uri) = match check_authorize(&app, &p, Some(&user), &base_url(&app, &headers)).await {
         Ok(v) => v,
         Err(r) => return r,
     };
@@ -624,9 +776,13 @@ pub async fn authorize_page(
         "Connect",
         Some(&user),
         html! {
-            h1 { "Connect " (client.name) }
-            p { strong { (client.name) } " wants to use your AiNKI account " strong { (user.handle()) } "." }
-            p.muted.small { "After you allow it, you'll be sent back to " (target) "." }
+            h1 { "Connect an app" }
+            p { "An app calling itself " strong { (client.name) } " wants to use your AiNKI account " strong { (user.handle()) } "." }
+            p.notice {
+                "After you allow it, you'll be sent to " strong { (target) } ". "
+                "Only continue if you started connecting this app yourself and that address is the one you expect "
+                "(for Claude: claude.ai)."
+            }
             form method="post" action="/oauth/authorize" {
                 (hidden("response_type", &p.response_type))
                 (hidden("client_id", &p.client_id))
@@ -692,7 +848,7 @@ pub struct ConsentForm {
 }
 
 pub async fn authorize_submit(State(app): State<AppState>, headers: HeaderMap, WebUser(user): WebUser, Form(f): Form<ConsentForm>) -> Response {
-    let (client, redirect_uri) = match check_authorize(&app, &f.params, Some(&user)).await {
+    let (client, redirect_uri) = match check_authorize(&app, &f.params, Some(&user), &base_url(&app, &headers)).await {
         Ok(v) => v,
         Err(r) => return r,
     };
@@ -741,6 +897,7 @@ pub struct TokenRequest {
     pub refresh_token: Option<String>,
     pub client_id: Option<String>,
     pub client_secret: Option<String>,
+    pub resource: Option<String>,
 }
 
 /// Client credentials from HTTP Basic auth, if present.
@@ -773,6 +930,9 @@ fn basic_auth(headers: &HeaderMap) -> Option<(String, String)> {
 }
 
 pub async fn token(State(app): State<AppState>, headers: HeaderMap, Form(t): Form<TokenRequest>) -> Response {
+    if !resource_ok(t.resource.as_deref(), &base_url(&app, &headers)) {
+        return OAuthError::new("invalid_target", "unknown resource").into_response();
+    }
     let (client_id, secret) = match basic_auth(&headers) {
         Some((id, secret)) => (Some(id), Some(secret)),
         None => (t.client_id.clone(), t.client_secret.clone()),
@@ -825,6 +985,33 @@ mod tests {
         assert!(!valid_redirect("https://a.example/cb#frag"));
         assert!(same_loopback("http://localhost:1234/cb", "http://localhost:9999/cb"));
         assert!(!same_loopback("http://localhost:1234/cb", "http://localhost:9999/other"));
+    }
+
+    #[test]
+    fn only_public_addresses_are_fetched() {
+        for ip in ["127.0.0.1", "10.1.2.3", "172.16.0.1", "192.168.1.1", "169.254.169.254", "100.64.0.1", "0.0.0.0", "::1", "fd00::1", "fe80::1", "::ffff:127.0.0.1", "64:ff9b::a00:1"] {
+            assert!(!is_public_ip(ip.parse().unwrap()), "{ip}");
+        }
+        for ip in ["1.1.1.1", "160.79.104.10", "2606:4700::1111"] {
+            assert!(is_public_ip(ip.parse().unwrap()), "{ip}");
+        }
+    }
+
+    #[tokio::test]
+    async fn metadata_urls_must_be_safe() {
+        for url in ["http://example.com/client", "https://user@example.com/c", "https://example.com:8443/c", "https://example.com/", "https://127.0.0.1/c", "https://localhost/c"] {
+            assert!(fetch_metadata_document(url).await.is_none(), "{url}");
+        }
+    }
+
+    #[test]
+    fn resources() {
+        let base = "https://cards.example.com";
+        assert!(resource_ok(None, base));
+        assert!(resource_ok(Some("https://cards.example.com/mcp"), base));
+        assert!(resource_ok(Some("https://cards.example.com/"), base));
+        assert!(!resource_ok(Some("https://evil.example/mcp"), base));
+        assert!(ct_eq(b"abc", b"abc") && !ct_eq(b"abc", b"abd") && !ct_eq(b"ab", b"abc"));
     }
 
     #[test]

@@ -35,6 +35,9 @@ impl App {
     /// Offer a copy of a deck to another user (by `name#1234`, or a unique name).
     pub async fn share_deck(&self, access: &Access, deck_id: i64, recipient: &str) -> Result<OutgoingShare> {
         access.require_write()?;
+        // Sending data to another account is an account-wide decision: a
+        // token limited to some decks may not do it.
+        access.require_all_decks()?;
         self.deck(access, deck_id).await?;
         let to = match self.find_user(recipient).await {
             Ok(u) => u,

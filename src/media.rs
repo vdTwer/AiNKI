@@ -16,6 +16,8 @@ use crate::{
 
 pub const MAX_UPLOAD_BYTES: usize = 15 * 1024 * 1024;
 const MAX_DIMENSION: u32 = 1200;
+/// Largest image we are willing to decode at all.
+const MAX_DECODE_DIMENSION: u32 = 10_000;
 const GRAY_LEVELS: u8 = 16;
 
 #[derive(Debug, Clone, Serialize, sqlx::FromRow)]
@@ -64,9 +66,15 @@ fn dither(img: &mut GrayImage, levels: u8) {
 
 /// Decode, downscale, grayscale, dither and re-encode as PNG.
 pub fn process_image(data: &[u8]) -> Result<(Vec<u8>, u32, u32)> {
-    let reader = ImageReader::new(std::io::Cursor::new(data))
+    let mut reader = ImageReader::new(std::io::Cursor::new(data))
         .with_guessed_format()
         .map_err(|_| AppError::bad("could not read image"))?;
+    // A tiny file can claim enormous dimensions (decompression bomb).
+    let mut limits = image::Limits::default();
+    limits.max_image_width = Some(MAX_DECODE_DIMENSION);
+    limits.max_image_height = Some(MAX_DECODE_DIMENSION);
+    limits.max_alloc = Some(256 * 1024 * 1024);
+    reader.limits(limits);
     let img = reader
         .decode()
         .map_err(|e| AppError::bad(format!("unsupported or broken image: {e}")))?;
@@ -132,6 +140,25 @@ impl App {
             .await?)
     }
 
+    /// An image as seen through `access`: tokens limited to some decks only
+    /// see images on cards in those decks.
+    pub async fn media_for(&self, access: &Access, id: &str) -> Result<(Media, Vec<u8>)> {
+        if let crate::auth::Actor::Agent { decks: Some(decks), .. } = &access.actor {
+            let deck_ids: Vec<i64> = sqlx::query_scalar(
+                "SELECT deck_id FROM cards WHERE user_id = ? AND (front_image = ? OR back_image = ?)",
+            )
+            .bind(access.user_id())
+            .bind(id)
+            .bind(id)
+            .fetch_all(&self.db)
+            .await?;
+            if !deck_ids.iter().any(|d| decks.contains(d)) {
+                return Err(AppError::NotFound);
+            }
+        }
+        self.media(access.user_id(), id).await
+    }
+
     pub async fn media(&self, user_id: i64, id: &str) -> Result<(Media, Vec<u8>)> {
         let m: Media = sqlx::query_as("SELECT * FROM media WHERE id = ? AND user_id = ?")
             .bind(id)
@@ -163,6 +190,16 @@ mod tests {
         let decoded = image::load_from_memory(&out).unwrap().to_luma8();
         let step = 255 / (GRAY_LEVELS as u32 - 1);
         assert!(decoded.pixels().all(|p| p.0[0] as u32 % step == 0));
+    }
+
+    #[test]
+    fn rejects_huge_dimensions() {
+        // Cheap to store, but over the decode limit.
+        let img = image::GrayImage::new(MAX_DECODE_DIMENSION + 1, 1);
+        let mut png = Vec::new();
+        img.write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png).unwrap();
+        assert!(png.len() < 100_000);
+        assert!(process_image(&png).is_err());
     }
 
     #[test]

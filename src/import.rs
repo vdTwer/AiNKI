@@ -56,8 +56,8 @@ pub fn parse_csv(text: &str) -> Result<Vec<(String, String)>> {
     let mut out = Vec::new();
     for (i, rec) in reader.records().enumerate() {
         let rec = rec.map_err(|e| AppError::bad(format!("CSV error: {e}")))?;
-        let front = rec.get(0).unwrap_or("").trim().to_string();
-        let back = rec.get(1).unwrap_or("").trim().to_string();
+        let front = restore_formula(rec.get(0).unwrap_or("").trim().to_string());
+        let back = restore_formula(rec.get(1).unwrap_or("").trim().to_string());
         if i == 0
             && matches!(front.to_lowercase().as_str(), "front" | "question")
             && matches!(back.to_lowercase().as_str(), "back" | "answer")
@@ -72,11 +72,30 @@ pub fn parse_csv(text: &str) -> Result<Vec<(String, String)>> {
     Ok(out)
 }
 
+/// Spreadsheets run cells starting with = + - @ (or tab/CR) as formulas.
+/// Exported decks may contain text from other people (shared decks), so
+/// such cells get a leading apostrophe, which spreadsheets hide and our
+/// importer strips again.
+fn defuse_formula(cell: &str) -> String {
+    if cell.starts_with(['=', '+', '-', '@', '\t', '\r']) {
+        format!("'{cell}")
+    } else {
+        cell.to_string()
+    }
+}
+
+fn restore_formula(cell: String) -> String {
+    match cell.strip_prefix('\'') {
+        Some(rest) if rest.starts_with(['=', '+', '-', '@', '\t', '\r']) => rest.to_string(),
+        _ => cell,
+    }
+}
+
 fn csv_escape(rows: &[(String, String)]) -> Result<String> {
     let mut w = csv::Writer::from_writer(vec![]);
     w.write_record(["front", "back"]).map_err(|e| AppError::Internal(e.into()))?;
     for (f, b) in rows {
-        w.write_record([f, b]).map_err(|e| AppError::Internal(e.into()))?;
+        w.write_record([defuse_formula(f), defuse_formula(b)]).map_err(|e| AppError::Internal(e.into()))?;
     }
     String::from_utf8(w.into_inner().map_err(|e| AppError::Internal(anyhow::anyhow!("{e}")))?)
         .map_err(|e| AppError::Internal(e.into()))
@@ -291,11 +310,26 @@ fn parse_media_entries(buf: &[u8]) -> Vec<String> {
     names
 }
 
-fn maybe_zstd(data: Vec<u8>) -> Vec<u8> {
+/// Limits against decompression bombs: a small upload must not be able to
+/// expand into gigabytes.
+const MAX_COLLECTION_BYTES: u64 = 512 * 1024 * 1024;
+const MAX_MEDIA_FILE_BYTES: u64 = 20 * 1024 * 1024;
+const MAX_MEDIA_TOTAL_BYTES: u64 = 512 * 1024 * 1024;
+const MAX_MEDIA_FILES: usize = 5000;
+
+/// Read at most `limit` bytes; `None` if there is more.
+fn read_limited(r: impl Read, limit: u64) -> Option<Vec<u8>> {
+    let mut buf = Vec::new();
+    r.take(limit + 1).read_to_end(&mut buf).ok()?;
+    (buf.len() as u64 <= limit).then_some(buf)
+}
+
+fn maybe_zstd(data: Vec<u8>, limit: u64) -> Option<Vec<u8>> {
     if data.starts_with(&[0x28, 0xB5, 0x2F, 0xFD]) {
-        zstd::decode_all(Cursor::new(&data)).unwrap_or(data)
+        let decoder = zstd::stream::read::Decoder::new(Cursor::new(&data)).ok()?;
+        read_limited(decoder, limit)
     } else {
-        data
+        Some(data)
     }
 }
 
@@ -308,21 +342,23 @@ struct Package {
 fn read_package(data: &[u8]) -> Result<Package> {
     let mut zip = zip::ZipArchive::new(Cursor::new(data))
         .map_err(|_| AppError::bad("not a valid .apkg file (expected a zip archive)"))?;
-    let mut read = |name: &str| -> Option<Vec<u8>> {
-        let mut f = zip.by_name(name).ok()?;
-        let mut buf = Vec::new();
-        f.read_to_end(&mut buf).ok()?;
-        Some(buf)
+    // Sizes are checked while decompressing, not trusted from the header.
+    let mut read = |name: &str, limit: u64| -> Option<Vec<u8>> {
+        let f = zip.by_name(name).ok()?;
+        read_limited(f, limit)
     };
-    let collection = read("collection.anki21b")
-        .map(maybe_zstd)
-        .or_else(|| read("collection.anki21"))
-        .or_else(|| read("collection.anki2"))
-        .ok_or_else(|| AppError::bad("no Anki collection found in the package"))?;
-    let index: Vec<(String, String)> = match read("media") {
+    let too_big = || AppError::bad("the Anki collection in this package is too large");
+    let collection = if let Some(raw) = read("collection.anki21b", MAX_COLLECTION_BYTES) {
+        maybe_zstd(raw, MAX_COLLECTION_BYTES).ok_or_else(too_big)?
+    } else {
+        read("collection.anki21", MAX_COLLECTION_BYTES)
+            .or_else(|| read("collection.anki2", MAX_COLLECTION_BYTES))
+            .ok_or_else(|| AppError::bad("no Anki collection found in the package (or it is too large)"))?
+    };
+    let index: Vec<(String, String)> = match read("media", 16 * 1024 * 1024) {
         Some(raw) => match serde_json::from_slice::<HashMap<String, String>>(&raw) {
             Ok(map) => map.into_iter().collect(),
-            Err(_) => parse_media_entries(&maybe_zstd(raw))
+            Err(_) => parse_media_entries(&maybe_zstd(raw, 16 * 1024 * 1024).unwrap_or_default())
                 .into_iter()
                 .enumerate()
                 .map(|(i, n)| (i.to_string(), n))
@@ -331,15 +367,18 @@ fn read_package(data: &[u8]) -> Result<Package> {
         None => vec![],
     };
     let mut media = HashMap::new();
+    let mut total = 0u64;
     for (zip_name, file_name) in index {
         let lower = file_name.to_ascii_lowercase();
         let is_image = [".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp"]
             .iter()
             .any(|e| lower.ends_with(e));
-        if is_image {
-            if let Some(bytes) = read(&zip_name) {
-                media.insert(file_name, maybe_zstd(bytes));
-            }
+        if !is_image || media.len() >= MAX_MEDIA_FILES || total >= MAX_MEDIA_TOTAL_BYTES {
+            continue;
+        }
+        if let Some(bytes) = read(&zip_name, MAX_MEDIA_FILE_BYTES).and_then(|b| maybe_zstd(b, MAX_MEDIA_FILE_BYTES)) {
+            total += bytes.len() as u64;
+            media.insert(file_name, bytes);
         }
     }
     Ok(Package { collection, media })
@@ -418,12 +457,28 @@ impl App {
         path: &std::path::Path,
         media: HashMap<String, Vec<u8>>,
     ) -> Result<ImportReport> {
+        // The file is untrusted. Read-only, and with trusted_schema off so
+        // views or triggers in it can't call functions with side effects.
         let opts = SqliteConnectOptions::from_str(&format!("sqlite://{}", path.display()))
             .map_err(|e| AppError::Internal(e.into()))?
-            .read_only(true);
+            .read_only(true)
+            .pragma("trusted_schema", "OFF")
+            .pragma("query_only", "ON");
         let mut conn = sqlx::ConnectOptions::connect(&opts)
             .await
             .map_err(|_| AppError::bad("could not open the Anki collection"))?;
+        // Every name we read must be a plain table, not a (possibly very
+        // expensive) view.
+        let views: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM sqlite_master
+             WHERE name IN ('col', 'notes', 'cards', 'revlog', 'decks') AND type != 'table'",
+        )
+        .fetch_one(&mut conn)
+        .await
+        .map_err(|_| AppError::bad("unrecognized Anki collection"))?;
+        if views > 0 {
+            return Err(AppError::bad("unrecognized Anki collection"));
+        }
 
         let col = sqlx::query("SELECT crt, decks FROM col LIMIT 1")
             .fetch_one(&mut conn)
@@ -675,6 +730,24 @@ impl App {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn csv_formulas_are_defused_and_round_trip() {
+        let rows = vec![("=HYPERLINK(\"http://x\")".to_string(), "-5".to_string())];
+        let out = csv_escape(&rows).unwrap();
+        assert!(out.contains("'=HYPERLINK"));
+        assert!(out.contains("'-5"));
+        assert_eq!(parse_csv(&out).unwrap(), rows);
+    }
+
+    #[test]
+    fn limited_reads() {
+        assert_eq!(read_limited(&b"abc"[..], 3), Some(b"abc".to_vec()));
+        assert_eq!(read_limited(&b"abcd"[..], 3), None);
+        let bomb = zstd::encode_all(&vec![0u8; 10_000][..], 3).unwrap();
+        assert!(maybe_zstd(bomb.clone(), 1000).is_none());
+        assert_eq!(maybe_zstd(bomb, 20_000).map(|v| v.len()), Some(10_000));
+    }
 
     #[test]
     fn csv_parsing() {

@@ -30,6 +30,25 @@
   }
 
   var body = document.body;
+
+  // Signup: send the browser's timezone along.
+  var tz = document.getElementById('tz');
+  if (tz) {
+    try { tz.value = Intl.DateTimeFormat().resolvedOptions().timeZone; } catch (e) {}
+  }
+
+  // Keyboard shortcuts on the (online) study pages: space shows the answer,
+  // 1-4 answer. Everything also works without them.
+  if (body.getAttribute('data-page') !== 'offline') {
+    document.addEventListener('keydown', function (e) {
+      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') return;
+      var k = e.key === ' ' || e.key === 'Enter' ? ' ' : e.key;
+      if (!/^[ 1-4]$/.test(k)) return;
+      var el = document.querySelector('[data-key="' + k + '"]');
+      if (!el && k === ' ') el = document.querySelector('[data-key="3"]');
+      if (el) { e.preventDefault(); el.click(); }
+    });
+  }
   var pageUser = body.getAttribute('data-user');
   var isOfflinePage = body.getAttribute('data-page') === 'offline';
 
@@ -37,6 +56,7 @@
   // user logs in again.
   if (document.querySelector('[data-clear-offline]')) {
     try { localStorage.removeItem(QUEUE); localStorage.removeItem(UNDO); } catch (e) {}
+    if ('caches' in window) caches.delete('ainki-media').catch(function () {});
   }
 
   function pendingFor(userId) {

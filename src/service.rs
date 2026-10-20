@@ -228,6 +228,19 @@ pub struct Stats {
     pub average_retrievability: Option<f64>,
 }
 
+pub const MAX_CARD_TEXT: usize = 20_000;
+pub const MAX_NAME: usize = 200;
+pub const MAX_DESCRIPTION: usize = 2_000;
+
+/// Reject oversized text so one request can't bloat the database or pages.
+fn check_len(what: &str, value: &str, max: usize) -> Result<()> {
+    if value.chars().count() > max {
+        Err(AppError::bad(format!("{what} is too long (at most {max} characters)")))
+    } else {
+        Ok(())
+    }
+}
+
 pub(crate) fn placeholders(n: usize) -> String {
     vec!["?"; n].join(",")
 }
@@ -255,6 +268,8 @@ impl App {
         if p.name.trim().is_empty() {
             return Err(AppError::bad("preset name is empty"));
         }
+        check_len("preset name", &p.name, MAX_NAME)?;
+        check_len("description", &p.description, MAX_DESCRIPTION)?;
         if !(0.70..=0.99).contains(&p.desired_retention) {
             return Err(AppError::bad("desired retention must be between 0.70 and 0.99"));
         }
@@ -531,6 +546,8 @@ impl App {
         if name.is_empty() {
             return Err(AppError::bad("deck name is empty"));
         }
+        check_len("deck name", name, MAX_NAME)?;
+        check_len("description", description, MAX_DESCRIPTION)?;
         if self.deck_by_name(access, name).await?.is_some() {
             return Err(AppError::Conflict(format!("a deck called '{name}' already exists")));
         }
@@ -569,6 +586,7 @@ impl App {
             if n.is_empty() {
                 return Err(AppError::bad("deck name is empty"));
             }
+            check_len("deck name", n, MAX_NAME)?;
             if let Some(other) = self.deck_by_name(access, n).await? {
                 if other.id != id {
                     return Err(AppError::Conflict(format!("a deck called '{n}' already exists")));
@@ -577,6 +595,7 @@ impl App {
             deck.name = n.to_string();
         }
         if let Some(d) = description {
+            check_len("description", d, MAX_DESCRIPTION)?;
             deck.description = d.trim().to_string();
         }
         if let Some(p) = preset_id {
@@ -662,6 +681,8 @@ impl App {
         if front.trim().is_empty() && front_image.is_none() {
             return Err(AppError::bad("the front needs text or an image"));
         }
+        check_len("front", front, MAX_CARD_TEXT)?;
+        check_len("back", back, MAX_CARD_TEXT)?;
         self.check_media(access, &front_image).await?;
         self.check_media(access, &back_image).await?;
         let source = match access.actor {
@@ -686,6 +707,9 @@ impl App {
         created_by: &str,
     ) -> Result<i64> {
         let t = now();
+        // Imports and copies are not validated field by field; cap them here.
+        let cap = |x: &str| -> String { x.trim().chars().take(MAX_CARD_TEXT).collect() };
+        let (front, back) = (cap(front), cap(back));
         Ok(sqlx::query_scalar(
             "INSERT INTO cards (user_id, deck_id, front, back, front_image, back_image, position,
                 created_by, created_at, updated_at)
@@ -695,8 +719,8 @@ impl App {
         )
         .bind(user_id)
         .bind(deck_id)
-        .bind(front.trim())
-        .bind(back.trim())
+        .bind(front)
+        .bind(back)
         .bind(front_image)
         .bind(back_image)
         .bind(user_id)
@@ -727,6 +751,8 @@ impl App {
         if card.front.is_empty() && card.front_image.is_none() {
             return Err(AppError::bad("the front needs text or an image"));
         }
+        check_len("front", &card.front, MAX_CARD_TEXT)?;
+        check_len("back", &card.back, MAX_CARD_TEXT)?;
         sqlx::query(
             "UPDATE cards SET front = ?, back = ?, front_image = ?, back_image = ?, updated_at = ?
              WHERE id = ?",

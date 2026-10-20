@@ -14,6 +14,10 @@ use crate::{
 };
 
 async fn app() -> Arc<App> {
+    app_with(|_| {}).await
+}
+
+async fn app_with(configure: impl FnOnce(&mut Config)) -> Arc<App> {
     let opts = SqliteConnectOptions::from_str("sqlite::memory:")
         .unwrap()
         .foreign_keys(true);
@@ -25,17 +29,16 @@ async fn app() -> Arc<App> {
         .unwrap();
     sqlx::migrate!("./migrations").run(&db).await.unwrap();
     let dir = std::env::temp_dir().join(format!("ainki-test-{}", uuid::Uuid::new_v4().simple()));
-    Arc::new(App {
-        db,
-        config: Config {
-            data_dir: dir,
-            bind: "127.0.0.1:0".into(),
-            allow_signup: true,
-            secure_cookies: false,
-            default_timezone: "UTC".into(),
-            public_url: None,
-        },
-    })
+    let mut config = Config {
+        data_dir: dir,
+        bind: "127.0.0.1:0".into(),
+        allow_signup: true,
+        secure_cookies: false,
+        default_timezone: "UTC".into(),
+        public_url: None,
+    };
+    configure(&mut config);
+    Arc::new(App::new(db, config))
 }
 
 async fn user(app: &App, name: &str) -> Access {
@@ -376,16 +379,33 @@ async fn oauth_flow() {
     // The refresh token is not an access token.
     assert!(app.token_access(&tokens.refresh_token).await.is_err());
 
-    // Refresh rotates: the old refresh token stops working.
+    // Refresh rotates: the old refresh token stops working. A quick retry
+    // is just refused...
     let fresh = app.refresh_tokens(&client_id, None, &tokens.refresh_token).await.unwrap();
     assert!(app.refresh_tokens(&client_id, None, &tokens.refresh_token).await.is_err());
+    assert!(app.token_access(&fresh.access_token).await.is_ok());
+    // ...but reuse later means the token leaked: the connection is revoked.
+    sqlx::query("UPDATE oauth_tokens SET used_at = used_at - 3600 WHERE kind = 'refresh_used'")
+        .execute(&app.db)
+        .await
+        .unwrap();
+    assert!(app.refresh_tokens(&client_id, None, &tokens.refresh_token).await.is_err());
+    assert!(app.token_access(&fresh.access_token).await.is_err());
+    assert!(app.refresh_tokens(&client_id, None, &fresh.refresh_token).await.is_err());
+    // Connect again for the rest of the test.
+    let code = app
+        .create_auth_code(a.user_id(), &client, redirect, &challenge, true, false, None)
+        .await
+        .unwrap();
+    let tokens = app.exchange_code(&client_id, None, &code, Some(redirect), &verifier).await.unwrap();
+    let fresh = app.refresh_tokens(&client_id, None, &tokens.refresh_token).await.unwrap();
     assert!(app.token_access(&fresh.access_token).await.is_ok());
     // Another client can't use it.
     assert!(app.refresh_tokens("someone-else", None, &fresh.refresh_token).await.is_err());
 
     // The connection shows up next to tokens; disconnecting kills it.
     let list = app.list_tokens(a.user_id()).await.unwrap();
-    assert_eq!(list.len(), 1);
+    assert_eq!(list.len(), 1, "the revoked connection is gone");
     assert_eq!(list[0].0.name, "Claude");
     assert_eq!(list[0].0.oauth_client_id.as_deref(), Some(client_id.as_str()));
     app.revoke_token(a.user_id(), list[0].0.id).await.unwrap();
@@ -427,4 +447,183 @@ async fn oauth_flow() {
         })
         .await
         .is_err());
+}
+
+// ----- HTTP-level security checks ------------------------------------------
+
+mod http {
+    use super::*;
+    use axum::{
+        body::Body,
+        http::{Request, StatusCode, header},
+    };
+    use tower::ServiceExt;
+
+    async fn send(app: &Arc<App>, req: Request<Body>) -> axum::response::Response {
+        crate::web::router(app.clone()).oneshot(req).await.unwrap()
+    }
+
+    fn form(path: &str, body: &str) -> axum::http::request::Builder {
+        let _ = body;
+        Request::post(path)
+            .header(header::HOST, "cards.example.com")
+            .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+    }
+
+    async fn login_cookie(app: &Arc<App>, name: &str) -> String {
+        let user = app.find_user(name).await.unwrap();
+        let token = app.create_session(user.id).await.unwrap();
+        format!("{}={token}", app.config.session_cookie_name())
+    }
+
+    #[tokio::test]
+    async fn security_headers_everywhere() {
+        let app = app().await;
+        let res = send(&app, Request::get("/login").body(Body::empty()).unwrap()).await;
+        let h = res.headers();
+        assert!(h["content-security-policy"].to_str().unwrap().contains("script-src 'self'"));
+        assert!(h["content-security-policy"].to_str().unwrap().contains("frame-ancestors 'none'"));
+        assert_eq!(h["x-frame-options"], "DENY");
+        assert_eq!(h["x-content-type-options"], "nosniff");
+        assert_eq!(h[header::CACHE_CONTROL], "no-store");
+        assert!(!h.contains_key(header::STRICT_TRANSPORT_SECURITY));
+
+        let secure = app_with(|c| c.public_url = Some("https://cards.example.com".into())).await;
+        let res = send(&secure, Request::get("/login").body(Body::empty()).unwrap()).await;
+        assert!(res.headers().contains_key(header::STRICT_TRANSPORT_SECURITY));
+        assert_eq!(secure.config.session_cookie_name(), "__Host-ainki_session");
+    }
+
+    #[tokio::test]
+    async fn cross_origin_posts_are_blocked() {
+        let app = app().await;
+        user(&app, "kolja").await;
+        let cookie = login_cookie(&app, "kolja").await;
+        let post = |origin: &str| {
+            form("/decks/new", "")
+                .header(header::ORIGIN, origin)
+                .header(header::COOKIE, cookie.clone())
+                .body(Body::from("name=Evil"))
+                .unwrap()
+        };
+        assert_eq!(send(&app, post("https://evil.example")).await.status(), StatusCode::FORBIDDEN);
+        assert_eq!(send(&app, post("https://sub.cards.example.com")).await.status(), StatusCode::FORBIDDEN);
+        assert_eq!(send(&app, post("null")).await.status(), StatusCode::FORBIDDEN);
+        assert_eq!(send(&app, post("https://cards.example.com")).await.status(), StatusCode::SEE_OTHER);
+        // Token endpoints are meant to be called cross-origin.
+        let res = send(
+            &app,
+            Request::post("/oauth/token")
+                .header(header::ORIGIN, "https://evil.example")
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .body(Body::from("grant_type=refresh_token&client_id=x&refresh_token=y"))
+                .unwrap(),
+        )
+        .await;
+        assert_ne!(res.status(), StatusCode::FORBIDDEN);
+    }
+
+    #[tokio::test]
+    async fn login_is_throttled() {
+        let app = app().await;
+        user(&app, "kolja").await;
+        let attempt = |pw: &str| {
+            form("/login", "")
+                .header("x-forwarded-for", "203.0.113.5")
+                .body(Body::from(format!("username=kolja&password={pw}")))
+                .unwrap()
+        };
+        for _ in 0..20 {
+            assert_eq!(send(&app, attempt("wrong-password")).await.status(), StatusCode::UNAUTHORIZED);
+        }
+        // Even the right password is refused while throttled.
+        assert_eq!(send(&app, attempt("password123")).await.status(), StatusCode::TOO_MANY_REQUESTS);
+    }
+
+    #[tokio::test]
+    async fn oversized_bodies_are_rejected() {
+        let app = app().await;
+        let big = format!("username=a&password={}", "x".repeat(2 * 1024 * 1024));
+        let res = send(&app, form("/login", "").body(Body::from(big)).unwrap()).await;
+        assert_eq!(res.status(), StatusCode::PAYLOAD_TOO_LARGE);
+    }
+
+    #[tokio::test]
+    async fn signup_closes_after_first_account() {
+        let app = app_with(|c| c.allow_signup = false).await;
+        let signup = |name: &str| form("/signup", "").body(Body::from(format!("username={name}&password=password123"))).unwrap();
+        let first = send(&app, signup("owner")).await;
+        assert_eq!(first.status(), StatusCode::SEE_OTHER);
+        assert!(first.headers().get_all(header::SET_COOKIE).iter().any(|c| c.to_str().unwrap().contains("ainki_session=")));
+        let second = send(&app, signup("stranger")).await;
+        assert_eq!(second.headers()[header::LOCATION], "/login");
+        assert!(app.find_user("stranger").await.is_err());
+    }
+
+    #[tokio::test]
+    async fn flash_messages_come_from_cookies_only() {
+        let app = app().await;
+        user(&app, "kolja").await;
+        let cookie = login_cookie(&app, "kolja").await;
+        // A crafted ?msg= link shows nothing.
+        let res = send(
+            &app,
+            Request::get("/?msg=Your%20account%20is%20locked")
+                .header(header::COOKIE, cookie.clone())
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await;
+        let body = axum::body::to_bytes(res.into_body(), usize::MAX).await.unwrap();
+        assert!(!String::from_utf8_lossy(&body).contains("locked"));
+        // The flash cookie is shown once and then cleared.
+        let res = send(
+            &app,
+            Request::get("/")
+                .header(header::COOKIE, format!("{cookie}; ainki_flash=Saved%20it."))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await;
+        assert!(res.headers().get_all(header::SET_COOKIE).iter().any(|c| c.to_str().unwrap().starts_with("ainki_flash=;")));
+        let body = axum::body::to_bytes(res.into_body(), usize::MAX).await.unwrap();
+        assert!(String::from_utf8_lossy(&body).contains("Saved it."));
+    }
+
+    #[tokio::test]
+    async fn login_redirect_stays_on_site() {
+        let app = app().await;
+        user(&app, "kolja").await;
+        for (next, expect) in [
+            ("/decks/1", "/decks/1"),
+            ("//evil.example", "/"),
+            ("/\\evil.example", "/"),
+            ("/%09/evil.example", "/%09/evil.example"),
+            ("https://evil.example", "/"),
+        ] {
+            let body = format!("username=kolja&password=password123&next={}", crate::web::urlenc(next));
+            let res = send(&app, form("/login", "").body(Body::from(body)).unwrap()).await;
+            assert_eq!(res.headers()[header::LOCATION], expect, "next={next}");
+        }
+        // A literal tab inside the path is refused.
+        let body = format!("username=kolja&password=password123&next={}", crate::web::urlenc("/\t/evil.example"));
+        let res = send(&app, form("/login", "").body(Body::from(body)).unwrap()).await;
+        assert_eq!(res.headers()[header::LOCATION], "/");
+    }
+
+    #[tokio::test]
+    async fn mcp_requires_a_token() {
+        let app = app().await;
+        let res = send(
+            &app,
+            Request::post("/mcp")
+                .header(header::CONTENT_TYPE, "application/json")
+                .header(header::AUTHORIZATION, "Bearer ainki_not_a_real_token")
+                .body(Body::from("{}"))
+                .unwrap(),
+        )
+        .await;
+        assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
+        assert!(res.headers()[header::WWW_AUTHENTICATE].to_str().unwrap().contains("resource_metadata="));
+    }
 }

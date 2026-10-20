@@ -17,25 +17,47 @@ cd AiNKI
 docker compose up -d
 ```
 
-Open <http://localhost:8080> and sign up. Data lives in the `ainki-data` Docker volume.
+Open <http://localhost:8080> and create your account. The first account can always sign up; after that signup is closed unless you set `AINKI_ALLOW_SIGNUP=true` (or create accounts with `ainki create-user`, see below). Data lives in the `ainki-data` Docker volume.
 
-Settings go in a `.env` file next to `docker-compose.yml` (all optional):
+AiNKI listens on `127.0.0.1:8080` only, so it is reachable from this machine but not directly from the network. Put a reverse proxy with HTTPS in front of it.
+
+### Behind Caddy
+
+`.env` next to `docker-compose.yml`:
+
+```sh
+AINKI_PUBLIC_URL=https://cards.example.com
+```
+
+`Caddyfile`:
+
+```
+cards.example.com {
+    reverse_proxy 127.0.0.1:8080
+}
+```
+
+Caddy gets the certificate. With an `https://` public URL, AiNKI marks its cookies Secure (`__Host-` prefixed) and sends HSTS. If Caddy runs in Docker on the same network, use `reverse_proxy ainki:8080` instead.
+
+### Settings
+
+All optional, in `.env`:
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
-| `AINKI_PORT` | `8080` | Port on the host. |
-| `AINKI_ALLOW_SIGNUP` | `true` | Set to `false` once everyone has an account. |
+| `AINKI_PUBLIC_URL` | (from request) | Your public address, e.g. `https://cards.example.com`. Needed for connecting Claude (OAuth issuer and MCP URL); also turns on Secure cookies and HSTS. |
+| `AINKI_ALLOW_SIGNUP` | `false` | Let anyone create an account. The first account can always sign up. |
 | `AINKI_TIMEZONE` | `UTC` | Default timezone for new accounts. Each user can change theirs. |
-| `AINKI_PUBLIC_URL` | (from request) | E.g. `https://cards.example.com`. Needed for connecting Claude (OAuth issuer and MCP URL). |
-| `AINKI_SECURE_COOKIES` | `false` | Set to `true` when served over HTTPS. |
-
-To serve it on the internet, put it behind a reverse proxy that terminates TLS (Caddy, nginx, Traefik), and set `AINKI_PUBLIC_URL` and `AINKI_SECURE_COOKIES=true`.
+| `AINKI_PORT` | `8080` | Port on the host. |
+| `AINKI_LISTEN` | `127.0.0.1` | Host address to listen on. `0.0.0.0` exposes AiNKI without a proxy (plain HTTP, not recommended). |
+| `AINKI_SECURE_COOKIES` | `false` | Force Secure cookies even without an `https://` public URL. |
 
 ### Admin commands
 
-There's no email, so password resets are done by the admin:
+There's no email, so accounts and password resets are done by the admin:
 
 ```sh
+docker compose exec ainki ainki create-user anna 'initial-password'
 docker compose exec ainki ainki list-users
 docker compose exec ainki ainki reset-password 'kolja#4821' 'new-password'
 ```
@@ -112,6 +134,16 @@ Upload an `.apkg` or `.colpkg` under **Import**. Each card keeps the first two f
 
 CSV import takes one card per line (`front,back`). Commas, semicolons or tabs all work.
 
+## Security
+
+- **Accounts.** Passwords are hashed with Argon2id. Failed logins are throttled per client IP and per account; unknown and known usernames take the same time to reject. Sessions are random 256-bit tokens, stored hashed, in `HttpOnly`, `SameSite=Lax` cookies (`Secure` and `__Host-` over HTTPS).
+- **Browser protections.** A strict Content Security Policy (no inline scripts), `frame-ancestors 'none'`, `nosniff`, and an Origin check on every form post on top of SameSite cookies. Card Markdown is rendered with raw HTML disabled and sanitized again.
+- **Agents.** Tokens and OAuth connections are scoped (read-only, review, specific decks) and revocable. OAuth uses PKCE (S256 only), exact redirect URIs, 1-hour access tokens and rotating refresh tokens; reusing an old refresh token revokes the connection. The consent page shows where the app will send you. Agents are told to treat card content as data, never as instructions.
+- **Uploads and imports.** Request sizes are limited per route. Images are size-limited before decoding and re-encoded. Anki packages are read with limits against zip/zstd bombs and opened read-only with SQLite's `trusted_schema` off.
+- **Outgoing requests.** The only one is fetching OAuth client metadata documents: HTTPS only, public IP addresses only (pinned against DNS rebinding), small responses, short timeouts, rate-limited.
+- **Container.** Runs as an unprivileged user with a read-only root filesystem, all capabilities dropped and `no-new-privileges`.
+- **Dependencies.** `cargo audit` is clean; see `.cargo/audit.toml` for the one ignored advisory and why.
+
 ## Development
 
 ```sh
@@ -127,7 +159,8 @@ The code:
 - `src/mcp.rs`: the MCP server (rmcp, Streamable HTTP, stateless).
 - `src/oauth.rs`: OAuth 2.1 authorization server for MCP clients.
 - `src/share.rs`: deck sharing.
-- `src/offline.rs`, `src/static/`: offline queue and sync; service worker and offline study client.
+- `src/offline.rs`, `src/static/`: offline queue and sync; service worker and browser script.
+- `src/security.rs`: rate limiting, security headers, Origin checks, flash messages.
 - `src/import.rs`: Anki and CSV import, CSV export.
 - `src/media.rs`: image processing (resize, grayscale, Floyd–Steinberg dithering).
 
