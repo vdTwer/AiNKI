@@ -67,6 +67,8 @@ pub struct ApiToken {
     pub created_at: i64,
     pub last_used_at: Option<i64>,
     pub revoked_at: Option<i64>,
+    /// Set for connections approved through OAuth.
+    pub oauth_client_id: Option<String>,
 }
 
 /// Who is acting. The website acts with the user's full rights; agents act
@@ -164,11 +166,11 @@ fn verify_password(password: &str, hash: &str) -> bool {
         .unwrap_or(false)
 }
 
-fn sha256_hex(s: &str) -> String {
+pub(crate) fn sha256_hex(s: &str) -> String {
     hex::encode(Sha256::digest(s.as_bytes()))
 }
 
-fn random_hex(bytes: usize) -> String {
+pub(crate) fn random_hex(bytes: usize) -> String {
     let mut buf = vec![0u8; bytes];
     rand::thread_rng().fill_bytes(&mut buf);
     hex::encode(buf)
@@ -381,25 +383,46 @@ impl App {
         can_review: bool,
         deck_ids: Option<Vec<i64>>,
     ) -> Result<(ApiToken, String)> {
+        let raw = format!("ainki_{}", random_hex(24));
+        let token = self
+            .create_grant(user_id, name, can_write, can_review, deck_ids, &raw, None)
+            .await?;
+        Ok((token, raw))
+    }
+
+    /// Store an agent's permissions. For OAuth connections `secret` is never
+    /// handed out; the client gets short-lived access tokens instead.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) async fn create_grant(
+        &self,
+        user_id: i64,
+        name: &str,
+        can_write: bool,
+        can_review: bool,
+        deck_ids: Option<Vec<i64>>,
+        secret: &str,
+        oauth_client_id: Option<&str>,
+    ) -> Result<ApiToken> {
         let name = name.trim();
         if name.is_empty() {
             return Err(AppError::bad("give the token a name"));
         }
-        let raw = format!("ainki_{}", random_hex(24));
-        let prefix = raw[..12].to_string();
+        let prefix = if oauth_client_id.is_some() { "oauth".to_string() } else { secret[..12].to_string() };
         let mut tx = self.db.begin().await?;
         let id: i64 = sqlx::query_scalar(
-            "INSERT INTO api_tokens (user_id, name, token_hash, prefix, can_write, can_review, all_decks, created_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?) RETURNING id",
+            "INSERT INTO api_tokens (user_id, name, token_hash, prefix, can_write, can_review, all_decks,
+                created_at, oauth_client_id)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id",
         )
         .bind(user_id)
         .bind(name)
-        .bind(sha256_hex(&raw))
+        .bind(sha256_hex(secret))
         .bind(&prefix)
         .bind(can_write)
         .bind(can_review)
         .bind(deck_ids.is_none())
         .bind(now())
+        .bind(oauth_client_id)
         .fetch_one(&mut *tx)
         .await?;
         if let Some(decks) = &deck_ids {
@@ -424,11 +447,10 @@ impl App {
             }
         }
         tx.commit().await?;
-        let token = sqlx::query_as("SELECT * FROM api_tokens WHERE id = ?")
+        Ok(sqlx::query_as("SELECT * FROM api_tokens WHERE id = ?")
             .bind(id)
             .fetch_one(&self.db)
-            .await?;
-        Ok((token, raw))
+            .await?)
     }
 
     pub async fn list_tokens(&self, user_id: i64) -> Result<Vec<(ApiToken, Vec<String>)>> {
@@ -453,20 +475,34 @@ impl App {
     }
 
     pub async fn revoke_token(&self, user_id: i64, token_id: i64) -> Result<()> {
-        sqlx::query("UPDATE api_tokens SET revoked_at = ? WHERE id = ? AND user_id = ?")
+        let n = sqlx::query("UPDATE api_tokens SET revoked_at = ? WHERE id = ? AND user_id = ?")
             .bind(now())
             .bind(token_id)
             .bind(user_id)
             .execute(&self.db)
-            .await?;
+            .await?
+            .rows_affected();
+        if n > 0 {
+            sqlx::query("DELETE FROM oauth_tokens WHERE api_token_id = ?")
+                .bind(token_id)
+                .execute(&self.db)
+                .await?;
+        }
         Ok(())
     }
 
     pub async fn token_access(&self, raw: &str) -> Result<Access> {
+        let hash = sha256_hex(raw.trim());
+        // A manual token, or an OAuth access token pointing at its connection.
         let token: ApiToken = sqlx::query_as(
-            "SELECT * FROM api_tokens WHERE token_hash = ? AND revoked_at IS NULL",
+            "SELECT * FROM api_tokens WHERE revoked_at IS NULL AND (
+                (token_hash = ? AND oauth_client_id IS NULL)
+                OR id = (SELECT api_token_id FROM oauth_tokens
+                         WHERE token_hash = ? AND kind = 'access' AND expires_at > ?))",
         )
-        .bind(sha256_hex(raw.trim()))
+        .bind(&hash)
+        .bind(&hash)
+        .bind(now())
         .fetch_optional(&self.db)
         .await?
         .ok_or(AppError::Unauthorized)?;

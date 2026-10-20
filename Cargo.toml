@@ -31,7 +31,8 @@ sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio",
 time = "0.3"
 tokio = { version = "1", features = ["full"] }
 tokio-util = "0.7"
-tower-http = { version = "0.6", features = ["trace", "limit"] }
+tower-http = { version = "0.6", features = ["trace", "limit", "cors"] }
+reqwest = { version = "0.13", default-features = false, features = ["rustls", "json"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 uuid = { version = "1", features = ["v4"] }

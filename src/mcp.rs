@@ -80,12 +80,19 @@ pub async fn auth(State(app): State<AppState>, mut req: Request, next: Next) -> 
             req.extensions_mut().insert(a);
             next.run(req).await
         }
-        None => (
-            StatusCode::UNAUTHORIZED,
-            [(header::WWW_AUTHENTICATE, "Bearer")],
-            "missing or invalid API token; create one in AiNKI under Settings → Agent access",
-        )
-            .into_response(),
+        None => {
+            // Tells MCP clients where to start the OAuth flow (RFC 9728).
+            let base = crate::oauth::base_url(&app, req.headers());
+            let challenge = format!(
+                "Bearer resource_metadata=\"{base}/.well-known/oauth-protected-resource/mcp\""
+            );
+            (
+                StatusCode::UNAUTHORIZED,
+                [(header::WWW_AUTHENTICATE, challenge)],
+                "missing or invalid access token: connect through OAuth, or create a token in AiNKI under Settings → Agent access",
+            )
+                .into_response()
+        }
     }
 }
 
@@ -338,6 +345,19 @@ pub struct ImportCsvParams {
 pub struct ImportApkgParams {
     /// The .apkg file as base64.
     pub data_base64: String,
+}
+
+#[derive(Deserialize, JsonSchema)]
+pub struct ShareDeckParams {
+    pub deck_id: i64,
+    /// The other user's handle, e.g. "anna#0420".
+    pub user: String,
+}
+
+#[derive(Deserialize, JsonSchema)]
+pub struct ShareIdParam {
+    /// Id from list_shares.
+    pub share_id: i64,
 }
 
 // ----- tools ------------------------------------------------------------------
@@ -639,6 +659,36 @@ impl AinkiMcp {
         let a = access(&parts)?;
         let data = decode_b64(&p.data_base64)?;
         out(self.app.import_apkg(&a, data).await.map_err(err)?)
+    }
+
+    #[tool(description = "Offer a copy of a deck to another AiNKI user. They get their own copy with fresh progress once they accept.")]
+    async fn share_deck(&self, Parameters(p): Parameters<ShareDeckParams>, Extension(parts): Extension<Parts>) -> ToolResult {
+        let a = access(&parts)?;
+        out(self.app.share_deck(&a, p.deck_id, &p.user).await.map_err(err)?)
+    }
+
+    #[tool(description = "Decks other users offered to this user (incoming), and pending offers this user made for a deck (outgoing, needs deck_id).")]
+    async fn list_shares(&self, Parameters(p): Parameters<OptionalDeckParam>, Extension(parts): Extension<Parts>) -> ToolResult {
+        let a = access(&parts)?;
+        let incoming = self.app.incoming_shares(&a).await.map_err(err)?;
+        let outgoing = match p.deck_id {
+            Some(id) => self.app.outgoing_shares(&a, id).await.map_err(err)?,
+            None => vec![],
+        };
+        out(json!({ "incoming": incoming, "outgoing": outgoing }))
+    }
+
+    #[tool(description = "Accept an incoming shared deck: copies it into the user's decks.")]
+    async fn accept_share(&self, Parameters(p): Parameters<ShareIdParam>, Extension(parts): Extension<Parts>) -> ToolResult {
+        let a = access(&parts)?;
+        out(self.app.accept_share(&a, p.share_id).await.map_err(err)?)
+    }
+
+    #[tool(description = "Decline an incoming shared deck.")]
+    async fn decline_share(&self, Parameters(p): Parameters<ShareIdParam>, Extension(parts): Extension<Parts>) -> ToolResult {
+        let a = access(&parts)?;
+        self.app.decline_share(&a, p.share_id).await.map_err(err)?;
+        out(json!({ "declined": true }))
     }
 
     #[tool(description = "Export a deck's cards as CSV text (front,back).")]

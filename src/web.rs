@@ -22,7 +22,7 @@ use crate::{
     AppState,
     auth::{Access, User},
     error::AppError,
-    import, markdown, mcp, media, now, presets,
+    import, markdown, mcp, media, now, oauth, presets,
     scheduler::{self, CardState, Rating},
     service::{CardFilter, CardInput, PresetInput, fmt_ts},
 };
@@ -64,7 +64,32 @@ pub fn router(app: AppState) -> Router {
     let mcp_routes = Router::new()
         .nest_service("/mcp", mcp::service(app.clone()))
         .layer(middleware::from_fn_with_state(app.clone(), mcp::auth));
+    // Endpoints MCP clients call directly. They use tokens, not cookies, so
+    // cross-origin calls (browser-based clients) are safe to allow.
+    let cors = tower_http::cors::CorsLayer::new()
+        .allow_origin(tower_http::cors::Any)
+        .allow_methods(tower_http::cors::Any)
+        .allow_headers(tower_http::cors::Any)
+        .expose_headers([header::WWW_AUTHENTICATE, header::HeaderName::from_static("mcp-session-id")]);
+    let client_routes = Router::new()
+        .route("/.well-known/oauth-protected-resource", get(oauth::protected_resource))
+        .route("/.well-known/oauth-protected-resource/mcp", get(oauth::protected_resource))
+        .route("/.well-known/oauth-authorization-server", get(oauth::authorization_server))
+        .route("/.well-known/openid-configuration", get(oauth::authorization_server))
+        .route("/oauth/register", post(oauth::register))
+        .route("/oauth/token", post(oauth::token))
+        .route("/oauth/revoke", post(oauth::revoke))
+        .merge(mcp_routes)
+        .layer(cors);
     Router::new()
+        .route("/oauth/authorize", get(oauth::authorize_page).post(oauth::authorize_submit))
+        .route("/offline", get(offline_page))
+        .route("/offline.js", get(offline_js))
+        .route("/sw.js", get(service_worker))
+        .route("/api/offline/queue", get(offline_queue))
+        .route("/api/offline/sync", post(offline_sync))
+        .route("/decks/{id}/share", post(deck_share))
+        .route("/shares/{id}", post(share_action))
         .route("/", get(home))
         .route("/style.css", get(style))
         .route("/healthz", get(|| async { "ok" }))
@@ -94,7 +119,7 @@ pub fn router(app: AppState) -> Router {
         .route("/import", get(import_page).post(import_upload))
         .route("/stats", get(stats_page))
         .route("/media/{id}", get(media_file))
-        .merge(mcp_routes)
+        .merge(client_routes)
         .layer(DefaultBodyLimit::max(import::MAX_IMPORT_BYTES + 1024 * 1024))
         .layer(tower_http::trace::TraceLayer::new_for_http())
         .with_state(app)
@@ -111,21 +136,31 @@ impl WebUser {
     }
 }
 
+async fn session_from_parts(parts: &Parts, app: &AppState) -> Option<User> {
+    let jar = CookieJar::from_headers(&parts.headers);
+    app.session_user(jar.get(COOKIE)?.value()).await.ok().flatten()
+}
+
+impl axum::extract::OptionalFromRequestParts<AppState> for WebUser {
+    type Rejection = std::convert::Infallible;
+
+    async fn from_request_parts(parts: &mut Parts, app: &AppState) -> Result<Option<Self>, Self::Rejection> {
+        Ok(session_from_parts(parts, app).await.map(WebUser))
+    }
+}
+
 impl FromRequestParts<AppState> for WebUser {
     type Rejection = Response;
 
     async fn from_request_parts(parts: &mut Parts, app: &AppState) -> Result<Self, Self::Rejection> {
-        let jar = CookieJar::from_headers(&parts.headers);
-        if let Some(c) = jar.get(COOKIE) {
-            if let Ok(Some(user)) = app.session_user(c.value()).await {
-                return Ok(WebUser(user));
-            }
+        match session_from_parts(parts, app).await {
+            Some(user) => Ok(WebUser(user)),
+            None => Err(Redirect::to("/login").into_response()),
         }
-        Err(Redirect::to("/login").into_response())
     }
 }
 
-pub struct WebError(AppError);
+pub struct WebError(pub AppError);
 
 impl From<AppError> for WebError {
     fn from(e: AppError) -> Self {
@@ -183,7 +218,7 @@ fn redirect(to: impl AsRef<str>) -> Response {
     Redirect::to(to.as_ref()).into_response()
 }
 
-fn urlenc(s: &str) -> String {
+pub fn urlenc(s: &str) -> String {
     let mut out = String::new();
     for b in s.bytes() {
         match b {
@@ -194,7 +229,12 @@ fn urlenc(s: &str) -> String {
     out
 }
 
-fn layout(title: &str, user: Option<&User>, body: Markup) -> Markup {
+pub fn layout(title: &str, user: Option<&User>, body: Markup) -> Markup {
+    page(title, user, None, body)
+}
+
+/// `page_kind` marks special pages for the offline script.
+fn page(title: &str, user: Option<&User>, page_kind: Option<&str>, body: Markup) -> Markup {
     let scale = user.map(|u| u.font_scale).unwrap_or(100) as f64 / 100.0;
     html! {
         (DOCTYPE)
@@ -209,7 +249,7 @@ fn layout(title: &str, user: Option<&User>, body: Markup) -> Markup {
                     style { (PreEscaped(format!(":root{{--scale:{scale}}}"))) }
                 }
             }
-            body {
+            body data-user=[user.map(|u| u.id)] data-page=[page_kind] {
                 @if let Some(u) = user {
                     nav.top {
                         a.brand href="/" { "AiNKI" }
@@ -218,8 +258,14 @@ fn layout(title: &str, user: Option<&User>, body: Markup) -> Markup {
                         a href="/stats" { "Stats" }
                         a href="/settings" title=(u.handle()) { "Settings" }
                     }
+                } @else if page_kind == Some("offline") {
+                    nav.top {
+                        a.brand href="/" { "AiNKI" }
+                        a href="/offline" { "Study offline" }
+                    }
                 }
                 main { (body) }
+                script src="/offline.js" defer {}
             }
         }
     }
@@ -275,7 +321,15 @@ struct MsgQuery {
 
 // ----- auth pages ---------------------------------------------------------
 
-fn auth_form(title: &str, action: &str, error: Option<&str>, signup: bool, allow_signup: bool) -> Markup {
+/// Only same-site paths are allowed as a post-login target.
+fn safe_next(next: Option<&str>) -> Option<&str> {
+    next.filter(|n| n.starts_with('/') && !n.starts_with("//") && !n.starts_with("/\\"))
+}
+
+fn auth_form(signup: bool, error: Option<&str>, allow_signup: bool, next: Option<&str>) -> Markup {
+    let title = if signup { "Sign up" } else { "Log in" };
+    let action = if signup { "/signup" } else { "/login" };
+    let next_q = next.map(|n| format!("?next={}", urlenc(n))).unwrap_or_default();
     layout(
         title,
         None,
@@ -284,7 +338,10 @@ fn auth_form(title: &str, action: &str, error: Option<&str>, signup: bool, allow
             p.muted { "Flashcards with FSRS spaced repetition." }
             h2 { (title) }
             @if let Some(e) = error { p.notice role="alert" { (e) } }
-            form method="post" action=(action) {
+            @if next.is_some_and(|n| n.starts_with("/oauth/")) {
+                p.notice { "Log in to connect an app to your AiNKI account." }
+            }
+            form method="post" action=(action) data-clear-offline {
                 label {
                     "Username"
                     @if !signup { span.muted { " (name or name#1234)" } }
@@ -295,6 +352,7 @@ fn auth_form(title: &str, action: &str, error: Option<&str>, signup: bool, allow
                     input type="password" name="password" required minlength=(if signup { "8" } else { "1" })
                         autocomplete=(if signup { "new-password" } else { "current-password" });
                 }
+                @if let Some(n) = next { input type="hidden" name="next" value=(n); }
                 @if signup {
                     input type="hidden" name="timezone" id="tz" value="";
                     script { (PreEscaped("try{document.getElementById('tz').value=Intl.DateTimeFormat().resolvedOptions().timeZone}catch(e){}")) }
@@ -302,16 +360,25 @@ fn auth_form(title: &str, action: &str, error: Option<&str>, signup: bool, allow
                 button.btn.primary type="submit" { (title) }
             }
             @if signup {
-                p { "Already have an account? " a href="/login" { "Log in" } }
+                p { "Already have an account? " a href=(format!("/login{next_q}")) { "Log in" } }
             } @else if allow_signup {
-                p { "New here? " a href="/signup" { "Create an account" } }
+                p { "New here? " a href=(format!("/signup{next_q}")) { "Create an account" } }
             }
         },
     )
 }
 
-async fn login_page(State(app): State<AppState>) -> Markup {
-    auth_form("Log in", "/login", None, false, app.config.allow_signup)
+#[derive(Deserialize)]
+struct NextQuery {
+    next: Option<String>,
+}
+
+async fn login_page(State(app): State<AppState>, user: Option<WebUser>, Query(q): Query<NextQuery>) -> Response {
+    let next = safe_next(q.next.as_deref());
+    if user.is_some() {
+        return redirect(next.unwrap_or("/"));
+    }
+    auth_form(false, None, app.config.allow_signup, next).into_response()
 }
 
 #[derive(Deserialize)]
@@ -320,33 +387,36 @@ struct LoginForm {
     password: String,
     #[serde(default)]
     timezone: String,
+    next: Option<String>,
 }
 
 async fn login(State(app): State<AppState>, jar: CookieJar, Form(f): Form<LoginForm>) -> Response {
+    let next = safe_next(f.next.as_deref());
     match app.authenticate(&f.username, &f.password).await {
         Ok(user) => match app.create_session(user.id).await {
-            Ok(token) => (jar.add(session_cookie(&app, token)), Redirect::to("/")).into_response(),
+            Ok(token) => (jar.add(session_cookie(&app, token)), Redirect::to(next.unwrap_or("/"))).into_response(),
             Err(e) => WebError(e).into_response(),
         },
         Err(e) => (
             StatusCode::UNAUTHORIZED,
-            auth_form("Log in", "/login", Some(&capitalize(&e.to_string())), false, app.config.allow_signup),
+            auth_form(false, Some(&capitalize(&e.to_string())), app.config.allow_signup, next),
         )
             .into_response(),
     }
 }
 
-async fn signup_page(State(app): State<AppState>) -> Response {
+async fn signup_page(State(app): State<AppState>, Query(q): Query<NextQuery>) -> Response {
     if !app.config.allow_signup {
         return redirect("/login");
     }
-    auth_form("Sign up", "/signup", None, true, true).into_response()
+    auth_form(true, None, true, safe_next(q.next.as_deref())).into_response()
 }
 
 async fn signup(State(app): State<AppState>, jar: CookieJar, Form(f): Form<LoginForm>) -> Response {
     if !app.config.allow_signup {
         return redirect("/login");
     }
+    let next = safe_next(f.next.as_deref());
     let result = async {
         let user = app.create_user(&f.username, &f.password, &f.timezone).await?;
         let token = app.create_session(user.id).await?;
@@ -354,17 +424,16 @@ async fn signup(State(app): State<AppState>, jar: CookieJar, Form(f): Form<Login
     }
     .await;
     match result {
-        Ok((user, token)) => (
-            jar.add(session_cookie(&app, token)),
-            Redirect::to(&format!(
+        Ok((user, token)) => {
+            let welcome = format!(
                 "/?msg={}",
                 urlenc(&format!("Welcome! Your username is {}. Use it to log in.", user.handle()))
-            )),
-        )
-            .into_response(),
+            );
+            (jar.add(session_cookie(&app, token)), Redirect::to(next.unwrap_or(&welcome))).into_response()
+        }
         Err(e) => (
             StatusCode::BAD_REQUEST,
-            auth_form("Sign up", "/signup", Some(&capitalize(&e.to_string())), true, true),
+            auth_form(true, Some(&capitalize(&e.to_string())), true, next),
         )
             .into_response(),
     }
@@ -382,16 +451,43 @@ async fn logout(State(app): State<AppState>, jar: CookieJar) -> Response {
 async fn home(State(app): State<AppState>, user: WebUser, Query(q): Query<MsgQuery>) -> WebResult {
     let access = user.access();
     let decks = app.deck_summaries(&access).await?;
+    let shares = app.incoming_shares(&access).await?;
     let total_due: i64 = decks.iter().map(|d| d.due_total()).sum();
-    Ok(layout(
+    Ok(page(
         "Decks",
         Some(&user.0),
+        Some("home"),
         html! {
             (flash(&q.msg))
             @if total_due > 0 {
                 a.btn.primary.wide href="/study" { "Study all · " (total_due) " due" }
             } @else if !decks.is_empty() {
                 p.notice { "All done for today." }
+            }
+            @if !decks.is_empty() {
+                p.small.offline-line {
+                    a href="/offline" { "Study offline" }
+                    " " span.muted id="offline-status" {}
+                }
+            }
+            @if !shares.is_empty() {
+                h2 { "Shared with you" }
+                ul.list {
+                    @for sh in &shares {
+                        li.token {
+                            div.grow {
+                                strong { (sh.deck_name) } br;
+                                span.small { (sh.cards) (if sh.cards == 1 { " card" } else { " cards" }) " from " (sh.from) }
+                            }
+                            form method="post" action=(format!("/shares/{}", sh.id)) {
+                                button.btn.primary type="submit" name="action" value="accept" { "Add" }
+                                " "
+                                button.btn type="submit" name="action" value="decline" { "No thanks" }
+                            }
+                        }
+                    }
+                }
+                p.muted.small { "Adding gives you your own copy. Your progress is yours; later changes by the sender don't carry over." }
             }
             h1 { "Decks" }
             @if decks.is_empty() {
@@ -702,6 +798,7 @@ async fn deck_page(
             p.actions {
                 a.btn href=(format!("/cards/new?deck={id}")) { "Add card" }
                 a.btn href=(format!("/decks/{id}/edit")) { "Edit deck" }
+                a.btn href=(format!("/decks/{id}/edit#share")) { "Share" }
                 a.btn href=(format!("/stats?deck={id}")) { "Stats" }
             }
             p.muted.small { "Preset: " a href=(format!("/presets/{}", d.preset_id)) { (summary.preset_name) } }
@@ -757,14 +854,21 @@ fn truncate(s: &str, n: usize) -> String {
     }
 }
 
-async fn deck_edit_page(State(app): State<AppState>, user: WebUser, Path(id): Path<i64>) -> WebResult {
+async fn deck_edit_page(
+    State(app): State<AppState>,
+    user: WebUser,
+    Path(id): Path<i64>,
+    Query(q): Query<MsgQuery>,
+) -> WebResult {
     let access = user.access();
     let deck = app.deck(&access, id).await?;
     let presets = app.list_presets(&access).await?;
+    let shares = app.outgoing_shares(&access, id).await?;
     Ok(layout(
         "Edit deck",
         Some(&user.0),
         html! {
+            (flash(&q.msg))
             h1 { "Edit deck" }
             form method="post" action=(format!("/decks/{id}/edit")) {
                 label { "Name" input type="text" name="name" required value=(deck.name); }
@@ -776,6 +880,27 @@ async fn deck_edit_page(State(app): State<AppState>, user: WebUser, Path(id): Pa
                 }
                 p.muted.small { "With an exam date, no card in this deck is scheduled after the exam." }
                 button.btn.primary type="submit" { "Save" }
+            }
+            h2 id="share" { "Share" }
+            p { "Send a copy of this deck to someone. They get the cards with fresh progress; your deck stays as it is." }
+            form method="post" action=(format!("/decks/{id}/share")) {
+                label { "Username" span.muted { " (name#1234)" }
+                    input type="text" name="user" required autocapitalize="none" autocorrect="off" placeholder="name#1234";
+                }
+                button.btn type="submit" { "Share" }
+            }
+            @if !shares.is_empty() {
+                p { "Waiting for them to accept:" }
+                ul.list {
+                    @for sh in &shares {
+                        li.token {
+                            span.grow { (sh.to) }
+                            form method="post" action=(format!("/shares/{}", sh.id)) {
+                                button.btn type="submit" name="action" value="cancel" { "Cancel" }
+                            }
+                        }
+                    }
+                }
             }
             h2 { "Delete" }
             form method="post" action=(format!("/decks/{id}/delete")) {
@@ -1361,39 +1486,50 @@ async fn reset_params(State(app): State<AppState>, user: WebUser) -> WebResult {
 // ----- tokens -------------------------------------------------------------
 
 fn mcp_url(app: &AppState, headers: &HeaderMap) -> String {
-    if let Some(u) = &app.config.public_url {
-        return format!("{u}/mcp");
-    }
-    let host = headers
-        .get("x-forwarded-host")
-        .or_else(|| headers.get(header::HOST))
-        .and_then(|h| h.to_str().ok())
-        .unwrap_or("localhost:8080");
-    let proto = headers
-        .get("x-forwarded-proto")
-        .and_then(|h| h.to_str().ok())
-        .unwrap_or("http");
-    format!("{proto}://{host}/mcp")
+    format!("{}/mcp", oauth::base_url(app, headers))
 }
 
-async fn tokens_page(State(app): State<AppState>, user: WebUser, Query(q): Query<MsgQuery>) -> WebResult {
+async fn tokens_page(
+    State(app): State<AppState>,
+    user: WebUser,
+    headers: HeaderMap,
+    Query(q): Query<MsgQuery>,
+) -> WebResult {
     let access = user.access();
     let tokens = app.list_tokens(user.0.id).await?;
     let decks = app.decks(&access).await?;
     let clock = user.0.clock();
+    let url = mcp_url(&app, &headers);
+    let https = url.starts_with("https://");
     Ok(layout(
         "Agent access",
         Some(&user.0),
         html! {
             (flash(&q.msg))
             h1 { "Agent access" }
-            p { "AI agents connect through MCP with a token. They can do what you allow below; agents can never change your password or create tokens." }
-            @if tokens.is_empty() { p.muted { "No tokens yet." } }
-            ul.list {
+            h2 { "Connect Claude" }
+            ol.prose {
+                li { "In Claude, open " strong { "Settings → Connectors" } " and choose " strong { "Add custom connector" } "." }
+                li { "Name it AiNKI and paste this URL:" pre.copy { (url) } }
+                li { "Click " strong { "Connect" } ", log in here if asked, and click " strong { "Allow" } "." }
+            }
+            @if !https {
+                p.notice {
+                    "This address isn't HTTPS. Claude on the web and in the apps needs AiNKI on a public HTTPS address; "
+                    "set AINKI_PUBLIC_URL to it. Claude Code on this computer can use it as is: "
+                    code { "claude mcp add --transport http ainki " (url) }
+                }
+            }
+            p.muted.small { "Any MCP client that supports OAuth connects the same way. Agents can never change your password or settings." }
+            h2 { "Connected" }
+            @if tokens.is_empty() { p.muted { "Nothing connected yet." } }
+            ul.list hidden[tokens.is_empty()] {
                 @for (t, deck_names) in &tokens {
                     li.token {
                         div.grow {
-                            strong { (t.name) } " " code { (t.prefix) "…" } br;
+                            strong { (t.name) } " "
+                            @if t.oauth_client_id.is_some() { span.small { "(connected app)" } } @else { code { (t.prefix) "…" } }
+                            br;
                             span.small {
                                 (if t.can_write { "read & write" } else { "read only" })
                                 (if t.can_review { " · can review" } else { "" })
@@ -1407,12 +1543,16 @@ async fn tokens_page(State(app): State<AppState>, user: WebUser, Query(q): Query
                             }
                         }
                         form method="post" action=(format!("/tokens/{}/revoke", t.id)) {
-                            button.btn.danger type="submit" { "Revoke" }
+                            button.btn.danger type="submit" {
+                                (if t.oauth_client_id.is_some() { "Disconnect" } else { "Revoke" })
+                            }
                         }
                     }
                 }
             }
-            h2 { "New token" }
+            details {
+                summary { "Create a token by hand" }
+                p.small { "For agents without OAuth support: they send the token as " code { "Authorization: Bearer <token>" } "." }
             form method="post" action="/tokens" {
                 label { "Name" input type="text" name="name" required placeholder="e.g. Claude"; }
                 label.check { input type="checkbox" name="can_write" value="1" checked; " Can add, edit and delete" }
@@ -1426,6 +1566,7 @@ async fn tokens_page(State(app): State<AppState>, user: WebUser, Query(q): Query
                     }
                 }
                 button.btn.primary type="submit" { "Create token" }
+            }
             }
         },
     )
@@ -1487,7 +1628,7 @@ async fn token_create(
 
 async fn token_revoke(State(app): State<AppState>, user: WebUser, Path(id): Path<i64>) -> WebResult {
     app.revoke_token(user.0.id, id).await?;
-    Ok(redirect("/tokens?msg=Token%20revoked."))
+    Ok(redirect("/tokens?msg=Access%20removed."))
 }
 
 // ----- import -------------------------------------------------------------
@@ -1645,4 +1786,135 @@ async fn media_file(State(app): State<AppState>, user: WebUser, Path(id): Path<S
     h.insert(header::CONTENT_TYPE, HeaderValue::from_str(&m.mime).unwrap_or(HeaderValue::from_static("image/png")));
     h.insert(header::CACHE_CONTROL, HeaderValue::from_static("private, max-age=31536000, immutable"));
     Ok(res)
+}
+
+// ----- sharing ------------------------------------------------------------
+
+#[derive(Deserialize)]
+struct ShareForm {
+    user: String,
+}
+
+async fn deck_share(
+    State(app): State<AppState>,
+    user: WebUser,
+    Path(id): Path<i64>,
+    Form(f): Form<ShareForm>,
+) -> WebResult {
+    let share = app.share_deck(&user.access(), id, &f.user).await?;
+    Ok(redirect(format!(
+        "/decks/{id}/edit?msg={}#share",
+        urlenc(&format!("Shared with {}. They'll see it on their home page.", share.to))
+    )))
+}
+
+async fn share_action(
+    State(app): State<AppState>,
+    user: WebUser,
+    Path(id): Path<i64>,
+    Form(f): Form<ActionForm>,
+) -> WebResult {
+    let access = user.access();
+    match f.action.as_str() {
+        "accept" => {
+            let deck = app.accept_share(&access, id).await?;
+            Ok(redirect(format!("/decks/{}?msg={}", deck.id, urlenc("Added to your decks."))))
+        }
+        "decline" => {
+            app.decline_share(&access, id).await?;
+            Ok(redirect("/"))
+        }
+        "cancel" => {
+            app.cancel_share(&access, id).await?;
+            Ok(redirect("/"))
+        }
+        _ => Err(AppError::bad("unknown action").into()),
+    }
+}
+
+// ----- offline ------------------------------------------------------------
+
+const OFFLINE_JS: &str = include_str!("static/offline.js");
+const SW_JS: &str = include_str!("static/sw.js");
+
+async fn offline_js() -> impl IntoResponse {
+    (
+        [
+            (header::CONTENT_TYPE, "text/javascript; charset=utf-8"),
+            (header::CACHE_CONTROL, "no-cache"),
+        ],
+        OFFLINE_JS,
+    )
+}
+
+async fn service_worker() -> impl IntoResponse {
+    (
+        [
+            (header::CONTENT_TYPE, "text/javascript; charset=utf-8"),
+            (header::CACHE_CONTROL, "no-cache"),
+        ],
+        SW_JS,
+    )
+}
+
+/// The offline study page. It is the same for everyone (the service worker
+/// caches it); the script fills it from the downloaded queue.
+async fn offline_page() -> impl IntoResponse {
+    let body = page(
+        "Study offline",
+        None,
+        Some("offline"),
+        html! {
+            p.small.muted id="o-conn" {}
+            noscript { p.notice { "Offline studying needs JavaScript. " a href="/study" { "Study online" } } }
+            p.notice id="o-msg" hidden {}
+            div id="o-study" hidden {
+                p.muted.small.status { span id="o-deck" {} span id="o-left" {} }
+                section.face id="o-front" {}
+                a.btn.primary.wide.show id="o-show" href="#" { "Show answer" }
+                div id="o-backwrap" hidden {
+                    hr.divider;
+                    section.face.back id="o-back" {}
+                    div.answers.cols-2 id="o-answers" {}
+                }
+                div.study-tools {
+                    button.link type="button" id="o-undo" { "Undo" }
+                    a href="/" { "Home" }
+                }
+            }
+        },
+    );
+    ([(header::CACHE_CONTROL, "no-cache")], body)
+}
+
+async fn offline_queue(State(app): State<AppState>, user: Option<WebUser>) -> Response {
+    let Some(user) = user else {
+        return StatusCode::UNAUTHORIZED.into_response();
+    };
+    match app.offline_queue(&user.access()).await {
+        Ok(mut v) => {
+            v["font_scale"] = serde_json::json!(user.0.font_scale);
+            ([(header::CACHE_CONTROL, "no-store")], axum::Json(v)).into_response()
+        }
+        Err(e) => WebError(e).into_response(),
+    }
+}
+
+#[derive(Deserialize)]
+struct SyncRequest {
+    answers: Vec<crate::offline::OfflineAnswer>,
+}
+
+async fn offline_sync(
+    State(app): State<AppState>,
+    user: Option<WebUser>,
+    axum::Json(req): axum::Json<SyncRequest>,
+) -> Response {
+    let Some(user) = user else {
+        return StatusCode::UNAUTHORIZED.into_response();
+    };
+    match app.offline_sync(&user.access(), req.answers).await {
+        Ok(results) => axum::Json(serde_json::json!({ "results": results })).into_response(),
+        Err(e) => WebError(e).into_response(),
+    }
 }

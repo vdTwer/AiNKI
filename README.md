@@ -2,10 +2,10 @@
 
 An AI-native flashcard service. Like Anki, but:
 
-- **AI-native.** Agents get a full MCP API. Anything you can do on the website, an agent can do too, within the permissions you give its token.
+- **AI-native.** Agents get a full MCP API. Anything you can do on the website, an agent can do too, within the permissions you give it. Connecting Claude takes a URL and one click.
 - **FSRS by default.** Scheduling uses FSRS-6 with researched defaults and presets for common situations. One button fits the parameters to your own memory.
 - **Simple cards.** A front and a back. Each is Markdown text plus an optional image. No note types, no templates.
-- **Web first, mobile first.** One website that works well on a phone and on e-ink readers: grayscale, high contrast, no animations, large tap targets, no JavaScript required. Images are dithered to 16 gray levels on upload.
+- **Web first, mobile first.** One website that works well on a phone and on e-ink readers: grayscale, high contrast, no animations, large tap targets, no JavaScript required. Images are dithered to 16 gray levels on upload. With JavaScript you can also study offline.
 
 Accounts are a username and password. Usernames get a Discord-style tag (`kolja#4821`), so two people can pick the same name.
 
@@ -26,7 +26,7 @@ Settings go in a `.env` file next to `docker-compose.yml` (all optional):
 | `AINKI_PORT` | `8080` | Port on the host. |
 | `AINKI_ALLOW_SIGNUP` | `true` | Set to `false` once everyone has an account. |
 | `AINKI_TIMEZONE` | `UTC` | Default timezone for new accounts. Each user can change theirs. |
-| `AINKI_PUBLIC_URL` | (from request) | E.g. `https://cards.example.com`. Used in the MCP setup snippet. |
+| `AINKI_PUBLIC_URL` | (from request) | E.g. `https://cards.example.com`. Needed for connecting Claude (OAuth issuer and MCP URL). |
 | `AINKI_SECURE_COOKIES` | `false` | Set to `true` when served over HTTPS. |
 
 To serve it on the internet, put it behind a reverse proxy that terminates TLS (Caddy, nginx, Traefik), and set `AINKI_PUBLIC_URL` and `AINKI_SECURE_COOKIES=true`.
@@ -48,21 +48,37 @@ Everything is in the volume: `ainki.db` (SQLite) and `media/`. To make a consist
 docker compose stop && docker run --rm -v ainki_ainki-data:/data -v "$PWD":/backup debian:trixie-slim tar czf /backup/ainki-backup.tgz -C /data . && docker compose start
 ```
 
-## Connect an agent (MCP)
+## Connect Claude (or any MCP client)
 
-1. On the website go to **Settings → Agent access** and create a token. Choose:
-   - **Read & write**: allows adding, editing and deleting. Without it the token is read-only.
-   - **Can review**: lets the agent quiz you and record your answers. Those reviews are labelled as agent reviews.
-   - **All decks** or a list of decks. A token limited to some decks can't create or delete decks or change presets.
-2. Point your agent at `http(s)://<your host>/mcp`, sending the token as `Authorization: Bearer <token>`. The page shows ready-made snippets, for example:
+AiNKI must be reachable on a public HTTPS address (set `AINKI_PUBLIC_URL`). Then:
+
+1. In Claude, open **Settings → Connectors → Add custom connector**.
+2. Paste `https://<your host>/mcp`.
+3. Click **Connect**, log in to AiNKI, click **Allow**.
+
+On the approval page you choose what Claude may do: add, edit and delete cards and decks; quiz you and record your answers; all decks or only some. Connected apps are listed under **Settings → Agent access**, where you can disconnect them.
+
+This is the standard MCP authorization flow (OAuth 2.1 with PKCE, dynamic client registration and client metadata documents), so other MCP clients that support OAuth connect the same way. Claude Code on the same machine can also use a plain `http://localhost` address:
 
 ```sh
-claude mcp add --transport http ainki https://cards.example.com/mcp --header "Authorization: Bearer ainki_…"
+claude mcp add --transport http ainki http://localhost:8080/mcp
 ```
 
-Agents can never change your password or settings, or create tokens.
+For agents without OAuth support, create a token by hand under **Settings → Agent access** and send it as `Authorization: Bearer <token>`.
 
-Tools: `get_overview`, `list_decks`, `create_deck`, `update_deck`, `delete_deck`, `list_cards`, `get_card`, `create_cards`, `update_card`, `delete_cards`, `set_cards_suspended`, `reset_cards`, `upload_image`, `get_image`, `get_next_card`, `answer_card`, `undo_last_answer`, `get_stats`, `list_presets`, `create_preset`, `update_preset`, `delete_preset`, `optimize_fsrs`, `import_csv`, `import_apkg`, `export_deck_csv`.
+Agents can never change your password or settings, or create tokens. Reviews done through an agent are labelled, and you can leave them out of FSRS optimization.
+
+Tools: `get_overview`, `list_decks`, `create_deck`, `update_deck`, `delete_deck`, `list_cards`, `get_card`, `create_cards`, `update_card`, `delete_cards`, `set_cards_suspended`, `reset_cards`, `upload_image`, `get_image`, `get_next_card`, `answer_card`, `undo_last_answer`, `get_stats`, `list_presets`, `create_preset`, `update_preset`, `delete_preset`, `optimize_fsrs`, `import_csv`, `import_apkg`, `export_deck_csv`, `share_deck`, `list_shares`, `accept_share`, `decline_share`.
+
+## Sharing decks
+
+On a deck's **Share** section, enter someone's `name#1234`. The deck shows up on their home page, and when they accept they get their own copy: same cards and images, fresh progress. Later edits on either side don't carry over.
+
+## Studying offline
+
+Whenever you open AiNKI online, your browser quietly downloads today's study queue and card images. Without a connection, AiNKI opens the offline study page (or tap **Study offline** on the home page). Answers are kept on the device and sent when you're back online. The server replays them with the time you actually answered, so scheduling is the same as if you had been online.
+
+Offline studying needs JavaScript and covers studying only; adding or editing cards needs a connection. A card that was also answered somewhere else in the meantime keeps the other answer.
 
 ## Scheduling
 
@@ -109,14 +125,14 @@ The code:
 - `src/scheduler.rs`: card lifecycle around FSRS (learning steps, day boundaries, fuzz, exam caps).
 - `src/web.rs`, `src/style.css`: the website (server-rendered with maud).
 - `src/mcp.rs`: the MCP server (rmcp, Streamable HTTP, stateless).
+- `src/oauth.rs`: OAuth 2.1 authorization server for MCP clients.
+- `src/share.rs`: deck sharing.
+- `src/offline.rs`, `src/static/`: offline queue and sync; service worker and offline study client.
 - `src/import.rs`: Anki and CSV import, CSV export.
 - `src/media.rs`: image processing (resize, grayscale, Floyd–Steinberg dithering).
 
 ## Roadmap
 
-- Sharing decks between users, and public decks.
-- Offline studying (service worker plus a sync queue).
-- OAuth for MCP clients, in addition to tokens.
 - "Compute optimal retention" (CMRR) suggestions per preset.
 - Optional automatic monthly optimization.
 - Export to `.apkg`.

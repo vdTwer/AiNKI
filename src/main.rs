@@ -12,10 +12,13 @@ mod error;
 mod import;
 mod markdown;
 mod mcp;
+mod oauth;
+mod offline;
 mod media;
 mod presets;
 mod scheduler;
 mod service;
+mod share;
 #[cfg(test)]
 mod tests;
 mod web;

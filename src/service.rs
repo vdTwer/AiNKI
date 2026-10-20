@@ -228,7 +228,7 @@ pub struct Stats {
     pub average_retrievability: Option<f64>,
 }
 
-fn placeholders(n: usize) -> String {
+pub(crate) fn placeholders(n: usize) -> String {
     vec!["?"; n].join(",")
 }
 
@@ -868,7 +868,7 @@ impl App {
 
     // ----- studying ------------------------------------------------------
 
-    async fn sched_config(&self, access: &Access, deck: &Deck) -> Result<SchedConfig> {
+    pub(crate) async fn sched_config(&self, access: &Access, deck: &Deck) -> Result<SchedConfig> {
         let p = self.preset(access, deck.preset_id).await?;
         Ok(SchedConfig {
             desired_retention: p.desired_retention as f32,
@@ -989,6 +989,23 @@ impl App {
         duration_ms: Option<i64>,
         expected_reps: Option<i64>,
     ) -> Result<AnswerResult> {
+        self.answer_card_at(access, card_id, rating, duration_ms, expected_reps, None, None)
+            .await
+    }
+
+    /// Like [`Self::answer_card`], for answers given earlier (offline).
+    /// `answered_at` becomes the review time; `client_id` makes retries no-ops.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn answer_card_at(
+        &self,
+        access: &Access,
+        card_id: i64,
+        rating: Rating,
+        duration_ms: Option<i64>,
+        expected_reps: Option<i64>,
+        answered_at: Option<i64>,
+        client_id: Option<&str>,
+    ) -> Result<AnswerResult> {
         access.require_review()?;
         let card = self.card(access, card_id).await?;
         if let Some(reps) = expected_reps {
@@ -1000,7 +1017,11 @@ impl App {
         let cfg = self.sched_config(access, &deck).await?;
         let params = access.user.params();
         let fsrs = scheduler::fsrs_for(&params);
-        let clock = access.user.clock();
+        let mut clock = access.user.clock();
+        if let Some(at) = answered_at {
+            // Never before the card's last review, never in the future.
+            clock.now = at.min(clock.now).max(card.last_review.unwrap_or(0));
+        }
         let before = card.sched();
         let out = scheduler::answer(&fsrs, &cfg, card.id, &before, rating, &clock)?;
         let c = &out.card;
@@ -1029,8 +1050,9 @@ impl App {
         }
         sqlx::query(
             "INSERT INTO review_log (user_id, card_id, deck_id, rating, reviewed_at, state_before,
-                elapsed_days, scheduled_secs, stability, difficulty, duration_ms, source, prev_card)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                elapsed_days, scheduled_secs, stability, difficulty, duration_ms, source, prev_card,
+                client_id)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         )
         .bind(access.user_id())
         .bind(card.id)
@@ -1045,6 +1067,7 @@ impl App {
         .bind(duration_ms.map(|d| d.clamp(0, 3_600_000)))
         .bind(access.source())
         .bind(serde_json::to_string(&before).ok())
+        .bind(client_id)
         .execute(&mut *tx)
         .await?;
         tx.commit().await?;

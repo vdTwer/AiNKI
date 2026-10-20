@@ -153,7 +153,7 @@ hr.divider { border-top: 3px dashed var(--fg); margin: .5rem 0; }
 .md td, .md th { border: 1px solid var(--fg); padding: .2rem .4rem; }
 .md blockquote { border-left: 4px solid var(--fg); margin: 0; padding-left: .8rem; }
 
-form.answers {
+.answers {
   display: grid;
   gap: .6rem;
   position: sticky;
@@ -163,11 +163,11 @@ form.answers {
   margin: 1rem 0 0;
   border-top: 2px solid var(--fg);
 }
-form.answers.cols-2 { grid-template-columns: 1fr 1fr; }
-form.answers.cols-4 { grid-template-columns: repeat(4, 1fr); }
-form.answers .btn { flex-direction: column; gap: 0; min-height: 4rem; padding: .4rem; }
-form.answers .label { font-size: 1.1rem; }
-form.answers .ivl { font-size: .8rem; font-weight: 400; }
+.answers.cols-2 { grid-template-columns: 1fr 1fr; }
+.answers.cols-4 { grid-template-columns: repeat(4, 1fr); }
+.answers .btn { flex-direction: column; gap: 0; min-height: 4rem; padding: .4rem; }
+.answers .label { font-size: 1.1rem; }
+.answers .ivl { font-size: .8rem; font-weight: 400; }
 .study-tools { display: flex; justify-content: space-between; align-items: center; }
 .study-tools form { margin: 0; }
 
