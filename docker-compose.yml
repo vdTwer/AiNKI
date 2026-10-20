@@ -1,0 +1,33 @@
+services:
+  ainki:
+    build: .
+    image: ainki:latest
+    restart: unless-stopped
+    ports:
+      # Only reachable from this machine by default: put Caddy (or another
+      # reverse proxy) in front. Set AINKI_LISTEN=0.0.0.0 to expose it directly.
+      - "${AINKI_LISTEN:-127.0.0.1}:${AINKI_PORT:-8080}:8080"
+    environment:
+      # Your public address, e.g. https://cards.example.com. Needed for
+      # connecting Claude; also turns on Secure cookies and HSTS.
+      AINKI_PUBLIC_URL: "${AINKI_PUBLIC_URL:-}"
+      # The first account can always sign up. Set to true to let anyone
+      # create accounts; leave false and use `ainki create-user` otherwise.
+      AINKI_ALLOW_SIGNUP: "${AINKI_ALLOW_SIGNUP:-false}"
+      # Default timezone for new accounts (each user can change theirs).
+      AINKI_TIMEZONE: "${AINKI_TIMEZONE:-UTC}"
+      # Force Secure cookies even without an https AINKI_PUBLIC_URL.
+      AINKI_SECURE_COOKIES: "${AINKI_SECURE_COOKIES:-false}"
+    volumes:
+      - ainki-data:/data
+    # Hardening: nothing but /data is writable, no extra privileges.
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:size=16m
+
+volumes:
+  ainki-data:
