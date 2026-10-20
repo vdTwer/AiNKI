@@ -1354,19 +1354,24 @@ impl App {
         four_buttons: bool,
         font_scale: i64,
         optimize_include_agent: bool,
+        desktop_look: &str,
     ) -> Result<()> {
+        if !matches!(desktop_look, "sketch" | "simple") {
+            return Err(AppError::bad("unknown look"));
+        }
         timezone
             .parse::<chrono_tz::Tz>()
             .map_err(|_| AppError::bad(format!("unknown timezone '{timezone}'")))?;
         sqlx::query(
             "UPDATE users SET timezone = ?, rollover_hour = ?, four_buttons = ?, font_scale = ?,
-                optimize_include_agent = ? WHERE id = ?",
+                optimize_include_agent = ?, desktop_look = ? WHERE id = ?",
         )
         .bind(timezone)
         .bind(rollover_hour.clamp(0, 23))
         .bind(four_buttons)
         .bind(font_scale.clamp(80, 200))
         .bind(optimize_include_agent)
+        .bind(desktop_look)
         .bind(user_id)
         .execute(&self.db)
         .await?;

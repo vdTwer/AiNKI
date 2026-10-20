@@ -29,6 +29,20 @@ use crate::{
 };
 
 const CSS: &str = include_str!("style.css");
+const SKETCH_CSS: &str = include_str!("static/sketch.css");
+const THEME_JS: &str = include_str!("static/theme.js");
+const PAPER_SVG: &str = include_str!("static/paper.svg");
+const SCRIBBLE_SVG: &str = include_str!("static/scribble.svg");
+const FONTS: &[(&str, &[u8])] = &[
+    ("alegreya-sans-400-latin.woff2", include_bytes!("static/fonts/alegreya-sans-400-latin.woff2")),
+    ("alegreya-sans-400-latin-ext.woff2", include_bytes!("static/fonts/alegreya-sans-400-latin-ext.woff2")),
+    ("alegreya-sans-400-italic-latin.woff2", include_bytes!("static/fonts/alegreya-sans-400-italic-latin.woff2")),
+    ("alegreya-sans-400-italic-latin-ext.woff2", include_bytes!("static/fonts/alegreya-sans-400-italic-latin-ext.woff2")),
+    ("alegreya-sans-700-latin.woff2", include_bytes!("static/fonts/alegreya-sans-700-latin.woff2")),
+    ("alegreya-sans-700-latin-ext.woff2", include_bytes!("static/fonts/alegreya-sans-700-latin-ext.woff2")),
+    ("patrick-hand-400-latin.woff2", include_bytes!("static/fonts/patrick-hand-400-latin.woff2")),
+    ("patrick-hand-400-latin-ext.woff2", include_bytes!("static/fonts/patrick-hand-400-latin-ext.woff2")),
+];
 
 pub async fn serve(app: AppState) -> anyhow::Result<()> {
     let bind = app.config.bind.clone();
@@ -63,7 +77,8 @@ async fn shutdown_signal() {
 pub fn router(app: AppState) -> Router {
     let mcp_routes = Router::new()
         .nest_service("/mcp", mcp::service(app.clone()))
-        .layer(middleware::from_fn_with_state(app.clone(), mcp::auth));
+        // route_layer: only /mcp needs a token, not every unknown URL.
+        .route_layer(middleware::from_fn_with_state(app.clone(), mcp::auth));
     // Endpoints MCP clients call directly. They use tokens, not cookies, so
     // cross-origin calls (browser-based clients) are safe to allow.
     let cors = tower_http::cors::CorsLayer::new()
@@ -127,6 +142,11 @@ pub fn router(app: AppState) -> Router {
         .layer(middleware::from_fn_with_state(app.clone(), security::check_origin));
     let static_routes = Router::new()
         .route("/style.css", get(style))
+        .route("/sketch.css", get(|| static_file("text/css; charset=utf-8", SKETCH_CSS.as_bytes())))
+        .route("/theme.js", get(|| static_file("text/javascript; charset=utf-8", THEME_JS.as_bytes())))
+        .route("/paper.svg", get(|| static_file("image/svg+xml", PAPER_SVG.as_bytes())))
+        .route("/scribble.svg", get(|| static_file("image/svg+xml", SCRIBBLE_SVG.as_bytes())))
+        .route("/fonts/{name}", get(font_file))
         .route("/offline", get(offline_page))
         .route("/offline.js", get(offline_js))
         .route("/sw.js", get(service_worker))
@@ -260,6 +280,9 @@ pub fn urlenc(s: &str) -> String {
     out
 }
 
+/// Where the hand-drawn look may apply; must match static/theme.js.
+const DESKTOP_MEDIA: &str = "(min-width: 60em) and (hover: hover) and (pointer: fine)";
+
 pub fn layout(title: &str, user: Option<&User>, body: Markup) -> Markup {
     page(title, user, None, body)
 }
@@ -269,13 +292,17 @@ fn page(title: &str, user: Option<&User>, page_kind: Option<&str>, body: Markup)
     let scale = user.map(|u| u.font_scale).unwrap_or(100) as f64 / 100.0;
     html! {
         (DOCTYPE)
-        html lang="en" {
+        html lang="en" data-look=[user.map(|u| u.desktop_look.as_str())] {
             head {
                 meta charset="utf-8";
                 meta name="viewport" content="width=device-width, initial-scale=1";
                 meta name="color-scheme" content="light dark";
                 title { (title) " · AiNKI" }
                 link rel="stylesheet" href="/style.css";
+                // The hand-drawn look: only on desktops, and only once
+                // theme.js has switched it on.
+                link rel="stylesheet" href="/sketch.css" media=(DESKTOP_MEDIA);
+                script src="/theme.js" {}
                 @if (scale - 1.0).abs() > f64::EPSILON {
                     style { (PreEscaped(format!(":root{{--scale:{scale}}}"))) }
                 }
@@ -333,6 +360,27 @@ fn session_cookie(app: &AppState, token: String) -> Cookie<'static> {
 
 fn time_days(days: i64) -> time::Duration {
     time::Duration::days(days)
+}
+
+/// Small static assets. They change only with a new release, so an hour of
+/// caching is plenty (the service worker refreshes them too).
+async fn static_file(content_type: &'static str, body: &'static [u8]) -> Response {
+    (
+        [(header::CONTENT_TYPE, content_type), (header::CACHE_CONTROL, "public, max-age=3600")],
+        body,
+    )
+        .into_response()
+}
+
+async fn font_file(Path(name): Path<String>) -> Response {
+    match FONTS.iter().find(|(n, _)| *n == name) {
+        Some((_, bytes)) => (
+            [(header::CONTENT_TYPE, "font/woff2"), (header::CACHE_CONTROL, "public, max-age=31536000, immutable")],
+            *bytes,
+        )
+            .into_response(),
+        None => StatusCode::NOT_FOUND.into_response(),
+    }
 }
 
 async fn style() -> impl IntoResponse {
@@ -1504,6 +1552,12 @@ async fn settings_page(State(app): State<AppState>, user: WebUser, Flash(msg): F
                 label { "Text size (%)" input type="number" name="font_scale" min="80" max="200" step="10" value=(u.font_scale); }
                 label.check { input type="checkbox" name="four_buttons" value="1" checked[u.four_buttons]; " Show Hard and Easy buttons" }
                 label.check { input type="checkbox" name="optimize_include_agent" value="1" checked[u.optimize_include_agent]; " Use reviews done through agents when optimizing" }
+                fieldset {
+                    legend { "Look on desktop computers" }
+                    label.check { input type="radio" name="desktop_look" value="sketch" checked[u.desktop_look != "simple"]; " Hand-drawn" }
+                    label.check { input type="radio" name="desktop_look" value="simple" checked[u.desktop_look == "simple"]; " Simple" }
+                    p.muted.small { "Phones, e-readers and browsers without JavaScript always use the simple, high-contrast look." }
+                }
                 button.btn.primary type="submit" { "Save" }
             }
             h2 id="fsrs" { "FSRS" }
@@ -1547,6 +1601,7 @@ struct SettingsForm {
     font_scale: i64,
     four_buttons: Option<String>,
     optimize_include_agent: Option<String>,
+    desktop_look: Option<String>,
 }
 
 async fn settings_update(State(app): State<AppState>, user: WebUser, Form(f): Form<SettingsForm>) -> WebResult {
@@ -1557,6 +1612,7 @@ async fn settings_update(State(app): State<AppState>, user: WebUser, Form(f): Fo
         f.four_buttons.is_some(),
         f.font_scale,
         f.optimize_include_agent.is_some(),
+        f.desktop_look.as_deref().unwrap_or("sketch"),
     )
     .await?;
     Ok(redirect_msg("/settings", "Saved."))
@@ -1866,7 +1922,7 @@ async fn stats_page(State(app): State<AppState>, user: WebUser, Query(q): Query<
             h2 { "Memory" }
             dl.kv {
                 dt { "Reviews, last 30 days" } dd { (s.reviews_30d) }
-                dt { "Recalled when due" } dd { (pct(s.true_retention_30d)) " (" (s.retention_sample_30d) " reviews)" }
+                dt { "Recalled when due" } dd { (pct(s.true_retention_30d)) " (" (s.retention_sample_30d) (if s.retention_sample_30d == 1 { " review)" } else { " reviews)" }) }
                 dt { "Average recall chance now" } dd { (pct(s.average_retrievability)) }
             }
             h2 { "Cards" }

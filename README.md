@@ -6,6 +6,7 @@ An AI-native flashcard service. Like Anki, but:
 - **FSRS by default.** Scheduling uses FSRS-6 with researched defaults and presets for common situations. One button fits the parameters to your own memory.
 - **Simple cards.** A front and a back. Each is Markdown text plus an optional image. No note types, no templates.
 - **Web first, mobile first.** One website that works well on a phone and on e-ink readers: grayscale, high contrast, no animations, large tap targets, no JavaScript required. Images are dithered to 16 gray levels on upload. With JavaScript you can also study offline.
+- **A warmer look on desktop.** On computers, AiNKI switches to a hand-drawn look: index cards, uneven pen strokes, humanist type, Terra Cotta and Wild Orchid accents. Phones, e-readers and browsers without JavaScript always get the simple look, and anyone can choose it in settings.
 
 Accounts are a username and password. Usernames get a Discord-style tag (`kolja#4821`), so two people can pick the same name.
 
@@ -161,6 +162,7 @@ The code:
 - `src/share.rs`: deck sharing.
 - `src/offline.rs`, `src/static/`: offline queue and sync; service worker and browser script.
 - `src/security.rs`: rate limiting, security headers, Origin checks, flash messages.
+- `src/style.css`: the simple look (the base everywhere). `src/static/sketch.css` and `theme.js`: the hand-drawn desktop look, switched on only by script on wide screens with a mouse that aren't e-ink. Fonts (Alegreya Sans, Patrick Hand; SIL Open Font License) are served by AiNKI itself.
 - `src/import.rs`: Anki and CSV import, CSV export.
 - `src/media.rs`: image processing (resize, grayscale, Floyd–Steinberg dithering).
 
