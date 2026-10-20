@@ -14,9 +14,7 @@ RUN touch src/main.rs && cargo build --release --locked
 
 FROM debian:trixie-slim
 # CA certificates: AiNKI fetches OAuth client metadata over HTTPS.
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates \
-    && rm -rf /var/lib/apt/lists/*
+COPY --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 RUN useradd --system --uid 10001 --home-dir /data --shell /usr/sbin/nologin ainki \
     && mkdir -p /data && chown ainki:ainki /data
 COPY --from=build /src/target/release/ainki /usr/local/bin/ainki
