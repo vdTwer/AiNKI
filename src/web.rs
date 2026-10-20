@@ -19,7 +19,7 @@ use maud::{DOCTYPE, Markup, PreEscaped, html};
 use serde::Deserialize;
 
 use crate::{
-    AppState,
+    App, AppState,
     auth::{Access, User},
     error::AppError,
     import, markdown, mcp, media, now, oauth, presets,
@@ -29,6 +29,16 @@ use crate::{
 };
 
 const CSS: &str = include_str!("style.css");
+const CALM_CSS: &str = include_str!("static/calm.css");
+const THEME_JS: &str = include_str!("static/theme.js");
+const FONTS: &[(&str, &[u8])] = &[
+    ("newsreader-italic-latin-ext.woff2", include_bytes!("static/fonts/newsreader-italic-latin-ext.woff2")),
+    ("newsreader-italic-latin.woff2", include_bytes!("static/fonts/newsreader-italic-latin.woff2")),
+    ("newsreader-latin-ext.woff2", include_bytes!("static/fonts/newsreader-latin-ext.woff2")),
+    ("newsreader-latin.woff2", include_bytes!("static/fonts/newsreader-latin.woff2")),
+    ("source-sans-3-latin-ext.woff2", include_bytes!("static/fonts/source-sans-3-latin-ext.woff2")),
+    ("source-sans-3-latin.woff2", include_bytes!("static/fonts/source-sans-3-latin.woff2")),
+];
 
 pub async fn serve(app: AppState) -> anyhow::Result<()> {
     let bind = app.config.bind.clone();
@@ -63,7 +73,8 @@ async fn shutdown_signal() {
 pub fn router(app: AppState) -> Router {
     let mcp_routes = Router::new()
         .nest_service("/mcp", mcp::service(app.clone()))
-        .layer(middleware::from_fn_with_state(app.clone(), mcp::auth));
+        // route_layer: only /mcp needs a token, not every unknown URL.
+        .route_layer(middleware::from_fn_with_state(app.clone(), mcp::auth));
     // Endpoints MCP clients call directly. They use tokens, not cookies, so
     // cross-origin calls (browser-based clients) are safe to allow.
     let cors = tower_http::cors::CorsLayer::new()
@@ -127,6 +138,9 @@ pub fn router(app: AppState) -> Router {
         .layer(middleware::from_fn_with_state(app.clone(), security::check_origin));
     let static_routes = Router::new()
         .route("/style.css", get(style))
+        .route("/calm.css", get(|| static_file("text/css; charset=utf-8", CALM_CSS.as_bytes())))
+        .route("/theme.js", get(|| static_file("text/javascript; charset=utf-8", THEME_JS.as_bytes())))
+        .route("/fonts/{name}", get(font_file))
         .route("/offline", get(offline_page))
         .route("/offline.js", get(offline_js))
         .route("/sw.js", get(service_worker))
@@ -260,6 +274,42 @@ pub fn urlenc(s: &str) -> String {
     out
 }
 
+/// Where the Calm look may apply; must match static/theme.js.
+const DESKTOP_MEDIA: &str = "(min-width: 60em) and (hover: hover) and (pointer: fine)";
+
+/// Collapses the side rail (Calm look only; hidden otherwise).
+fn rail_toggle() -> Markup {
+    html! {
+        button.rail-toggle type="button" aria-expanded="true" aria-label="Hide menu" {
+            svg viewBox="0 0 14 14" aria-hidden="true" focusable="false" {
+                path d="M9 3 L5 7 L9 11" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" {}
+            }
+            span.rail-toggle-label { "Hide" }
+        }
+    }
+}
+
+/// "Tuesday, 20 October" in the user's timezone.
+fn long_date(user: &User) -> String {
+    user.clock().today().format("%A, %-d %B").to_string()
+}
+
+/// When something happens, in words: "at 14:30", "tomorrow at 9:00",
+/// "on Friday, 24 October".
+fn when_words(user: &User, ts: i64) -> String {
+    let clock = user.clock();
+    let Some(local) = chrono::DateTime::from_timestamp(ts, 0).map(|t| t.with_timezone(&clock.tz)) else {
+        return String::new();
+    };
+    let days = (clock.date_of(ts) - clock.today()).num_days();
+    let time = local.format("%-H:%M");
+    match days {
+        ..=0 => format!("today at {time}"),
+        1 => format!("tomorrow at {time}"),
+        _ => format!("on {}", local.format("%A, %-d %B")),
+    }
+}
+
 pub fn layout(title: &str, user: Option<&User>, body: Markup) -> Markup {
     page(title, user, None, body)
 }
@@ -269,30 +319,39 @@ fn page(title: &str, user: Option<&User>, page_kind: Option<&str>, body: Markup)
     let scale = user.map(|u| u.font_scale).unwrap_or(100) as f64 / 100.0;
     html! {
         (DOCTYPE)
-        html lang="en" {
+        html lang="en" data-look=[user.map(|u| if u.desktop_look == "simple" { "simple" } else { "calm" })] {
             head {
                 meta charset="utf-8";
                 meta name="viewport" content="width=device-width, initial-scale=1";
                 meta name="color-scheme" content="light dark";
                 title { (title) " · AiNKI" }
                 link rel="stylesheet" href="/style.css";
+                // The Calm look: only on desktops, and only once theme.js
+                // has switched it on. Everything else gets style.css alone.
+                link rel="stylesheet" href="/calm.css" media=(DESKTOP_MEDIA);
+                script src="/theme.js" {}
                 @if (scale - 1.0).abs() > f64::EPSILON {
                     style { (PreEscaped(format!(":root{{--scale:{scale}}}"))) }
                 }
             }
             body data-user=[user.map(|u| u.id)] data-page=[page_kind] {
+                // On phones a bar across the top; in the Calm look a
+                // collapsible rail on the left.
                 @if let Some(u) = user {
-                    nav.top {
-                        a.brand href="/" { "AiNKI" }
-                        a href="/study" { "Study" }
-                        a href="/cards/new" { "Add" }
-                        a href="/stats" { "Stats" }
-                        a href="/settings" title=(u.handle()) { "Settings" }
+                    nav.top aria-label="Main" {
+                        a.brand href="/" data-nav="decks" { "AiNKI" }
+                        a.rail-only href="/" data-nav="decks" data-label="Decks" { "Decks" }
+                        a href="/study" data-nav="study" data-label="Study" { "Study" }
+                        a href="/cards/new" data-nav="add" data-label="Add" { "Add" }
+                        a href="/stats" data-nav="stats" data-label="Stats" { "Stats" }
+                        a href="/settings" data-nav="settings" data-label="Settings" title=(u.handle()) { "Settings" }
+                        (rail_toggle())
                     }
                 } @else if page_kind == Some("offline") {
-                    nav.top {
-                        a.brand href="/" { "AiNKI" }
-                        a href="/offline" { "Study offline" }
+                    nav.top aria-label="Main" {
+                        a.brand href="/" data-nav="decks" { "AiNKI" }
+                        a href="/offline" data-nav="study" data-label="Study offline" { "Study offline" }
+                        (rail_toggle())
                     }
                 }
                 main { (body) }
@@ -333,6 +392,27 @@ fn session_cookie(app: &AppState, token: String) -> Cookie<'static> {
 
 fn time_days(days: i64) -> time::Duration {
     time::Duration::days(days)
+}
+
+/// Small static assets. They change only with a new release, so an hour of
+/// caching is plenty (the service worker refreshes them too).
+async fn static_file(content_type: &'static str, body: &'static [u8]) -> Response {
+    (
+        [(header::CONTENT_TYPE, content_type), (header::CACHE_CONTROL, "public, max-age=3600")],
+        body,
+    )
+        .into_response()
+}
+
+async fn font_file(Path(name): Path<String>) -> Response {
+    match FONTS.iter().find(|(n, _)| *n == name) {
+        Some((_, bytes)) => (
+            [(header::CONTENT_TYPE, "font/woff2"), (header::CACHE_CONTROL, "public, max-age=31536000, immutable")],
+            *bytes,
+        )
+            .into_response(),
+        None => StatusCode::NOT_FOUND.into_response(),
+    }
 }
 
 async fn style() -> impl IntoResponse {
@@ -522,22 +602,44 @@ async fn home(State(app): State<AppState>, user: WebUser, Flash(msg): Flash) -> 
     let access = user.access();
     let decks = app.deck_summaries(&access).await?;
     let shares = app.incoming_shares(&access).await?;
+    let stats = app.stats(&access, None).await?;
     let total_due: i64 = decks.iter().map(|d| d.due_total()).sum();
+    // A rough guide; real thinking time once there's enough history.
+    let minutes = ((total_due as f64 * stats.seconds_per_review.unwrap_or(12.0)) / 60.0).ceil().max(1.0) as i64;
+    let mut facts = Vec::new();
+    if total_due > 0 {
+        facts.push(format!("About {minutes} minute{}", if minutes == 1 { "" } else { "s" }));
+    }
+    if let Some(r) = stats.true_retention_30d {
+        facts.push(format!("{:.0}% recalled last month", r * 100.0));
+    }
+    if stats.streak_days > 1 {
+        facts.push(format!("{}-day streak", stats.streak_days));
+    }
     Ok(page(
         "Decks",
         Some(&user.0),
         Some("home"),
         html! {
             (flash(&msg))
-            @if total_due > 0 {
-                a.btn.primary.wide href="/study" { "Study all · " (total_due) " due" }
-            } @else if !decks.is_empty() {
-                p.notice { "All done for today." }
-            }
-            @if !decks.is_empty() {
-                p.small.offline-line {
-                    a href="/offline" { "Study offline" }
-                    " " span.muted id="offline-status" {}
+            section.today aria-label="Today" {
+                p.date { (long_date(&user.0)) }
+                @if total_due > 0 {
+                    h1 { span.count { (total_due) (if total_due == 1 { " card" } else { " cards" }) } " due today" }
+                } @else if !decks.is_empty() {
+                    h1 { "All done for today" }
+                } @else {
+                    h1 { "Welcome to AiNKI" }
+                }
+                @if !facts.is_empty() { p.facts { (facts.join(" · ")) } }
+                @if total_due > 0 {
+                    p { a.btn.primary.start href="/study" { "Start studying " span.arrow aria-hidden="true" { "→" } } }
+                }
+                @if !decks.is_empty() {
+                    p.small.offline-line {
+                        a href="/offline" { "Study offline" }
+                        " " span.muted id="offline-status" {}
+                    }
                 }
             }
             @if !shares.is_empty() {
@@ -559,31 +661,40 @@ async fn home(State(app): State<AppState>, user: WebUser, Flash(msg): Flash) -> 
                 }
                 p.muted.small { "Adding gives you your own copy. Your progress is yours; later changes by the sender don't carry over." }
             }
-            h1 { "Decks" }
             @if decks.is_empty() {
-                p { "No decks yet. Create one, or import from Anki or a CSV file." }
-            }
-            ul.list {
-                @for d in &decks {
-                    li {
-                        a.row href=(format!("/decks/{}", d.deck.id)) {
-                            span.grow { (d.deck.name) }
-                            span.counts {
-                                @if d.due_total() > 0 {
-                                    span title="new" { (d.new_today) " new" }
-                                    " · "
-                                    span title="due" { (d.learning_due + d.review_due) " due" }
-                                } @else {
-                                    span.muted { "done" }
+                p { "No decks yet. Create one, or bring your Anki decks along." }
+            } @else {
+                div.table-head aria-hidden="true" {
+                    span.grow { "Decks" }
+                    span.num { "Due" }
+                    span.num { "New" }
+                    span.chev {}
+                }
+                ul.list.decks {
+                    @for d in &decks {
+                        @let due = d.learning_due + d.review_due;
+                        li {
+                            a.row href=(format!("/decks/{}", d.deck.id)) {
+                                span.grow {
+                                    span.deck-name { (d.deck.name) }
+                                    @if let Some(exam) = &d.deck.exam_date {
+                                        span.sub { "Exam on " (exam) }
+                                    } @else if d.due_total() == 0 && d.total > 0 {
+                                        span.sub { "Done for today" }
+                                    }
                                 }
+                                span.num.due title="due" { @if due > 0 { (due) span.unit { " due" } } @else { "—" } }
+                                span.num.new title="new" { @if d.new_today > 0 { span.dot aria-hidden="true" {} (d.new_today) span.unit { " new" } } @else { "—" } }
+                                span.chev aria-hidden="true" { "›" }
                             }
                         }
                     }
                 }
             }
-            p.actions {
+            p.actions.quiet-links {
+                a.btn href="/cards/new" { "Add card" }
                 a.btn href="/decks/new" { "New deck" }
-                a.btn href="/import" { "Import" }
+                a.btn href="/import" { "Import from Anki" }
             }
         },
     )
@@ -607,6 +718,50 @@ fn study_url(deck: Option<i64>) -> String {
     }
 }
 
+/// How far into today's session: (answered so far, total for today).
+async fn session_progress(app: &App, access: &Access, deck: Option<i64>) -> Result<(i64, i64), AppError> {
+    let summaries = app.deck_summaries(access).await?;
+    let (done, left) = summaries
+        .iter()
+        .filter(|s| deck.is_none_or(|d| s.deck.id == d))
+        .fold((0, 0), |(done, left), s| (done + s.new_done_today + s.review_done_today, left + s.due_total()));
+    Ok((done, done + left))
+}
+
+/// The thin line and "14 of 32" under the card.
+fn study_foot(deck_name: &str, deck_id: i64, done: i64, total: i64, q_deck: Option<i64>, card_id: Option<i64>) -> Markup {
+    let pct = if total > 0 { (done * 100 / total).clamp(0, 100) } else { 0 };
+    let total = total.max(1);
+    let position = (done + 1).min(total);
+    html! {
+        div.study-foot {
+            div.progress role="progressbar" aria-label="Today's progress" aria-valuemin="0" aria-valuemax=(total) aria-valuenow=(done) {
+                div.bar data-progress=(pct) style=(format!("width:{pct}%")) {}
+            }
+            div.study-meta {
+                a href=(format!("/decks/{deck_id}")) { (deck_name) }
+                span.count { (position) " of " (total) }
+            }
+            div.study-tools {
+                form method="post" action="/study/undo" {
+                    @if let Some(d) = q_deck { input type="hidden" name="deck" value=(d); }
+                    button.link type="submit" { "Undo" }
+                }
+                @if let Some(id) = card_id { a href=(format!("/cards/{id}")) { "Edit card" } }
+            }
+        }
+    }
+}
+
+fn state_tag(state: CardState) -> Markup {
+    let (class, label) = match state {
+        CardState::New => ("new", "New"),
+        CardState::Learning | CardState::Relearning => ("learning", "Learning"),
+        CardState::Review => ("review", "Review"),
+    };
+    html! { p.card-state { span.dot.(class) aria-hidden="true" {} (label) } }
+}
+
 async fn study(State(app): State<AppState>, user: WebUser, Flash(msg): Flash, Query(q): Query<StudyQuery>) -> WebResult {
     let access = user.access();
     let deck_param = q.deck.map(|d| format!("&deck={d}")).unwrap_or_default();
@@ -616,6 +771,7 @@ async fn study(State(app): State<AppState>, user: WebUser, Flash(msg): Flash, Qu
         let card = app.card(&access, card_id).await?;
         let deck = app.deck(&access, card.deck_id).await?;
         let previews = app.previews(&access, &card, &deck).await?;
+        let (done, total) = session_progress(&app, &access, q.deck).await?;
         let four = user.0.four_buttons;
         let shown = q.t.unwrap_or_else(now);
         let buttons: Vec<(Rating, &str, &str)> = if four {
@@ -628,26 +784,32 @@ async fn study(State(app): State<AppState>, user: WebUser, Flash(msg): Flash, Qu
         } else {
             vec![(Rating::Again, "Again", "1"), (Rating::Good, "Good", "3")]
         };
-        return Ok(layout(
+        return Ok(page(
             "Study",
             Some(&user.0),
+            Some("study"),
             html! {
-                p.muted.small { (deck.name) }
-                section.face { (face(&card.front, &card.front_image)) }
-                hr.divider;
-                section.face.back id="answer" { (face(&card.back, &card.back_image)) }
-                form.answers.cols-2[!four].cols-4[four] method="post" action="/study/answer" {
-                    input type="hidden" name="card" value=(card.id);
-                    input type="hidden" name="reps" value=(card.reps);
-                    input type="hidden" name="t" value=(shown);
-                    @if let Some(d) = q.deck { input type="hidden" name="deck" value=(d); }
-                    @for (rating, label, key) in &buttons {
-                        @let preview = previews.iter().find(|(r, _)| r == rating).map(|(_, p)| p.as_str()).unwrap_or("");
-                        button.btn.primary[*rating == Rating::Good] type="submit" name="rating" value=(*rating as i64) data-key=(key) {
-                            span.label { (label) }
-                            span.ivl { (preview) }
+                section.study.revealed {
+                    div.card-area {
+                        (state_tag(card.card_state()))
+                        section.face.front { (face(&card.front, &card.front_image)) }
+                        hr.divider;
+                        section.face.back id="answer" { (face(&card.back, &card.back_image)) }
+                    }
+                    form.answers.cols-2[!four].cols-4[four] method="post" action="/study/answer" {
+                        input type="hidden" name="card" value=(card.id);
+                        input type="hidden" name="reps" value=(card.reps);
+                        input type="hidden" name="t" value=(shown);
+                        @if let Some(d) = q.deck { input type="hidden" name="deck" value=(d); }
+                        @for (rating, label, key) in &buttons {
+                            @let preview = previews.iter().find(|(r, _)| r == rating).map(|(_, p)| p.as_str()).unwrap_or("");
+                            button.btn.primary[*rating == Rating::Good].again[*rating == Rating::Again] type="submit" name="rating" value=(*rating as i64) data-key=(key) {
+                                span.label { (label) " " span.key { (key) } }
+                                span.ivl { (preview) }
+                            }
                         }
                     }
+                    (study_foot(&deck.name, deck.id, done, total, q.deck, Some(card.id)))
                 }
             },
         )
@@ -657,52 +819,67 @@ async fn study(State(app): State<AppState>, user: WebUser, Flash(msg): Flash, Qu
     let Some(sc) = app.next_card(&access, q.deck).await? else {
         let decks = app.deck_summaries(&access).await?;
         let any_cards = decks.iter().any(|d| d.total > 0);
-        return Ok(layout(
+        let stats = app.stats(&access, q.deck).await?;
+        let next = app.next_review_at(&access, q.deck).await?;
+        let minutes = stats.minutes_today.round() as i64;
+        return Ok(page(
             "Study",
             Some(&user.0),
+            Some("study-done"),
             html! {
                 (flash(&msg))
-                h1 { "Done for now" }
-                @if any_cards {
-                    p { "Nothing else is due. Come back later." }
-                } @else {
-                    p { "There are no cards yet." }
-                    p { a.btn.primary href=(match q.deck { Some(d) => format!("/cards/new?deck={d}"), None => "/cards/new".into() }) { "Add cards" } }
+                section.session-end {
+                    @if any_cards {
+                        div.end-dot aria-hidden="true" { div {} }
+                        h1 { "All done." }
+                        p.summary {
+                            @if stats.reviews_today > 0 {
+                                (stats.reviews_today) (if stats.reviews_today == 1 { " card" } else { " cards" })
+                                @if minutes >= 1 { " in " (minutes) (if minutes == 1 { " minute" } else { " minutes" }) }
+                                ". "
+                            }
+                            @if let Some(t) = next {
+                                "The next review is " (when_words(&user.0, t)) "."
+                            } @else {
+                                "Nothing else is scheduled yet."
+                            }
+                        }
+                    } @else {
+                        h1 { "No cards yet" }
+                        p.summary { "Add a few cards, or import a deck from Anki, and they'll show up here." }
+                        p { a.btn.primary href=(match q.deck { Some(d) => format!("/cards/new?deck={d}"), None => "/cards/new".into() }) { "Add cards" } }
+                    }
+                    p.end-links {
+                        a href="/" { "Back to decks" }
+                        form method="post" action="/study/undo" {
+                            @if let Some(d) = q.deck { input type="hidden" name="deck" value=(d); }
+                            button.link type="submit" { "Undo last answer" }
+                        }
+                    }
                 }
-                form method="post" action="/study/undo" {
-                    @if let Some(d) = q.deck { input type="hidden" name="deck" value=(d); }
-                    button.btn type="submit" { "Undo last answer" }
-                }
-                p { a href="/" { "Back to decks" } }
             },
         )
         .into_response());
     };
     let card = &sc.card;
-    let state_label = match card.card_state() {
-        CardState::New => "new",
-        CardState::Learning | CardState::Relearning => "learning",
-        CardState::Review => "review",
-    };
-    Ok(layout(
+    let (done, total) = session_progress(&app, &access, q.deck).await?;
+    Ok(page(
         "Study",
         Some(&user.0),
+        Some("study"),
         html! {
             (flash(&msg))
-            p.muted.small.status {
-                span { (sc.deck.name) }
-                span { (state_label) " · " (sc.remaining) " left" }
-            }
-            section.face { (face(&card.front, &card.front_image)) }
-            a.btn.primary.wide.show data-key=" " href=(format!("/study?card={}&show=1&t={}{}#answer", card.id, now(), deck_param)) {
-                "Show answer"
-            }
-            div.study-tools {
-                form method="post" action="/study/undo" {
-                    @if let Some(d) = q.deck { input type="hidden" name="deck" value=(d); }
-                    button.link type="submit" { "Undo" }
+            section.study {
+                div.card-area {
+                    (state_tag(card.card_state()))
+                    section.face.front { (face(&card.front, &card.front_image)) }
                 }
-                a href=(format!("/cards/{}", card.id)) { "Edit card" }
+                p.reveal {
+                    a.btn.primary.show data-key=" " href=(format!("/study?card={}&show=1&t={}{}#answer", card.id, now(), deck_param)) {
+                        "Show answer" span.key { "space" }
+                    }
+                }
+                (study_foot(&sc.deck.name, sc.deck.id, done, total, q.deck, Some(card.id)))
             }
         },
     )
@@ -766,6 +943,7 @@ async fn deck_new_page(State(app): State<AppState>, user: WebUser) -> WebResult 
         "New deck",
         Some(&user.0),
         html! {
+            (add_tabs("deck"))
             h1 { "New deck" }
             form method="post" action="/decks/new" {
                 label { "Name" input type="text" name="name" required autofocus; }
@@ -792,7 +970,8 @@ async fn deck_create(State(app): State<AppState>, user: WebUser, Form(f): Form<D
     let deck = app
         .create_deck(&user.access(), &f.name, &f.description, f.preset_id)
         .await?;
-    Ok(redirect(format!("/decks/{}", deck.id)))
+    // Straight on to filling it.
+    Ok(redirect_msg(format!("/cards/new?deck={}", deck.id), "Deck created. Add its first card."))
 }
 
 #[derive(Deserialize, Default)]
@@ -1019,6 +1198,9 @@ async fn deck_export(State(app): State<AppState>, user: WebUser, Path(id): Path<
 #[derive(Default)]
 struct CardFormData {
     deck: Option<i64>,
+    /// Set when the picker says "New deck…": the name to create.
+    new_deck: Option<String>,
+    pending_new_deck: Option<String>,
     front: String,
     back: String,
     front_upload: Option<Vec<u8>>,
@@ -1041,7 +1223,17 @@ async fn read_card_form(mut mp: Multipart) -> Result<CardFormData, AppError> {
             .map_err(|e| AppError::bad(format!("upload failed: {e}")))?;
         let text = || String::from_utf8_lossy(&data).to_string();
         match name.as_str() {
+            "deck" if text() == NEW_DECK => f.new_deck = Some(String::new()),
             "deck" => f.deck = text().parse().ok(),
+            "new_deck" => {
+                if let Some(name) = f.new_deck.as_mut() {
+                    *name = text();
+                } else {
+                    // Only used when "New deck…" is picked; remember it in
+                    // case the picker comes later in the form.
+                    f.pending_new_deck = Some(text());
+                }
+            }
             "front" => f.front = text(),
             "back" => f.back = text(),
             "front_image" if !data.is_empty() => f.front_upload = Some(data.to_vec()),
@@ -1051,6 +1243,11 @@ async fn read_card_form(mut mp: Multipart) -> Result<CardFormData, AppError> {
             _ => {}
         }
     }
+    if let (Some(name), Some(pending)) = (f.new_deck.as_mut(), f.pending_new_deck.take()) {
+        if name.is_empty() {
+            *name = pending;
+        }
+    }
     if f.front_upload.as_ref().is_some_and(|d| d.len() > media::MAX_UPLOAD_BYTES)
         || f.back_upload.as_ref().is_some_and(|d| d.len() > media::MAX_UPLOAD_BYTES)
     {
@@ -1058,6 +1255,20 @@ async fn read_card_form(mut mp: Multipart) -> Result<CardFormData, AppError> {
     }
     Ok(f)
 }
+
+/// The "Add" section: one click to a new card, a new deck, or an import.
+fn add_tabs(current: &str) -> Markup {
+    html! {
+        nav.tabs aria-label="Add" {
+            @for (key, href, label) in [("card", "/cards/new", "Card"), ("deck", "/decks/new", "Deck"), ("import", "/import", "Import")] {
+                a href=(href) aria-current=[(key == current).then_some("page")] { (label) }
+            }
+        }
+    }
+}
+
+/// Value of the deck picker's "New deck…" option.
+const NEW_DECK: &str = "new";
 
 #[allow(clippy::too_many_arguments)]
 fn card_form(
@@ -1069,12 +1280,23 @@ fn card_form(
     front_image: &Option<String>,
     back_image: &Option<String>,
     submit: &str,
+    allow_new_deck: bool,
 ) -> Markup {
+    let new_selected = allow_new_deck && (decks.is_empty() || deck_id.is_none());
     html! {
         form method="post" action=(action) enctype="multipart/form-data" {
             label { "Deck"
-                select name="deck" required {
-                    @for d in decks { option value=(d.id) selected[Some(d.id) == deck_id] { (d.name) } }
+                select name="deck" required data-new-deck-select {
+                    @for d in decks { option value=(d.id) selected[!new_selected && Some(d.id) == deck_id] { (d.name) } }
+                    @if allow_new_deck {
+                        option value=(NEW_DECK) selected[new_selected] { "New deck…" }
+                    }
+                }
+            }
+            @if allow_new_deck {
+                label id="new-deck-field" {
+                    "New deck name"
+                    input type="text" name="new_deck" maxlength="200" placeholder="e.g. Spanish verbs";
                 }
             }
             label { "Front" textarea name="front" rows="4" autofocus { (front) } }
@@ -1101,18 +1323,21 @@ struct NewCardQuery {
 }
 
 async fn card_new_page(State(app): State<AppState>, user: WebUser, Flash(msg): Flash, Query(q): Query<NewCardQuery>) -> WebResult {
-    let decks = app.decks(&user.access()).await?;
-    if decks.is_empty() {
-        return Ok(redirect("/decks/new"));
-    }
-    let deck = q.deck.or_else(|| decks.first().map(|d| d.id));
+    let access = user.access();
+    let decks = app.decks(&access).await?;
+    // The deck from the link, else the one last added to, else the first.
+    let deck = match q.deck {
+        Some(id) => Some(id),
+        None => app.last_used_deck(&access).await?.or_else(|| decks.first().map(|d| d.id)),
+    };
     Ok(layout(
         "Add card",
         Some(&user.0),
         html! {
+            (add_tabs("card"))
             (flash(&msg))
             h1 { "Add card" }
-            (card_form("/cards/new", &decks, deck, "", "", &None, &None, "Add"))
+            (card_form("/cards/new", &decks, deck, "", "", &None, &None, "Add card", true))
         },
     )
     .into_response())
@@ -1121,7 +1346,19 @@ async fn card_new_page(State(app): State<AppState>, user: WebUser, Flash(msg): F
 async fn card_create(State(app): State<AppState>, user: WebUser, mp: Multipart) -> WebResult {
     let access = user.access();
     let f = read_card_form(mp).await?;
-    let deck = f.deck.ok_or_else(|| AppError::bad("pick a deck"))?;
+    let deck = match (&f.new_deck, f.deck) {
+        (Some(name), _) => {
+            if name.trim().is_empty() {
+                return Err(AppError::bad("give the new deck a name").into());
+            }
+            match app.deck_by_name(&access, name).await? {
+                Some(existing) => existing.id,
+                None => app.create_deck(&access, name, "", None).await?.id,
+            }
+        }
+        (None, Some(id)) => id,
+        (None, None) => return Err(AppError::bad("pick a deck").into()),
+    };
     let front_image = match f.front_upload {
         Some(d) => Some(app.store_image(&access, d).await?.id),
         None => None,
@@ -1132,7 +1369,8 @@ async fn card_create(State(app): State<AppState>, user: WebUser, mp: Multipart) 
     };
     app.create_card(&access, deck, &f.front, &f.back, front_image, back_image)
         .await?;
-    Ok(redirect_msg(format!("/cards/new?deck={deck}"), "Added."))
+    let msg = if f.new_deck.is_some() { "Deck created and card added." } else { "Added." };
+    Ok(redirect_msg(format!("/cards/new?deck={deck}"), msg))
 }
 
 async fn card_page(
@@ -1154,7 +1392,7 @@ async fn card_page(
         html! {
             (flash(&msg))
             h1 { "Edit card" }
-            (card_form(&format!("/cards/{id}"), &decks, Some(card.deck_id), &card.front, &card.back, &card.front_image, &card.back_image, "Save"))
+            (card_form(&format!("/cards/{id}"), &decks, Some(card.deck_id), &card.front, &card.back, &card.front_image, &card.back_image, "Save", false))
             h2 { "Scheduling" }
             dl.kv {
                 dt { "State" } dd { (card.card_state().as_str()) @if card.suspended { " (suspended)" } }
@@ -1442,6 +1680,12 @@ async fn settings_page(State(app): State<AppState>, user: WebUser, Flash(msg): F
                 label { "Text size (%)" input type="number" name="font_scale" min="80" max="200" step="10" value=(u.font_scale); }
                 label.check { input type="checkbox" name="four_buttons" value="1" checked[u.four_buttons]; " Show Hard and Easy buttons" }
                 label.check { input type="checkbox" name="optimize_include_agent" value="1" checked[u.optimize_include_agent]; " Use reviews done through agents when optimizing" }
+                fieldset {
+                    legend { "Look on desktop computers" }
+                    label.check { input type="radio" name="desktop_look" value="calm" checked[u.desktop_look != "simple"]; " Calm" }
+                    label.check { input type="radio" name="desktop_look" value="simple" checked[u.desktop_look == "simple"]; " Simple" }
+                    p.muted.small { "Phones, e-readers and browsers without JavaScript always use the simple, high-contrast look." }
+                }
                 button.btn.primary type="submit" { "Save" }
             }
             h2 id="fsrs" { "FSRS" }
@@ -1485,6 +1729,7 @@ struct SettingsForm {
     font_scale: i64,
     four_buttons: Option<String>,
     optimize_include_agent: Option<String>,
+    desktop_look: Option<String>,
 }
 
 async fn settings_update(State(app): State<AppState>, user: WebUser, Form(f): Form<SettingsForm>) -> WebResult {
@@ -1495,6 +1740,7 @@ async fn settings_update(State(app): State<AppState>, user: WebUser, Form(f): Fo
         f.four_buttons.is_some(),
         f.font_scale,
         f.optimize_include_agent.is_some(),
+        f.desktop_look.as_deref().unwrap_or("calm"),
     )
     .await?;
     Ok(redirect_msg("/settings", "Saved."))
@@ -1695,19 +1941,21 @@ async fn import_page(State(app): State<AppState>, user: WebUser, Flash(msg): Fla
         "Import",
         Some(&user.0),
         html! {
+            (add_tabs("import"))
             (flash(&msg))
             h1 { "Import" }
-            h2 { "Anki package" }
-            p { "Upload an " code { ".apkg" } " or " code { ".colpkg" } " file. Each card keeps the first two fields of its note, the first image of each side and its review history. Cloze notes become one card per gap." }
+            h2 { "From Anki (.apkg)" }
+            p { "In Anki, use " strong { "File → Export…" } ", choose " em { "Anki Deck Package (*.apkg)" } " and tick " em { "Include scheduling information" } " to keep your progress. Upload the file here and its decks are created for you." }
+            p.muted.small { "Each card keeps the first two fields of its note, the first image of each side and its review history. Cloze notes become one card per gap. " code { ".colpkg" } " backups work too." }
             form method="post" action="/import" enctype="multipart/form-data" {
                 input type="hidden" name="kind" value="apkg";
                 label.file { "File" input type="file" name="file" accept=".apkg,.colpkg" required; }
-                button.btn.primary type="submit" { "Import Anki package" }
+                button.btn.primary.wide type="submit" { "Import Anki deck" }
             }
-            h2 { "CSV" }
+            h2 { "From a CSV file" }
             p { "One card per line: front, back. Commas, semicolons or tabs work. A header line \"front,back\" is skipped." }
             @if decks.is_empty() {
-                p { a href="/decks/new" { "Create a deck first." } }
+                p { "CSV files go into an existing deck. " a href="/decks/new" { "Create a deck first." } }
             } @else {
                 form method="post" action="/import" enctype="multipart/form-data" {
                     input type="hidden" name="kind" value="csv";
@@ -1802,7 +2050,7 @@ async fn stats_page(State(app): State<AppState>, user: WebUser, Query(q): Query<
             h2 { "Memory" }
             dl.kv {
                 dt { "Reviews, last 30 days" } dd { (s.reviews_30d) }
-                dt { "Recalled when due" } dd { (pct(s.true_retention_30d)) " (" (s.retention_sample_30d) " reviews)" }
+                dt { "Recalled when due" } dd { (pct(s.true_retention_30d)) " (" (s.retention_sample_30d) (if s.retention_sample_30d == 1 { " review)" } else { " reviews)" }) }
                 dt { "Average recall chance now" } dd { (pct(s.average_retrievability)) }
             }
             h2 { "Cards" }

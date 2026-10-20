@@ -226,6 +226,8 @@ pub struct Stats {
     /// Number of cards falling due on each of the next 14 days.
     pub forecast: Vec<(String, i64)>,
     pub average_retrievability: Option<f64>,
+    /// Typical thinking time per answer over the last 30 days, in seconds.
+    pub seconds_per_review: Option<f64>,
 }
 
 pub const MAX_CARD_TEXT: usize = 20_000;
@@ -434,6 +436,17 @@ impl App {
                 .fetch_all(&self.db)
                 .await?;
         Ok(all.into_iter().filter(|d| access.can_see_deck(d.id)).collect())
+    }
+
+    /// The visible deck a card was most recently added to.
+    pub async fn last_used_deck(&self, access: &Access) -> Result<Option<i64>> {
+        let recent: Vec<i64> = sqlx::query_scalar(
+            "SELECT deck_id FROM cards WHERE user_id = ? ORDER BY created_at DESC, id DESC LIMIT 50",
+        )
+        .bind(access.user_id())
+        .fetch_all(&self.db)
+        .await?;
+        Ok(recent.into_iter().find(|d| access.can_see_deck(*d)))
     }
 
     pub async fn deck_by_name(&self, access: &Access, name: &str) -> Result<Option<Deck>> {
@@ -1167,6 +1180,28 @@ impl App {
         Ok(Some(self.card(access, card.id).await?))
     }
 
+    /// When the next already-learned card falls due (after now), in the
+    /// given deck or all visible decks.
+    pub async fn next_review_at(&self, access: &Access, deck_id: Option<i64>) -> Result<Option<i64>> {
+        let deck_ids: Vec<i64> = match deck_id {
+            Some(id) => vec![self.deck(access, id).await?.id],
+            None => self.decks(access).await?.into_iter().map(|d| d.id).collect(),
+        };
+        if deck_ids.is_empty() {
+            return Ok(None);
+        }
+        let sql = format!(
+            "SELECT MIN(due) FROM cards WHERE user_id = ? AND suspended = 0 AND state != 0
+             AND due > ? AND deck_id IN ({})",
+            placeholders(deck_ids.len())
+        );
+        let mut q = sqlx::query_scalar::<_, Option<i64>>(&sql).bind(access.user_id()).bind(now());
+        for id in &deck_ids {
+            q = q.bind(id);
+        }
+        Ok(q.fetch_one(&self.db).await?)
+    }
+
     pub async fn card_history(&self, access: &Access, card_id: i64) -> Result<Vec<Value>> {
         self.card(access, card_id).await?;
         #[derive(sqlx::FromRow)]
@@ -1228,6 +1263,7 @@ impl App {
             streak_days: 0,
             forecast: vec![],
             average_retrievability: None,
+            seconds_per_review: None,
         };
         if deck_ids.is_empty() {
             return Ok(stats);
@@ -1302,6 +1338,7 @@ impl App {
         let start_today = clock.start_of_today();
         let start_30 = clock.day_start(today - Duration::days(30));
         let mut passed = 0;
+        let (mut timed_ms, mut timed) = (0i64, 0i64);
         let mut review_total = 0;
         let mut days = std::collections::HashSet::new();
         for l in &logs {
@@ -1312,6 +1349,10 @@ impl App {
             }
             if l.reviewed_at >= start_30 {
                 stats.reviews_30d += 1;
+                if let Some(ms) = l.duration_ms.filter(|ms| *ms > 0) {
+                    timed_ms += ms;
+                    timed += 1;
+                }
                 if l.state_before == CardState::Review as i64 {
                     review_total += 1;
                     if l.rating > 1 {
@@ -1330,6 +1371,9 @@ impl App {
             day -= Duration::days(1);
         }
         stats.minutes_today = (stats.minutes_today * 10.0).round() / 10.0;
+        if timed >= 10 {
+            stats.seconds_per_review = Some(timed_ms as f64 / timed as f64 / 1000.0);
+        }
         Ok(stats)
     }
 
@@ -1343,19 +1387,24 @@ impl App {
         four_buttons: bool,
         font_scale: i64,
         optimize_include_agent: bool,
+        desktop_look: &str,
     ) -> Result<()> {
+        if !matches!(desktop_look, "calm" | "simple") {
+            return Err(AppError::bad("unknown look"));
+        }
         timezone
             .parse::<chrono_tz::Tz>()
             .map_err(|_| AppError::bad(format!("unknown timezone '{timezone}'")))?;
         sqlx::query(
             "UPDATE users SET timezone = ?, rollover_hour = ?, four_buttons = ?, font_scale = ?,
-                optimize_include_agent = ? WHERE id = ?",
+                optimize_include_agent = ?, desktop_look = ? WHERE id = ?",
         )
         .bind(timezone)
         .bind(rollover_hour.clamp(0, 23))
         .bind(four_buttons)
         .bind(font_scale.clamp(80, 200))
         .bind(optimize_include_agent)
+        .bind(desktop_look)
         .bind(user_id)
         .execute(&self.db)
         .await?;

@@ -612,6 +612,36 @@ mod http {
     }
 
     #[tokio::test]
+    async fn desktop_look_is_opt_in_by_script_and_setting() {
+        let app = app().await;
+        let a = user(&app, "kolja").await;
+        let cookie = login_cookie(&app, "kolja").await;
+        let page = |c: String| Request::get("/").header(header::COOKIE, c).body(Body::empty()).unwrap();
+        let body = axum::body::to_bytes(send(&app, page(cookie.clone())).await.into_body(), usize::MAX).await.unwrap();
+        let html = String::from_utf8_lossy(&body);
+        // The base page is the simple look; the hand-drawn one is only a
+        // desktop-only stylesheet that theme.js may switch on.
+        assert!(html.contains(r#"data-look="calm""#));
+        assert!(html.contains(r#"<link rel="stylesheet" href="/style.css">"#));
+        assert!(html.contains(r#"href="/calm.css" media="(min-width: 60em) and (hover: hover) and (pointer: fine)""#));
+        assert!(html.contains(r#"<script src="/theme.js">"#));
+        assert!(!html.contains(r#"class="calm""#));
+
+        app.update_settings(a.user_id(), "UTC", 4, false, 100, true, "simple").await.unwrap();
+        let body = axum::body::to_bytes(send(&app, page(cookie)).await.into_body(), usize::MAX).await.unwrap();
+        assert!(String::from_utf8_lossy(&body).contains(r#"data-look="simple""#));
+        assert!(app.update_settings(a.user_id(), "UTC", 4, false, 100, true, "neon").await.is_err());
+
+        for (path, kind) in [("/calm.css", "text/css"), ("/theme.js", "text/javascript"), ("/fonts/newsreader-latin.woff2", "font/woff2")] {
+            let res = send(&app, Request::get(path).body(Body::empty()).unwrap()).await;
+            assert_eq!(res.status(), StatusCode::OK, "{path}");
+            assert!(res.headers()[header::CONTENT_TYPE].to_str().unwrap().starts_with(kind));
+        }
+        let res = send(&app, Request::get("/fonts/../ainki.db").body(Body::empty()).unwrap()).await;
+        assert_eq!(res.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
     async fn mcp_requires_a_token() {
         let app = app().await;
         let res = send(
