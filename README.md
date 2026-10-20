@@ -5,8 +5,8 @@ An AI-native flashcard service. Like Anki, but:
 - **AI-native.** Agents get a full MCP API. Anything you can do on the website, an agent can do too, within the permissions you give it. Connecting Claude takes a URL and one click.
 - **FSRS by default.** Scheduling uses FSRS-6 with researched defaults and presets for common situations. One button fits the parameters to your own memory.
 - **Simple cards.** A front and a back. Each is Markdown text plus an optional image. No note types, no templates.
-- **Web first, mobile first.** One website that works well on a phone and on e-ink readers: grayscale, high contrast, no animations, large tap targets, no JavaScript required. Images are dithered to 16 gray levels on upload. With JavaScript you can also study offline.
-- **A warmer look on desktop.** On computers, AiNKI switches to a calm look: a quiet warm page, a serif for your cards, a collapsible side rail instead of a header, Terra Cotta and Wild Orchid accents, and buttons that tilt a little toward the cursor. Phones, e-readers and browsers without JavaScript always get the simple look, and anyone can choose it in settings.
+- **Web first, mobile first.** One website that works well on a phone and on e-ink readers: grayscale, high contrast, no animations, large tap targets, no JavaScript required. Images are dithered to 16 gray levels on upload. With JavaScript, studying never reloads the page.
+- **A warmer look on desktop.** On computers, AiNKI switches to a calm look: a quiet warm page, a serif for your cards, a side rail of dots that slides open under the cursor instead of a header, Terra Cotta and Wild Orchid accents, and buttons that tilt a little toward the cursor. Phones, e-readers and browsers without JavaScript always get the simple look, and anyone can choose it in settings.
 
 Accounts are a username and password. Usernames get a Discord-style tag (`kolja#4821`), so two people can pick the same name.
 
@@ -97,12 +97,6 @@ Tools: `get_overview`, `list_decks`, `create_deck`, `update_deck`, `delete_deck`
 
 On a deck's **Share** section, enter someone's `name#1234`. The deck shows up on their home page, and when they accept they get their own copy: same cards and images, fresh progress. Later edits on either side don't carry over.
 
-## Studying offline
-
-Whenever you open AiNKI online, your browser quietly downloads today's study queue and card images. Without a connection, AiNKI opens the offline study page (or tap **Study offline** on the home page). Answers are kept on the device and sent when you're back online. The server replays them with the time you actually answered, so scheduling is the same as if you had been online.
-
-Offline studying needs JavaScript and covers studying only; adding or editing cards needs a connection. A card that was also answered somewhere else in the meantime keeps the other answer.
-
 ## Scheduling
 
 AiNKI uses the [FSRS](https://github.com/open-spaced-repetition/fsrs4anki/wiki/The-Algorithm) model through the [`fsrs`](https://crates.io/crates/fsrs) crate (FSRS-6). FSRS tracks each card's *stability* (how long until recall drops to 90%) and *difficulty*. It schedules the next review for when your chance of recalling the card drops to your *desired retention*.
@@ -160,7 +154,7 @@ The code:
 - `src/mcp.rs`: the MCP server (rmcp, Streamable HTTP, stateless).
 - `src/oauth.rs`: OAuth 2.1 authorization server for MCP clients.
 - `src/share.rs`: deck sharing.
-- `src/offline.rs`, `src/static/`: offline queue and sync; service worker and browser script.
+- `src/static/app.js`: the browser script: studying without page reloads, small touches. Everything works without it.
 - `src/security.rs`: rate limiting, security headers, Origin checks, flash messages.
 - `src/style.css`: the simple look (the base everywhere). `src/static/calm.css` and `theme.js`: the calm desktop look, switched on only by script on wide screens with a mouse that aren't e-ink. Fonts (Newsreader, Source Sans 3; SIL Open Font License) are served by AiNKI itself.
 - `src/import.rs`: Anki and CSV import, CSV export.
