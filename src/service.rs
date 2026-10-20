@@ -436,6 +436,17 @@ impl App {
         Ok(all.into_iter().filter(|d| access.can_see_deck(d.id)).collect())
     }
 
+    /// The visible deck a card was most recently added to.
+    pub async fn last_used_deck(&self, access: &Access) -> Result<Option<i64>> {
+        let recent: Vec<i64> = sqlx::query_scalar(
+            "SELECT deck_id FROM cards WHERE user_id = ? ORDER BY created_at DESC, id DESC LIMIT 50",
+        )
+        .bind(access.user_id())
+        .fetch_all(&self.db)
+        .await?;
+        Ok(recent.into_iter().find(|d| access.can_see_deck(*d)))
+    }
+
     pub async fn deck_by_name(&self, access: &Access, name: &str) -> Result<Option<Deck>> {
         let deck: Option<Deck> =
             sqlx::query_as("SELECT * FROM decks WHERE user_id = ? AND name = ? COLLATE NOCASE")

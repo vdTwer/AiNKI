@@ -561,7 +561,7 @@ async fn home(State(app): State<AppState>, user: WebUser, Flash(msg): Flash) -> 
             }
             h1 { "Decks" }
             @if decks.is_empty() {
-                p { "No decks yet. Create one, or import from Anki or a CSV file." }
+                p { "No decks yet. Create one, or bring your Anki decks along." }
             }
             ul.list {
                 @for d in &decks {
@@ -582,8 +582,9 @@ async fn home(State(app): State<AppState>, user: WebUser, Flash(msg): Flash) -> 
                 }
             }
             p.actions {
+                a.btn href="/cards/new" { "Add card" }
                 a.btn href="/decks/new" { "New deck" }
-                a.btn href="/import" { "Import" }
+                a.btn href="/import" { "Import from Anki" }
             }
         },
     )
@@ -766,6 +767,7 @@ async fn deck_new_page(State(app): State<AppState>, user: WebUser) -> WebResult 
         "New deck",
         Some(&user.0),
         html! {
+            (add_tabs("deck"))
             h1 { "New deck" }
             form method="post" action="/decks/new" {
                 label { "Name" input type="text" name="name" required autofocus; }
@@ -792,7 +794,8 @@ async fn deck_create(State(app): State<AppState>, user: WebUser, Form(f): Form<D
     let deck = app
         .create_deck(&user.access(), &f.name, &f.description, f.preset_id)
         .await?;
-    Ok(redirect(format!("/decks/{}", deck.id)))
+    // Straight on to filling it.
+    Ok(redirect_msg(format!("/cards/new?deck={}", deck.id), "Deck created. Add its first card."))
 }
 
 #[derive(Deserialize, Default)]
@@ -1019,6 +1022,9 @@ async fn deck_export(State(app): State<AppState>, user: WebUser, Path(id): Path<
 #[derive(Default)]
 struct CardFormData {
     deck: Option<i64>,
+    /// Set when the picker says "New deck…": the name to create.
+    new_deck: Option<String>,
+    pending_new_deck: Option<String>,
     front: String,
     back: String,
     front_upload: Option<Vec<u8>>,
@@ -1041,7 +1047,17 @@ async fn read_card_form(mut mp: Multipart) -> Result<CardFormData, AppError> {
             .map_err(|e| AppError::bad(format!("upload failed: {e}")))?;
         let text = || String::from_utf8_lossy(&data).to_string();
         match name.as_str() {
+            "deck" if text() == NEW_DECK => f.new_deck = Some(String::new()),
             "deck" => f.deck = text().parse().ok(),
+            "new_deck" => {
+                if let Some(name) = f.new_deck.as_mut() {
+                    *name = text();
+                } else {
+                    // Only used when "New deck…" is picked; remember it in
+                    // case the picker comes later in the form.
+                    f.pending_new_deck = Some(text());
+                }
+            }
             "front" => f.front = text(),
             "back" => f.back = text(),
             "front_image" if !data.is_empty() => f.front_upload = Some(data.to_vec()),
@@ -1051,6 +1067,11 @@ async fn read_card_form(mut mp: Multipart) -> Result<CardFormData, AppError> {
             _ => {}
         }
     }
+    if let (Some(name), Some(pending)) = (f.new_deck.as_mut(), f.pending_new_deck.take()) {
+        if name.is_empty() {
+            *name = pending;
+        }
+    }
     if f.front_upload.as_ref().is_some_and(|d| d.len() > media::MAX_UPLOAD_BYTES)
         || f.back_upload.as_ref().is_some_and(|d| d.len() > media::MAX_UPLOAD_BYTES)
     {
@@ -1058,6 +1079,20 @@ async fn read_card_form(mut mp: Multipart) -> Result<CardFormData, AppError> {
     }
     Ok(f)
 }
+
+/// The "Add" section: one click to a new card, a new deck, or an import.
+fn add_tabs(current: &str) -> Markup {
+    html! {
+        nav.tabs aria-label="Add" {
+            @for (key, href, label) in [("card", "/cards/new", "Card"), ("deck", "/decks/new", "Deck"), ("import", "/import", "Import")] {
+                a href=(href) aria-current=[(key == current).then_some("page")] { (label) }
+            }
+        }
+    }
+}
+
+/// Value of the deck picker's "New deck…" option.
+const NEW_DECK: &str = "new";
 
 #[allow(clippy::too_many_arguments)]
 fn card_form(
@@ -1069,12 +1104,23 @@ fn card_form(
     front_image: &Option<String>,
     back_image: &Option<String>,
     submit: &str,
+    allow_new_deck: bool,
 ) -> Markup {
+    let new_selected = allow_new_deck && (decks.is_empty() || deck_id.is_none());
     html! {
         form method="post" action=(action) enctype="multipart/form-data" {
             label { "Deck"
-                select name="deck" required {
-                    @for d in decks { option value=(d.id) selected[Some(d.id) == deck_id] { (d.name) } }
+                select name="deck" required data-new-deck-select {
+                    @for d in decks { option value=(d.id) selected[!new_selected && Some(d.id) == deck_id] { (d.name) } }
+                    @if allow_new_deck {
+                        option value=(NEW_DECK) selected[new_selected] { "New deck…" }
+                    }
+                }
+            }
+            @if allow_new_deck {
+                label id="new-deck-field" {
+                    "New deck name"
+                    input type="text" name="new_deck" maxlength="200" placeholder="e.g. Spanish verbs";
                 }
             }
             label { "Front" textarea name="front" rows="4" autofocus { (front) } }
@@ -1101,18 +1147,21 @@ struct NewCardQuery {
 }
 
 async fn card_new_page(State(app): State<AppState>, user: WebUser, Flash(msg): Flash, Query(q): Query<NewCardQuery>) -> WebResult {
-    let decks = app.decks(&user.access()).await?;
-    if decks.is_empty() {
-        return Ok(redirect("/decks/new"));
-    }
-    let deck = q.deck.or_else(|| decks.first().map(|d| d.id));
+    let access = user.access();
+    let decks = app.decks(&access).await?;
+    // The deck from the link, else the one last added to, else the first.
+    let deck = match q.deck {
+        Some(id) => Some(id),
+        None => app.last_used_deck(&access).await?.or_else(|| decks.first().map(|d| d.id)),
+    };
     Ok(layout(
         "Add card",
         Some(&user.0),
         html! {
+            (add_tabs("card"))
             (flash(&msg))
             h1 { "Add card" }
-            (card_form("/cards/new", &decks, deck, "", "", &None, &None, "Add"))
+            (card_form("/cards/new", &decks, deck, "", "", &None, &None, "Add card", true))
         },
     )
     .into_response())
@@ -1121,7 +1170,19 @@ async fn card_new_page(State(app): State<AppState>, user: WebUser, Flash(msg): F
 async fn card_create(State(app): State<AppState>, user: WebUser, mp: Multipart) -> WebResult {
     let access = user.access();
     let f = read_card_form(mp).await?;
-    let deck = f.deck.ok_or_else(|| AppError::bad("pick a deck"))?;
+    let deck = match (&f.new_deck, f.deck) {
+        (Some(name), _) => {
+            if name.trim().is_empty() {
+                return Err(AppError::bad("give the new deck a name").into());
+            }
+            match app.deck_by_name(&access, name).await? {
+                Some(existing) => existing.id,
+                None => app.create_deck(&access, name, "", None).await?.id,
+            }
+        }
+        (None, Some(id)) => id,
+        (None, None) => return Err(AppError::bad("pick a deck").into()),
+    };
     let front_image = match f.front_upload {
         Some(d) => Some(app.store_image(&access, d).await?.id),
         None => None,
@@ -1132,7 +1193,8 @@ async fn card_create(State(app): State<AppState>, user: WebUser, mp: Multipart) 
     };
     app.create_card(&access, deck, &f.front, &f.back, front_image, back_image)
         .await?;
-    Ok(redirect_msg(format!("/cards/new?deck={deck}"), "Added."))
+    let msg = if f.new_deck.is_some() { "Deck created and card added." } else { "Added." };
+    Ok(redirect_msg(format!("/cards/new?deck={deck}"), msg))
 }
 
 async fn card_page(
@@ -1154,7 +1216,7 @@ async fn card_page(
         html! {
             (flash(&msg))
             h1 { "Edit card" }
-            (card_form(&format!("/cards/{id}"), &decks, Some(card.deck_id), &card.front, &card.back, &card.front_image, &card.back_image, "Save"))
+            (card_form(&format!("/cards/{id}"), &decks, Some(card.deck_id), &card.front, &card.back, &card.front_image, &card.back_image, "Save", false))
             h2 { "Scheduling" }
             dl.kv {
                 dt { "State" } dd { (card.card_state().as_str()) @if card.suspended { " (suspended)" } }
@@ -1695,19 +1757,21 @@ async fn import_page(State(app): State<AppState>, user: WebUser, Flash(msg): Fla
         "Import",
         Some(&user.0),
         html! {
+            (add_tabs("import"))
             (flash(&msg))
             h1 { "Import" }
-            h2 { "Anki package" }
-            p { "Upload an " code { ".apkg" } " or " code { ".colpkg" } " file. Each card keeps the first two fields of its note, the first image of each side and its review history. Cloze notes become one card per gap." }
+            h2 { "From Anki (.apkg)" }
+            p { "In Anki, use " strong { "File → Export…" } ", choose " em { "Anki Deck Package (*.apkg)" } " and tick " em { "Include scheduling information" } " to keep your progress. Upload the file here and its decks are created for you." }
+            p.muted.small { "Each card keeps the first two fields of its note, the first image of each side and its review history. Cloze notes become one card per gap. " code { ".colpkg" } " backups work too." }
             form method="post" action="/import" enctype="multipart/form-data" {
                 input type="hidden" name="kind" value="apkg";
                 label.file { "File" input type="file" name="file" accept=".apkg,.colpkg" required; }
-                button.btn.primary type="submit" { "Import Anki package" }
+                button.btn.primary.wide type="submit" { "Import Anki deck" }
             }
-            h2 { "CSV" }
+            h2 { "From a CSV file" }
             p { "One card per line: front, back. Commas, semicolons or tabs work. A header line \"front,back\" is skipped." }
             @if decks.is_empty() {
-                p { a href="/decks/new" { "Create a deck first." } }
+                p { "CSV files go into an existing deck. " a href="/decks/new" { "Create a deck first." } }
             } @else {
                 form method="post" action="/import" enctype="multipart/form-data" {
                     input type="hidden" name="kind" value="csv";

@@ -37,6 +37,23 @@
     try { tz.value = Intl.DateTimeFormat().resolvedOptions().timeZone; } catch (e) {}
   }
 
+  // Card form: only show the new deck name when "New deck…" is picked.
+  var deckSelect = document.querySelector('[data-new-deck-select]');
+  var newDeckField = document.getElementById('new-deck-field');
+  if (deckSelect && newDeckField) {
+    var toggle = function () {
+      var isNew = deckSelect.value === 'new';
+      newDeckField.hidden = !isNew;
+      var input = newDeckField.querySelector('input');
+      if (input) input.required = isNew;
+    };
+    deckSelect.addEventListener('change', function () {
+      toggle();
+      if (deckSelect.value === 'new') newDeckField.querySelector('input').focus();
+    });
+    toggle();
+  }
+
   // Keyboard shortcuts on the (online) study pages: space shows the answer,
   // 1-4 answer. Everything also works without them.
   if (body.getAttribute('data-page') !== 'offline') {
