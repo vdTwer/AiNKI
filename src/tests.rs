@@ -286,53 +286,6 @@ fn tiny_png() -> Vec<u8> {
 }
 
 #[tokio::test]
-async fn offline_answers_replay_in_order() {
-    use crate::offline::OfflineAnswer;
-    let app = app().await;
-    let a = user(&app, "kolja").await;
-    let deck = app.create_deck(&a, "D", "", None).await.unwrap();
-    let c1 = app.create_card(&a, deck.id, "one", "1", None, None).await.unwrap();
-    let c2 = app.create_card(&a, deck.id, "two", "2", None, None).await.unwrap();
-
-    let q = app.offline_queue(&a).await.unwrap();
-    let items = q["items"].as_array().unwrap();
-    assert_eq!(items.len(), 2);
-    assert_eq!(items[0]["previews"]["again"]["secs"], 600);
-
-    let t = now() - 3600;
-    let ans = |id: &str, card: i64, rating: &str, reps: i64, at: i64| OfflineAnswer {
-        client_id: id.into(),
-        card_id: card,
-        rating: rating.into(),
-        reps,
-        answered_at: at,
-        duration_ms: Some(4000),
-    };
-    // Sent out of order on purpose; the server sorts by time.
-    let results = app
-        .offline_sync(&a, vec![ans("b", c1.id, "good", 1, t + 700), ans("a", c1.id, "again", 0, t), ans("c", c2.id, "good", 0, t + 10)])
-        .await
-        .unwrap();
-    assert!(results.iter().all(|r| r.status == "ok"), "{results:?}");
-    let card = app.card(&a, c1.id).await.unwrap();
-    assert_eq!(card.reps, 2);
-    assert_eq!(card.card_state(), CardState::Review);
-    assert_eq!(card.last_review, Some(t + 700));
-
-    // Retrying the same sync is harmless.
-    let again = app.offline_sync(&a, vec![ans("a", c1.id, "again", 0, t)]).await.unwrap();
-    assert_eq!(again[0].status, "duplicate");
-    // An answer for a card that moved on in the meantime is skipped.
-    let stale = app.offline_sync(&a, vec![ans("d", c2.id, "again", 0, t + 20)]).await.unwrap();
-    assert_eq!(stale[0].status, "stale");
-    assert_eq!(app.card(&a, c2.id).await.unwrap().reps, 1);
-    // Future timestamps are clamped to now.
-    let c3 = app.create_card(&a, deck.id, "three", "3", None, None).await.unwrap();
-    app.offline_sync(&a, vec![ans("e", c3.id, "good", 0, now() + 86_400)]).await.unwrap();
-    assert!(app.card(&a, c3.id).await.unwrap().last_review.unwrap() <= now());
-}
-
-#[tokio::test]
 async fn oauth_flow() {
     use base64::Engine;
     use sha2::Digest;
@@ -639,6 +592,25 @@ mod http {
         }
         let res = send(&app, Request::get("/fonts/../ainki.db").body(Body::empty()).unwrap()).await;
         assert_eq!(res.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn study_page_carries_both_sides() {
+        let app = app().await;
+        let a = user(&app, "kolja").await;
+        let deck = app.create_deck(&a, "Languages::Spanish", "", None).await.unwrap();
+        app.create_card(&a, deck.id, "el perro", "the dog", None, None).await.unwrap();
+        let cookie = login_cookie(&app, "kolja").await;
+        let res = send(&app, Request::get("/study").header(header::COOKIE, cookie).body(Body::empty()).unwrap()).await;
+        let html = String::from_utf8_lossy(&axum::body::to_bytes(res.into_body(), usize::MAX).await.unwrap()).into_owned();
+        // The answer is already on the page, hidden until revealed.
+        assert!(html.contains("the dog"));
+        assert!(html.contains(r#"<section class="face back" id="answer" hidden>"#));
+        assert!(html.contains(r#"action="/study/answer" hidden>"#));
+        // Nested deck names are shown as a path, not with "::".
+        assert!(!html.contains("Languages::Spanish"));
+        assert!(html.contains(r#"<span class="deck-leaf">Spanish</span>"#));
+        assert!(!html.contains("/offline"));
     }
 
     #[tokio::test]

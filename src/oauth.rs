@@ -801,7 +801,7 @@ pub async fn authorize_page(
                     @if !decks.is_empty() {
                         label.check { input type="radio" name="scope_decks" value="some"; " Only these:" }
                         @for d in &decks {
-                            label.check.indent { input type="checkbox" name="decks" value=(d.id); " " (d.name) }
+                            label.check.indent { input type="checkbox" name="decks" value=(d.id); " " (crate::web::deck_plain(&d.name)) }
                         }
                     }
                 }

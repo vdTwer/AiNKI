@@ -25,12 +25,13 @@ use crate::{
     import, markdown, mcp, media, now, oauth, presets,
     security::{self, ClientIp, Flash},
     scheduler::{self, CardState, Rating},
-    service::{CardFilter, CardInput, PresetInput, fmt_ts},
+    service::{Card, CardFilter, CardInput, Deck, PresetInput, fmt_ts},
 };
 
 const CSS: &str = include_str!("style.css");
 const CALM_CSS: &str = include_str!("static/calm.css");
 const THEME_JS: &str = include_str!("static/theme.js");
+const APP_JS: &str = include_str!("static/app.js");
 const FONTS: &[(&str, &[u8])] = &[
     ("newsreader-italic-latin-ext.woff2", include_bytes!("static/fonts/newsreader-italic-latin-ext.woff2")),
     ("newsreader-italic-latin.woff2", include_bytes!("static/fonts/newsreader-italic-latin.woff2")),
@@ -124,9 +125,7 @@ pub fn router(app: AppState) -> Router {
         .route("/tokens/{id}/revoke", post(token_revoke))
         .route("/stats", get(stats_page))
         .route("/media/{id}", get(media_file))
-        .route("/api/offline/queue", get(offline_queue))
         .layer(small)
-        .route("/api/offline/sync", post(offline_sync).layer(DefaultBodyLimit::max(2 * 1024 * 1024)))
         .route("/cards/new", get(card_new_page).post(card_create).layer(card_upload))
         .route("/cards/{id}", get(card_page).post(card_update).layer(card_upload))
         .route(
@@ -141,9 +140,8 @@ pub fn router(app: AppState) -> Router {
         .route("/calm.css", get(|| static_file("text/css; charset=utf-8", CALM_CSS.as_bytes())))
         .route("/theme.js", get(|| static_file("text/javascript; charset=utf-8", THEME_JS.as_bytes())))
         .route("/fonts/{name}", get(font_file))
-        .route("/offline", get(offline_page))
-        .route("/offline.js", get(offline_js))
-        .route("/sw.js", get(service_worker))
+        // Revalidated on every load so pages and their script stay in step.
+        .route("/app.js", get(|| async { ([(header::CONTENT_TYPE, "text/javascript; charset=utf-8"), (header::CACHE_CONTROL, "no-cache")], APP_JS) }))
         .route("/healthz", get(|| async { "ok" }));
     Router::new()
         .merge(browser_routes)
@@ -277,16 +275,27 @@ pub fn urlenc(s: &str) -> String {
 /// Where the Calm look may apply; must match static/theme.js.
 const DESKTOP_MEDIA: &str = "(min-width: 60em) and (hover: hover) and (pointer: fine)";
 
-/// Collapses the side rail (Calm look only; hidden otherwise).
-fn rail_toggle() -> Markup {
+/// Nested Anki decks arrive as "Languages::Spanish". The parents are shown
+/// as a quiet path, the deck's own name last: "Languages › Spanish".
+fn deck_parts(name: &str) -> Vec<&str> {
+    let parts: Vec<&str> = name.split("::").map(str::trim).filter(|p| !p.is_empty()).collect();
+    if parts.is_empty() { vec![name] } else { parts }
+}
+
+fn deck_title(name: &str) -> Markup {
+    let parts = deck_parts(name);
+    let (leaf, parents) = parts.split_last().expect("at least one part");
     html! {
-        button.rail-toggle type="button" aria-expanded="true" aria-label="Hide menu" {
-            svg viewBox="0 0 14 14" aria-hidden="true" focusable="false" {
-                path d="M9 3 L5 7 L9 11" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" {}
-            }
-            span.rail-toggle-label { "Hide" }
+        @if !parents.is_empty() {
+            span.deck-path { @for p in parents { (p) span.sep aria-hidden="true" { "›" } } }
         }
+        span.deck-leaf { (leaf) }
     }
+}
+
+/// The same for places that only take text (titles, options, lists).
+pub fn deck_plain(name: &str) -> String {
+    deck_parts(name).join(" › ")
 }
 
 /// "Tuesday, 20 October" in the user's timezone.
@@ -314,7 +323,7 @@ pub fn layout(title: &str, user: Option<&User>, body: Markup) -> Markup {
     page(title, user, None, body)
 }
 
-/// `page_kind` marks special pages for the offline script.
+/// `page_kind` marks special pages for app.js.
 fn page(title: &str, user: Option<&User>, page_kind: Option<&str>, body: Markup) -> Markup {
     let scale = user.map(|u| u.font_scale).unwrap_or(100) as f64 / 100.0;
     html! {
@@ -339,23 +348,16 @@ fn page(title: &str, user: Option<&User>, page_kind: Option<&str>, body: Markup)
                 // collapsible rail on the left.
                 @if let Some(u) = user {
                     nav.top aria-label="Main" {
-                        a.brand href="/" data-nav="decks" { "AiNKI" }
+                        a.brand href="/" data-nav="decks" data-label="AiNKI" { "AiNKI" }
                         a.rail-only href="/" data-nav="decks" data-label="Decks" { "Decks" }
                         a href="/study" data-nav="study" data-label="Study" { "Study" }
                         a href="/cards/new" data-nav="add" data-label="Add" { "Add" }
                         a href="/stats" data-nav="stats" data-label="Stats" { "Stats" }
                         a href="/settings" data-nav="settings" data-label="Settings" title=(u.handle()) { "Settings" }
-                        (rail_toggle())
-                    }
-                } @else if page_kind == Some("offline") {
-                    nav.top aria-label="Main" {
-                        a.brand href="/" data-nav="decks" { "AiNKI" }
-                        a href="/offline" data-nav="study" data-label="Study offline" { "Study offline" }
-                        (rail_toggle())
                     }
                 }
                 main { (body) }
-                script src="/offline.js" defer {}
+                script src="/app.js" defer {}
             }
         }
     }
@@ -395,7 +397,7 @@ fn time_days(days: i64) -> time::Duration {
 }
 
 /// Small static assets. They change only with a new release, so an hour of
-/// caching is plenty (the service worker refreshes them too).
+/// caching is plenty.
 async fn static_file(content_type: &'static str, body: &'static [u8]) -> Response {
     (
         [(header::CONTENT_TYPE, content_type), (header::CACHE_CONTROL, "public, max-age=3600")],
@@ -454,7 +456,7 @@ fn auth_form(signup: bool, error: Option<&str>, allow_signup: bool, next: Option
             @if next.is_some_and(|n| n.starts_with("/oauth/")) {
                 p.notice { "Log in to connect an app to your AiNKI account." }
             }
-            form method="post" action=(action) data-clear-offline {
+            form method="post" action=(action) {
                 label {
                     "Username"
                     @if !signup { span.muted { " (name or name#1234)" } }
@@ -635,12 +637,6 @@ async fn home(State(app): State<AppState>, user: WebUser, Flash(msg): Flash) -> 
                 @if total_due > 0 {
                     p { a.btn.primary.start href="/study" { "Start studying " span.arrow aria-hidden="true" { "→" } } }
                 }
-                @if !decks.is_empty() {
-                    p.small.offline-line {
-                        a href="/offline" { "Study offline" }
-                        " " span.muted id="offline-status" {}
-                    }
-                }
             }
             @if !shares.is_empty() {
                 h2 { "Shared with you" }
@@ -648,7 +644,7 @@ async fn home(State(app): State<AppState>, user: WebUser, Flash(msg): Flash) -> 
                     @for sh in &shares {
                         li.token {
                             div.grow {
-                                strong { (sh.deck_name) } br;
+                                strong { (deck_title(&sh.deck_name)) } br;
                                 span.small { (sh.cards) (if sh.cards == 1 { " card" } else { " cards" }) " from " (sh.from) }
                             }
                             form method="post" action=(format!("/shares/{}", sh.id)) {
@@ -676,7 +672,7 @@ async fn home(State(app): State<AppState>, user: WebUser, Flash(msg): Flash) -> 
                         li {
                             a.row href=(format!("/decks/{}", d.deck.id)) {
                                 span.grow {
-                                    span.deck-name { (d.deck.name) }
+                                    span.deck-name { (deck_title(&d.deck.name)) }
                                     @if let Some(exam) = &d.deck.exam_date {
                                         span.sub { "Exam on " (exam) }
                                     } @else if d.due_total() == 0 && d.total > 0 {
@@ -739,7 +735,7 @@ fn study_foot(deck_name: &str, deck_id: i64, done: i64, total: i64, q_deck: Opti
                 div.bar data-progress=(pct) style=(format!("width:{pct}%")) {}
             }
             div.study-meta {
-                a href=(format!("/decks/{deck_id}")) { (deck_name) }
+                a href=(format!("/decks/{deck_id}")) { (deck_title(deck_name)) }
                 span.count { (position) " of " (total) }
             }
             div.study-tools {
@@ -748,6 +744,24 @@ fn study_foot(deck_name: &str, deck_id: i64, done: i64, total: i64, q_deck: Opti
                     button.link type="submit" { "Undo" }
                 }
                 @if let Some(id) = card_id { a href=(format!("/cards/{id}")) { "Edit card" } }
+            }
+        }
+    }
+}
+
+/// The closing moment of a session (Calm look only): the progress line
+/// draws itself full, folds into a dot, and the dot swells into a check
+/// with a ripple and a few sparks.
+fn end_mark() -> Markup {
+    html! {
+        div.end-mark aria-hidden="true" {
+            div.end-line {}
+            div.end-ring {}
+            div.end-sparks { @for i in 0..8 { span style=(format!("--a:{}deg", i * 45)) {} } }
+            div.end-disc {
+                svg viewBox="0 0 24 24" focusable="false" {
+                    path d="M6.5 12.5 L10.5 16.5 L17.5 8.5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" {}
+                }
             }
         }
     }
@@ -762,58 +776,81 @@ fn state_tag(state: CardState) -> Markup {
     html! { p.card-state { span.dot.(class) aria-hidden="true" {} (label) } }
 }
 
+/// One card. The answer side and the rating buttons are always on the page;
+/// before the reveal they are hidden, and app.js shows them without a round
+/// trip. Without JavaScript "Show answer" loads the revealed page instead.
+#[allow(clippy::too_many_arguments)]
+async fn study_card(
+    app: &App,
+    access: &Access,
+    user: &User,
+    msg: &Option<String>,
+    card: &Card,
+    deck: &Deck,
+    q_deck: Option<i64>,
+    shown: i64,
+    revealed: bool,
+) -> Result<Markup, AppError> {
+    let previews = app.previews(access, card, deck).await?;
+    let (done, total) = session_progress(app, access, q_deck).await?;
+    let four = user.four_buttons;
+    let buttons: Vec<(Rating, &str, &str)> = if four {
+        vec![
+            (Rating::Again, "Again", "1"),
+            (Rating::Hard, "Hard", "2"),
+            (Rating::Good, "Good", "3"),
+            (Rating::Easy, "Easy", "4"),
+        ]
+    } else {
+        vec![(Rating::Again, "Again", "1"), (Rating::Good, "Good", "3")]
+    };
+    let deck_param = q_deck.map(|d| format!("&deck={d}")).unwrap_or_default();
+    Ok(page(
+        "Study",
+        Some(user),
+        Some("study"),
+        html! {
+            (flash(msg))
+            section.study.revealed[revealed] {
+                div.card-area {
+                    (state_tag(card.card_state()))
+                    section.face.front { (face(&card.front, &card.front_image)) }
+                    hr.divider hidden[!revealed];
+                    section.face.back id="answer" hidden[!revealed] { (face(&card.back, &card.back_image)) }
+                }
+                p.reveal hidden[revealed] {
+                    a.btn.primary.show data-key=" " href=(format!("/study?card={}&show=1&t={}{}#answer", card.id, shown, deck_param)) {
+                        "Show answer" span.key { "space" }
+                    }
+                }
+                form.answers.cols-2[!four].cols-4[four] method="post" action="/study/answer" hidden[!revealed] {
+                    input type="hidden" name="card" value=(card.id);
+                    input type="hidden" name="reps" value=(card.reps);
+                    input type="hidden" name="t" value=(shown);
+                    @if let Some(d) = q_deck { input type="hidden" name="deck" value=(d); }
+                    @for (rating, label, key) in &buttons {
+                        @let preview = previews.iter().find(|(r, _)| r == rating).map(|(_, p)| p.as_str()).unwrap_or("");
+                        button.btn.primary[*rating == Rating::Good].again[*rating == Rating::Again] type="submit" name="rating" value=(*rating as i64) data-key=(key) {
+                            span.label { (label) " " span.key { (key) } }
+                            span.ivl { (preview) }
+                        }
+                    }
+                }
+                (study_foot(&deck.name, deck.id, done, total, q_deck, Some(card.id)))
+            }
+        },
+    ))
+}
+
 async fn study(State(app): State<AppState>, user: WebUser, Flash(msg): Flash, Query(q): Query<StudyQuery>) -> WebResult {
     let access = user.access();
-    let deck_param = q.deck.map(|d| format!("&deck={d}")).unwrap_or_default();
 
     // Answer side of a specific card.
     if let (Some(card_id), Some(1)) = (q.card, q.show) {
         let card = app.card(&access, card_id).await?;
         let deck = app.deck(&access, card.deck_id).await?;
-        let previews = app.previews(&access, &card, &deck).await?;
-        let (done, total) = session_progress(&app, &access, q.deck).await?;
-        let four = user.0.four_buttons;
         let shown = q.t.unwrap_or_else(now);
-        let buttons: Vec<(Rating, &str, &str)> = if four {
-            vec![
-                (Rating::Again, "Again", "1"),
-                (Rating::Hard, "Hard", "2"),
-                (Rating::Good, "Good", "3"),
-                (Rating::Easy, "Easy", "4"),
-            ]
-        } else {
-            vec![(Rating::Again, "Again", "1"), (Rating::Good, "Good", "3")]
-        };
-        return Ok(page(
-            "Study",
-            Some(&user.0),
-            Some("study"),
-            html! {
-                section.study.revealed {
-                    div.card-area {
-                        (state_tag(card.card_state()))
-                        section.face.front { (face(&card.front, &card.front_image)) }
-                        hr.divider;
-                        section.face.back id="answer" { (face(&card.back, &card.back_image)) }
-                    }
-                    form.answers.cols-2[!four].cols-4[four] method="post" action="/study/answer" {
-                        input type="hidden" name="card" value=(card.id);
-                        input type="hidden" name="reps" value=(card.reps);
-                        input type="hidden" name="t" value=(shown);
-                        @if let Some(d) = q.deck { input type="hidden" name="deck" value=(d); }
-                        @for (rating, label, key) in &buttons {
-                            @let preview = previews.iter().find(|(r, _)| r == rating).map(|(_, p)| p.as_str()).unwrap_or("");
-                            button.btn.primary[*rating == Rating::Good].again[*rating == Rating::Again] type="submit" name="rating" value=(*rating as i64) data-key=(key) {
-                                span.label { (label) " " span.key { (key) } }
-                                span.ivl { (preview) }
-                            }
-                        }
-                    }
-                    (study_foot(&deck.name, deck.id, done, total, q.deck, Some(card.id)))
-                }
-            },
-        )
-        .into_response());
+        return Ok(study_card(&app, &access, &user.0, &msg, &card, &deck, q.deck, shown, true).await?.into_response());
     }
 
     let Some(sc) = app.next_card(&access, q.deck).await? else {
@@ -830,7 +867,7 @@ async fn study(State(app): State<AppState>, user: WebUser, Flash(msg): Flash, Qu
                 (flash(&msg))
                 section.session-end {
                     @if any_cards {
-                        div.end-dot aria-hidden="true" { div {} }
+                        (end_mark())
                         h1 { "All done." }
                         p.summary {
                             @if stats.reviews_today > 0 {
@@ -849,7 +886,7 @@ async fn study(State(app): State<AppState>, user: WebUser, Flash(msg): Flash, Qu
                         p.summary { "Add a few cards, or import a deck from Anki, and they'll show up here." }
                         p { a.btn.primary href=(match q.deck { Some(d) => format!("/cards/new?deck={d}"), None => "/cards/new".into() }) { "Add cards" } }
                     }
-                    p.end-links {
+                    div.end-links {
                         a href="/" { "Back to decks" }
                         form method="post" action="/study/undo" {
                             @if let Some(d) = q.deck { input type="hidden" name="deck" value=(d); }
@@ -861,29 +898,7 @@ async fn study(State(app): State<AppState>, user: WebUser, Flash(msg): Flash, Qu
         )
         .into_response());
     };
-    let card = &sc.card;
-    let (done, total) = session_progress(&app, &access, q.deck).await?;
-    Ok(page(
-        "Study",
-        Some(&user.0),
-        Some("study"),
-        html! {
-            (flash(&msg))
-            section.study {
-                div.card-area {
-                    (state_tag(card.card_state()))
-                    section.face.front { (face(&card.front, &card.front_image)) }
-                }
-                p.reveal {
-                    a.btn.primary.show data-key=" " href=(format!("/study?card={}&show=1&t={}{}#answer", card.id, now(), deck_param)) {
-                        "Show answer" span.key { "space" }
-                    }
-                }
-                (study_foot(&sc.deck.name, sc.deck.id, done, total, q.deck, Some(card.id)))
-            }
-        },
-    )
-    .into_response())
+    Ok(study_card(&app, &access, &user.0, &msg, &sc.card, &sc.deck, q.deck, now(), false).await?.into_response())
 }
 
 #[derive(Deserialize)]
@@ -1016,11 +1031,11 @@ async fn deck_page(
         urlenc(q.state.as_deref().unwrap_or(""))
     );
     Ok(layout(
-        &d.name,
+        &deck_plain(&d.name),
         Some(&user.0),
         html! {
             (flash(&msg))
-            h1 { (d.name) }
+            h1 { (deck_title(&d.name)) }
             @if !d.description.is_empty() { p { (d.description) } }
             dl.stats-inline {
                 div { dt { "New today" } dd { (summary.new_today) } }
@@ -1287,7 +1302,7 @@ fn card_form(
         form method="post" action=(action) enctype="multipart/form-data" {
             label { "Deck"
                 select name="deck" required data-new-deck-select {
-                    @for d in decks { option value=(d.id) selected[!new_selected && Some(d.id) == deck_id] { (d.name) } }
+                    @for d in decks { option value=(d.id) selected[!new_selected && Some(d.id) == deck_id] { (deck_plain(&d.name)) } }
                     @if allow_new_deck {
                         option value=(NEW_DECK) selected[new_selected] { "New deck…" }
                     }
@@ -1836,7 +1851,7 @@ async fn tokens_page(
                                 (if t.can_write { "read & write" } else { "read only" })
                                 (if t.can_review { " · can review" } else { "" })
                                 " · "
-                                @if t.all_decks { "all decks" } @else { (deck_names.join(", ")) }
+                                @if t.all_decks { "all decks" } @else { (deck_names.iter().map(|n| deck_plain(n)).collect::<Vec<_>>().join(", ")) }
                             }
                             br;
                             span.muted.small {
@@ -1864,7 +1879,7 @@ async fn tokens_page(
                     label.check { input type="radio" name="scope" value="all" checked; " All decks (also lets it create decks and change presets)" }
                     label.check { input type="radio" name="scope" value="some"; " Only these:" }
                     @for d in &decks {
-                        label.check.indent { input type="checkbox" name="decks" value=(d.id); " " (d.name) }
+                        label.check.indent { input type="checkbox" name="decks" value=(d.id); " " (deck_plain(&d.name)) }
                     }
                 }
                 button.btn.primary type="submit" { "Create token" }
@@ -1960,7 +1975,7 @@ async fn import_page(State(app): State<AppState>, user: WebUser, Flash(msg): Fla
                 form method="post" action="/import" enctype="multipart/form-data" {
                     input type="hidden" name="kind" value="csv";
                     label { "Into deck"
-                        select name="deck" { @for d in &decks { option value=(d.id) { (d.name) } } }
+                        select name="deck" { @for d in &decks { option value=(d.id) { (deck_plain(&d.name)) } } }
                     }
                     label.file { "File" input type="file" name="file" accept=".csv,.tsv,.txt"; }
                     label { "…or paste" textarea name="text" rows="5" placeholder="Hund,dog\nKatze,cat" {} }
@@ -2040,7 +2055,7 @@ async fn stats_page(State(app): State<AppState>, user: WebUser, Query(q): Query<
         "Stats",
         Some(&user.0),
         html! {
-            h1 { "Stats" @if let Some(d) = &deck { ": " (d.name) } }
+            h1 { "Stats" @if let Some(d) = &deck { ": " (deck_title(&d.name)) } }
             h2 { "Today" }
             dl.stats-inline {
                 div { dt { "Reviews" } dd { (s.reviews_today) } }
@@ -2133,92 +2148,5 @@ async fn share_action(
             Ok(redirect("/"))
         }
         _ => Err(AppError::bad("unknown action").into()),
-    }
-}
-
-// ----- offline ------------------------------------------------------------
-
-const OFFLINE_JS: &str = include_str!("static/offline.js");
-const SW_JS: &str = include_str!("static/sw.js");
-
-async fn offline_js() -> impl IntoResponse {
-    (
-        [
-            (header::CONTENT_TYPE, "text/javascript; charset=utf-8"),
-            (header::CACHE_CONTROL, "no-cache"),
-        ],
-        OFFLINE_JS,
-    )
-}
-
-async fn service_worker() -> impl IntoResponse {
-    (
-        [
-            (header::CONTENT_TYPE, "text/javascript; charset=utf-8"),
-            (header::CACHE_CONTROL, "no-cache"),
-        ],
-        SW_JS,
-    )
-}
-
-/// The offline study page. It is the same for everyone (the service worker
-/// caches it); the script fills it from the downloaded queue.
-async fn offline_page() -> impl IntoResponse {
-    let body = page(
-        "Study offline",
-        None,
-        Some("offline"),
-        html! {
-            p.small.muted id="o-conn" {}
-            noscript { p.notice { "Offline studying needs JavaScript. " a href="/study" { "Study online" } } }
-            p.notice id="o-msg" hidden {}
-            div id="o-study" hidden {
-                p.muted.small.status { span id="o-deck" {} span id="o-left" {} }
-                section.face id="o-front" {}
-                a.btn.primary.wide.show id="o-show" href="#" { "Show answer" }
-                div id="o-backwrap" hidden {
-                    hr.divider;
-                    section.face.back id="o-back" {}
-                    div.answers.cols-2 id="o-answers" {}
-                }
-                div.study-tools {
-                    button.link type="button" id="o-undo" { "Undo" }
-                    a href="/" { "Home" }
-                }
-            }
-        },
-    );
-    ([(header::CACHE_CONTROL, "no-cache")], body)
-}
-
-async fn offline_queue(State(app): State<AppState>, user: Option<WebUser>) -> Response {
-    let Some(user) = user else {
-        return StatusCode::UNAUTHORIZED.into_response();
-    };
-    match app.offline_queue(&user.access()).await {
-        Ok(mut v) => {
-            v["font_scale"] = serde_json::json!(user.0.font_scale);
-            ([(header::CACHE_CONTROL, "no-store")], axum::Json(v)).into_response()
-        }
-        Err(e) => WebError(e).into_response(),
-    }
-}
-
-#[derive(Deserialize)]
-struct SyncRequest {
-    answers: Vec<crate::offline::OfflineAnswer>,
-}
-
-async fn offline_sync(
-    State(app): State<AppState>,
-    user: Option<WebUser>,
-    axum::Json(req): axum::Json<SyncRequest>,
-) -> Response {
-    let Some(user) = user else {
-        return StatusCode::UNAUTHORIZED.into_response();
-    };
-    match app.offline_sync(&user.access(), req.answers).await {
-        Ok(results) => axum::Json(serde_json::json!({ "results": results })).into_response(),
-        Err(e) => WebError(e).into_response(),
     }
 }

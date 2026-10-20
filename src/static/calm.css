@@ -53,11 +53,13 @@
    (JavaScript on, wide screen with a mouse, not e-ink, not turned off in
    settings) and the <link>'s media query matches. It builds on style.css.
 
-   A quiet tool: one centred column, a clean top, a collapsible side rail.
+   A quiet tool: one centred column, a clean top, a side rail of dots that
+   slides open while the pointer is over it.
    Newsreader for what you learn, Source Sans 3 for everything else.
    Terra Cotta (16-1526 TCX) is the one accent; Wild Orchid (16-2120 TCX)
    marks new cards and "Again". Buttons are small cards that tilt toward
-   the pointer (offline.js sets --rx/--ry/--sx/--sy/--gx/--gy).
+   the pointer (app.js sets --rx/--ry/--sx/--sy/--gx/--gy); small ones only
+   lift a little.
    ------------------------------------------------------------------------ */
 
 html.calm {
@@ -151,11 +153,6 @@ html.calm :focus-visible { outline: 2px solid var(--terra); outline-offset: 3px;
 
 @keyframes calm-appear { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
 @keyframes calm-grow { from { transform: scaleX(0); } to { transform: scaleX(1); } }
-@keyframes calm-close-to-dot {
-  0% { width: 560px; height: 2px; border-radius: 2px; }
-  55% { width: 6px; height: 2px; border-radius: 2px; }
-  100% { width: 7px; height: 7px; border-radius: 50%; }
-}
 
 /* Flash messages: one quiet line with a dot. */
 html.calm .notice {
@@ -173,9 +170,12 @@ html.calm .notice {
 html.calm .notice::before { content: ''; flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--terra); }
 
 /* ----- side rail ---------------------------------------------------------- */
+/* A column of dots. While the pointer is over it (or keyboard focus is in
+   it) a panel slides out from the edge and the names follow, one after
+   another. */
 html.calm nav.top {
   position: fixed;
-  left: 36px;
+  left: 0;
   top: 50%;
   transform: translateY(-50%);
   z-index: 10;
@@ -186,84 +186,85 @@ html.calm nav.top {
   gap: 0;
   max-width: none;
   margin: 0;
-  padding: 0;
+  padding: 20px 28px 20px 36px;
   border: 0;
   font-size: .93rem;
+}
+html.calm nav.top::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 176px;
+  z-index: -1;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-left: 0;
+  border-radius: 0 16px 16px 0;
+  box-shadow: 6px 0 24px rgba(var(--shadow), .06);
+  transform: translateX(calc(-100% - 32px));
+  transition: transform 200ms var(--ease);
+  pointer-events: none;
 }
 html.calm nav.top a {
   position: relative;
   display: flex;
   align-items: center;
-  gap: 10px;
   flex: none;
-  min-height: 40px;
+  width: 40px;
+  min-height: 36px;
   padding: 0;
+  font-size: 0;
   font-weight: 400;
   color: var(--muted);
   text-align: left;
-  transition: color 140ms ease;
 }
-html.calm nav.top a:hover, html.calm nav.top a:focus-visible { background: none; color: var(--terra-hover); }
-html.calm nav.top a.brand { font-weight: 600; font-size: .93rem; letter-spacing: .01em; color: var(--ink); margin-bottom: 8px; padding: 0; }
 html.calm nav.top a.rail-only { display: flex; }
+html.calm nav.top a.brand { margin-bottom: 6px; padding: 0; }
+html.calm nav.top a:hover, html.calm nav.top a:focus-visible { background: none; }
 html.calm nav.top a:not(.brand)::before {
   content: '';
   flex: none;
   width: 5px;
   height: 5px;
   border-radius: 50%;
-  background: transparent;
+  background: var(--line-strong);
   transition: background-color 140ms ease, transform 160ms var(--ease);
 }
-html.calm nav.top a[aria-current="page"]:not(.brand) { color: var(--ink); }
 html.calm nav.top a[aria-current="page"]:not(.brand)::before { background: var(--terra); }
-html.calm .rail-toggle {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  min-height: 40px;
-  margin-top: 12px;
-  padding: 0;
-  border: 0;
-  background: none;
-  box-shadow: none;
-  font: inherit;
-  font-size: .87rem;
-  color: var(--faint);
-  cursor: pointer;
-  transform: none;
-  transition: color 140ms ease;
-}
-html.calm .rail-toggle:hover { color: var(--ink); }
-html.calm .rail-toggle::after { display: none; }
-html.calm .rail-toggle svg { width: 14px; height: 14px; transition: transform 200ms var(--ease); }
-
-/* Collapsed: a column of small dots; the name shows on hover. */
-html.calm.rail-collapsed nav.top a.brand { display: none; }
-html.calm.rail-collapsed nav.top a:not(.brand) { font-size: 0; width: 40px; min-height: 36px; gap: 0; }
-html.calm.rail-collapsed nav.top a:not(.brand)::before { background: var(--line-strong); }
-html.calm.rail-collapsed nav.top a[aria-current="page"]:not(.brand)::before { background: var(--terra); }
-html.calm.rail-collapsed nav.top a:not(.brand):hover::before { background: var(--terra-hover); transform: scale(1.4); }
-html.calm.rail-collapsed nav.top a:not(.brand)::after {
+html.calm nav.top a:not(.brand):hover::before { background: var(--terra-hover); transform: scale(1.4); }
+html.calm nav.top a::after {
   content: attr(data-label);
   position: absolute;
   left: 18px;
   white-space: nowrap;
-  font-size: .87rem;
-  color: var(--ink);
+  font-size: .93rem;
+  color: var(--muted);
   opacity: 0;
-  transform: translateX(-4px);
-  transition: opacity 140ms ease, transform 160ms var(--ease);
+  transform: translateX(-8px);
+  transition: opacity 120ms ease, transform 160ms var(--ease), color 140ms ease;
   pointer-events: none;
 }
-html.calm.rail-collapsed nav.top a:not(.brand):hover::after,
-html.calm.rail-collapsed nav.top a:not(.brand):focus-visible::after { opacity: 1; transform: none; }
-html.calm.rail-collapsed .rail-toggle svg { transform: rotate(180deg); }
-html.calm.rail-collapsed .rail-toggle-label { display: none; }
+html.calm nav.top a.brand::after { left: 0; font-weight: 600; letter-spacing: .01em; color: var(--ink); }
+html.calm nav.top a[aria-current="page"]:not(.brand)::after { color: var(--ink); }
+html.calm nav.top a:hover::after { color: var(--terra-hover); }
+html.calm nav.top:hover::before, html.calm nav.top:focus-within::before { transform: none; pointer-events: auto; }
+html.calm nav.top:hover a::after, html.calm nav.top:focus-within a::after {
+  opacity: 1;
+  transform: none;
+  pointer-events: auto;
+  transition: opacity 160ms ease var(--stagger, 0ms), transform 220ms var(--ease) var(--stagger, 0ms), color 140ms ease;
+}
+html.calm nav.top a:nth-child(2) { --stagger: 20ms; }
+html.calm nav.top a:nth-child(3) { --stagger: 40ms; }
+html.calm nav.top a:nth-child(4) { --stagger: 60ms; }
+html.calm nav.top a:nth-child(5) { --stagger: 80ms; }
+html.calm nav.top a:nth-child(6) { --stagger: 100ms; }
 
 /* ----- cards you can almost pick up -------------------------------------- */
 html.calm .btn,
-html.calm button:not(.link):not(.rail-toggle) {
+html.calm button:not(.link) {
   --rx: 0deg; --ry: 0deg; --sx: 0px; --sy: 2px; --gx: 50%; --gy: 50%;
   --dur: 460ms; --spring: cubic-bezier(.34, 1.56, .64, 1);
   --edge: var(--line);
@@ -287,7 +288,7 @@ html.calm button:not(.link):not(.rail-toggle) {
   transition: transform var(--dur) var(--spring), box-shadow var(--dur) var(--spring), border-color 160ms ease;
 }
 html.calm .btn::after,
-html.calm button:not(.link):not(.rail-toggle)::after {
+html.calm button:not(.link)::after {
   content: '';
   position: absolute;
   inset: 0;
@@ -299,20 +300,25 @@ html.calm button:not(.link):not(.rail-toggle)::after {
   pointer-events: none;
 }
 html.calm .btn:hover,
-html.calm button:not(.link):not(.rail-toggle):hover {
+html.calm button:not(.link):hover {
   color: var(--ink);
   background: var(--surface);
   border-color: var(--line-strong);
   box-shadow: 0 1px 0 var(--edge), var(--sx) var(--sy) 18px rgba(var(--shadow), .10);
 }
 html.calm .btn:hover::after,
-html.calm button:not(.link):not(.rail-toggle):hover::after { opacity: 1; }
+html.calm button:not(.link):hover::after { opacity: 1; }
 html.calm .btn:active,
-html.calm button:not(.link):not(.rail-toggle):active {
+html.calm button:not(.link):active {
   background: var(--surface);
   color: var(--ink);
   transform: perspective(700px) rotateX(var(--rx)) rotateY(var(--ry)) translateZ(-8px);
 }
+/* Too small to tilt convincingly: they lift a pixel instead. */
+html.calm .btn.flat:hover,
+html.calm button.flat:not(.link):hover { transform: translateY(-1px); }
+html.calm .btn.flat:active,
+html.calm button.flat:not(.link):active { transform: translateY(0) scale(.98); }
 html.calm .btn.primary { --edge: var(--terra-edge); background: var(--surface); color: var(--ink); }
 html.calm .btn.primary:hover { border-color: var(--terra); }
 html.calm .btn.again { --edge: var(--orchid-edge); }
@@ -457,9 +463,6 @@ html.calm .today .facts { margin: .2rem 0 0; color: var(--muted); }
 html.calm .today .start { display: inline-flex; width: auto; margin: 1.4rem 0 0; font-size: 1rem; }
 html.calm .start .arrow { display: inline-block; transition: transform 180ms var(--ease); }
 html.calm .start:hover .arrow { transform: translateX(3px); }
-html.calm .offline-line { margin-top: 1.2rem; color: var(--muted); }
-html.calm .offline-line a { color: var(--muted); }
-html.calm .offline-line a:hover { color: var(--terra-hover); }
 html.calm .table-head {
   display: flex;
   align-items: baseline;
@@ -475,8 +478,15 @@ html.calm .table-head .num { display: block; width: 64px; text-align: right; }
 html.calm .table-head .chev { display: block; width: 16px; }
 html.calm ul.decks li { border-bottom: 0; }
 html.calm ul.decks a.row { display: grid; grid-template-columns: minmax(0, 1fr) 64px 64px 16px; gap: 12px; min-height: 60px; }
-html.calm ul.decks .deck-name { font-family: var(--serif); font-optical-sizing: auto; font-size: 1.13rem; }
-html.calm ul.decks .sub { font-size: .87rem; color: var(--muted); }
+html.calm ul.decks a.row .grow { display: flex; flex-direction: column; justify-content: center; }
+html.calm ul.decks .deck-name { font-family: var(--serif); font-optical-sizing: auto; font-size: 1.13rem; line-height: 1.3; }
+html.calm ul.decks .sub { margin-top: .3rem; font-size: .87rem; line-height: 1.3; color: var(--muted); }
+
+/* Nested decks: the parents above in small type, the deck's own name below. */
+html.calm .deck-path { font-family: var(--sans); color: var(--muted); }
+html.calm .deck-path .sep { margin: 0 .4em; color: var(--faint); }
+html.calm ul.decks .deck-path { margin-bottom: .1rem; font-size: .8rem; letter-spacing: .01em; }
+html.calm h1 .deck-path { margin-bottom: .2rem; font-size: .87rem; letter-spacing: .01em; }
 html.calm ul.decks .num { text-align: right; font-weight: 400; font-size: 1rem; color: var(--muted); }
 html.calm ul.decks .num.due { color: var(--terra-deep); font-weight: 600; }
 html.calm ul.decks .num.new { display: inline-flex; align-items: center; justify-content: flex-end; gap: 6px; color: var(--orchid-deep); }
@@ -489,6 +499,10 @@ html.calm ul.decks a.row:hover .chev { transform: translateX(2px); color: var(--
 html.calm main:has(> .study), html.calm main:has(> .session-end) { padding-top: 0; padding-bottom: 0; }
 html.calm .study { display: flex; flex-direction: column; min-height: 100vh; }
 html.calm .study .card-area { flex: 1; display: flex; flex-direction: column; align-items: center; text-align: center; padding-top: 22vh; }
+/* Between cards: the old one fades up and away, the next one settles in. */
+html.calm .study .card-area { transition: opacity 120ms ease, transform 160ms var(--ease); }
+html.calm .study .card-area.leaving { opacity: 0; transform: translateY(-6px); }
+html.calm .study.entering .card-area { animation: calm-appear 220ms var(--ease) both; }
 html.calm .card-state {
   display: inline-flex;
   align-items: center;
@@ -561,8 +575,30 @@ html.calm .study-foot .study-tools { justify-content: flex-start; gap: 1.2rem; m
 html.calm .study-foot .study-tools a, html.calm .study-foot .study-tools button.link { color: var(--faint); }
 html.calm .study-foot .study-tools a:hover, html.calm .study-foot .study-tools button.link:hover { color: var(--terra-hover); }
 
-/* The end of a session: the progress line closes into a dot, then a single
-   calm line. */
+/* The end of a session, about a second and a half: the progress line draws
+   itself full and folds into a dot; the dot swells into a check with a
+   ripple and a few sparks; then the words. */
+@keyframes end-draw { from { transform: scaleX(.6); } to { transform: scaleX(1); } }
+@keyframes end-fold {
+  0%, 30% { transform: scaleX(1); opacity: 1; }
+  88% { transform: scaleX(.0125); opacity: 1; }
+  100% { transform: scaleX(.0125); opacity: 0; }
+}
+@keyframes end-swell {
+  0% { transform: scale(.15); }
+  60% { transform: scale(1.12); }
+  100% { transform: scale(1); }
+}
+@keyframes end-tick { to { stroke-dashoffset: 0; } }
+@keyframes end-ripple {
+  from { transform: scale(1); opacity: .8; }
+  to { transform: scale(2.4); opacity: 0; }
+}
+@keyframes end-spark {
+  0% { transform: rotate(var(--a)) translateY(0) scale(1); opacity: 0; }
+  15% { opacity: 1; }
+  100% { transform: rotate(var(--a)) translateY(-58px) scale(.3); opacity: 0; }
+}
 html.calm .session-end {
   min-height: 100vh;
   display: flex;
@@ -571,21 +607,71 @@ html.calm .session-end {
   justify-content: center;
   text-align: center;
 }
-html.calm .end-dot { display: flex; align-items: center; justify-content: center; height: 7px; }
-html.calm .end-dot div { background: var(--terra); animation: calm-close-to-dot 620ms cubic-bezier(.6, 0, .2, 1) both; }
-html.calm .session-end h1 { margin: 1.8rem 0 0; font-size: 1.73rem; line-height: 1.3; animation: calm-appear 320ms var(--ease) 520ms both; }
-html.calm .session-end .summary { margin: .4rem 0 0; color: var(--muted); animation: calm-appear 320ms var(--ease) 600ms both; }
-html.calm .session-end .end-links { justify-content: center; gap: 1.4rem; margin-top: 1.4rem; font-size: .93rem; animation: calm-appear 320ms var(--ease) 600ms both; }
+html.calm .end-mark { display: block; position: relative; width: 48px; height: 48px; }
+html.calm .end-mark > * { position: absolute; left: 50%; top: 50%; }
+html.calm .end-line {
+  width: 560px;
+  height: 2px;
+  margin: -1px 0 0 -280px;
+  animation: end-fold 620ms cubic-bezier(.7, 0, .3, 1) 260ms both;
+}
+html.calm .end-line::before {
+  content: '';
+  display: block;
+  height: 100%;
+  border-radius: 2px;
+  background: var(--terra);
+  transform-origin: left;
+  animation: end-draw 320ms var(--ease) both;
+}
+html.calm .end-disc {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  margin: -24px 0 0 -24px;
+  border-radius: 50%;
+  background: var(--terra);
+  color: var(--paper);
+  animation: end-swell 460ms cubic-bezier(.34, 1.56, .64, 1) 840ms both;
+}
+html.calm .end-disc svg { width: 26px; height: 26px; }
+html.calm .end-disc path { stroke-dasharray: 20; stroke-dashoffset: 20; animation: end-tick 340ms var(--ease) 1080ms forwards; }
+html.calm .end-ring {
+  width: 48px;
+  height: 48px;
+  margin: -24px 0 0 -24px;
+  border: 2px solid var(--orchid);
+  border-radius: 50%;
+  opacity: 0;
+  animation: end-ripple 700ms cubic-bezier(.2, .7, .3, 1) 1000ms both;
+}
+html.calm .end-sparks span {
+  position: absolute;
+  width: 6px;
+  height: 6px;
+  margin: -3px 0 0 -3px;
+  border-radius: 50%;
+  background: var(--terra);
+  opacity: 0;
+  animation: end-spark 640ms cubic-bezier(.2, .7, .3, 1) 1000ms both;
+}
+html.calm .end-sparks span:nth-child(even) { background: var(--orchid); animation-delay: 1060ms; }
+html.calm .session-end h1 { margin: 2rem 0 0; font-size: 1.73rem; line-height: 1.3; animation: calm-appear 420ms var(--ease) 1250ms both; }
+html.calm .session-end .summary { margin: .4rem 0 0; color: var(--muted); animation: calm-appear 420ms var(--ease) 1350ms both; }
+html.calm .session-end .end-links { justify-content: center; gap: 1.4rem; margin-top: 1.4rem; font-size: .93rem; animation: calm-appear 420ms var(--ease) 1450ms both; }
 html.calm .session-end .end-links a, html.calm .session-end .end-links button.link { color: var(--muted); }
 html.calm .session-end .end-links a:hover, html.calm .session-end .end-links button.link:hover { color: var(--terra-hover); }
 html.calm .session-end .btn { margin-top: 1rem; }
 
-/* ----- login and the offline page ----------------------------------------- */
+/* ----- login --------------------------------------------------------------- */
 html.calm .brand-big { font-family: var(--serif); font-weight: 400; font-size: 2.07rem; letter-spacing: 0; margin: 0; }
 html.calm main:has(.brand-big) { padding-top: 22vh; }
 
 @media (prefers-reduced-motion: reduce) {
   html.calm *, html.calm *::before, html.calm *::after { animation: none !important; transition: none !important; }
   html.calm .btn, html.calm button, html.calm a.row { transform: none !important; }
-  html.calm .end-dot div { width: 7px; height: 7px; border-radius: 50%; }
+  html.calm .end-line, html.calm .end-ring, html.calm .end-sparks { display: none; }
+  html.calm .end-disc path { stroke-dashoffset: 0; }
 }
