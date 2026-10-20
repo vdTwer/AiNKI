@@ -1,0 +1,21 @@
+services:
+  ainki:
+    build: .
+    image: ainki:latest
+    restart: unless-stopped
+    ports:
+      - "${AINKI_PORT:-8080}:8080"
+    environment:
+      # Set to false once everyone you know has an account.
+      AINKI_ALLOW_SIGNUP: "${AINKI_ALLOW_SIGNUP:-true}"
+      # Default timezone for new accounts (each user can change theirs).
+      AINKI_TIMEZONE: "${AINKI_TIMEZONE:-UTC}"
+      # Public URL, e.g. https://cards.example.com. Shown when creating agent tokens.
+      AINKI_PUBLIC_URL: "${AINKI_PUBLIC_URL:-}"
+      # Set to true when serving over HTTPS.
+      AINKI_SECURE_COOKIES: "${AINKI_SECURE_COOKIES:-false}"
+    volumes:
+      - ainki-data:/data
+
+volumes:
+  ainki-data:
