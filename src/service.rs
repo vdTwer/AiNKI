@@ -216,6 +216,8 @@ pub struct Stats {
     pub suspended: i64,
     pub due_now: i64,
     pub reviews_today: i64,
+    /// Different cards answered today (a card can be answered more than once).
+    pub cards_today: i64,
     pub minutes_today: f64,
     /// Share of mature-ish (review-state) recalls that succeeded, last 30 days.
     pub true_retention_30d: Option<f64>,
@@ -1233,6 +1235,7 @@ impl App {
             suspended: 0,
             due_now: 0,
             reviews_today: 0,
+            cards_today: 0,
             minutes_today: 0.0,
             true_retention_30d: None,
             retention_sample_30d: 0,
@@ -1295,13 +1298,14 @@ impl App {
 
         #[derive(sqlx::FromRow)]
         struct Log {
+            card_id: i64,
             rating: i64,
             reviewed_at: i64,
             state_before: i64,
             duration_ms: Option<i64>,
         }
         let sql = format!(
-            "SELECT rating, reviewed_at, state_before, duration_ms FROM review_log
+            "SELECT card_id, rating, reviewed_at, state_before, duration_ms FROM review_log
              WHERE user_id = ? AND rating > 0 AND deck_id IN ({ph}) AND reviewed_at >= ?"
         );
         let mut q = sqlx::query_as::<_, Log>(&sql).bind(access.user_id());
@@ -1318,10 +1322,12 @@ impl App {
         let (mut timed_ms, mut timed) = (0i64, 0i64);
         let mut review_total = 0;
         let mut days = std::collections::HashSet::new();
+        let mut cards_today = std::collections::HashSet::new();
         for l in &logs {
             days.insert(clock.date_of(l.reviewed_at));
             if l.reviewed_at >= start_today {
                 stats.reviews_today += 1;
+                cards_today.insert(l.card_id);
                 stats.minutes_today += l.duration_ms.unwrap_or(0) as f64 / 60_000.0;
             }
             if l.reviewed_at >= start_30 {
@@ -1342,6 +1348,7 @@ impl App {
             stats.true_retention_30d = Some(passed as f64 / review_total as f64);
         }
         stats.retention_sample_30d = review_total;
+        stats.cards_today = cards_today.len() as i64;
         let mut day = if days.contains(&today) { today } else { today - Duration::days(1) };
         while days.contains(&day) {
             stats.streak_days += 1;

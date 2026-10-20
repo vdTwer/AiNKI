@@ -144,6 +144,7 @@
     if (!next) throw new Error('no page');
     var oldBar = document.querySelector('.study-foot .bar');
     var from = oldBar ? oldBar.getAttribute('data-progress') : null;
+    var wasStudying = !!document.querySelector('main .study');
     document.title = doc.title;
     var page = doc.body.getAttribute('data-page');
     if (page) document.body.setAttribute('data-page', page); else document.body.removeAttribute('data-page');
@@ -165,6 +166,10 @@
       requestAnimationFrame(function () { bar.style.width = to + '%'; });
     }
     if (next.querySelector('.study')) next.querySelector('.study').classList.add('entering');
+    // The closing animation is for the answer that ended the session, not
+    // for opening the page again later.
+    var end = next.querySelector('.session-end');
+    if (end && wasStudying) end.classList.add('finishing');
   }
 
   function send(form, submitter) {

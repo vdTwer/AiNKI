@@ -415,8 +415,10 @@ html.calm nav.tabs a[aria-current="page"]::after { transform: scaleX(1); }
 
 /* ----- lists and tables ----------------------------------------------------- */
 html.calm ul.list { border-top: 0; margin: .25rem 0; }
-html.calm ul.list li { border-bottom: 1px solid var(--line); }
+html.calm ul.list li { border-bottom: 1px solid var(--line); transition: border-color 160ms ease; }
 html.calm ul.list li:last-child { border-bottom: 0; }
+/* A row lifted into a card takes the hairlines around it along. */
+html.calm ul.list li:has(> a.row:hover), html.calm ul.list li:has(+ li > a.row:hover) { border-color: transparent; }
 html.calm a.row {
   --rx: 0deg; --ry: 0deg; --sx: 0px; --sy: 2px; --gx: 50%; --gy: 50%;
   --dur: 460ms; --spring: cubic-bezier(.34, 1.56, .64, 1);
@@ -430,12 +432,25 @@ html.calm a.row {
   transform: perspective(var(--persp, 700px)) rotateX(var(--rx)) rotateY(var(--ry));
   transition: transform var(--dur) var(--spring), box-shadow var(--dur) var(--spring), background-color 160ms ease, border-color 160ms ease;
 }
+/* On hover a row becomes a button: same edge, shadow and light. */
+html.calm a.row::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: radial-gradient(180px circle at var(--gx) var(--gy), rgba(255, 255, 255, .75), rgba(255, 255, 255, 0) 65%);
+  mix-blend-mode: soft-light;
+  opacity: 0;
+  transition: opacity 200ms ease;
+  pointer-events: none;
+}
 html.calm a.row:hover {
   color: var(--ink);
   background: var(--surface);
-  border-color: var(--line);
-  box-shadow: 0 1px 0 var(--line), var(--sx) var(--sy) 14px rgba(var(--shadow), .08);
+  border-color: var(--line-strong);
+  box-shadow: 0 1px 0 var(--line), var(--sx) var(--sy) 18px rgba(var(--shadow), .10);
 }
+html.calm a.row:hover::after { opacity: 1; }
 html.calm a.row:hover .grow { text-decoration: none; }
 html.calm .counts { font-weight: 400; font-size: .93rem; color: var(--muted); }
 html.calm li.token { padding: .8rem 0; }
@@ -573,29 +588,13 @@ html.calm .study-foot .study-tools { justify-content: flex-start; gap: 1.2rem; m
 html.calm .study-foot .study-tools a, html.calm .study-foot .study-tools button.link { color: var(--faint); }
 html.calm .study-foot .study-tools a:hover, html.calm .study-foot .study-tools button.link:hover { color: var(--terra-hover); }
 
-/* The end of a session, about a second and a half: the progress line draws
-   itself full and folds into a dot; the dot swells into a check with a
-   ripple and a few sparks; then the words. */
-@keyframes end-draw { from { transform: scaleX(.6); } to { transform: scaleX(1); } }
-@keyframes end-fold {
-  0%, 30% { transform: scaleX(1); opacity: 1; }
-  88% { transform: scaleX(.0125); opacity: 1; }
-  100% { transform: scaleX(.0125); opacity: 0; }
-}
-@keyframes end-swell {
-  0% { transform: scale(.15); }
-  60% { transform: scale(1.12); }
-  100% { transform: scale(1); }
-}
-@keyframes end-tick { to { stroke-dashoffset: 0; } }
-@keyframes end-ripple {
-  from { transform: scale(1); opacity: .8; }
-  to { transform: scale(2.4); opacity: 0; }
-}
-@keyframes end-spark {
-  0% { transform: rotate(var(--a)) translateY(0) scale(1); opacity: 0; }
-  15% { opacity: 1; }
-  100% { transform: rotate(var(--a)) translateY(-58px) scale(.3); opacity: 0; }
+/* The end of a session: the progress line closes into a dot, then a single
+   calm line. It plays only when a session has just ended (app.js adds
+   .finishing); opening the page later shows the dot at rest. */
+@keyframes calm-close-to-dot {
+  0% { width: 560px; height: 2px; border-radius: 2px; }
+  55% { width: 6px; height: 2px; border-radius: 2px; }
+  100% { width: 7px; height: 7px; border-radius: 50%; }
 }
 html.calm .session-end {
   min-height: 100vh;
@@ -605,63 +604,18 @@ html.calm .session-end {
   justify-content: center;
   text-align: center;
 }
-html.calm .end-mark { display: block; position: relative; width: 48px; height: 48px; }
-html.calm .end-mark > * { position: absolute; left: 50%; top: 50%; }
-html.calm .end-line {
-  width: 560px;
-  height: 2px;
-  margin: -1px 0 0 -280px;
-  animation: end-fold 620ms cubic-bezier(.7, 0, .3, 1) 260ms both;
-}
-html.calm .end-line::before {
-  content: '';
-  display: block;
-  height: 100%;
-  border-radius: 2px;
-  background: var(--terra);
-  transform-origin: left;
-  animation: end-draw 320ms var(--ease) both;
-}
-html.calm .end-disc {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 48px;
-  height: 48px;
-  margin: -24px 0 0 -24px;
-  border-radius: 50%;
-  background: var(--terra);
-  color: var(--paper);
-  animation: end-swell 460ms cubic-bezier(.34, 1.56, .64, 1) 840ms both;
-}
-html.calm .end-disc svg { width: 26px; height: 26px; }
-html.calm .end-disc path { stroke-dasharray: 20; stroke-dashoffset: 20; animation: end-tick 340ms var(--ease) 1080ms forwards; }
-html.calm .end-ring {
-  width: 48px;
-  height: 48px;
-  margin: -24px 0 0 -24px;
-  border: 2px solid var(--orchid);
-  border-radius: 50%;
-  opacity: 0;
-  animation: end-ripple 700ms cubic-bezier(.2, .7, .3, 1) 1000ms both;
-}
-html.calm .end-sparks span {
-  position: absolute;
-  width: 6px;
-  height: 6px;
-  margin: -3px 0 0 -3px;
-  border-radius: 50%;
-  background: var(--terra);
-  opacity: 0;
-  animation: end-spark 640ms cubic-bezier(.2, .7, .3, 1) 1000ms both;
-}
-html.calm .end-sparks span:nth-child(even) { background: var(--orchid); animation-delay: 1060ms; }
-html.calm .session-end h1 { margin: 2rem 0 0; font-size: 1.73rem; line-height: 1.3; animation: calm-appear 420ms var(--ease) 1250ms both; }
-html.calm .session-end .summary { margin: .4rem 0 0; color: var(--muted); animation: calm-appear 420ms var(--ease) 1350ms both; }
-html.calm .session-end .end-links { justify-content: center; gap: 1.4rem; margin-top: 1.4rem; font-size: .93rem; animation: calm-appear 420ms var(--ease) 1450ms both; }
+html.calm .end-dot { display: flex; align-items: center; justify-content: center; height: 7px; }
+html.calm .end-dot div { width: 7px; height: 7px; border-radius: 50%; background: var(--terra); }
+html.calm .session-end h1 { margin: 1.8rem 0 0; font-size: 1.73rem; line-height: 1.3; }
+html.calm .session-end .summary { margin: .4rem 0 0; color: var(--muted); }
+html.calm .session-end .end-links { justify-content: center; gap: 1.4rem; margin-top: 1.4rem; font-size: .93rem; }
 html.calm .session-end .end-links a, html.calm .session-end .end-links button.link { color: var(--muted); }
 html.calm .session-end .end-links a:hover, html.calm .session-end .end-links button.link:hover { color: var(--terra-hover); }
 html.calm .session-end .btn { margin-top: 1rem; }
+
+html.calm .finishing .end-dot div { animation: calm-close-to-dot 620ms cubic-bezier(.6, 0, .2, 1) both; }
+html.calm .finishing h1 { animation: calm-appear 320ms var(--ease) 520ms both; }
+html.calm .finishing .summary, html.calm .finishing .end-links { animation: calm-appear 320ms var(--ease) 600ms both; }
 
 /* ----- login --------------------------------------------------------------- */
 html.calm .brand-big { font-family: var(--serif); font-weight: 400; font-size: 2.07rem; letter-spacing: 0; margin: 0; }
@@ -670,6 +624,4 @@ html.calm main:has(.brand-big) { padding-top: 22vh; }
 @media (prefers-reduced-motion: reduce) {
   html.calm *, html.calm *::before, html.calm *::after { animation: none !important; transition: none !important; }
   html.calm .btn, html.calm button, html.calm a.row { transform: none !important; }
-  html.calm .end-line, html.calm .end-ring, html.calm .end-sparks { display: none; }
-  html.calm .end-disc path { stroke-dashoffset: 0; }
 }
