@@ -17,7 +17,9 @@
 
 *, *::before, *::after {
   box-sizing: border-box;
-  /* E-ink panels ghost on every frame; never animate. */
+}
+/* E-ink panels ghost on every frame; never animate in the simple look. */
+html:not(.calm) *, html:not(.calm) *::before, html:not(.calm) *::after {
   transition: none !important;
   animation: none !important;
   scroll-behavior: auto !important;
@@ -194,7 +196,35 @@ table.forecast .bar-cell { width: 100%; }
 table.forecast .bar { display: block; height: 1.1rem; background: var(--fg); min-width: 2px; }
 table.forecast .num { text-align: right; padding-left: .5rem; font-variant-numeric: tabular-nums; }
 
+/* Calm-only pieces (side rail extras, key hints, the closing dot). */
+.rail-only, .rail-toggle, .key, .end-dot { display: none; }
+
+/* Decks home */
+.today .date { margin: 1rem 0 0; color: var(--muted); }
+.today h1 { margin-top: .2rem; }
+.today .facts { margin: 0 0 .5rem; color: var(--muted); }
+.today .start { display: flex; width: 100%; font-size: 1.1rem; }
+.table-head { display: flex; gap: .75rem; margin-top: 2rem; padding: 0 .2rem .3rem; font-size: .8rem; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; }
+.table-head .num, .table-head .chev { display: none; }
+ul.decks a.row .deck-name { display: block; }
+ul.decks a.row .sub { display: block; font-size: .85rem; color: var(--muted); }
+ul.decks a.row .num { white-space: nowrap; font-variant-numeric: tabular-nums; font-weight: 600; font-size: .95rem; }
+ul.decks a.row .chev { display: none; }
+
+/* Studying */
+.card-state { margin: .5rem 0 0; font-size: .8rem; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+.study .reveal .show { display: flex; width: 100%; margin: 1rem 0; font-size: 1.1rem; }
+.study-foot { margin-top: 1.5rem; }
+.study-foot .progress { height: 4px; background: var(--soft); }
+.study-foot .bar { height: 4px; background: var(--fg); }
+.study-meta { display: flex; justify-content: space-between; gap: 1rem; margin: .4rem 0; font-size: .9rem; color: var(--muted); }
+.study-meta .count { font-variant-numeric: tabular-nums; }
+.session-end h1 { margin-top: 2rem; }
+.session-end .end-links { display: flex; align-items: center; gap: 1.5rem; flex-wrap: wrap; }
+.session-end .end-links form { margin: 0; }
+
 @media (max-width: 360px) {
   html { font-size: calc(16px * var(--scale)); }
   form.answers.cols-4 { grid-template-columns: 1fr 1fr; }
 }
+#offline-status:not(:empty)::before { content: "· "; }

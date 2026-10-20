@@ -19,7 +19,7 @@ use maud::{DOCTYPE, Markup, PreEscaped, html};
 use serde::Deserialize;
 
 use crate::{
-    AppState,
+    App, AppState,
     auth::{Access, User},
     error::AppError,
     import, markdown, mcp, media, now, oauth, presets,
@@ -29,19 +29,15 @@ use crate::{
 };
 
 const CSS: &str = include_str!("style.css");
-const SKETCH_CSS: &str = include_str!("static/sketch.css");
+const CALM_CSS: &str = include_str!("static/calm.css");
 const THEME_JS: &str = include_str!("static/theme.js");
-const PAPER_SVG: &str = include_str!("static/paper.svg");
-const SCRIBBLE_SVG: &str = include_str!("static/scribble.svg");
 const FONTS: &[(&str, &[u8])] = &[
-    ("alegreya-sans-400-latin.woff2", include_bytes!("static/fonts/alegreya-sans-400-latin.woff2")),
-    ("alegreya-sans-400-latin-ext.woff2", include_bytes!("static/fonts/alegreya-sans-400-latin-ext.woff2")),
-    ("alegreya-sans-400-italic-latin.woff2", include_bytes!("static/fonts/alegreya-sans-400-italic-latin.woff2")),
-    ("alegreya-sans-400-italic-latin-ext.woff2", include_bytes!("static/fonts/alegreya-sans-400-italic-latin-ext.woff2")),
-    ("alegreya-sans-700-latin.woff2", include_bytes!("static/fonts/alegreya-sans-700-latin.woff2")),
-    ("alegreya-sans-700-latin-ext.woff2", include_bytes!("static/fonts/alegreya-sans-700-latin-ext.woff2")),
-    ("patrick-hand-400-latin.woff2", include_bytes!("static/fonts/patrick-hand-400-latin.woff2")),
-    ("patrick-hand-400-latin-ext.woff2", include_bytes!("static/fonts/patrick-hand-400-latin-ext.woff2")),
+    ("newsreader-italic-latin-ext.woff2", include_bytes!("static/fonts/newsreader-italic-latin-ext.woff2")),
+    ("newsreader-italic-latin.woff2", include_bytes!("static/fonts/newsreader-italic-latin.woff2")),
+    ("newsreader-latin-ext.woff2", include_bytes!("static/fonts/newsreader-latin-ext.woff2")),
+    ("newsreader-latin.woff2", include_bytes!("static/fonts/newsreader-latin.woff2")),
+    ("source-sans-3-latin-ext.woff2", include_bytes!("static/fonts/source-sans-3-latin-ext.woff2")),
+    ("source-sans-3-latin.woff2", include_bytes!("static/fonts/source-sans-3-latin.woff2")),
 ];
 
 pub async fn serve(app: AppState) -> anyhow::Result<()> {
@@ -142,10 +138,8 @@ pub fn router(app: AppState) -> Router {
         .layer(middleware::from_fn_with_state(app.clone(), security::check_origin));
     let static_routes = Router::new()
         .route("/style.css", get(style))
-        .route("/sketch.css", get(|| static_file("text/css; charset=utf-8", SKETCH_CSS.as_bytes())))
+        .route("/calm.css", get(|| static_file("text/css; charset=utf-8", CALM_CSS.as_bytes())))
         .route("/theme.js", get(|| static_file("text/javascript; charset=utf-8", THEME_JS.as_bytes())))
-        .route("/paper.svg", get(|| static_file("image/svg+xml", PAPER_SVG.as_bytes())))
-        .route("/scribble.svg", get(|| static_file("image/svg+xml", SCRIBBLE_SVG.as_bytes())))
         .route("/fonts/{name}", get(font_file))
         .route("/offline", get(offline_page))
         .route("/offline.js", get(offline_js))
@@ -280,8 +274,41 @@ pub fn urlenc(s: &str) -> String {
     out
 }
 
-/// Where the hand-drawn look may apply; must match static/theme.js.
+/// Where the Calm look may apply; must match static/theme.js.
 const DESKTOP_MEDIA: &str = "(min-width: 60em) and (hover: hover) and (pointer: fine)";
+
+/// Collapses the side rail (Calm look only; hidden otherwise).
+fn rail_toggle() -> Markup {
+    html! {
+        button.rail-toggle type="button" aria-expanded="true" aria-label="Hide menu" {
+            svg viewBox="0 0 14 14" aria-hidden="true" focusable="false" {
+                path d="M9 3 L5 7 L9 11" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" {}
+            }
+            span.rail-toggle-label { "Hide" }
+        }
+    }
+}
+
+/// "Tuesday, 20 October" in the user's timezone.
+fn long_date(user: &User) -> String {
+    user.clock().today().format("%A, %-d %B").to_string()
+}
+
+/// When something happens, in words: "at 14:30", "tomorrow at 9:00",
+/// "on Friday, 24 October".
+fn when_words(user: &User, ts: i64) -> String {
+    let clock = user.clock();
+    let Some(local) = chrono::DateTime::from_timestamp(ts, 0).map(|t| t.with_timezone(&clock.tz)) else {
+        return String::new();
+    };
+    let days = (clock.date_of(ts) - clock.today()).num_days();
+    let time = local.format("%-H:%M");
+    match days {
+        ..=0 => format!("today at {time}"),
+        1 => format!("tomorrow at {time}"),
+        _ => format!("on {}", local.format("%A, %-d %B")),
+    }
+}
 
 pub fn layout(title: &str, user: Option<&User>, body: Markup) -> Markup {
     page(title, user, None, body)
@@ -292,34 +319,39 @@ fn page(title: &str, user: Option<&User>, page_kind: Option<&str>, body: Markup)
     let scale = user.map(|u| u.font_scale).unwrap_or(100) as f64 / 100.0;
     html! {
         (DOCTYPE)
-        html lang="en" data-look=[user.map(|u| u.desktop_look.as_str())] {
+        html lang="en" data-look=[user.map(|u| if u.desktop_look == "simple" { "simple" } else { "calm" })] {
             head {
                 meta charset="utf-8";
                 meta name="viewport" content="width=device-width, initial-scale=1";
                 meta name="color-scheme" content="light dark";
                 title { (title) " · AiNKI" }
                 link rel="stylesheet" href="/style.css";
-                // The hand-drawn look: only on desktops, and only once
-                // theme.js has switched it on.
-                link rel="stylesheet" href="/sketch.css" media=(DESKTOP_MEDIA);
+                // The Calm look: only on desktops, and only once theme.js
+                // has switched it on. Everything else gets style.css alone.
+                link rel="stylesheet" href="/calm.css" media=(DESKTOP_MEDIA);
                 script src="/theme.js" {}
                 @if (scale - 1.0).abs() > f64::EPSILON {
                     style { (PreEscaped(format!(":root{{--scale:{scale}}}"))) }
                 }
             }
             body data-user=[user.map(|u| u.id)] data-page=[page_kind] {
+                // On phones a bar across the top; in the Calm look a
+                // collapsible rail on the left.
                 @if let Some(u) = user {
-                    nav.top {
-                        a.brand href="/" { "AiNKI" }
-                        a href="/study" { "Study" }
-                        a href="/cards/new" { "Add" }
-                        a href="/stats" { "Stats" }
-                        a href="/settings" title=(u.handle()) { "Settings" }
+                    nav.top aria-label="Main" {
+                        a.brand href="/" data-nav="decks" { "AiNKI" }
+                        a.rail-only href="/" data-nav="decks" data-label="Decks" { "Decks" }
+                        a href="/study" data-nav="study" data-label="Study" { "Study" }
+                        a href="/cards/new" data-nav="add" data-label="Add" { "Add" }
+                        a href="/stats" data-nav="stats" data-label="Stats" { "Stats" }
+                        a href="/settings" data-nav="settings" data-label="Settings" title=(u.handle()) { "Settings" }
+                        (rail_toggle())
                     }
                 } @else if page_kind == Some("offline") {
-                    nav.top {
-                        a.brand href="/" { "AiNKI" }
-                        a href="/offline" { "Study offline" }
+                    nav.top aria-label="Main" {
+                        a.brand href="/" data-nav="decks" { "AiNKI" }
+                        a href="/offline" data-nav="study" data-label="Study offline" { "Study offline" }
+                        (rail_toggle())
                     }
                 }
                 main { (body) }
@@ -570,22 +602,44 @@ async fn home(State(app): State<AppState>, user: WebUser, Flash(msg): Flash) -> 
     let access = user.access();
     let decks = app.deck_summaries(&access).await?;
     let shares = app.incoming_shares(&access).await?;
+    let stats = app.stats(&access, None).await?;
     let total_due: i64 = decks.iter().map(|d| d.due_total()).sum();
+    // A rough guide; real thinking time once there's enough history.
+    let minutes = ((total_due as f64 * stats.seconds_per_review.unwrap_or(12.0)) / 60.0).ceil().max(1.0) as i64;
+    let mut facts = Vec::new();
+    if total_due > 0 {
+        facts.push(format!("About {minutes} minute{}", if minutes == 1 { "" } else { "s" }));
+    }
+    if let Some(r) = stats.true_retention_30d {
+        facts.push(format!("{:.0}% recalled last month", r * 100.0));
+    }
+    if stats.streak_days > 1 {
+        facts.push(format!("{}-day streak", stats.streak_days));
+    }
     Ok(page(
         "Decks",
         Some(&user.0),
         Some("home"),
         html! {
             (flash(&msg))
-            @if total_due > 0 {
-                a.btn.primary.wide href="/study" { "Study all · " (total_due) " due" }
-            } @else if !decks.is_empty() {
-                p.notice { "All done for today." }
-            }
-            @if !decks.is_empty() {
-                p.small.offline-line {
-                    a href="/offline" { "Study offline" }
-                    " " span.muted id="offline-status" {}
+            section.today aria-label="Today" {
+                p.date { (long_date(&user.0)) }
+                @if total_due > 0 {
+                    h1 { span.count { (total_due) (if total_due == 1 { " card" } else { " cards" }) } " due today" }
+                } @else if !decks.is_empty() {
+                    h1 { "All done for today" }
+                } @else {
+                    h1 { "Welcome to AiNKI" }
+                }
+                @if !facts.is_empty() { p.facts { (facts.join(" · ")) } }
+                @if total_due > 0 {
+                    p { a.btn.primary.start href="/study" { "Start studying " span.arrow aria-hidden="true" { "→" } } }
+                }
+                @if !decks.is_empty() {
+                    p.small.offline-line {
+                        a href="/offline" { "Study offline" }
+                        " " span.muted id="offline-status" {}
+                    }
                 }
             }
             @if !shares.is_empty() {
@@ -607,29 +661,37 @@ async fn home(State(app): State<AppState>, user: WebUser, Flash(msg): Flash) -> 
                 }
                 p.muted.small { "Adding gives you your own copy. Your progress is yours; later changes by the sender don't carry over." }
             }
-            h1 { "Decks" }
             @if decks.is_empty() {
                 p { "No decks yet. Create one, or bring your Anki decks along." }
-            }
-            ul.list {
-                @for d in &decks {
-                    li {
-                        a.row href=(format!("/decks/{}", d.deck.id)) {
-                            span.grow { (d.deck.name) }
-                            span.counts {
-                                @if d.due_total() > 0 {
-                                    span title="new" { (d.new_today) " new" }
-                                    " · "
-                                    span title="due" { (d.learning_due + d.review_due) " due" }
-                                } @else {
-                                    span.muted { "done" }
+            } @else {
+                div.table-head aria-hidden="true" {
+                    span.grow { "Decks" }
+                    span.num { "Due" }
+                    span.num { "New" }
+                    span.chev {}
+                }
+                ul.list.decks {
+                    @for d in &decks {
+                        @let due = d.learning_due + d.review_due;
+                        li {
+                            a.row href=(format!("/decks/{}", d.deck.id)) {
+                                span.grow {
+                                    span.deck-name { (d.deck.name) }
+                                    @if let Some(exam) = &d.deck.exam_date {
+                                        span.sub { "Exam on " (exam) }
+                                    } @else if d.due_total() == 0 && d.total > 0 {
+                                        span.sub { "Done for today" }
+                                    }
                                 }
+                                span.num.due title="due" { @if due > 0 { (due) span.unit { " due" } } @else { "—" } }
+                                span.num.new title="new" { @if d.new_today > 0 { span.dot aria-hidden="true" {} (d.new_today) span.unit { " new" } } @else { "—" } }
+                                span.chev aria-hidden="true" { "›" }
                             }
                         }
                     }
                 }
             }
-            p.actions {
+            p.actions.quiet-links {
                 a.btn href="/cards/new" { "Add card" }
                 a.btn href="/decks/new" { "New deck" }
                 a.btn href="/import" { "Import from Anki" }
@@ -656,6 +718,50 @@ fn study_url(deck: Option<i64>) -> String {
     }
 }
 
+/// How far into today's session: (answered so far, total for today).
+async fn session_progress(app: &App, access: &Access, deck: Option<i64>) -> Result<(i64, i64), AppError> {
+    let summaries = app.deck_summaries(access).await?;
+    let (done, left) = summaries
+        .iter()
+        .filter(|s| deck.is_none_or(|d| s.deck.id == d))
+        .fold((0, 0), |(done, left), s| (done + s.new_done_today + s.review_done_today, left + s.due_total()));
+    Ok((done, done + left))
+}
+
+/// The thin line and "14 of 32" under the card.
+fn study_foot(deck_name: &str, deck_id: i64, done: i64, total: i64, q_deck: Option<i64>, card_id: Option<i64>) -> Markup {
+    let pct = if total > 0 { (done * 100 / total).clamp(0, 100) } else { 0 };
+    let total = total.max(1);
+    let position = (done + 1).min(total);
+    html! {
+        div.study-foot {
+            div.progress role="progressbar" aria-label="Today's progress" aria-valuemin="0" aria-valuemax=(total) aria-valuenow=(done) {
+                div.bar data-progress=(pct) style=(format!("width:{pct}%")) {}
+            }
+            div.study-meta {
+                a href=(format!("/decks/{deck_id}")) { (deck_name) }
+                span.count { (position) " of " (total) }
+            }
+            div.study-tools {
+                form method="post" action="/study/undo" {
+                    @if let Some(d) = q_deck { input type="hidden" name="deck" value=(d); }
+                    button.link type="submit" { "Undo" }
+                }
+                @if let Some(id) = card_id { a href=(format!("/cards/{id}")) { "Edit card" } }
+            }
+        }
+    }
+}
+
+fn state_tag(state: CardState) -> Markup {
+    let (class, label) = match state {
+        CardState::New => ("new", "New"),
+        CardState::Learning | CardState::Relearning => ("learning", "Learning"),
+        CardState::Review => ("review", "Review"),
+    };
+    html! { p.card-state { span.dot.(class) aria-hidden="true" {} (label) } }
+}
+
 async fn study(State(app): State<AppState>, user: WebUser, Flash(msg): Flash, Query(q): Query<StudyQuery>) -> WebResult {
     let access = user.access();
     let deck_param = q.deck.map(|d| format!("&deck={d}")).unwrap_or_default();
@@ -665,6 +771,7 @@ async fn study(State(app): State<AppState>, user: WebUser, Flash(msg): Flash, Qu
         let card = app.card(&access, card_id).await?;
         let deck = app.deck(&access, card.deck_id).await?;
         let previews = app.previews(&access, &card, &deck).await?;
+        let (done, total) = session_progress(&app, &access, q.deck).await?;
         let four = user.0.four_buttons;
         let shown = q.t.unwrap_or_else(now);
         let buttons: Vec<(Rating, &str, &str)> = if four {
@@ -677,26 +784,32 @@ async fn study(State(app): State<AppState>, user: WebUser, Flash(msg): Flash, Qu
         } else {
             vec![(Rating::Again, "Again", "1"), (Rating::Good, "Good", "3")]
         };
-        return Ok(layout(
+        return Ok(page(
             "Study",
             Some(&user.0),
+            Some("study"),
             html! {
-                p.muted.small { (deck.name) }
-                section.face { (face(&card.front, &card.front_image)) }
-                hr.divider;
-                section.face.back id="answer" { (face(&card.back, &card.back_image)) }
-                form.answers.cols-2[!four].cols-4[four] method="post" action="/study/answer" {
-                    input type="hidden" name="card" value=(card.id);
-                    input type="hidden" name="reps" value=(card.reps);
-                    input type="hidden" name="t" value=(shown);
-                    @if let Some(d) = q.deck { input type="hidden" name="deck" value=(d); }
-                    @for (rating, label, key) in &buttons {
-                        @let preview = previews.iter().find(|(r, _)| r == rating).map(|(_, p)| p.as_str()).unwrap_or("");
-                        button.btn.primary[*rating == Rating::Good] type="submit" name="rating" value=(*rating as i64) data-key=(key) {
-                            span.label { (label) }
-                            span.ivl { (preview) }
+                section.study.revealed {
+                    div.card-area {
+                        (state_tag(card.card_state()))
+                        section.face.front { (face(&card.front, &card.front_image)) }
+                        hr.divider;
+                        section.face.back id="answer" { (face(&card.back, &card.back_image)) }
+                    }
+                    form.answers.cols-2[!four].cols-4[four] method="post" action="/study/answer" {
+                        input type="hidden" name="card" value=(card.id);
+                        input type="hidden" name="reps" value=(card.reps);
+                        input type="hidden" name="t" value=(shown);
+                        @if let Some(d) = q.deck { input type="hidden" name="deck" value=(d); }
+                        @for (rating, label, key) in &buttons {
+                            @let preview = previews.iter().find(|(r, _)| r == rating).map(|(_, p)| p.as_str()).unwrap_or("");
+                            button.btn.primary[*rating == Rating::Good].again[*rating == Rating::Again] type="submit" name="rating" value=(*rating as i64) data-key=(key) {
+                                span.label { (label) " " span.key { (key) } }
+                                span.ivl { (preview) }
+                            }
                         }
                     }
+                    (study_foot(&deck.name, deck.id, done, total, q.deck, Some(card.id)))
                 }
             },
         )
@@ -706,52 +819,67 @@ async fn study(State(app): State<AppState>, user: WebUser, Flash(msg): Flash, Qu
     let Some(sc) = app.next_card(&access, q.deck).await? else {
         let decks = app.deck_summaries(&access).await?;
         let any_cards = decks.iter().any(|d| d.total > 0);
-        return Ok(layout(
+        let stats = app.stats(&access, q.deck).await?;
+        let next = app.next_review_at(&access, q.deck).await?;
+        let minutes = stats.minutes_today.round() as i64;
+        return Ok(page(
             "Study",
             Some(&user.0),
+            Some("study-done"),
             html! {
                 (flash(&msg))
-                h1 { "Done for now" }
-                @if any_cards {
-                    p { "Nothing else is due. Come back later." }
-                } @else {
-                    p { "There are no cards yet." }
-                    p { a.btn.primary href=(match q.deck { Some(d) => format!("/cards/new?deck={d}"), None => "/cards/new".into() }) { "Add cards" } }
+                section.session-end {
+                    @if any_cards {
+                        div.end-dot aria-hidden="true" { div {} }
+                        h1 { "All done." }
+                        p.summary {
+                            @if stats.reviews_today > 0 {
+                                (stats.reviews_today) (if stats.reviews_today == 1 { " card" } else { " cards" })
+                                @if minutes >= 1 { " in " (minutes) (if minutes == 1 { " minute" } else { " minutes" }) }
+                                ". "
+                            }
+                            @if let Some(t) = next {
+                                "The next review is " (when_words(&user.0, t)) "."
+                            } @else {
+                                "Nothing else is scheduled yet."
+                            }
+                        }
+                    } @else {
+                        h1 { "No cards yet" }
+                        p.summary { "Add a few cards, or import a deck from Anki, and they'll show up here." }
+                        p { a.btn.primary href=(match q.deck { Some(d) => format!("/cards/new?deck={d}"), None => "/cards/new".into() }) { "Add cards" } }
+                    }
+                    p.end-links {
+                        a href="/" { "Back to decks" }
+                        form method="post" action="/study/undo" {
+                            @if let Some(d) = q.deck { input type="hidden" name="deck" value=(d); }
+                            button.link type="submit" { "Undo last answer" }
+                        }
+                    }
                 }
-                form method="post" action="/study/undo" {
-                    @if let Some(d) = q.deck { input type="hidden" name="deck" value=(d); }
-                    button.btn type="submit" { "Undo last answer" }
-                }
-                p { a href="/" { "Back to decks" } }
             },
         )
         .into_response());
     };
     let card = &sc.card;
-    let state_label = match card.card_state() {
-        CardState::New => "new",
-        CardState::Learning | CardState::Relearning => "learning",
-        CardState::Review => "review",
-    };
-    Ok(layout(
+    let (done, total) = session_progress(&app, &access, q.deck).await?;
+    Ok(page(
         "Study",
         Some(&user.0),
+        Some("study"),
         html! {
             (flash(&msg))
-            p.muted.small.status {
-                span { (sc.deck.name) }
-                span { (state_label) " · " (sc.remaining) " left" }
-            }
-            section.face { (face(&card.front, &card.front_image)) }
-            a.btn.primary.wide.show data-key=" " href=(format!("/study?card={}&show=1&t={}{}#answer", card.id, now(), deck_param)) {
-                "Show answer"
-            }
-            div.study-tools {
-                form method="post" action="/study/undo" {
-                    @if let Some(d) = q.deck { input type="hidden" name="deck" value=(d); }
-                    button.link type="submit" { "Undo" }
+            section.study {
+                div.card-area {
+                    (state_tag(card.card_state()))
+                    section.face.front { (face(&card.front, &card.front_image)) }
                 }
-                a href=(format!("/cards/{}", card.id)) { "Edit card" }
+                p.reveal {
+                    a.btn.primary.show data-key=" " href=(format!("/study?card={}&show=1&t={}{}#answer", card.id, now(), deck_param)) {
+                        "Show answer" span.key { "space" }
+                    }
+                }
+                (study_foot(&sc.deck.name, sc.deck.id, done, total, q.deck, Some(card.id)))
             }
         },
     )
@@ -1554,7 +1682,7 @@ async fn settings_page(State(app): State<AppState>, user: WebUser, Flash(msg): F
                 label.check { input type="checkbox" name="optimize_include_agent" value="1" checked[u.optimize_include_agent]; " Use reviews done through agents when optimizing" }
                 fieldset {
                     legend { "Look on desktop computers" }
-                    label.check { input type="radio" name="desktop_look" value="sketch" checked[u.desktop_look != "simple"]; " Hand-drawn" }
+                    label.check { input type="radio" name="desktop_look" value="calm" checked[u.desktop_look != "simple"]; " Calm" }
                     label.check { input type="radio" name="desktop_look" value="simple" checked[u.desktop_look == "simple"]; " Simple" }
                     p.muted.small { "Phones, e-readers and browsers without JavaScript always use the simple, high-contrast look." }
                 }
@@ -1612,7 +1740,7 @@ async fn settings_update(State(app): State<AppState>, user: WebUser, Form(f): Fo
         f.four_buttons.is_some(),
         f.font_scale,
         f.optimize_include_agent.is_some(),
-        f.desktop_look.as_deref().unwrap_or("sketch"),
+        f.desktop_look.as_deref().unwrap_or("calm"),
     )
     .await?;
     Ok(redirect_msg("/settings", "Saved."))

@@ -1,5 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="200" height="14" viewBox="0 0 200 14" preserveAspectRatio="none">
-  <!-- A quick pen stroke, gone over twice. -->
-  <path d="M2 9 C 30 5, 52 11, 80 7 S 132 4, 160 8 S 188 10, 198 6" fill="none" stroke="#d979a2" stroke-width="3" stroke-linecap="round"/>
-  <path d="M6 11 C 40 8, 70 12, 104 9 S 160 7, 194 10" fill="none" stroke="#d38377" stroke-width="2" stroke-linecap="round" opacity="0.8"/>
-</svg>

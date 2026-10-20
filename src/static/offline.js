@@ -69,6 +69,100 @@
   var pageUser = body.getAttribute('data-user');
   var isOfflinePage = body.getAttribute('data-page') === 'offline';
 
+  // ----- navigation -------------------------------------------------------
+  // Mark the current section in the menu.
+  (function () {
+    var path = location.pathname;
+    var section =
+      path === '/' || path.indexOf('/decks/') === 0 && path !== '/decks/new' ? 'decks' :
+      path === '/study' || path === '/offline' ? 'study' :
+      path === '/cards/new' || path === '/decks/new' || path === '/import' ? 'add' :
+      path === '/stats' ? 'stats' :
+      path === '/settings' || path.indexOf('/presets') === 0 || path === '/tokens' ? 'settings' : null;
+    if (!section) return;
+    var links = document.querySelectorAll('nav.top a[data-nav="' + section + '"]');
+    for (var i = 0; i < links.length; i++) links[i].setAttribute('aria-current', 'page');
+  })();
+
+  // The side rail (Calm look) folds away into a column of dots.
+  var railToggle = document.querySelector('.rail-toggle');
+  if (railToggle) {
+    var root = document.documentElement;
+    var syncRail = function () {
+      var collapsed = root.classList.contains('rail-collapsed');
+      railToggle.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+      railToggle.setAttribute('aria-label', collapsed ? 'Show menu' : 'Hide menu');
+    };
+    railToggle.addEventListener('click', function () {
+      root.classList.toggle('rail-collapsed');
+      try { localStorage.setItem('ainki.rail', root.classList.contains('rail-collapsed') ? 'closed' : 'open'); } catch (e) {}
+      syncRail();
+    });
+    syncRail();
+  }
+
+  // ----- Calm details -------------------------------------------------------
+  var calm = document.documentElement.classList.contains('calm');
+
+  // Long card text is set smaller and left-aligned.
+  var faces = document.querySelectorAll('section.face');
+  for (var f = 0; f < faces.length; f++) {
+    if ((faces[f].textContent || '').trim().length > 90) faces[f].classList.add('long');
+  }
+
+  // The progress line glides on from where it was on the previous card.
+  var bar = document.querySelector('.study-foot .bar');
+  try {
+    if (bar) {
+      var pct = bar.getAttribute('data-progress');
+      var prev = sessionStorage.getItem('ainki.progress');
+      if (calm && prev !== null && prev !== pct) {
+        bar.style.transition = 'none';
+        bar.style.width = prev + '%';
+        void bar.offsetWidth;
+        bar.style.transition = '';
+        requestAnimationFrame(function () { bar.style.width = pct + '%'; });
+      }
+      sessionStorage.setItem('ainki.progress', pct);
+    } else if (document.querySelector('.session-end')) {
+      sessionStorage.removeItem('ainki.progress');
+    }
+  } catch (e) { /* storage blocked */ }
+
+  // Buttons are small cards: while the pointer is over one it tilts toward
+  // it (the side under the pointer dips away), then springs back.
+  if (calm && window.matchMedia && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    var tiltables = document.querySelectorAll('.btn, button:not(.link):not(.rail-toggle), a.row');
+    var tilt = function (el) {
+      if (el.closest('.quiet-links')) return;
+      var max = el.matches('a.row') ? 3 : el.closest('.answers') ? 10 : 8;
+      el.addEventListener('pointermove', function (e) {
+        var r = el.getBoundingClientRect();
+        var x = (e.clientX - r.left) / r.width;
+        var y = (e.clientY - r.top) / r.height;
+        var s = el.style;
+        s.setProperty('--dur', '90ms');
+        s.setProperty('--spring', 'linear');
+        s.setProperty('--rx', ((0.5 - y) * max).toFixed(2) + 'deg');
+        s.setProperty('--ry', ((x - 0.5) * max).toFixed(2) + 'deg');
+        s.setProperty('--sx', ((0.5 - x) * 10).toFixed(1) + 'px');
+        s.setProperty('--sy', (2 + (0.5 - y) * 8).toFixed(1) + 'px');
+        s.setProperty('--gx', (x * 100).toFixed(1) + '%');
+        s.setProperty('--gy', (y * 100).toFixed(1) + '%');
+      });
+      el.addEventListener('pointerleave', function () {
+        var s = el.style;
+        s.removeProperty('--dur');
+        s.removeProperty('--spring');
+        s.setProperty('--rx', '0deg');
+        s.setProperty('--ry', '0deg');
+        s.setProperty('--sx', '0px');
+        s.setProperty('--sy', '2px');
+      });
+    };
+    for (var t = 0; t < tiltables.length; t++) tilt(tiltables[t]);
+  }
+
   // Logged out: drop the downloaded queue. Unsent answers stay until that
   // user logs in again.
   if (document.querySelector('[data-clear-offline]')) {

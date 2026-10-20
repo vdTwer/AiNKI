@@ -1,10 +1,10 @@
 // AiNKI service worker: keeps the offline study page, styles and card images
 // available without a connection.
-var SHELL = 'ainki-shell-v3';
+var SHELL = 'ainki-shell-v4';
 var MEDIA = 'ainki-media';
 var SHELL_URLS = [
-  '/offline', '/style.css', '/offline.js', '/theme.js', '/sketch.css', '/paper.svg', '/scribble.svg',
-  '/fonts/alegreya-sans-400-latin.woff2', '/fonts/alegreya-sans-700-latin.woff2', '/fonts/patrick-hand-400-latin.woff2'
+  '/offline', '/style.css', '/offline.js', '/theme.js', '/calm.css',
+  '/fonts/newsreader-latin.woff2', '/fonts/newsreader-italic-latin.woff2', '/fonts/source-sans-3-latin.woff2'
 ];
 
 self.addEventListener('install', function (e) {

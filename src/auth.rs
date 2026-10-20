@@ -32,7 +32,7 @@ pub struct User {
     pub fsrs_params: String,
     pub fsrs_params_updated_at: Option<i64>,
     pub optimize_include_agent: bool,
-    /// 'sketch' or 'simple'; only matters on desktop computers.
+    /// 'calm' or 'simple'; only matters on desktop computers.
     pub desktop_look: String,
     pub created_at: i64,
 }
