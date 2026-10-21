@@ -394,6 +394,135 @@ html.calm input[type=file]::file-selector-button {
 html.calm fieldset { border: 1px solid var(--line); border-radius: 12px; padding: .6rem 1rem; }
 html.calm legend { font-size: .87rem; font-weight: 600; }
 
+/* Writing a card: the card itself, as it will look when you study it.
+   The front large, a short line, the back below; the deck as one quiet
+   line above. Images are picked, dropped or pasted onto a side. */
+html.calm .card-form { margin: 0; }
+html.calm .deck-line { display: flex; flex-wrap: wrap; align-items: baseline; gap: .4rem 1.6rem; margin: 0 0 1.1rem; }
+html.calm .deck-line label { display: inline-flex; align-items: baseline; gap: .6rem; margin: 0; font-weight: 400; font-size: 1rem; }
+html.calm .deck-line label[hidden] { display: none; }
+html.calm .deck-label { font-size: .87rem; color: var(--muted); }
+html.calm .deck-line .select { position: relative; display: inline-flex; align-items: baseline; }
+html.calm .deck-line .select::after {
+  content: '';
+  position: absolute;
+  right: 2px;
+  top: 50%;
+  width: 6px;
+  height: 6px;
+  margin-top: -5px;
+  border-right: 1.3px solid var(--faint);
+  border-bottom: 1.3px solid var(--faint);
+  transform: rotate(45deg);
+  pointer-events: none;
+  transition: border-color 140ms ease;
+}
+html.calm .deck-line .select:hover::after { border-color: var(--terra-hover); }
+html.calm .deck-line select, html.calm .deck-line input[type=text] {
+  appearance: none;
+  -webkit-appearance: none;
+  width: auto;
+  min-height: 0;
+  margin: 0;
+  padding: .15rem 0 .2rem;
+  border: 0;
+  border-bottom: 1px solid transparent;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+  font-family: var(--serif);
+  font-optical-sizing: auto;
+  font-size: 1.13rem;
+  color: var(--ink);
+  cursor: pointer;
+}
+html.calm .deck-line select { padding-right: 1.2rem; max-width: 22rem; text-overflow: ellipsis; }
+html.calm .deck-line select option { font-family: var(--sans); font-size: 1rem; }
+html.calm .deck-line input[type=text] { width: 13rem; border-bottom-color: var(--line-strong); cursor: text; }
+html.calm .deck-line input[type=text]::placeholder { color: var(--faint); }
+html.calm .deck-line select:hover { color: var(--terra-hover); }
+html.calm .deck-line select:focus, html.calm .deck-line input[type=text]:focus { box-shadow: none; border-bottom-color: var(--terra); }
+
+html.calm .sheet {
+  padding: 2rem 2.4rem 1.4rem;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  box-shadow: 0 1px 0 var(--line), 0 10px 30px rgba(var(--shadow), .05);
+  text-align: center;
+  transition: border-color 160ms ease, box-shadow 220ms var(--ease);
+}
+html.calm .sheet:focus-within { border-color: var(--line-strong); box-shadow: 0 1px 0 var(--line), 0 14px 36px rgba(var(--shadow), .08); }
+html.calm .face-edit { position: relative; border-radius: 12px; transition: background-color 140ms ease; }
+html.calm .face-edit.dropping { background: rgba(211, 131, 119, .08); }
+html.calm .face-label {
+  display: block;
+  margin: 0 0 .5rem;
+  font-size: .8rem;
+  font-weight: 600;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--faint);
+  transition: color 140ms ease;
+}
+html.calm .face-edit:focus-within .face-label { color: var(--terra-deep); }
+html.calm .sheet textarea {
+  display: block;
+  width: 100%;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+  resize: none;
+  overflow: hidden;
+  text-align: center;
+  font-family: var(--serif);
+  font-optical-sizing: auto;
+  color: var(--ink);
+  field-sizing: content;
+}
+html.calm .sheet textarea:focus { box-shadow: none; }
+html.calm .sheet textarea::placeholder { color: var(--faint); opacity: 1; font-style: italic; }
+html.calm .face-edit[data-face=front] textarea { font-size: 2.07rem; line-height: 1.25; letter-spacing: -0.005em; min-height: 2.6rem; }
+html.calm .face-edit[data-face=back] textarea { font-size: 1.47rem; line-height: 1.4; min-height: 2.1rem; }
+/* Long text is set smaller and to the left, as it will be when studying. */
+html.calm .face-edit[data-face=front] textarea.long { font-size: 1.33rem; line-height: 1.45; text-align: left; }
+html.calm .face-edit[data-face=back] textarea.long { font-size: 1.13rem; line-height: 1.55; text-align: left; }
+html.calm .sheet hr.divider { width: 64px; height: 0; margin: 1.6rem auto 1.5rem; border: 0; border-top: 1px solid var(--line-strong); }
+
+html.calm .face-image { display: flex; flex-direction: column; align-items: center; gap: .3rem; margin: .9rem 0 0; }
+html.calm .face-image[hidden] { display: none; }
+html.calm .face-image img { display: block; filter: none; max-width: 100%; max-height: 180px; width: auto; margin: 0; border-radius: 8px; animation: calm-appear 220ms var(--ease) both; }
+/* Images are stored in grayscale; the preview shows it as it will be. */
+html.calm .face-image.preview img { filter: grayscale(1); }
+html.calm .face-image label.check { min-height: 0; margin: 0; font-size: .87rem; color: var(--muted); }
+html.calm .face-image button.link { font-size: .87rem; }
+html.calm label.attach {
+  display: inline-flex;
+  align-items: center;
+  gap: .4rem;
+  margin: .8rem 0 0;
+  font-size: .87rem;
+  font-weight: 400;
+  color: var(--faint);
+  cursor: pointer;
+  transition: color 140ms ease;
+}
+html.calm label.attach .icon { display: inline-flex; }
+html.calm label.attach .optional { display: none; }
+html.calm label.attach:hover, html.calm label.attach:focus-within { color: var(--terra-hover); }
+html.calm label.attach:focus-within { outline: 2px solid var(--terra); outline-offset: 3px; border-radius: 4px; }
+html.calm label.attach input { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+html.calm .face-edit.has-image label.attach { display: none; }
+
+html.calm .form-foot { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-top: 1.2rem; }
+html.calm .form-foot p { margin: 0; color: var(--faint); }
+html.calm .form-foot .btn.wide { display: inline-flex; width: auto; margin: 0; padding: .55rem 1.1rem .55rem 1.4rem; gap: .8rem; }
+html.calm .form-foot .key { color: var(--faint); border-color: var(--line); }
+
 /* The Add section's tabs: words with a line under the current one. */
 html.calm nav.tabs { display: flex; gap: 1.6rem; border: 0; border-radius: 0; margin: 0 0 2rem; overflow: visible; }
 html.calm nav.tabs a { position: relative; padding: .4rem 0; min-height: 0; font-weight: 500; color: var(--muted); }

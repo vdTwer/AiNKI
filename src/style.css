@@ -233,3 +233,9 @@ ul.decks a.row .chev { display: none; }
   html { font-size: calc(16px * var(--scale)); }
   form.answers.cols-4 { grid-template-columns: 1fr 1fr; }
 }
+
+/* Card form */
+.sheet hr.divider { margin: 1.2rem 0; }
+.face-image { margin: 0 0 .9rem; }
+.face-image img { display: block; max-width: 100%; max-height: 12rem; margin-bottom: .3rem; }
+label.attach .icon { display: none; }
