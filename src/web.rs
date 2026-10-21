@@ -1183,8 +1183,18 @@ async fn deck_page(
                 }
                 button.btn type="submit" { "Find" }
             }
-            p.muted.small { (count(total, "card")) }
-            ul.list.cards {
+            @let filtered = q.q.as_deref().is_some_and(|t| !t.trim().is_empty()) || q.state.as_deref().is_some_and(|t| !t.is_empty());
+            @if total == 0 && !filtered {
+                p.empty.muted { "No cards yet. " a href=(format!("/cards/new?deck={id}")) { "Add the first card." } }
+            } @else if total == 0 {
+                p.empty.muted {
+                    @if let Some(t) = q.q.as_deref().filter(|t| !t.trim().is_empty()) { "No cards match “" (t) "”. " } @else { "No cards match this filter. " }
+                    a href=(format!("/decks/{id}")) { "Show all cards." }
+                }
+            } @else {
+                p.muted.small { (count(total, "card")) }
+            }
+            ul.list.cards hidden[cards.is_empty()] {
                 @for c in &cards {
                     li {
                         a.row href=(format!("/cards/{}", c.id)) {
