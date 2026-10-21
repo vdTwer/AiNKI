@@ -1971,6 +1971,13 @@ async fn reset_params(State(app): State<AppState>, user: WebUser) -> WebResult {
 
 // ----- tokens -------------------------------------------------------------
 
+// What an agent may do, worded once for the token form and the OAuth
+// consent page.
+pub const PERM_WRITE: &str = "Add, edit and delete cards and decks";
+pub const PERM_REVIEW: &str = "Quiz you and record your answers";
+pub const PERM_ALL_DECKS: &str = "All decks (also lets it create decks, change presets and share)";
+pub const PERM_SOME_DECKS: &str = "Only these:";
+
 fn mcp_url(app: &AppState, headers: &HeaderMap) -> String {
     format!("{}/mcp", oauth::base_url(app, headers))
 }
@@ -2041,12 +2048,12 @@ async fn tokens_page(
                 p.small { "For agents without OAuth support: they send the token as " code { "Authorization: Bearer <token>" } "." }
             form method="post" action="/tokens" {
                 label { "Name" input type="text" name="name" required placeholder="e.g. Claude"; }
-                label.check { input type="checkbox" name="can_write" value="1" checked; " Can add, edit and delete" }
-                label.check { input type="checkbox" name="can_review" value="1" checked; " Can review cards (quiz me)" }
+                label.check { input type="checkbox" name="can_write" value="1" checked; " " (PERM_WRITE) }
+                label.check { input type="checkbox" name="can_review" value="1" checked; " " (PERM_REVIEW) }
                 fieldset {
                     legend { "Decks" }
-                    label.check { input type="radio" name="scope" value="all" checked; " All decks (also lets it create decks and change presets)" }
-                    label.check { input type="radio" name="scope" value="some"; " Only these:" }
+                    label.check { input type="radio" name="scope" value="all" checked; " " (PERM_ALL_DECKS) }
+                    label.check { input type="radio" name="scope" value="some"; " " (PERM_SOME_DECKS) }
                     @for d in &decks {
                         label.check.indent { input type="checkbox" name="decks" value=(d.id); " " (deck_plain(&d.name)) }
                     }
