@@ -720,14 +720,14 @@ async fn home(State(app): State<AppState>, user: WebUser, Flash(msg): Flash) -> 
                                 span.small { (sh.cards) (if sh.cards == 1 { " card" } else { " cards" }) " from " (sh.from) }
                             }
                             form method="post" action=(format!("/shares/{}", sh.id)) {
-                                button.btn.primary type="submit" name="action" value="accept" { "Add" }
+                                button.btn.primary type="submit" name="action" value="accept" { "Accept" }
                                 " "
-                                button.btn type="submit" name="action" value="decline" { "No thanks" }
+                                button.btn type="submit" name="action" value="decline" { "Decline" }
                             }
                         }
                     }
                 }
-                p.muted.small { "Adding gives you your own copy. Your progress is yours; later changes by the sender don't carry over." }
+                p.muted.small { "Accepting gives you your own copy. Your progress is yours; later changes by the sender don't carry over." }
             }
             @if decks.is_empty() {
                 p { "No decks yet. Create one, or bring your Anki decks along." }
@@ -764,7 +764,7 @@ async fn home(State(app): State<AppState>, user: WebUser, Flash(msg): Flash) -> 
             p.actions.icon-links {
                 (icon_btn("/cards/new", ICON_ADD, "Add card"))
                 (icon_btn("/decks/new", ICON_DECKS, "New deck"))
-                (icon_btn("/import", ICON_IMPORT, "Import from Anki"))
+                (icon_btn("/import", ICON_IMPORT, "Import"))
             }
         },
     )
@@ -806,7 +806,7 @@ fn study_foot(deck_name: &str, deck_id: i64, done: i64, total: i64, q_deck: Opti
             div.study-tools {
                 form method="post" action="/study/undo" {
                     @if let Some(d) = q_deck { input type="hidden" name="deck" value=(d); }
-                    button.link.icon-link type="submit" { (icon(ICON_UNDO, PAGE_ICON)) span { "Undo" } }
+                    button.link.icon-link type="submit" { (icon(ICON_UNDO, PAGE_ICON)) span { "Undo last answer" } }
                 }
                 @if let Some(id) = card_id { (icon_link(&format!("/cards/{id}"), ICON_EDIT, "Edit card")) }
             }
@@ -977,7 +977,7 @@ async fn study(State(app): State<AppState>, user: WebUser, Flash(msg): Flash, Qu
                         a href="/" { "Back to decks" }
                         form method="post" action="/study/undo" {
                             @if let Some(d) = q.deck { input type="hidden" name="deck" value=(d); }
-                            button.link type="submit" { "Undo last answer" }
+                            button.link.icon-link type="submit" { (icon(ICON_UNDO, PAGE_ICON)) span { "Undo last answer" } }
                         }
                     }
                 }
@@ -1155,7 +1155,7 @@ async fn deck_page(
             }
             @if let Some(exam) = &d.exam_date { p.muted { "Exam " (exam_words(&user.0, exam)) } }
             @if summary.due_total() > 0 {
-                a.btn.primary.wide href=(format!("/study?deck={id}")) { "Study" }
+                p { a.btn.primary.start href=(format!("/study?deck={id}")) { "Start studying " span.arrow aria-hidden="true" { "→" } } }
             }
             p.actions.icon-links {
                 (icon_btn(&format!("/cards/new?deck={id}"), ICON_ADD, "Add card"))

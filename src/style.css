@@ -203,7 +203,7 @@ table.forecast .num { text-align: right; padding-left: .5rem; font-variant-numer
 .today .date { margin: 1rem 0 0; color: var(--muted); }
 .today h1 { margin-top: .2rem; }
 .today .facts { margin: 0 0 .5rem; color: var(--muted); }
-.today .start { display: flex; width: 100%; font-size: 1.1rem; }
+.start { display: flex; width: 100%; font-size: 1.1rem; }
 .table-head { display: flex; gap: .75rem; margin-top: 2rem; padding: 0 .2rem .3rem; font-size: .8rem; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; }
 .table-head .num, .table-head .chev { display: none; }
 ul.decks a.row .deck-name { display: block; }

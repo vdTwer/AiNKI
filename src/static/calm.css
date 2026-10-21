@@ -924,7 +924,7 @@ html.calm .today .date { margin: 0; font-size: .87rem; color: var(--muted); }
 html.calm .today h1 { margin: .35rem 0 0; }
 html.calm .today h1 .count { color: var(--terra-deep); }
 html.calm .today .facts { margin: .2rem 0 0; color: var(--muted); }
-html.calm .today .start { display: inline-flex; width: auto; margin: 1.4rem 0 0; font-size: 1rem; }
+html.calm .start { display: inline-flex; width: auto; margin: 1.4rem 0 0; font-size: 1rem; }
 html.calm .start .arrow { display: inline-block; transition: transform 180ms var(--ease); }
 html.calm .start:hover .arrow { transform: translateX(3px); }
 html.calm .table-head {
