@@ -5,7 +5,7 @@ use std::{collections::HashMap, time::Duration};
 
 use axum::{
     Router,
-    extract::{DefaultBodyLimit, FromRequestParts, Multipart, Path, Query, State},
+    extract::{DefaultBodyLimit, FromRequestParts, Multipart, Path, Query, RawQuery, State},
     http::{HeaderMap, HeaderValue, StatusCode, header, request::Parts},
     middleware,
     response::{IntoResponse, Redirect, Response},
@@ -139,12 +139,11 @@ pub fn router(app: AppState) -> Router {
         )
         .layer(middleware::from_fn_with_state(app.clone(), security::check_origin));
     let static_routes = Router::new()
-        .route("/style.css", get(style))
-        .route("/calm.css", get(|| static_file("text/css; charset=utf-8", CALM_CSS.as_bytes())))
-        .route("/theme.js", get(|| static_file("text/javascript; charset=utf-8", THEME_JS.as_bytes())))
+        .route("/style.css", get(|q: RawQuery| asset(q, "text/css; charset=utf-8", CSS)))
+        .route("/calm.css", get(|q: RawQuery| asset(q, "text/css; charset=utf-8", CALM_CSS)))
+        .route("/theme.js", get(|q: RawQuery| asset(q, "text/javascript; charset=utf-8", THEME_JS)))
+        .route("/app.js", get(|q: RawQuery| asset(q, "text/javascript; charset=utf-8", APP_JS)))
         .route("/fonts/{name}", get(font_file))
-        // Revalidated on every load so pages and their script stay in step.
-        .route("/app.js", get(|| async { ([(header::CONTENT_TYPE, "text/javascript; charset=utf-8"), (header::CACHE_CONTROL, "no-cache")], APP_JS) }))
         .route("/healthz", get(|| async { "ok" }));
     Router::new()
         .merge(browser_routes)
@@ -531,33 +530,24 @@ fn time_days(days: i64) -> time::Duration {
 
 /// Small static assets. They change only with a new release, so an hour of
 /// caching is plenty.
-async fn static_file(content_type: &'static str, body: &'static [u8]) -> Response {
-    (
-        [(header::CONTENT_TYPE, content_type), (header::CACHE_CONTROL, "public, max-age=3600")],
-        body,
-    )
-        .into_response()
+/// Every built-in file goes out through here. Fonts never change under a
+/// name and a stylesheet or script asked for with the current ?v= never
+/// changes either, so both are cached for good; anything else revalidates.
+fn static_file(content_type: &'static str, body: &'static [u8], forever: bool) -> Response {
+    let cache = if forever { "public, max-age=31536000, immutable" } else { "no-cache" };
+    ([(header::CONTENT_TYPE, content_type), (header::CACHE_CONTROL, cache)], body).into_response()
+}
+
+async fn asset(RawQuery(q): RawQuery, content_type: &'static str, body: &'static str) -> Response {
+    let current = q.and_then(|q| q.strip_prefix("v=").map(|v| v == asset_version())).unwrap_or(false);
+    static_file(content_type, body.as_bytes(), current)
 }
 
 async fn font_file(Path(name): Path<String>) -> Response {
     match FONTS.iter().find(|(n, _)| *n == name) {
-        Some((_, bytes)) => (
-            [(header::CONTENT_TYPE, "font/woff2"), (header::CACHE_CONTROL, "public, max-age=31536000, immutable")],
-            *bytes,
-        )
-            .into_response(),
+        Some((_, bytes)) => static_file("font/woff2", bytes, true),
         None => StatusCode::NOT_FOUND.into_response(),
     }
-}
-
-async fn style() -> impl IntoResponse {
-    (
-        [
-            (header::CONTENT_TYPE, "text/css; charset=utf-8"),
-            (header::CACHE_CONTROL, "public, max-age=3600"),
-        ],
-        CSS,
-    )
 }
 
 // ----- auth pages ---------------------------------------------------------
