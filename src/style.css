@@ -245,3 +245,11 @@ html:not(.calm) .sheet.form hr.divider { display: none; }
 ul.links a.row .grow > span { display: block; }
 label.drop .muted { display: block; font-weight: 400; }
 .sheet div.line { display: flex; justify-content: space-between; gap: 1rem; margin: .3rem 0; }
+
+/* A value with its unit after it: "90 %", "4 :00". */
+.field { display: flex; align-items: center; gap: .5rem; }
+.field input { flex: 1; }
+.field .unit { color: var(--muted); }
+/* Hard values folded away. */
+details.more { margin: .5rem 0 1rem; }
+details.more summary { cursor: pointer; font-weight: 600; min-height: 2.5rem; display: flex; align-items: center; }

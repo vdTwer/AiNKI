@@ -711,6 +711,20 @@ html.calm .sheet .hint:last-child { border-bottom: 0; }
 html.calm .sheet .title + .hint { padding-top: .3rem; border-bottom: 0; }
 html.calm .sheet .hint a { color: var(--terra-deep); }
 
+html.calm .sheet .line .field { display: inline-flex; align-items: baseline; gap: .35rem; }
+html.calm .sheet .line .field input { flex: none; }
+html.calm .sheet .line .unit { font-family: var(--serif); font-size: 1.13rem; }
+
+/* Hard values sit under a quiet fold. */
+html.calm details.more { margin: .4rem 0 0; }
+html.calm details.more summary { display: inline-flex; min-height: 0; padding: .9rem 0 .6rem; list-style: none; font-size: .93rem; font-weight: 400; color: var(--muted); cursor: pointer; transition: color 140ms ease; }
+html.calm details.more summary::-webkit-details-marker { display: none; }
+html.calm details.more summary::after { content: '›'; margin-left: .4rem; color: var(--faint); transition: transform 180ms var(--ease); }
+html.calm details.more[open] summary::after { transform: rotate(90deg); }
+html.calm details.more summary:hover { color: var(--terra-hover); }
+html.calm .sheet details.more { border-top: 1px solid var(--line); }
+html.calm .sheet details.more > .line:last-child { border-bottom: 0; }
+
 html.calm .sheet fieldset.line { min-width: 0; border: 0; border-bottom: 1px solid var(--line); border-radius: 0; }
 html.calm .sheet fieldset.line legend { float: left; padding: 0; font-size: 1rem; font-weight: 400; }
 

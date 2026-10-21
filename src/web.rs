@@ -1057,7 +1057,7 @@ fn deck_sheet(
             }
             hr.divider;
             label.line { "Preset" span.select { (preset_select(presets, selected)) } }
-            p.hint.muted.small { "How much you want to remember and your daily limits. " a href="/presets" { "About presets" } }
+            p.hint.muted.small { "How much you want to remember and how many cards a day. " a href="/presets" { "About presets" } }
             @if let Some(d) = deck {
                 label.line { span { "Exam date " span.muted { "(optional)" } }
                     input type="date" name="exam_date" value=(d.exam_date.clone().unwrap_or_default());
@@ -1556,11 +1556,16 @@ async fn card_page(
                 @if card.card_state() != CardState::New {
                     dt { "Due" } dd { (capitalize(&format::when(&clock, card.due))) }
                 }
-                @if let Some(s) = card.stability { dt { "Stability" } dd { (format!("{s:.1} days")) } }
-                @if let Some(d) = card.difficulty { dt { "Difficulty" } dd { (format!("{d:.1} / 10")) } }
                 @if let Some(r) = r { dt { "Recall chance now" } dd { (format::percent(Some(r as f64))) } }
-                dt { "Reviews / lapses" } dd { (card.reps) " / " (card.lapses) }
-                dt { "Added" } dd { (source_label(&card.created_by)) }
+            }
+            details.more {
+                summary { "Scheduling details" }
+                dl.kv {
+                    @if let Some(s) = card.stability { dt { "Stability" } dd { (format!("{s:.1} days")) } }
+                    @if let Some(d) = card.difficulty { dt { "Difficulty" } dd { (format!("{d:.1} / 10")) } }
+                    dt { "Reviews / lapses" } dd { (card.reps) " / " (card.lapses) }
+                    dt { "Added" } dd { (source_label(&card.created_by)) }
+                }
             }
             form.actions method="post" action=(format!("/cards/{id}/action")) {
                 @if card.suspended {
@@ -1730,16 +1735,22 @@ fn preset_sheet(p: &crate::service::Preset, used_by: &[String]) -> Markup {
             }
             @if !used_by.is_empty() { p.hint.muted.small { "Used by " (used_by.iter().map(|d| deck_plain(d)).collect::<Vec<_>>().join(", ")) } }
             hr.divider;
-            label.line { span { "Desired retention " span.muted { "(0.70–0.99)" } }
-                input type="number" name="desired_retention" min="0.7" max="0.99" step="0.01" required value=(format!("{:.2}", p.desired_retention));
+            label.line { "How much to remember"
+                span.field { input type="number" name="desired_retention" min="70" max="99" step="1" required value=(format!("{:.0}", p.desired_retention * 100.0)); span.unit { "%" } }
             }
             label.line { "New cards per day" input type="number" name="new_per_day" min="0" required value=(p.new_per_day); }
-            label.line { "Maximum reviews per day" input type="number" name="reviews_per_day" min="0" required value=(p.reviews_per_day); }
-            label.line { span { "Learning steps " span.muted { "(e.g. 10m or 1m 10m)" } }
-                input type="text" name="learning_steps" value=(p.learning_steps);
+            label.line { "Reviews per day, at most" input type="number" name="reviews_per_day" min="0" required value=(p.reviews_per_day); }
+            // The hard values sit under a fold; most people never need them.
+            details.more {
+                summary { "Learning steps and longest gap" }
+                label.line { span { "Learning steps " span.muted { "(e.g. 10m or 1m 10m)" } }
+                    input type="text" name="learning_steps" value=(p.learning_steps);
+                }
+                label.line { "Relearning steps" input type="text" name="relearning_steps" value=(p.relearning_steps); }
+                label.line { "Longest gap between reviews"
+                    span.field { input type="number" name="max_interval" min="1" required value=(p.max_interval); span.unit { "days" } }
+                }
             }
-            label.line { "Relearning steps" input type="text" name="relearning_steps" value=(p.relearning_steps); }
-            label.line { "Maximum interval (days)" input type="number" name="max_interval" min="1" required value=(p.max_interval); }
         }
     }
 }
@@ -1853,7 +1864,8 @@ impl PresetForm {
         PresetInput {
             name: Some(self.name),
             description: Some(self.description),
-            desired_retention: Some(self.desired_retention),
+            // Typed as a percent, stored as a probability.
+            desired_retention: Some(self.desired_retention / 100.0),
             new_per_day: Some(self.new_per_day),
             reviews_per_day: Some(self.reviews_per_day),
             learning_steps: Some(self.learning_steps),
@@ -1909,8 +1921,8 @@ async fn settings_page(State(app): State<AppState>, user: WebUser, Flash(msg): F
                         input type="text" name="timezone" value=(u.timezone) list="tzs" required autocapitalize="none";
                         datalist id="tzs" { @for tz in chrono_tz::TZ_VARIANTS.iter() { option value=(tz.name()); } }
                     }
-                    label.line { "New day starts at (hour)" input type="number" name="rollover_hour" min="0" max="23" value=(u.rollover_hour); }
-                    label.line { "Text size (%)" input type="number" name="font_scale" min="80" max="200" step="10" value=(u.font_scale); }
+                    label.line { "New day starts at" span.field { input type="number" name="rollover_hour" min="0" max="23" value=(u.rollover_hour); span.unit { ":00" } } }
+                    label.line { "Text size" span.field { input type="number" name="font_scale" min="80" max="200" step="10" value=(u.font_scale); span.unit { "%" } } }
                     label.check { input type="checkbox" name="four_buttons" value="1" checked[u.four_buttons]; " Show Hard and Easy buttons" }
                     label.check { input type="checkbox" name="optimize_include_agent" value="1" checked[u.optimize_include_agent]; " Use reviews done through agents when optimizing" }
                     fieldset.line {
