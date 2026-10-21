@@ -354,21 +354,48 @@ fn page(title: &str, user: Option<&User>, page_kind: Option<&str>, body: Markup)
                 }
             }
             body data-user=[user.map(|u| u.id)] data-page=[page_kind] {
-                // On phones a bar across the top; in the Calm look a
-                // collapsible rail on the left.
-                @if let Some(u) = user {
+                // On phones a bar across the top; in the Calm look a rail of
+                // dots on the left that become icons as the pointer nears.
+                @if user.is_some() {
                     nav.top aria-label="Main" {
                         a.brand href="/" data-nav="decks" data-label="AiNKI" { "AiNKI" }
-                        a.rail-only href="/" data-nav="decks" data-label="Decks" { "Decks" }
-                        a href="/study" data-nav="study" data-label="Study" { "Study" }
-                        a href="/cards/new" data-nav="add" data-label="Add" { "Add" }
-                        a href="/stats" data-nav="stats" data-label="Stats" { "Stats" }
-                        a href="/settings" data-nav="settings" data-label="Settings" title=(u.handle()) { "Settings" }
+                        a.rail-only href="/" data-nav="decks" data-label="Decks" { (nav_icon(ICON_DECKS)) "Decks" }
+                        a href="/study" data-nav="study" data-label="Study" { (nav_icon(ICON_STUDY)) "Study" }
+                        a href="/cards/new" data-nav="add" data-label="Add" { (nav_icon(ICON_ADD)) "Add" }
+                        a href="/stats" data-nav="stats" data-label="Stats" { (nav_icon(ICON_STATS)) "Stats" }
+                        a href="/settings" data-nav="settings" data-label="Settings" { (nav_icon(ICON_SETTINGS)) "Settings" }
                     }
                 }
                 main { (body) }
                 script src=(format!("/app.js?v={}", asset_version())) defer {}
             }
+        }
+    }
+}
+
+// The rail's icons: 24px line drawings in the text colour.
+const ICON_DECKS: &str = r#"<rect x="4" y="9.5" width="16" height="10.5" rx="2"/><path d="M6.5 6.5h11M9 3.5h6"/>"#;
+const ICON_STUDY: &str = r#"<rect x="5" y="3.5" width="14" height="17" rx="2.5"/><path d="M9 10.5l2 2 4-4"/><path d="M9 16.5h6"/>"#;
+const ICON_ADD: &str = r#"<path d="M12 5v14M5 12h14"/>"#;
+const ICON_STATS: &str = r#"<path d="M5 20V13M12 20V5M19 20v-9"/>"#;
+const ICON_SETTINGS: &str = r#"<path d="M5 7h8M17 7h2M5 17h2M11 17h8"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/>"#;
+
+/// An icon as a small solid object: the drawing repeated a little further
+/// back each time gives it depth, plus a soft shadow behind. calm.css
+/// spaces the layers out; elsewhere only the name shows.
+fn nav_icon(paths: &'static str) -> Markup {
+    let layer = |class: &'static str, depth: u8| {
+        html! {
+            svg class=(class) style=(format!("--z:{depth}")) viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" {
+                (PreEscaped(paths))
+            }
+        }
+    };
+    html! {
+        span.tile aria-hidden="true" {
+            (layer("shadow", 0))
+            @for z in (1..=5).rev() { (layer("side", z)) }
+            (layer("face", 0))
         }
     }
 }
