@@ -380,12 +380,22 @@ const ICON_ADD: &str = r#"<path d="M12 5v14M5 12h14"/>"#;
 const ICON_STATS: &str = r#"<path d="M5 20V13M12 20V5M19 20v-9"/>"#;
 const ICON_SETTINGS: &str = r#"<path d="M5 7h8M17 7h2M5 17h2M11 17h8"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/>"#;
 
+/// An icon as a small solid object: the drawing repeated a little further
+/// back each time gives it depth, plus a soft shadow behind. calm.css
+/// spaces the layers out; elsewhere only the name shows.
 fn nav_icon(paths: &'static str) -> Markup {
-    html! {
-        span.tile aria-hidden="true" {
-            svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" {
+    let layer = |class: &'static str, depth: u8| {
+        html! {
+            svg class=(class) style=(format!("--z:{depth}")) viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" {
                 (PreEscaped(paths))
             }
+        }
+    };
+    html! {
+        span.tile aria-hidden="true" {
+            (layer("shadow", 0))
+            @for z in (1..=5).rev() { (layer("side", z)) }
+            (layer("face", 0))
         }
     }
 }

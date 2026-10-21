@@ -54,7 +54,7 @@
    settings) and the <link>'s media query matches. It builds on style.css.
 
    A quiet tool: one centred column, a clean top, a side rail of dots that
-   turn into icons as the pointer comes near.
+   turn into small 3D icons as the pointer comes near.
    Newsreader for what you learn, Source Sans 3 for everything else.
    Terra Cotta (16-1526 TCX) is the one accent; Wild Orchid (16-2120 TCX)
    marks new cards and "Again". Buttons are small cards that tilt toward
@@ -172,8 +172,8 @@ html.calm .notice::before { content: ''; flex: none; width: 6px; height: 6px; bo
 /* ----- side rail ---------------------------------------------------------- */
 /* Three steps. Far away it is a column of dots. As the pointer comes near
    (app.js sets --near from 0 to 1 by distance) each dot grows into a small
-   tile with an icon. Over a tile, the tile tilts toward the pointer like a
-   button and its name appears beside it. Keyboard focus shows the icons. */
+   3D icon. Over an icon, it tilts toward the pointer like a button, lights
+   up, and its name appears beside it. Keyboard focus shows the icons. */
 html.calm nav.top {
   --near: 0;
   position: fixed;
@@ -229,44 +229,47 @@ html.calm nav.top a::before {
 }
 html.calm nav.top a[aria-current="page"]::before { background: var(--terra); }
 
-/* Step two: the tile with its icon, a small card like a button. */
+/* Step two: the icon, a small solid object. Its layers sit one behind the
+   other in 3D, so when it tilts you see its sides; the shadow lies further
+   back, so it slides the other way. */
 html.calm nav.top .tile {
   position: absolute;
   inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  isolation: isolate;
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: 11px;
-  box-shadow: 0 1px 0 var(--line), calc(var(--ry) * -.6) calc(2px + var(--rx) * .5) 10px rgba(var(--shadow), .06);
+  display: block;
+  color: var(--muted);
+  transform-style: preserve-3d;
   opacity: clamp(0, calc(var(--near) * 1.6 - .4), 1);
-  transform: perspective(var(--persp, 240px)) rotateX(var(--rx)) rotateY(var(--ry)) scale(calc(.45 + var(--near) * .55));
-  transition: opacity 120ms ease, transform var(--dur) var(--spring), box-shadow var(--dur) var(--spring), border-color 160ms ease, color 140ms ease;
+  transform: perspective(var(--persp, 240px)) rotateX(calc(var(--rx) * 1.6)) rotateY(calc(var(--ry) * 1.6)) scale(calc(.4 + var(--near) * .6));
+  transition: opacity 120ms ease, transform var(--dur) var(--spring), color 140ms ease;
 }
-html.calm nav.top .tile svg { display: block; }
-html.calm nav.top .tile::after {
-  content: '';
+html.calm nav.top .tile svg {
   position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  background: radial-gradient(70px circle at var(--gx) var(--gy), rgba(255, 255, 255, .8), rgba(255, 255, 255, 0) 65%);
-  mix-blend-mode: soft-light;
-  opacity: 0;
-  transition: opacity 200ms ease;
-  pointer-events: none;
+  left: 8px;
+  top: 8px;
+  display: block;
+  overflow: visible;
+  transition: filter 200ms ease, opacity 200ms ease;
 }
-html.calm nav.top a[aria-current="page"] .tile { color: var(--terra-deep); border-color: var(--terra-edge); }
+html.calm nav.top .tile .face { transform: translateZ(1.5px); }
+html.calm nav.top .tile .side {
+  color: color-mix(in srgb, currentColor 62%, var(--ink));
+  transform: translateZ(calc(var(--z) * -.7px));
+}
+html.calm nav.top .tile .shadow {
+  color: rgb(var(--shadow));
+  opacity: .12;
+  filter: blur(1.5px);
+  transform: translateZ(-9px) translateY(2px);
+}
+html.calm nav.top a[aria-current="page"] .tile { color: var(--terra-deep); }
 
-/* Step three: over a tile it tilts and glows, and its name appears. */
-html.calm nav.top a:hover .tile, html.calm nav.top a.held .tile {
-  color: var(--terra-hover);
-  border-color: var(--line-strong);
-  box-shadow: 0 1px 0 var(--line), calc(var(--ry) * -.6) calc(2px + var(--rx) * .5) 16px rgba(var(--shadow), .12);
+/* Step three: over an icon it tilts toward the pointer, lights up and
+   its name appears. */
+html.calm nav.top a:hover .tile, html.calm nav.top a.held .tile { color: var(--terra-hover); }
+html.calm nav.top a:hover .tile .face, html.calm nav.top a.held .tile .face {
+  filter: drop-shadow(0 0 5px rgba(211, 131, 119, .55));
 }
-html.calm nav.top a[aria-current="page"]:hover .tile, html.calm nav.top a[aria-current="page"].held .tile { border-color: var(--terra); }
-html.calm nav.top a:hover .tile::after, html.calm nav.top a.held .tile::after { opacity: 1; }
+html.calm nav.top a:hover .tile .shadow, html.calm nav.top a.held .tile .shadow { opacity: .2; }
 html.calm nav.top a::after {
   content: attr(data-label);
   content: attr(data-label) / '';
@@ -797,5 +800,5 @@ html.calm main:has(.brand-big) { padding-top: 22vh; }
 @media (prefers-reduced-motion: reduce) {
   html.calm *, html.calm *::before, html.calm *::after { animation: none !important; transition: none !important; }
   html.calm .btn, html.calm button, html.calm a.row { transform: none !important; }
-  html.calm nav.top .tile { transform: scale(calc(.45 + var(--near) * .55)) !important; }
+  html.calm nav.top .tile { transform: scale(calc(.4 + var(--near) * .6)) !important; }
 }
