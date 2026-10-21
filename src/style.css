@@ -100,7 +100,8 @@ nav.top a[aria-current="page"]:not(.brand) { text-decoration: underline; text-de
 .btn.primary { background: var(--fg); color: var(--bg); }
 .btn.danger { border-style: dashed; }
 .btn.wide { display: flex; width: 100%; margin: 1rem 0; font-size: 1.1rem; }
-button.link { border: 0; padding: 0; min-height: 0; background: none; text-decoration: underline; font-weight: 400; }
+/* Looks like a link but keeps a full-size tap target. */
+button.link { border: 0; padding: 0 .2rem; min-height: 3rem; background: none; text-decoration: underline; font-weight: 400; }
 .btn:active { background: var(--fg); color: var(--bg); }
 .btn.primary:active { background: var(--bg); color: var(--fg); }
 :focus-visible { outline: 3px solid var(--fg); outline-offset: 3px; }

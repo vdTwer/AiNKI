@@ -413,7 +413,7 @@ html.calm .btn.again:hover, html.calm .btn.again.held { border-color: var(--orch
 html.calm .btn.danger { --edge: var(--line); color: var(--terra-deep); background: transparent; box-shadow: none; }
 html.calm .btn.danger:is(:hover, .held) { color: var(--terra-deep); background: transparent; box-shadow: 0 1px 0 var(--edge); }
 html.calm .btn.wide { display: flex; width: 100%; margin: 1.2rem 0; font-size: 1rem; }
-html.calm button.link { color: var(--muted); font-weight: 400; text-decoration: none; transition: color 140ms ease; }
+html.calm button.link { min-height: 0; padding: 0; color: var(--muted); font-weight: 400; text-decoration: none; transition: color 140ms ease; }
 html.calm button.link:hover { color: var(--terra-hover); }
 html.calm .key {
   display: inline-flex;
