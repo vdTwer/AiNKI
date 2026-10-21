@@ -118,7 +118,7 @@ pub fn too_many_requests(retry_after_secs: u64) -> Response {
 }
 
 const CSP: &str = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; \
-img-src 'self' blob:; connect-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'none'; \
+img-src 'self' blob:; connect-src 'self'; object-src 'none'; base-uri 'none'; \
 frame-ancestors 'none'";
 
 /// Security headers on every response. HTML pages that don't set their own

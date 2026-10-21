@@ -153,7 +153,6 @@ nav.tabs a + a { border-left: 2px solid var(--fg); }
 nav.tabs a[aria-current="page"] { background: var(--fg); color: var(--bg); }
 
 /* Studying */
-.status { display: flex; justify-content: space-between; gap: 1rem; margin: .5rem 0; }
 section.face { font-size: 1.35rem; padding: 1rem 0; overflow-wrap: anywhere; }
 section.face img, img.thumb { display: block; max-width: 100%; height: auto; margin: 0 auto .75rem; filter: grayscale(1); }
 img.thumb { max-height: 10rem; margin: 0 0 .5rem; }

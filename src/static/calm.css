@@ -407,7 +407,6 @@ html.calm .btn.again:hover, html.calm .btn.again.held { border-color: var(--orch
    stays with the button you are meant to press. */
 html.calm .btn.danger { --edge: var(--line); color: var(--terra-deep); background: transparent; box-shadow: none; }
 html.calm .btn.danger:is(:hover, .held) { color: var(--terra-deep); background: transparent; box-shadow: 0 1px 0 var(--edge); }
-html.calm .btn.danger::before { display: none; }
 html.calm .btn.wide { display: flex; width: 100%; margin: 1.2rem 0; font-size: 1rem; }
 html.calm button.link { color: var(--muted); font-weight: 400; text-decoration: none; transition: color 140ms ease; }
 html.calm button.link:hover { color: var(--terra-hover); }
@@ -599,7 +598,6 @@ html.calm label.attach {
   cursor: pointer;
   transition: color 140ms ease;
 }
-html.calm label.attach .icon { display: inline-flex; }
 html.calm label.attach .optional { display: none; }
 html.calm label.attach:hover, html.calm label.attach:focus-within { color: var(--terra-hover); }
 html.calm label.attach:focus-within { outline: 2px solid var(--terra); outline-offset: 3px; border-radius: 4px; }
@@ -657,7 +655,6 @@ html.calm .sheet .line, html.calm .sheet label.check {
 html.calm .sheet label.check { flex-direction: row-reverse; cursor: pointer; }
 html.calm .sheet > :is(.line, label.check):last-child,
 html.calm .sheet > :is(.line, label.check):has(+ .hint:last-child) { border-bottom: 0; }
-html.calm .sheet .line .unit { color: var(--muted); }
 html.calm .sheet .line .value { font-family: var(--serif); font-optical-sizing: auto; font-size: 1.13rem; text-align: right; }
 html.calm .sheet .line .value .small { font-family: var(--sans); }
 html.calm .sheet .line input[list]::-webkit-calendar-picker-indicator { opacity: 0; cursor: pointer; transition: opacity 140ms ease; }
@@ -719,7 +716,7 @@ html.calm .sheet .hint a { color: var(--terra-deep); }
 
 html.calm .sheet .line .field { display: inline-flex; align-items: baseline; gap: .35rem; }
 html.calm .sheet .line .field input { flex: none; }
-html.calm .sheet .line .unit { font-family: var(--serif); font-size: 1.13rem; }
+html.calm .sheet .line .unit { color: var(--muted); font-family: var(--serif); font-size: 1.13rem; }
 
 /* Hard values sit under a quiet fold. */
 html.calm details.more { margin: .4rem 0 0; }
