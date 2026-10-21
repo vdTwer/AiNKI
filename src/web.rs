@@ -443,7 +443,8 @@ const ICON_ADD: &str = r#"<path d="M12 5v14M5 12h14"/>"#;
 const ICON_STATS: &str = r#"<path d="M5 20V13M12 20V5M19 20v-9"/>"#;
 const ICON_SETTINGS: &str = r#"<path d="M5 7h8M17 7h2M5 17h2M11 17h8"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/>"#;
 const ICON_EDIT: &str = r#"<path d="M14.5 5.5l4 4L9 19H5v-4z"/><path d="M12.5 7.5l4 4"/>"#;
-const ICON_SHARE: &str = r#"<path d="M12 4v11M8 8l4-4 4 4"/><path d="M6 12v6.5A1.5 1.5 0 0 0 7.5 20h9a1.5 1.5 0 0 0 1.5-1.5V12"/>"#;
+// A paper plane, so Share doesn't look like Export's tray.
+const ICON_SHARE: &str = r#"<path d="M20 4L3.5 10.5l7 3 3 7z"/><path d="M20 4l-9.5 9.5"/>"#;
 const ICON_IMPORT: &str = r#"<path d="M12 4v11M8 11l4 4 4-4"/><path d="M5 16v2.5A1.5 1.5 0 0 0 6.5 20h11a1.5 1.5 0 0 0 1.5-1.5V16"/>"#;
 const ICON_EXPORT: &str = r#"<path d="M12 15V4M8 8l4-4 4 4"/><path d="M5 16v2.5A1.5 1.5 0 0 0 6.5 20h11a1.5 1.5 0 0 0 1.5-1.5V16"/>"#;
 const ICON_UNDO: &str = r#"<path d="M9 7L5 11l4 4"/><path d="M5 11h9a5 5 0 0 1 0 10h-2"/>"#;
