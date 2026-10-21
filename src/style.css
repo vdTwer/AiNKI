@@ -238,7 +238,10 @@ ul.decks a.row .chev { display: none; }
 .sheet hr.divider { margin: 1.2rem 0; }
 .face-image { margin: 0 0 .9rem; }
 .face-image img { display: block; max-width: 100%; max-height: 12rem; margin-bottom: .3rem; }
-label.attach .icon { display: none; }
 
-/* The rail's icons are for the Calm look; here the names are enough. */
-nav.top .tile { display: none; }
+/* Icons are for the Calm look; here the names are enough. */
+.tile { display: none; }
+html:not(.calm) .sheet.form hr.divider { display: none; }
+ul.links a.row .grow > span { display: block; }
+label.drop .muted { display: block; font-weight: 400; }
+.sheet div.line { display: flex; justify-content: space-between; gap: 1rem; margin: .3rem 0; }
