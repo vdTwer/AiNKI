@@ -77,7 +77,8 @@ impl App {
         .await?)
     }
 
-    pub async fn cancel_share(&self, access: &Access, share_id: i64) -> Result<()> {
+    /// Withdraw a pending offer. Returns the deck it was for.
+    pub async fn cancel_share(&self, access: &Access, share_id: i64) -> Result<i64> {
         access.require_write()?;
         let deck_id: i64 = sqlx::query_scalar("SELECT deck_id FROM deck_shares WHERE id = ? AND from_user = ?")
             .bind(share_id)
@@ -89,7 +90,7 @@ impl App {
             .bind(share_id)
             .execute(&self.db)
             .await?;
-        Ok(())
+        Ok(deck_id)
     }
 
     pub async fn incoming_shares(&self, access: &Access) -> Result<Vec<IncomingShare>> {

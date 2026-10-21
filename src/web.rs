@@ -2272,11 +2272,11 @@ async fn share_action(
         }
         "decline" => {
             app.decline_share(&access, id).await?;
-            Ok(redirect("/"))
+            Ok(redirect_msg("/", "Share declined."))
         }
         "cancel" => {
-            app.cancel_share(&access, id).await?;
-            Ok(redirect("/"))
+            let deck = app.cancel_share(&access, id).await?;
+            Ok(redirect_msg(format!("/decks/{deck}/edit#share"), "Share cancelled."))
         }
         _ => Err(AppError::bad("unknown action").into()),
     }
