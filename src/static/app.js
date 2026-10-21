@@ -48,6 +48,45 @@
     toggle();
   }
 
+  // Files: every file field takes a dropped (or pasted) file the same
+  // way. The first file that fits goes into the input as if it had been
+  // picked, so the field's own change handler shows it.
+  function putFile(input, files, fits) {
+    var f = files && Array.prototype.filter.call(files, fits)[0];
+    if (!f || typeof DataTransfer === 'undefined') return false;
+    var dt = new DataTransfer();
+    dt.items.add(f);
+    input.files = dt.files;
+    input.dispatchEvent(new Event('change'));
+    return true;
+  }
+
+  // The zone lights up while files are dragged over it. A drop is always
+  // caught, so a file that doesn't fit is ignored instead of the browser
+  // leaving the page to open it.
+  function dropZone(zone, input, fits) {
+    var hasFiles = function (e) {
+      return e.dataTransfer && Array.prototype.indexOf.call(e.dataTransfer.types, 'Files') >= 0;
+    };
+    zone.addEventListener('dragover', function (e) {
+      if (!hasFiles(e)) return;
+      e.preventDefault();
+      zone.classList.add('dropping');
+    });
+    zone.addEventListener('dragleave', function (e) {
+      if (!zone.contains(e.relatedTarget)) zone.classList.remove('dropping');
+    });
+    zone.addEventListener('drop', function (e) {
+      zone.classList.remove('dropping');
+      if (!hasFiles(e)) return;
+      e.preventDefault();
+      putFile(input, e.dataTransfer.files, fits);
+    });
+  }
+
+  var isImage = function (f) { return /^image\//.test(f.type); };
+  var anyFile = function () { return true; };
+
   // Card form: the sides grow with their text, long text is set as it
   // will be when studying, an image can be picked, dropped or pasted onto
   // a side, and Ctrl/Cmd+Enter adds the card.
@@ -86,31 +125,10 @@
         show();
         file.focus();
       });
-      var take = function (files) {
-        var f = files && Array.prototype.filter.call(files, function (x) { return /^image\//.test(x.type); })[0];
-        if (!f || typeof DataTransfer === 'undefined') return false;
-        var dt = new DataTransfer();
-        dt.items.add(f);
-        file.files = dt.files;
-        show();
-        return true;
-      };
       text.addEventListener('paste', function (e) {
-        if (e.clipboardData && take(e.clipboardData.files)) e.preventDefault();
+        if (e.clipboardData && putFile(file, e.clipboardData.files, isImage)) e.preventDefault();
       });
-      face.addEventListener('dragover', function (e) {
-        if (e.dataTransfer && Array.prototype.indexOf.call(e.dataTransfer.types, 'Files') >= 0) {
-          e.preventDefault();
-          face.classList.add('dropping');
-        }
-      });
-      face.addEventListener('dragleave', function (e) {
-        if (!face.contains(e.relatedTarget)) face.classList.remove('dropping');
-      });
-      face.addEventListener('drop', function (e) {
-        face.classList.remove('dropping');
-        if (e.dataTransfer && take(e.dataTransfer.files)) e.preventDefault();
-      });
+      dropZone(face, file, isImage);
     });
     var key = cardForm.querySelector('.submit-key');
     if (key && calm) {
@@ -125,8 +143,7 @@
     });
   }
 
-  // Picking a file to import: the sheet names the file, and lights up
-  // while one is dragged over it.
+  // Picking a file to import: the field names the file and takes drops.
   Array.prototype.forEach.call(document.querySelectorAll('form:not(.card-form) label.file'), function (label) {
     var input = label.querySelector('input[type=file]');
     var text = label.querySelector('.drop-text, .attach-text');
@@ -137,11 +154,7 @@
       text.textContent = f ? f.name : empty;
       label.classList.toggle('chosen', !!f);
     });
-    label.addEventListener('dragover', function () { label.classList.add('dropping'); });
-    label.addEventListener('dragleave', function (e) {
-      if (!label.contains(e.relatedTarget)) label.classList.remove('dropping');
-    });
-    label.addEventListener('drop', function () { label.classList.remove('dropping'); });
+    dropZone(label, input, anyFile);
   });
 
   // ----- page details (run again after every swap) --------------------------
