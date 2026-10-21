@@ -232,20 +232,56 @@ impl IntoResponse for WebError {
             AppError::Internal(_) => "Something went wrong on the server.".to_string(),
             e => capitalize(&e.to_string()),
         };
-        let body = layout(
-            "Sorry",
-            None,
-            html! {
-                h1 { "Sorry" }
-                p.notice { (msg) }
-                p { a.btn href="/" { "Home" } }
-            },
-        );
-        (status, body).into_response()
+        sorry(status, &msg)
     }
 }
 
+/// The page for anything that stops a request, so every refusal looks alike.
+pub fn sorry(status: StatusCode, msg: &str) -> Response {
+    let body = layout(
+        "Sorry",
+        None,
+        html! {
+            h1 { "Sorry" }
+            p.notice { (msg) }
+            p { a.btn href="/" { "Home" } }
+        },
+    );
+    (status, body).into_response()
+}
+
 type WebResult<T = Response> = Result<T, WebError>;
+
+/// The words for a problem the person can fix by changing what they sent.
+/// Anything else (not found, server trouble) gets the error page.
+fn fixable(e: &AppError) -> Option<String> {
+    match e {
+        AppError::BadRequest(m) | AppError::Conflict(m) | AppError::Forbidden(m) => Some(capitalize(m)),
+        _ => None,
+    }
+}
+
+/// The problem with a sent form, shown above it.
+fn form_error(error: Option<&str>) -> Markup {
+    html! { @if let Some(e) = error { p.notice role="alert" { (e) } } }
+}
+
+/// A form shown again with its problem: what was typed stays.
+fn form_again(page: Markup) -> Response {
+    (StatusCode::BAD_REQUEST, page).into_response()
+}
+
+/// For one-button actions: a problem the person can fix goes back to `to`
+/// as a flash message; anything else is the error page.
+fn or_back(to: impl AsRef<str>, result: Result<Response, AppError>) -> WebResult {
+    match result {
+        Ok(r) => Ok(r),
+        Err(e) => match fixable(&e) {
+            Some(msg) => Ok(redirect_msg(to, &msg)),
+            None => Err(e.into()),
+        },
+    }
+}
 
 fn capitalize(s: &str) -> String {
     let mut c = s.chars();
@@ -1092,22 +1128,28 @@ fn deck_sheet(
     }
 }
 
-async fn deck_new_page(State(app): State<AppState>, user: WebUser) -> WebResult {
-    let presets = app.list_presets(&user.access()).await?;
-    Ok(layout_in(
+/// The new-deck page; `draft` and `error` when a sent form comes back.
+fn deck_new_view(user: &User, presets: &[crate::service::Preset], draft: Option<&Deck>, error: Option<&str>) -> Markup {
+    let selected = draft.map(|d| d.preset_id).or_else(|| presets.first().map(|p| p.id));
+    layout_in(
         Nav::Add,
         "New deck",
-        Some(&user.0),
+        Some(user),
         html! {
             (add_tabs("deck"))
             h1 { "New deck" }
+            (form_error(error))
             form method="post" action="/decks/new" {
-                (deck_sheet(None, &presets, presets.first().map(|p| p.id)))
+                (deck_sheet(draft, presets, selected))
                 div.form-foot.end { button.btn.primary type="submit" { "Create deck" } }
             }
         },
     )
-    .into_response())
+}
+
+async fn deck_new_page(State(app): State<AppState>, user: WebUser) -> WebResult {
+    let presets = app.list_presets(&user.access()).await?;
+    Ok(deck_new_view(&user.0, &presets, None, None).into_response())
 }
 
 #[derive(Deserialize)]
@@ -1119,14 +1161,40 @@ struct DeckCreateForm {
     exam_date: Option<String>,
 }
 
+impl DeckCreateForm {
+    /// What was typed, to show the form again.
+    fn draft(&self, id: i64, user_id: i64) -> Deck {
+        Deck {
+            id,
+            user_id,
+            name: self.name.clone(),
+            description: self.description.clone(),
+            preset_id: self.preset_id.unwrap_or(0),
+            exam_date: self.exam_date.clone().filter(|e| !e.trim().is_empty()),
+            created_at: 0,
+        }
+    }
+}
+
 async fn deck_create(State(app): State<AppState>, user: WebUser, Form(f): Form<DeckCreateForm>) -> WebResult {
     let access = user.access();
-    let deck = app.create_deck(&access, &f.name, &f.description, f.preset_id).await?;
-    if let Some(exam) = f.exam_date.as_deref().filter(|e| !e.trim().is_empty()) {
-        app.update_deck(&access, deck.id, None, None, None, Some(exam)).await?;
+    let result = async {
+        let deck = app.create_deck(&access, &f.name, &f.description, f.preset_id).await?;
+        if let Some(exam) = f.exam_date.as_deref().filter(|e| !e.trim().is_empty()) {
+            app.update_deck(&access, deck.id, None, None, None, Some(exam)).await?;
+        }
+        Ok::<_, AppError>(deck)
     }
-    // Straight on to filling it.
-    Ok(redirect_msg(format!("/cards/new?deck={}", deck.id), "Deck created. Add its first card."))
+    .await;
+    match result {
+        // Straight on to filling it.
+        Ok(deck) => Ok(redirect_msg(format!("/cards/new?deck={}", deck.id), "Deck created. Add its first card.")),
+        Err(e) => {
+            let msg = fixable(&e).ok_or(e)?;
+            let presets = app.list_presets(&access).await?;
+            Ok(form_again(deck_new_view(&user.0, &presets, Some(&f.draft(0, user.0.id)), Some(&msg))))
+        }
+    }
 }
 
 #[derive(Deserialize, Default)]
@@ -1256,26 +1324,31 @@ fn truncate(s: &str, n: usize) -> String {
     }
 }
 
-async fn deck_edit_page(
-    State(app): State<AppState>,
-    user: WebUser,
-    Path(id): Path<i64>,
-    Flash(msg): Flash,
-) -> WebResult {
-    let access = user.access();
+/// The edit-deck page; `draft` and `error` when a sent form comes back.
+async fn deck_edit_view(
+    app: &App,
+    user: &User,
+    id: i64,
+    msg: &Option<String>,
+    draft: Option<&Deck>,
+    error: Option<&str>,
+) -> Result<Markup, AppError> {
+    let access = Access::web(user.clone());
     let deck = app.deck(&access, id).await?;
     let presets = app.list_presets(&access).await?;
     let shares = app.outgoing_shares(&access, id).await?;
+    let shown = draft.unwrap_or(&deck);
     Ok(layout_in(
         Nav::Decks,
         "Edit deck",
-        Some(&user.0),
+        Some(user),
         html! {
-            (flash(&msg))
+            (flash(msg))
             (parent(&format!("/decks/{id}"), &deck_plain(&deck.name)))
             h1 { "Edit deck" }
+            (form_error(error))
             form method="post" action=(format!("/decks/{id}/edit")) {
-                (deck_sheet(Some(&deck), &presets, Some(deck.preset_id)))
+                (deck_sheet(Some(shown), &presets, Some(shown.preset_id)))
                 div.form-foot.end { button.btn.primary type="submit" { "Save" } }
             }
             h2 id="share" { "Share" }
@@ -1309,8 +1382,16 @@ async fn deck_edit_page(
                 }
             }
         },
-    )
-    .into_response())
+    ))
+}
+
+async fn deck_edit_page(
+    State(app): State<AppState>,
+    user: WebUser,
+    Path(id): Path<i64>,
+    Flash(msg): Flash,
+) -> WebResult {
+    Ok(deck_edit_view(&app, &user.0, id, &msg, None, None).await?.into_response())
 }
 
 async fn deck_update(
@@ -1319,21 +1400,32 @@ async fn deck_update(
     Path(id): Path<i64>,
     Form(f): Form<DeckCreateForm>,
 ) -> WebResult {
-    app.update_deck(
-        &user.access(),
-        id,
-        Some(&f.name),
-        Some(&f.description),
-        f.preset_id,
-        Some(f.exam_date.as_deref().unwrap_or("")),
-    )
-    .await?;
-    Ok(redirect_msg(format!("/decks/{id}/edit"), "Deck saved."))
+    let result = app
+        .update_deck(
+            &user.access(),
+            id,
+            Some(&f.name),
+            Some(&f.description),
+            f.preset_id,
+            Some(f.exam_date.as_deref().unwrap_or("")),
+        )
+        .await;
+    match result {
+        Ok(_) => Ok(redirect_msg(format!("/decks/{id}/edit"), "Deck saved.")),
+        Err(e) => {
+            let msg = fixable(&e).ok_or(e)?;
+            let page = deck_edit_view(&app, &user.0, id, &None, Some(&f.draft(id, user.0.id)), Some(&msg)).await?;
+            Ok(form_again(page))
+        }
+    }
 }
 
 async fn deck_delete(State(app): State<AppState>, user: WebUser, Path(id): Path<i64>) -> WebResult {
-    let n = app.delete_deck(&user.access(), id).await?;
-    Ok(redirect_msg("/", &format!("Deck deleted, with its {}.", count(n, "card"))))
+    or_back(format!("/decks/{id}/edit"), async {
+        let n = app.delete_deck(&user.access(), id).await?;
+        Ok(redirect_msg("/", &format!("Deck deleted, with its {}.", count(n, "card"))))
+    }
+    .await)
 }
 
 async fn deck_export(State(app): State<AppState>, user: WebUser, Path(id): Path<i64>) -> WebResult {
@@ -1372,6 +1464,8 @@ struct CardFormData {
     back_upload: Option<Vec<u8>>,
     remove_front_image: bool,
     remove_back_image: bool,
+    /// An image was picked; it can't be refilled if the form comes back.
+    had_upload: bool,
 }
 
 async fn read_card_form(mut mp: Multipart) -> Result<CardFormData, AppError> {
@@ -1413,6 +1507,7 @@ async fn read_card_form(mut mp: Multipart) -> Result<CardFormData, AppError> {
             *name = pending;
         }
     }
+    f.had_upload = f.front_upload.is_some() || f.back_upload.is_some();
     if f.front_upload.as_ref().is_some_and(|d| d.len() > media::MAX_UPLOAD_BYTES)
         || f.back_upload.as_ref().is_some_and(|d| d.len() > media::MAX_UPLOAD_BYTES)
     {
@@ -1463,25 +1558,26 @@ fn face_field(side: &str, title: &str, placeholder: &str, text: &str, image: &Op
 }
 
 #[allow(clippy::too_many_arguments)]
-fn card_form(
-    action: &str,
-    decks: &[crate::service::Deck],
-    deck_id: Option<i64>,
-    front: &str,
-    back: &str,
-    front_image: &Option<String>,
-    back_image: &Option<String>,
-    submit: &str,
-    allow_new_deck: bool,
-) -> Markup {
-    let new_selected = allow_new_deck && (decks.is_empty() || deck_id.is_none());
+/// What the card form shows: a new card's empty sides, a card being
+/// edited, or what was sent when it comes back with a problem.
+struct CardDraft<'a> {
+    deck: Option<i64>,
+    new_deck: &'a str,
+    front: &'a str,
+    back: &'a str,
+    front_image: &'a Option<String>,
+    back_image: &'a Option<String>,
+}
+
+fn card_form(action: &str, decks: &[crate::service::Deck], c: &CardDraft, submit: &str, allow_new_deck: bool) -> Markup {
+    let new_selected = allow_new_deck && (decks.is_empty() || c.deck.is_none());
     html! {
         form.card-form method="post" action=(action) enctype="multipart/form-data" {
             div.deck-line {
                 label.deck-pick { span.deck-label { "Deck" }
                     span.select {
                         select name="deck" required data-new-deck-select=(NEW_DECK) {
-                            @for d in decks { option value=(d.id) selected[!new_selected && Some(d.id) == deck_id] { (deck_plain(&d.name)) } }
+                            @for d in decks { option value=(d.id) selected[!new_selected && Some(d.id) == c.deck] { (deck_plain(&d.name)) } }
                             @if allow_new_deck {
                                 option value=(NEW_DECK) selected[new_selected] { "New deck…" }
                             }
@@ -1491,14 +1587,14 @@ fn card_form(
                 @if allow_new_deck {
                     label.new-deck id="new-deck-field" {
                         span.deck-label { "New deck name" }
-                        input type="text" name="new_deck" maxlength="200" placeholder="e.g. Spanish verbs";
+                        input type="text" name="new_deck" maxlength="200" placeholder="e.g. Spanish verbs" value=(c.new_deck);
                     }
                 }
             }
             div.sheet {
-                (face_field("front", "Front", "Question", front, front_image, true))
+                (face_field("front", "Front", "Question", c.front, c.front_image, true))
                 hr.divider;
-                (face_field("back", "Back", "Answer", back, back_image, false))
+                (face_field("back", "Back", "Answer", c.back, c.back_image, false))
             }
             div.form-foot {
                 p.muted.small { "Text supports Markdown: **bold**, *italic*, lists, `code`." }
@@ -1513,6 +1609,21 @@ struct NewCardQuery {
     deck: Option<i64>,
 }
 
+fn card_new_view(user: &User, decks: &[Deck], c: &CardDraft, msg: &Option<String>, error: Option<&str>) -> Markup {
+    layout_in(
+        Nav::Add,
+        "Add card",
+        Some(user),
+        html! {
+            (add_tabs("card"))
+            (flash(msg))
+            h1 { "Add card" }
+            (form_error(error))
+            (card_form("/cards/new", decks, c, "Add card", true))
+        },
+    )
+}
+
 async fn card_new_page(State(app): State<AppState>, user: WebUser, Flash(msg): Flash, Query(q): Query<NewCardQuery>) -> WebResult {
     let access = user.access();
     let decks = app.decks(&access).await?;
@@ -1521,79 +1632,107 @@ async fn card_new_page(State(app): State<AppState>, user: WebUser, Flash(msg): F
         Some(id) => Some(id),
         None => app.last_used_deck(&access).await?.or_else(|| decks.first().map(|d| d.id)),
     };
-    Ok(layout_in(
-        Nav::Add,
-        "Add card",
-        Some(&user.0),
-        html! {
-            (add_tabs("card"))
-            (flash(&msg))
-            h1 { "Add card" }
-            (card_form("/cards/new", &decks, deck, "", "", &None, &None, "Add card", true))
-        },
-    )
-    .into_response())
+    let draft = CardDraft { deck, new_deck: "", front: "", back: "", front_image: &None, back_image: &None };
+    Ok(card_new_view(&user.0, &decks, &draft, &msg, None).into_response())
+}
+
+/// A picked image can't be put back into a form; say so with the problem.
+fn with_image_hint(msg: String, f: &CardFormData) -> String {
+    if f.had_upload { format!("{msg} Choose the image again.") } else { msg }
 }
 
 async fn card_create(State(app): State<AppState>, user: WebUser, mp: Multipart) -> WebResult {
     let access = user.access();
-    let f = read_card_form(mp).await?;
-    // A taken name adds to that deck instead of failing; the message says so.
-    let mut msg = "Card added.".to_string();
-    let deck = match (&f.new_deck, f.deck) {
-        (Some(name), _) => {
-            if name.trim().is_empty() {
-                return Err(AppError::bad("give the new deck a name").into());
-            }
-            match app.deck_by_name(&access, name).await? {
-                Some(existing) => {
-                    msg = format!("Card added to your existing deck {}.", deck_plain(&existing.name));
-                    existing.id
+    let mut f = read_card_form(mp).await?;
+    let result = async {
+        // A taken name adds to that deck instead of failing; the message says so.
+        let mut msg = "Card added.".to_string();
+        let deck = match (&f.new_deck, f.deck) {
+            (Some(name), _) => {
+                if name.trim().is_empty() {
+                    return Err(AppError::bad("give the new deck a name"));
                 }
-                None => {
-                    msg = "Deck created and card added.".into();
-                    app.create_deck(&access, name, "", None).await?.id
+                match app.deck_by_name(&access, name).await? {
+                    Some(existing) => {
+                        msg = format!("Card added to your existing deck {}.", deck_plain(&existing.name));
+                        existing.id
+                    }
+                    None => {
+                        msg = "Deck created and card added.".into();
+                        app.create_deck(&access, name, "", None).await?.id
+                    }
                 }
             }
+            (None, Some(id)) => id,
+            (None, None) => return Err(AppError::bad("pick a deck")),
+        };
+        let front_image = match f.front_upload.take() {
+            Some(d) => Some(app.store_image(&access, d).await?.id),
+            None => None,
+        };
+        let back_image = match f.back_upload.take() {
+            Some(d) => Some(app.store_image(&access, d).await?.id),
+            None => None,
+        };
+        app.create_card(&access, deck, &f.front, &f.back, front_image, back_image).await?;
+        Ok((deck, msg))
+    }
+    .await;
+    match result {
+        Ok((deck, msg)) => Ok(redirect_msg(format!("/cards/new?deck={deck}"), &msg)),
+        Err(e) => {
+            let msg = with_image_hint(fixable(&e).ok_or(e)?, &f);
+            let decks = app.decks(&access).await?;
+            let draft = CardDraft {
+                deck: if f.new_deck.is_some() { None } else { f.deck },
+                new_deck: f.new_deck.as_deref().unwrap_or(""),
+                front: &f.front,
+                back: &f.back,
+                front_image: &None,
+                back_image: &None,
+            };
+            Ok(form_again(card_new_view(&user.0, &decks, &draft, &None, Some(&msg))))
         }
-        (None, Some(id)) => id,
-        (None, None) => return Err(AppError::bad("pick a deck").into()),
-    };
-    let front_image = match f.front_upload {
-        Some(d) => Some(app.store_image(&access, d).await?.id),
-        None => None,
-    };
-    let back_image = match f.back_upload {
-        Some(d) => Some(app.store_image(&access, d).await?.id),
-        None => None,
-    };
-    app.create_card(&access, deck, &f.front, &f.back, front_image, back_image)
-        .await?;
-    Ok(redirect_msg(format!("/cards/new?deck={deck}"), &msg))
+    }
 }
 
-async fn card_page(
-    State(app): State<AppState>,
-    user: WebUser,
-    Path(id): Path<i64>,
-    Flash(msg): Flash,
-) -> WebResult {
-    let access = user.access();
+/// The card page; `sent` and `error` when an edit comes back with a problem.
+async fn card_view(app: &App, user: &User, id: i64, msg: &Option<String>, sent: Option<&CardFormData>, error: Option<&str>) -> Result<Markup, AppError> {
+    let access = Access::web(user.clone());
     let card = app.card(&access, id).await?;
     let decks = app.decks(&access).await?;
     let history = app.card_history(&access, id).await?;
-    let clock = user.0.clock();
-    let params = user.0.params();
+    let clock = user.clock();
+    let params = user.params();
     let r = scheduler::retrievability(&card.sched(), &params, &clock);
+    let draft = match sent {
+        Some(f) => CardDraft {
+            deck: f.deck.or(Some(card.deck_id)),
+            new_deck: "",
+            front: &f.front,
+            back: &f.back,
+            front_image: if f.remove_front_image { &None } else { &card.front_image },
+            back_image: if f.remove_back_image { &None } else { &card.back_image },
+        },
+        None => CardDraft {
+            deck: Some(card.deck_id),
+            new_deck: "",
+            front: &card.front,
+            back: &card.back,
+            front_image: &card.front_image,
+            back_image: &card.back_image,
+        },
+    };
     Ok(layout_in(
         Nav::Decks,
         "Edit card",
-        Some(&user.0),
+        Some(user),
         html! {
-            (flash(&msg))
+            (flash(msg))
             @if let Some(d) = decks.iter().find(|d| d.id == card.deck_id) { (parent(&format!("/decks/{}", d.id), &deck_plain(&d.name))) }
             h1 { "Edit card" }
-            (card_form(&format!("/cards/{id}"), &decks, Some(card.deck_id), &card.front, &card.back, &card.front_image, &card.back_image, "Save", false))
+            (form_error(error))
+            (card_form(&format!("/cards/{id}"), &decks, &draft, "Save", false))
             h2 { "Scheduling" }
             dl.kv {
                 dt { "State" } dd { (state_label(card.card_state())) @if card.suspended { " (suspended)" } }
@@ -1644,40 +1783,58 @@ async fn card_page(
                 }
             }
         },
-    )
-    .into_response())
+    ))
+}
+
+async fn card_page(
+    State(app): State<AppState>,
+    user: WebUser,
+    Path(id): Path<i64>,
+    Flash(msg): Flash,
+) -> WebResult {
+    Ok(card_view(&app, &user.0, id, &msg, None, None).await?.into_response())
 }
 
 async fn card_update(State(app): State<AppState>, user: WebUser, Path(id): Path<i64>, mp: Multipart) -> WebResult {
     let access = user.access();
-    let f = read_card_form(mp).await?;
-    let front_image = match f.front_upload {
-        Some(d) => Some(Some(app.store_image(&access, d).await?.id)),
-        None if f.remove_front_image => Some(None),
-        None => None,
-    };
-    let back_image = match f.back_upload {
-        Some(d) => Some(Some(app.store_image(&access, d).await?.id)),
-        None if f.remove_back_image => Some(None),
-        None => None,
-    };
-    app.update_card(
-        &access,
-        id,
-        CardInput {
-            front: Some(f.front),
-            back: Some(f.back),
-            front_image,
-            back_image,
-        },
-    )
-    .await?;
-    if let Some(deck) = f.deck {
-        if deck != app.card(&access, id).await?.deck_id {
-            app.move_card(&access, id, deck).await?;
+    let mut f = read_card_form(mp).await?;
+    let result = async {
+        let front_image = match f.front_upload.take() {
+            Some(d) => Some(Some(app.store_image(&access, d).await?.id)),
+            None if f.remove_front_image => Some(None),
+            None => None,
+        };
+        let back_image = match f.back_upload.take() {
+            Some(d) => Some(Some(app.store_image(&access, d).await?.id)),
+            None if f.remove_back_image => Some(None),
+            None => None,
+        };
+        app.update_card(
+            &access,
+            id,
+            CardInput {
+                front: Some(f.front.clone()),
+                back: Some(f.back.clone()),
+                front_image,
+                back_image,
+            },
+        )
+        .await?;
+        if let Some(deck) = f.deck {
+            if deck != app.card(&access, id).await?.deck_id {
+                app.move_card(&access, id, deck).await?;
+            }
+        }
+        Ok::<_, AppError>(())
+    }
+    .await;
+    match result {
+        Ok(()) => Ok(redirect_msg(format!("/cards/{id}"), "Card saved.")),
+        Err(e) => {
+            let msg = with_image_hint(fixable(&e).ok_or(e)?, &f);
+            Ok(form_again(card_view(&app, &user.0, id, &None, Some(&f), Some(&msg)).await?))
         }
     }
-    Ok(redirect_msg(format!("/cards/{id}"), "Card saved."))
 }
 
 #[derive(Deserialize)]
@@ -1692,27 +1849,30 @@ async fn card_action(
     Form(f): Form<ActionForm>,
 ) -> WebResult {
     let access = user.access();
-    let msg = match f.action.as_str() {
-        "suspend" => {
-            app.set_suspended(&access, id, true).await?;
-            "Card suspended."
-        }
-        "unsuspend" => {
-            app.set_suspended(&access, id, false).await?;
-            "Card unsuspended."
-        }
-        "reset" => {
-            app.reset_card(&access, id).await?;
-            "Card progress forgotten; it's new again."
-        }
-        "delete" => {
-            let card = app.card(&access, id).await?;
-            app.delete_card(&access, id).await?;
-            return Ok(redirect_msg(format!("/decks/{}", card.deck_id), "Card deleted."));
-        }
-        _ => return Err(AppError::bad("unknown action").into()),
-    };
-    Ok(redirect_msg(format!("/cards/{id}"), msg))
+    or_back(format!("/cards/{id}"), async {
+        let msg = match f.action.as_str() {
+            "suspend" => {
+                app.set_suspended(&access, id, true).await?;
+                "Card suspended."
+            }
+            "unsuspend" => {
+                app.set_suspended(&access, id, false).await?;
+                "Card unsuspended."
+            }
+            "reset" => {
+                app.reset_card(&access, id).await?;
+                "Card progress forgotten; it's new again."
+            }
+            "delete" => {
+                let card = app.card(&access, id).await?;
+                app.delete_card(&access, id).await?;
+                return Ok(redirect_msg(format!("/decks/{}", card.deck_id), "Card deleted."));
+            }
+            _ => return Err(AppError::bad("unknown action")),
+        };
+        Ok(redirect_msg(format!("/cards/{id}"), msg))
+    }
+    .await)
 }
 
 // ----- presets ------------------------------------------------------------
@@ -1824,41 +1984,51 @@ fn preset_draft(t: &presets::PresetTemplate, user_id: i64) -> crate::service::Pr
 
 /// A new preset, filled in from a template. Nothing is saved until the
 /// form is sent, like a new deck.
-async fn preset_new_page(user: WebUser, Query(q): Query<TemplateQuery>) -> WebResult {
-    let t = presets::template(q.template.as_deref().unwrap_or("standard")).ok_or(AppError::NotFound)?;
-    let draft = preset_draft(t, user.0.id);
-    Ok(layout_in(
+fn preset_new_view(user: &User, template: &str, draft: &crate::service::Preset, error: Option<&str>) -> Markup {
+    layout_in(
         Nav::Settings,
         "New preset",
-        Some(&user.0),
+        Some(user),
         html! {
             (parent("/presets", "Presets"))
             h1 { "New preset" }
+            (form_error(error))
             form method="post" action="/presets/new" {
-                input type="hidden" name="template" value=(t.key);
-                (preset_sheet(&draft, &[]))
+                input type="hidden" name="template" value=(template);
+                (preset_sheet(draft, &[]))
                 div.form-foot.end { button.btn.primary type="submit" { "Create preset" } }
             }
         },
     )
-    .into_response())
+}
+
+async fn preset_new_page(user: WebUser, Query(q): Query<TemplateQuery>) -> WebResult {
+    let t = presets::template(q.template.as_deref().unwrap_or("standard")).ok_or(AppError::NotFound)?;
+    Ok(preset_new_view(&user.0, t.key, &preset_draft(t, user.0.id), None).into_response())
 }
 
 async fn preset_create(State(app): State<AppState>, user: WebUser, Form(f): Form<PresetForm>) -> WebResult {
+    let draft = f.draft(0, user.0.id);
     let template = f.template.clone();
-    let p = app
-        .create_preset(&user.access(), template.as_deref(), f.into_input())
-        .await?;
-    Ok(redirect_msg(format!("/presets/{}", p.id), "Preset created."))
+    match app.create_preset(&user.access(), template.as_deref(), f.into_input()).await {
+        Ok(p) => Ok(redirect_msg(format!("/presets/{}", p.id), "Preset created.")),
+        Err(e) => {
+            let msg = fixable(&e).ok_or(e)?;
+            Ok(form_again(preset_new_view(&user.0, template.as_deref().unwrap_or("standard"), &draft, Some(&msg))))
+        }
+    }
 }
 
-async fn preset_page(
-    State(app): State<AppState>,
-    user: WebUser,
-    Path(id): Path<i64>,
-    Flash(msg): Flash,
-) -> WebResult {
-    let access = user.access();
+/// The preset page; `draft` and `error` when a sent form comes back.
+async fn preset_view(
+    app: &App,
+    user: &User,
+    id: i64,
+    msg: &Option<String>,
+    draft: Option<&crate::service::Preset>,
+    error: Option<&str>,
+) -> Result<Markup, AppError> {
+    let access = Access::web(user.clone());
     let p = app.preset(&access, id).await?;
     let decks: Vec<String> = app
         .decks(&access)
@@ -1870,13 +2040,14 @@ async fn preset_page(
     Ok(layout_in(
         Nav::Settings,
         "Edit preset",
-        Some(&user.0),
+        Some(user),
         html! {
-            (flash(&msg))
+            (flash(msg))
             (parent("/presets", "Presets"))
             h1 { "Edit preset" }
+            (form_error(error))
             form method="post" action=(format!("/presets/{id}")) {
-                (preset_sheet(&p, &decks))
+                (preset_sheet(draft.unwrap_or(&p), &decks))
                 div.form-foot.end { button.btn.primary type="submit" { "Save" } }
             }
             @if decks.is_empty() {
@@ -1889,8 +2060,16 @@ async fn preset_page(
                 }
             }
         },
-    )
-    .into_response())
+    ))
+}
+
+async fn preset_page(
+    State(app): State<AppState>,
+    user: WebUser,
+    Path(id): Path<i64>,
+    Flash(msg): Flash,
+) -> WebResult {
+    Ok(preset_view(&app, &user.0, id, &msg, None, None).await?.into_response())
 }
 
 #[derive(Deserialize)]
@@ -1921,6 +2100,23 @@ impl PresetForm {
             max_interval: Some(self.max_interval),
         }
     }
+
+    /// What was typed, to show the form again.
+    fn draft(&self, id: i64, user_id: i64) -> crate::service::Preset {
+        crate::service::Preset {
+            id,
+            user_id,
+            name: self.name.clone(),
+            description: self.description.clone(),
+            desired_retention: self.desired_retention / 100.0,
+            new_per_day: self.new_per_day,
+            reviews_per_day: self.reviews_per_day,
+            learning_steps: self.learning_steps.clone(),
+            relearning_steps: self.relearning_steps.clone(),
+            max_interval: self.max_interval,
+            created_at: 0,
+        }
+    }
 }
 
 async fn preset_update(
@@ -1929,14 +2125,22 @@ async fn preset_update(
     Path(id): Path<i64>,
     Form(f): Form<PresetForm>,
 ) -> WebResult {
-    app.update_preset(&user.access(), id, f.into_input())
-    .await?;
-    Ok(redirect_msg(format!("/presets/{id}"), "Preset saved."))
+    let draft = f.draft(id, user.0.id);
+    match app.update_preset(&user.access(), id, f.into_input()).await {
+        Ok(_) => Ok(redirect_msg(format!("/presets/{id}"), "Preset saved.")),
+        Err(e) => {
+            let msg = fixable(&e).ok_or(e)?;
+            Ok(form_again(preset_view(&app, &user.0, id, &None, Some(&draft), Some(&msg)).await?))
+        }
+    }
 }
 
 async fn preset_delete(State(app): State<AppState>, user: WebUser, Path(id): Path<i64>) -> WebResult {
-    app.delete_preset(&user.access(), id).await?;
-    Ok(redirect_msg("/presets", "Preset deleted."))
+    or_back(format!("/presets/{id}"), async {
+        app.delete_preset(&user.access(), id).await?;
+        Ok(redirect_msg("/presets", "Preset deleted."))
+    }
+    .await)
 }
 
 // ----- settings -----------------------------------------------------------
@@ -2016,7 +2220,7 @@ async fn settings_page(State(app): State<AppState>, user: WebUser, Flash(msg): F
                     }
                 }
             }
-            h2 { "Change password" }
+            h2 id="password" { "Change password" }
             form method="post" action="/settings/password" {
                 div.sheet.form {
                     label.line { "Current password" input type="password" name="current" required autocomplete="current-password"; }
@@ -2041,17 +2245,20 @@ struct SettingsForm {
 }
 
 async fn settings_update(State(app): State<AppState>, user: WebUser, Form(f): Form<SettingsForm>) -> WebResult {
-    app.update_settings(
-        user.0.id,
-        f.timezone.trim(),
-        f.rollover_hour,
-        f.four_buttons.is_some(),
-        f.font_scale,
-        f.optimize_include_agent.is_some(),
-        f.desktop_look.as_deref().unwrap_or("calm"),
-    )
-    .await?;
-    Ok(redirect_msg("/settings", "Settings saved."))
+    or_back("/settings", async {
+        app.update_settings(
+            user.0.id,
+            f.timezone.trim(),
+            f.rollover_hour,
+            f.four_buttons.is_some(),
+            f.font_scale,
+            f.optimize_include_agent.is_some(),
+            f.desktop_look.as_deref().unwrap_or("calm"),
+        )
+        .await?;
+        Ok(redirect_msg("/settings", "Settings saved."))
+    }
+    .await)
 }
 
 #[derive(Deserialize)]
@@ -2066,7 +2273,11 @@ async fn password_update(
     jar: CookieJar,
     Form(f): Form<PasswordForm>,
 ) -> WebResult {
-    app.change_password(&user.0, &f.current, &f.new).await?;
+    // Passwords are never written back into a form; the problem shows
+    // as a message above it.
+    if let Err(e) = app.change_password(&user.0, &f.current, &f.new).await {
+        return or_back("/settings#password", Err(e));
+    }
     let token = app.create_session(user.0.id).await?;
     Ok((
         jar.add(session_cookie(&app, token)).add(flash_cookie("Password changed.")),
@@ -2089,8 +2300,11 @@ async fn optimize(State(app): State<AppState>, user: WebUser) -> WebResult {
 }
 
 async fn reset_params(State(app): State<AppState>, user: WebUser) -> WebResult {
-    app.reset_parameters(&user.access()).await?;
-    Ok(redirect_msg("/settings#fsrs", "FSRS parameters reset to the defaults."))
+    or_back("/settings#fsrs", async {
+        app.reset_parameters(&user.access()).await?;
+        Ok(redirect_msg("/settings#fsrs", "FSRS parameters reset to the defaults."))
+    }
+    .await)
 }
 
 // ----- tokens -------------------------------------------------------------
@@ -2209,9 +2423,13 @@ async fn token_create(
     Form(f): Form<TokenForm>,
 ) -> WebResult {
     let decks = if f.scope == "all" { None } else { Some(f.decks) };
-    let (token, raw) = app
+    let (token, raw) = match app
         .create_token(user.0.id, &f.name, f.can_write.is_some(), f.can_review.is_some(), decks)
-        .await?;
+        .await
+    {
+        Ok(t) => t,
+        Err(e) => return or_back("/tokens", Err(e)),
+    };
     let url = mcp_url(&app, &headers);
     let config = serde_json::to_string_pretty(&serde_json::json!({
         "mcpServers": {
@@ -2247,8 +2465,11 @@ async fn token_create(
 }
 
 async fn token_revoke(State(app): State<AppState>, user: WebUser, Path(id): Path<i64>) -> WebResult {
-    app.revoke_token(user.0.id, id).await?;
-    Ok(redirect_msg("/tokens", "Access removed."))
+    or_back("/tokens", async {
+        app.revoke_token(user.0.id, id).await?;
+        Ok(redirect_msg("/tokens", "Access removed."))
+    }
+    .await)
 }
 
 // ----- import -------------------------------------------------------------
@@ -2321,10 +2542,13 @@ async fn import_upload(State(app): State<AppState>, user: WebUser, mut mp: Multi
             .map_err(|e| AppError::bad(format!("upload failed: {e}")))?;
         fields.insert(name, data.to_vec());
     }
+    let file = fields.get("file").cloned();
     let text = |k: &str| fields.get(k).map(|v| String::from_utf8_lossy(v).to_string()).unwrap_or_default();
-    let report = match text("kind").as_str() {
+    // The file has to be picked again anyway, so problems come back as a
+    // message on the import page.
+    let report = async { Ok::<_, AppError>(match text("kind").as_str() {
         "apkg" => {
-            let data = fields.remove("file").filter(|d| !d.is_empty()).ok_or_else(|| AppError::bad("choose a file"))?;
+            let data = file.filter(|d| !d.is_empty()).ok_or_else(|| AppError::bad("choose a file"))?;
             app.import_apkg(&access, data).await?
         }
         "csv" => {
@@ -2335,7 +2559,12 @@ async fn import_upload(State(app): State<AppState>, user: WebUser, mut mp: Multi
             }
             app.import_csv(&access, deck, &body).await?
         }
-        _ => return Err(AppError::bad("unknown import type").into()),
+        _ => return Err(AppError::bad("unknown import type")),
+    }) }
+    .await;
+    let report = match report {
+        Ok(r) => r,
+        Err(e) => return or_back("/import", Err(e)),
     };
     let mut msg = format!("Imported {}", count(report.cards_imported, "card"));
     if report.reviews_imported > 0 {
@@ -2441,11 +2670,14 @@ async fn deck_share(
     Path(id): Path<i64>,
     Form(f): Form<ShareForm>,
 ) -> WebResult {
-    let share = app.share_deck(&user.access(), id, &f.user).await?;
-    Ok(redirect_msg(
-        format!("/decks/{id}/edit#share"),
-        &format!("Shared with {}. They'll see it on their home page.", share.to),
-    ))
+    or_back(format!("/decks/{id}/edit#share"), async {
+        let share = app.share_deck(&user.access(), id, &f.user).await?;
+        Ok(redirect_msg(
+            format!("/decks/{id}/edit#share"),
+            &format!("Shared with {}. They'll see it on their home page.", share.to),
+        ))
+    }
+    .await)
 }
 
 async fn share_action(
@@ -2455,19 +2687,22 @@ async fn share_action(
     Form(f): Form<ActionForm>,
 ) -> WebResult {
     let access = user.access();
-    match f.action.as_str() {
-        "accept" => {
-            let deck = app.accept_share(&access, id).await?;
-            Ok(redirect_msg(format!("/decks/{}", deck.id), "Shared deck added to your decks."))
+    or_back("/", async {
+        match f.action.as_str() {
+            "accept" => {
+                let deck = app.accept_share(&access, id).await?;
+                Ok(redirect_msg(format!("/decks/{}", deck.id), "Shared deck added to your decks."))
+            }
+            "decline" => {
+                app.decline_share(&access, id).await?;
+                Ok(redirect_msg("/", "Share declined."))
+            }
+            "cancel" => {
+                let deck = app.cancel_share(&access, id).await?;
+                Ok(redirect_msg(format!("/decks/{deck}/edit#share"), "Share cancelled."))
+            }
+            _ => Err(AppError::bad("unknown action")),
         }
-        "decline" => {
-            app.decline_share(&access, id).await?;
-            Ok(redirect_msg("/", "Share declined."))
-        }
-        "cancel" => {
-            let deck = app.cancel_share(&access, id).await?;
-            Ok(redirect_msg(format!("/decks/{deck}/edit#share"), "Share cancelled."))
-        }
-        _ => Err(AppError::bad("unknown action").into()),
     }
+    .await)
 }

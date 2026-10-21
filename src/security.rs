@@ -14,7 +14,7 @@ use axum::{
     extract::{ConnectInfo, FromRequestParts, Request, State},
     http::{HeaderMap, HeaderValue, Method, StatusCode, header, request::Parts},
     middleware::Next,
-    response::{IntoResponse, Response},
+    response::Response,
 };
 
 use crate::AppState;
@@ -109,12 +109,12 @@ impl<S: Send + Sync> FromRequestParts<S> for ClientIp {
 }
 
 pub fn too_many_requests(retry_after_secs: u64) -> Response {
-    (
+    let mut res = crate::web::sorry(
         StatusCode::TOO_MANY_REQUESTS,
-        [(header::RETRY_AFTER, retry_after_secs.to_string())],
         "Too many attempts. Please wait a while and try again.",
-    )
-        .into_response()
+    );
+    res.headers_mut().insert(header::RETRY_AFTER, retry_after_secs.into());
+    res
 }
 
 const CSP: &str = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; \
@@ -189,7 +189,7 @@ pub async fn check_origin(State(app): State<AppState>, req: Request, next: Next)
             .is_some_and(|c| c != "null" && allowed_hosts(&app, headers).iter().any(|h| h == host_of(c)));
         if !ok {
             tracing::warn!("blocked cross-origin {} {} from {:?}", req.method(), req.uri().path(), claimed);
-            return (StatusCode::FORBIDDEN, "Cross-origin request blocked.").into_response();
+            return crate::web::sorry(StatusCode::FORBIDDEN, "This form came from another site, so it was blocked.");
         }
     }
     next.run(req).await
