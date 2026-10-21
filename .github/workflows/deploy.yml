@@ -1,0 +1,71 @@
+# Deploys main to production over SSH on every push (or by hand from the
+# Actions tab). The testing branch is not deployed: it is pulled and run on
+# local machines.
+#
+# Settings > Environments > production holds where and how to deploy:
+#   secrets:   SSH_HOST, SSH_USER, SSH_PRIVATE_KEY, SSH_KNOWN_HOSTS
+#   variables: DEPLOY_PATH (the checkout on the server), SSH_PORT (optional)
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production
+    # One deploy at a time; a newer push waits for the running one instead
+    # of cancelling it halfway through a build.
+    concurrency:
+      group: deploy-production
+      cancel-in-progress: false
+    timeout-minutes: 30
+    steps:
+      - name: Only main deploys
+        if: github.ref_name != 'main'
+        run: |
+          echo "::error::Only main deploys to production (got $GITHUB_REF_NAME)"
+          exit 1
+
+      - name: Set up SSH
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.SSH_KNOWN_HOSTS }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+
+      - name: Pull, build and restart on the server
+        env:
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_USER: ${{ secrets.SSH_USER }}
+          SSH_PORT: ${{ vars.SSH_PORT || '22' }}
+          DEPLOY_PATH: ${{ vars.DEPLOY_PATH }}
+          BRANCH: main
+        run: |
+          test -n "$DEPLOY_PATH" || { echo "::error::DEPLOY_PATH is not set for this environment"; exit 1; }
+          ssh -i ~/.ssh/deploy_key -p "$SSH_PORT" \
+              -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+              "$SSH_USER@$SSH_HOST" \
+              "bash -s -- $(printf '%q %q' "$DEPLOY_PATH" "$BRANCH")" <<'SCRIPT'
+          set -euo pipefail
+          cd "${1/#\~/$HOME}"
+          git fetch --prune origin "$2"
+          git checkout "$2"
+          # Fails instead of overwriting if the server copy has local commits.
+          git merge --ff-only "origin/$2"
+          echo "Deploying $(git log -1 --format='%h %s')"
+          # Build first: if it fails, the running container stays up.
+          docker compose build
+          docker compose up -d --remove-orphans
+          docker image prune -f
+          docker compose ps
+          SCRIPT
+
+      - name: Clean up
+        if: always()
+        run: rm -f ~/.ssh/deploy_key
