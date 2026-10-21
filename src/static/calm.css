@@ -587,7 +587,7 @@ html.calm label.attach {
   margin: .8rem 0 0;
   font-size: .87rem;
   font-weight: 400;
-  color: var(--faint);
+  color: var(--muted);
   cursor: pointer;
   transition: color 140ms ease;
 }
@@ -598,7 +598,7 @@ html.calm label.attach input { position: absolute; width: 1px; height: 1px; opac
 html.calm .face-edit.has-image label.attach { display: none; }
 
 html.calm .form-foot { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-top: 1.2rem; }
-html.calm .form-foot p { margin: 0; color: var(--faint); }
+html.calm .form-foot p { margin: 0; color: var(--muted); }
 html.calm .form-foot .btn.wide { display: inline-flex; width: auto; margin: 0; padding: .55rem 1.1rem .55rem 1.4rem; gap: .8rem; }
 html.calm .form-foot .key { color: var(--faint); border-color: var(--line); }
 
@@ -1025,7 +1025,7 @@ html.calm .study-meta { margin: .6rem 0 0; font-size: .87rem; color: var(--muted
 html.calm .study-meta a { color: var(--muted); }
 html.calm .study-meta a:hover { color: var(--terra-hover); }
 html.calm .study-foot .study-tools { justify-content: flex-start; gap: 1.2rem; margin-top: .2rem; font-size: .87rem; }
-html.calm .study-foot .study-tools a, html.calm .study-foot .study-tools button.link { color: var(--faint); }
+html.calm .study-foot .study-tools a, html.calm .study-foot .study-tools button.link { color: var(--muted); }
 html.calm .study-foot .study-tools a:hover, html.calm .study-foot .study-tools button.link:hover { color: var(--terra-hover); }
 
 /* The end of a session: the progress line closes into a dot, then a single
