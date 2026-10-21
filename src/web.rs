@@ -702,7 +702,7 @@ async fn home(State(app): State<AppState>, user: WebUser, Flash(msg): Flash) -> 
             section.today aria-label="Today" {
                 p.date { (long_date(&user.0)) }
                 @if total_due > 0 {
-                    h1 { span.count { (total_due) (if total_due == 1 { " card" } else { " cards" }) } " due today" }
+                    h1 { span.count { (total_due) (if total_due == 1 { " card" } else { " cards" }) } " to study today" }
                 } @else if !decks.is_empty() {
                     h1 { "All done for today" }
                 } @else {
