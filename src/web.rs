@@ -1458,7 +1458,6 @@ struct CardFormData {
     deck: Option<i64>,
     /// Set when the picker says "New deck…": the name to create.
     new_deck: Option<String>,
-    pending_new_deck: Option<String>,
     front: String,
     back: String,
     front_upload: Option<Vec<u8>>,
@@ -1469,50 +1468,42 @@ struct CardFormData {
     had_upload: bool,
 }
 
-async fn read_card_form(mut mp: Multipart) -> Result<CardFormData, AppError> {
-    let mut f = CardFormData::default();
-    while let Some(field) = mp
-        .next_field()
-        .await
-        .map_err(|e| AppError::bad(format!("bad form: {e}")))?
-    {
+/// Reads a multipart form into field name → bytes. Card and import forms
+/// both come through here, so upload problems read the same.
+async fn read_multipart(mut mp: Multipart) -> Result<HashMap<String, Vec<u8>>, AppError> {
+    let failed = |e: axum::extract::multipart::MultipartError| AppError::bad(format!("upload failed: {e}"));
+    let mut fields = HashMap::new();
+    while let Some(field) = mp.next_field().await.map_err(failed)? {
         let name = field.name().unwrap_or("").to_string();
-        let data = field
-            .bytes()
-            .await
-            .map_err(|e| AppError::bad(format!("upload failed: {e}")))?;
-        let text = || String::from_utf8_lossy(&data).to_string();
-        match name.as_str() {
-            "deck" if text() == NEW_DECK => f.new_deck = Some(String::new()),
-            "deck" => f.deck = text().parse().ok(),
-            "new_deck" => {
-                if let Some(name) = f.new_deck.as_mut() {
-                    *name = text();
-                } else {
-                    // Only used when "New deck…" is picked; remember it in
-                    // case the picker comes later in the form.
-                    f.pending_new_deck = Some(text());
-                }
-            }
-            "front" => f.front = text(),
-            "back" => f.back = text(),
-            "front_image" if !data.is_empty() => f.front_upload = Some(data.to_vec()),
-            "back_image" if !data.is_empty() => f.back_upload = Some(data.to_vec()),
-            "remove_front_image" => f.remove_front_image = true,
-            "remove_back_image" => f.remove_back_image = true,
-            _ => {}
-        }
+        let data = field.bytes().await.map_err(failed)?;
+        fields.insert(name, data.to_vec());
     }
-    if let (Some(name), Some(pending)) = (f.new_deck.as_mut(), f.pending_new_deck.take()) {
-        if name.is_empty() {
-            *name = pending;
-        }
-    }
+    Ok(fields)
+}
+
+fn field_text(fields: &HashMap<String, Vec<u8>>, k: &str) -> String {
+    fields.get(k).map(|v| String::from_utf8_lossy(v).to_string()).unwrap_or_default()
+}
+
+async fn read_card_form(mp: Multipart) -> Result<CardFormData, AppError> {
+    let mut fields = read_multipart(mp).await?;
+    let text = |k: &str| field_text(&fields, k);
+    let deck = text("deck");
+    let mut f = CardFormData {
+        // "New deck…" in the picker means: create the deck named alongside.
+        new_deck: (deck == NEW_DECK).then(|| text("new_deck")),
+        deck: deck.parse().ok(),
+        front: text("front"),
+        back: text("back"),
+        remove_front_image: fields.contains_key("remove_front_image"),
+        remove_back_image: fields.contains_key("remove_back_image"),
+        ..Default::default()
+    };
+    f.front_upload = fields.remove("front_image").filter(|d| !d.is_empty());
+    f.back_upload = fields.remove("back_image").filter(|d| !d.is_empty());
     f.had_upload = f.front_upload.is_some() || f.back_upload.is_some();
-    if f.front_upload.as_ref().is_some_and(|d| d.len() > media::MAX_UPLOAD_BYTES)
-        || f.back_upload.as_ref().is_some_and(|d| d.len() > media::MAX_UPLOAD_BYTES)
-    {
-        return Err(AppError::bad("images must be smaller than 15 MB"));
+    for d in [&f.front_upload, &f.back_upload].into_iter().flatten() {
+        media::check_size(d)?;
     }
     Ok(f)
 }
@@ -2518,23 +2509,14 @@ async fn import_page(State(app): State<AppState>, user: WebUser, Flash(msg): Fla
     .into_response())
 }
 
-async fn import_upload(State(app): State<AppState>, user: WebUser, mut mp: Multipart) -> WebResult {
+async fn import_upload(State(app): State<AppState>, user: WebUser, mp: Multipart) -> WebResult {
     let access = user.access();
-    let mut fields: HashMap<String, Vec<u8>> = HashMap::new();
-    while let Some(field) = mp
-        .next_field()
-        .await
-        .map_err(|e| AppError::bad(format!("upload failed: {e}")))?
-    {
-        let name = field.name().unwrap_or("").to_string();
-        let data = field
-            .bytes()
-            .await
-            .map_err(|e| AppError::bad(format!("upload failed: {e}")))?;
-        fields.insert(name, data.to_vec());
-    }
-    let file = fields.get("file").cloned();
-    let text = |k: &str| fields.get(k).map(|v| String::from_utf8_lossy(v).to_string()).unwrap_or_default();
+    let mut fields = match read_multipart(mp).await {
+        Ok(f) => f,
+        Err(e) => return or_back("/import", Err(e)),
+    };
+    let file = fields.remove("file");
+    let text = |k: &str| field_text(&fields, k);
     // The file has to be picked again anyway, so problems come back as a
     // message on the import page.
     let report = async { Ok::<_, AppError>(match text("kind").as_str() {
@@ -2544,7 +2526,7 @@ async fn import_upload(State(app): State<AppState>, user: WebUser, mut mp: Multi
         }
         "csv" => {
             let deck: i64 = text("deck").parse().map_err(|_| AppError::bad("pick a deck"))?;
-            let mut body = text("file");
+            let mut body = String::from_utf8_lossy(file.as_deref().unwrap_or_default()).to_string();
             if body.trim().is_empty() {
                 body = text("text");
             }

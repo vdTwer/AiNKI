@@ -15,6 +15,14 @@ use crate::{
 };
 
 pub const MAX_UPLOAD_BYTES: usize = 15 * 1024 * 1024;
+
+/// The one size check (and wording) for every image upload.
+pub fn check_size(data: &[u8]) -> Result<(), AppError> {
+    if data.len() > MAX_UPLOAD_BYTES {
+        return Err(AppError::bad(format!("images must be smaller than {} MB", MAX_UPLOAD_BYTES / (1024 * 1024))));
+    }
+    Ok(())
+}
 const MAX_DIMENSION: u32 = 1200;
 /// Largest image we are willing to decode at all.
 const MAX_DECODE_DIMENSION: u32 = 10_000;
@@ -106,9 +114,7 @@ impl App {
 
     pub async fn store_image(&self, access: &Access, data: Vec<u8>) -> Result<Media> {
         access.require_write()?;
-        if data.len() > MAX_UPLOAD_BYTES {
-            return Err(AppError::bad("image is larger than 15 MB"));
-        }
+        check_size(&data)?;
         self.store_image_for(access.user_id(), data).await
     }
 
