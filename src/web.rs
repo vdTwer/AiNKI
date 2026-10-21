@@ -1449,14 +1449,22 @@ async fn card_new_page(State(app): State<AppState>, user: WebUser, Flash(msg): F
 async fn card_create(State(app): State<AppState>, user: WebUser, mp: Multipart) -> WebResult {
     let access = user.access();
     let f = read_card_form(mp).await?;
+    // A taken name adds to that deck instead of failing; the message says so.
+    let mut msg = "Card added.".to_string();
     let deck = match (&f.new_deck, f.deck) {
         (Some(name), _) => {
             if name.trim().is_empty() {
                 return Err(AppError::bad("give the new deck a name").into());
             }
             match app.deck_by_name(&access, name).await? {
-                Some(existing) => existing.id,
-                None => app.create_deck(&access, name, "", None).await?.id,
+                Some(existing) => {
+                    msg = format!("Card added to your existing deck {}.", deck_plain(&existing.name));
+                    existing.id
+                }
+                None => {
+                    msg = "Deck created and card added.".into();
+                    app.create_deck(&access, name, "", None).await?.id
+                }
             }
         }
         (None, Some(id)) => id,
@@ -1472,8 +1480,7 @@ async fn card_create(State(app): State<AppState>, user: WebUser, mp: Multipart) 
     };
     app.create_card(&access, deck, &f.front, &f.back, front_image, back_image)
         .await?;
-    let msg = if f.new_deck.is_some() { "Deck created and card added." } else { "Added." };
-    Ok(redirect_msg(format!("/cards/new?deck={deck}"), msg))
+    Ok(redirect_msg(format!("/cards/new?deck={deck}"), &msg))
 }
 
 async fn card_page(
