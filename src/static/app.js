@@ -142,39 +142,114 @@
   // it (the side under the pointer dips away), then springs back. Small
   // ones get a closer perspective and a steeper angle, or the tilt would
   // be too faint to read as one.
+  //
+  // Leaving is forgiving: a card stays tilted and lit (.held) while the
+  // pointer is within a small margin around it, and only springs back once
+  // it is clearly gone. Entering has no margin, and entering another card
+  // lets the held one go at once.
+  var held = [];
+
+  function grace() { return Math.min(24, Math.max(10, window.innerWidth * 0.02)); }
+
+  function lean(el, e) {
+    var r = el.getBoundingClientRect();
+    var row = el.matches('a.row');
+    var base = row ? 3 : el.closest('.answers') ? 10 : 8;
+    var max = row ? base : base * Math.max(1, Math.min(1.8, 220 / r.width));
+    var x = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width));
+    var y = Math.max(0, Math.min(1, (e.clientY - r.top) / r.height));
+    var s = el.style;
+    s.setProperty('--dur', '90ms');
+    s.setProperty('--spring', 'linear');
+    s.setProperty('--rx', ((0.5 - y) * max).toFixed(2) + 'deg');
+    s.setProperty('--ry', ((x - 0.5) * max).toFixed(2) + 'deg');
+    s.setProperty('--sx', ((0.5 - x) * 10).toFixed(1) + 'px');
+    s.setProperty('--sy', (2 + (0.5 - y) * 8).toFixed(1) + 'px');
+    s.setProperty('--gx', (x * 100).toFixed(1) + '%');
+    s.setProperty('--gy', (y * 100).toFixed(1) + '%');
+  }
+
+  function rest(el) {
+    el.classList.remove('held');
+    var s = el.style;
+    s.removeProperty('--dur');
+    s.removeProperty('--spring');
+    s.setProperty('--rx', '0deg');
+    s.setProperty('--ry', '0deg');
+    s.setProperty('--sx', '0px');
+    s.setProperty('--sy', '2px');
+  }
+
+  function letGo(except) {
+    held = held.filter(function (el) {
+      if (el === except) return true;
+      rest(el);
+      return false;
+    });
+  }
+
   function tilt(el) {
     if (el.closest('.quiet-links')) return;
     var row = el.matches('a.row');
-    var base = row ? 3 : el.closest('.answers') ? 10 : 8;
     el.addEventListener('pointerenter', function () {
+      letGo(el);
+      el.classList.remove('held');
+      held = held.filter(function (h) { return h !== el; });
       var w = el.getBoundingClientRect().width;
       el.style.setProperty('--persp', (row ? 700 : Math.max(240, Math.min(700, w * 3))).toFixed(0) + 'px');
     });
-    el.addEventListener('pointermove', function (e) {
-      var r = el.getBoundingClientRect();
-      var max = row ? base : base * Math.max(1, Math.min(1.8, 220 / r.width));
-      var x = (e.clientX - r.left) / r.width;
-      var y = (e.clientY - r.top) / r.height;
-      var s = el.style;
-      s.setProperty('--dur', '90ms');
-      s.setProperty('--spring', 'linear');
-      s.setProperty('--rx', ((0.5 - y) * max).toFixed(2) + 'deg');
-      s.setProperty('--ry', ((x - 0.5) * max).toFixed(2) + 'deg');
-      s.setProperty('--sx', ((0.5 - x) * 10).toFixed(1) + 'px');
-      s.setProperty('--sy', (2 + (0.5 - y) * 8).toFixed(1) + 'px');
-      s.setProperty('--gx', (x * 100).toFixed(1) + '%');
-      s.setProperty('--gy', (y * 100).toFixed(1) + '%');
-    });
-    el.addEventListener('pointerleave', function () {
-      var s = el.style;
-      s.removeProperty('--dur');
-      s.removeProperty('--spring');
-      s.setProperty('--rx', '0deg');
-      s.setProperty('--ry', '0deg');
-      s.setProperty('--sx', '0px');
-      s.setProperty('--sy', '2px');
+    el.addEventListener('pointermove', function (e) { lean(el, e); });
+    el.addEventListener('pointerleave', function (e) {
+      if (e.pointerType !== 'mouse' || !el.isConnected) { rest(el); return; }
+      el.classList.add('held');
+      held.push(el);
     });
   }
+
+  document.addEventListener('pointermove', function (e) {
+    if (!held.length) return;
+    var g = grace();
+    held = held.filter(function (el) {
+      var r = el.getBoundingClientRect();
+      var inside = el.isConnected &&
+        e.clientX >= r.left - g && e.clientX <= r.right + g &&
+        e.clientY >= r.top - g && e.clientY <= r.bottom + g;
+      if (inside) lean(el, e); else rest(el);
+      return inside;
+    });
+  });
+  // The pointer left the window, or the page scrolled under it.
+  document.addEventListener('mouseout', function (e) { if (!e.relatedTarget) letGo(null); });
+  window.addEventListener('scroll', function () { letGo(null); }, { passive: true });
+
+  // The side rail: dots far away, icons up close. --near goes from 0 to 1
+  // as the pointer comes within reach of the rail.
+  (function () {
+    var nav = document.querySelector('nav.top');
+    if (!calm || !nav) return;
+    var far = 160, close = 56, frame = 0, px = -1, py = -1;
+    function update() {
+      frame = 0;
+      var near = 0;
+      if (px >= 0) {
+        var r = nav.getBoundingClientRect();
+        var dx = Math.max(r.left - px, 0, px - r.right);
+        var dy = Math.max(r.top - py, 0, py - r.bottom);
+        var d = Math.sqrt(dx * dx + dy * dy);
+        near = Math.max(0, Math.min(1, (far - d) / (far - close)));
+      }
+      nav.style.setProperty('--near', near.toFixed(3));
+    }
+    function later() { if (!frame) frame = requestAnimationFrame(update); }
+    document.addEventListener('pointermove', function (e) {
+      if (e.pointerType !== 'mouse') return;
+      px = e.clientX; py = e.clientY;
+      later();
+    });
+    document.addEventListener('mouseout', function (e) {
+      if (!e.relatedTarget) { px = -1; later(); }
+    });
+  })();
 
   function setup(scope) {
     // Long card text is set smaller and left-aligned.
@@ -184,7 +259,7 @@
     }
     if (calm && motion) {
       // Hidden buttons have no size yet; they are set up when shown.
-      var els = scope.querySelectorAll('.btn, button:not(.link), a.row');
+      var els = scope.querySelectorAll('.btn, button:not(.link), a.row, nav.top a:not(.brand)');
       for (var t = 0; t < els.length; t++) {
         if (!els[t].closest('[hidden]') && !els[t].hasAttribute('data-tilt')) {
           els[t].setAttribute('data-tilt', '');

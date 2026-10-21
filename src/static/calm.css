@@ -54,7 +54,7 @@
    settings) and the <link>'s media query matches. It builds on style.css.
 
    A quiet tool: one centred column, a clean top, a side rail of dots that
-   slides open while the pointer is over it.
+   turn into icons as the pointer comes near.
    Newsreader for what you learn, Source Sans 3 for everything else.
    Terra Cotta (16-1526 TCX) is the one accent; Wild Orchid (16-2120 TCX)
    marks new cards and "Again". Buttons are small cards that tilt toward
@@ -170,10 +170,12 @@ html.calm .notice {
 html.calm .notice::before { content: ''; flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--terra); }
 
 /* ----- side rail ---------------------------------------------------------- */
-/* A column of dots. While the pointer is over it (or keyboard focus is in
-   it) a panel slides out from the edge and the names follow, one after
-   another. */
+/* Three steps. Far away it is a column of dots. As the pointer comes near
+   (app.js sets --near from 0 to 1 by distance) each dot grows into a small
+   tile with an icon. Over a tile, the tile tilts toward the pointer like a
+   button and its name appears beside it. Keyboard focus shows the icons. */
 html.calm nav.top {
+  --near: 0;
   position: fixed;
   left: 0;
   top: 50%;
@@ -183,84 +185,113 @@ html.calm nav.top {
   flex-direction: column;
   align-items: flex-start;
   flex-wrap: nowrap;
-  gap: 0;
+  gap: 6px;
   max-width: none;
   margin: 0;
-  padding: 20px 28px 20px 36px;
+  padding: 20px 24px;
   border: 0;
   font-size: .93rem;
 }
-html.calm nav.top::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: 0;
-  width: 176px;
-  z-index: -1;
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-left: 0;
-  border-radius: 0 16px 16px 0;
-  box-shadow: 6px 0 24px rgba(var(--shadow), .06);
-  transform: translateX(calc(-100% - 32px));
-  transition: transform 200ms var(--ease);
-  pointer-events: none;
-}
+html.calm nav.top:focus-within { --near: 1; }
+html.calm nav.top a.brand { display: none; }
 html.calm nav.top a {
+  --rx: 0deg; --ry: 0deg; --gx: 50%; --gy: 50%;
+  --dur: 460ms; --spring: cubic-bezier(.34, 1.56, .64, 1);
   position: relative;
   display: flex;
   align-items: center;
+  justify-content: center;
   flex: none;
   width: 40px;
-  min-height: 36px;
+  height: 40px;
+  min-height: 0;
   padding: 0;
   font-size: 0;
   font-weight: 400;
   color: var(--muted);
-  text-align: left;
 }
 html.calm nav.top a.rail-only { display: flex; }
-html.calm nav.top a.brand { margin-bottom: 6px; padding: 0; }
 html.calm nav.top a:hover, html.calm nav.top a:focus-visible { background: none; }
-html.calm nav.top a:not(.brand)::before {
+html.calm nav.top a:focus-visible { outline: none; }
+html.calm nav.top a:focus-visible .tile { outline: 2px solid var(--terra); outline-offset: 3px; }
+
+/* Step one: the dot. It shrinks away as the tile grows out of it. */
+html.calm nav.top a::before {
   content: '';
-  flex: none;
+  position: absolute;
   width: 5px;
   height: 5px;
   border-radius: 50%;
   background: var(--line-strong);
-  transition: background-color 140ms ease, transform 160ms var(--ease);
+  opacity: clamp(0, calc(1 - var(--near) * 1.6), 1);
+  transform: scale(calc(1 + var(--near) * 1.4));
+  transition: opacity 120ms ease, transform 160ms var(--ease), background-color 140ms ease;
 }
-html.calm nav.top a[aria-current="page"]:not(.brand)::before { background: var(--terra); }
-html.calm nav.top a:not(.brand):hover::before { background: var(--terra-hover); transform: scale(1.4); }
-html.calm nav.top a::after {
-  content: attr(data-label);
+html.calm nav.top a[aria-current="page"]::before { background: var(--terra); }
+
+/* Step two: the tile with its icon, a small card like a button. */
+html.calm nav.top .tile {
   position: absolute;
-  left: 18px;
-  white-space: nowrap;
-  font-size: .93rem;
-  color: var(--muted);
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  isolation: isolate;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  box-shadow: 0 1px 0 var(--line), calc(var(--ry) * -.6) calc(2px + var(--rx) * .5) 10px rgba(var(--shadow), .06);
+  opacity: clamp(0, calc(var(--near) * 1.6 - .4), 1);
+  transform: perspective(var(--persp, 240px)) rotateX(var(--rx)) rotateY(var(--ry)) scale(calc(.45 + var(--near) * .55));
+  transition: opacity 120ms ease, transform var(--dur) var(--spring), box-shadow var(--dur) var(--spring), border-color 160ms ease, color 140ms ease;
+}
+html.calm nav.top .tile svg { display: block; }
+html.calm nav.top .tile::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: radial-gradient(70px circle at var(--gx) var(--gy), rgba(255, 255, 255, .8), rgba(255, 255, 255, 0) 65%);
+  mix-blend-mode: soft-light;
   opacity: 0;
-  transform: translateX(-8px);
-  transition: opacity 120ms ease, transform 160ms var(--ease), color 140ms ease;
+  transition: opacity 200ms ease;
   pointer-events: none;
 }
-html.calm nav.top a.brand::after { left: 0; font-weight: 600; letter-spacing: .01em; color: var(--ink); }
-html.calm nav.top a[aria-current="page"]:not(.brand)::after { color: var(--ink); }
-html.calm nav.top a:hover::after { color: var(--terra-hover); }
-html.calm nav.top:hover::before, html.calm nav.top:focus-within::before { transform: none; pointer-events: auto; }
-html.calm nav.top:hover a::after, html.calm nav.top:focus-within a::after {
-  opacity: 1;
-  transform: none;
-  pointer-events: auto;
-  transition: opacity 160ms ease var(--stagger, 0ms), transform 220ms var(--ease) var(--stagger, 0ms), color 140ms ease;
+html.calm nav.top a[aria-current="page"] .tile { color: var(--terra-deep); border-color: var(--terra-edge); }
+
+/* Step three: over a tile it tilts and glows, and its name appears. */
+html.calm nav.top a:hover .tile, html.calm nav.top a.held .tile {
+  color: var(--terra-hover);
+  border-color: var(--line-strong);
+  box-shadow: 0 1px 0 var(--line), calc(var(--ry) * -.6) calc(2px + var(--rx) * .5) 16px rgba(var(--shadow), .12);
 }
-html.calm nav.top a:nth-child(2) { --stagger: 20ms; }
-html.calm nav.top a:nth-child(3) { --stagger: 40ms; }
-html.calm nav.top a:nth-child(4) { --stagger: 60ms; }
-html.calm nav.top a:nth-child(5) { --stagger: 80ms; }
-html.calm nav.top a:nth-child(6) { --stagger: 100ms; }
+html.calm nav.top a[aria-current="page"]:hover .tile, html.calm nav.top a[aria-current="page"].held .tile { border-color: var(--terra); }
+html.calm nav.top a:hover .tile::after, html.calm nav.top a.held .tile::after { opacity: 1; }
+html.calm nav.top a::after {
+  content: attr(data-label);
+  content: attr(data-label) / '';
+  position: absolute;
+  left: calc(100% + 12px);
+  top: 50%;
+  padding: .25rem .6rem;
+  white-space: nowrap;
+  font-size: .87rem;
+  line-height: 1.4;
+  color: var(--ink);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: 0 4px 14px rgba(var(--shadow), .08);
+  opacity: 0;
+  transform: translate(-4px, -50%);
+  transition: opacity 100ms ease, transform 160ms var(--ease);
+  pointer-events: none;
+}
+html.calm nav.top a:hover::after, html.calm nav.top a.held::after, html.calm nav.top a:focus-visible::after {
+  opacity: 1;
+  transform: translate(0, -50%);
+  transition: opacity 140ms ease 60ms, transform 200ms var(--ease) 60ms;
+}
 
 /* ----- cards you can almost pick up -------------------------------------- */
 html.calm .btn,
@@ -300,14 +331,18 @@ html.calm button:not(.link)::after {
   pointer-events: none;
 }
 html.calm .btn:hover,
-html.calm button:not(.link):hover {
+html.calm button:not(.link):hover,
+html.calm .btn.held,
+html.calm button:not(.link).held {
   color: var(--ink);
   background: var(--surface);
   border-color: var(--line-strong);
   box-shadow: 0 1px 0 var(--edge), var(--sx) var(--sy) 18px rgba(var(--shadow), .10);
 }
 html.calm .btn:hover::after,
-html.calm button:not(.link):hover::after { opacity: 1; }
+html.calm button:not(.link):hover::after,
+html.calm .btn.held::after,
+html.calm button:not(.link).held::after { opacity: 1; }
 html.calm .btn:active,
 html.calm button:not(.link):active {
   background: var(--surface);
@@ -315,9 +350,9 @@ html.calm button:not(.link):active {
   transform: perspective(var(--persp, 700px)) rotateX(var(--rx)) rotateY(var(--ry)) translateZ(-8px);
 }
 html.calm .btn.primary { --edge: var(--terra-edge); background: var(--surface); color: var(--ink); }
-html.calm .btn.primary:hover { border-color: var(--terra); }
+html.calm .btn.primary:hover, html.calm .btn.primary.held { border-color: var(--terra); }
 html.calm .btn.again { --edge: var(--orchid-edge); }
-html.calm .btn.again:hover { border-color: var(--orchid); }
+html.calm .btn.again:hover, html.calm .btn.again.held { border-color: var(--orchid); }
 html.calm .btn.danger { --edge: var(--terra-edge); color: var(--terra-deep); background: transparent; }
 html.calm .btn.danger::before { display: none; }
 html.calm .btn.wide { display: flex; width: 100%; margin: 1.2rem 0; font-size: 1rem; }
@@ -547,7 +582,8 @@ html.calm ul.list { border-top: 0; margin: .25rem 0; }
 html.calm ul.list li { border-bottom: 1px solid var(--line); transition: border-color 160ms ease; }
 html.calm ul.list li:last-child { border-bottom: 0; }
 /* A row lifted into a card takes the hairlines around it along. */
-html.calm ul.list li:has(> a.row:hover), html.calm ul.list li:has(+ li > a.row:hover) { border-color: transparent; }
+html.calm ul.list li:has(> a.row:hover), html.calm ul.list li:has(+ li > a.row:hover),
+html.calm ul.list li:has(> a.row.held), html.calm ul.list li:has(+ li > a.row.held) { border-color: transparent; }
 html.calm a.row {
   --rx: 0deg; --ry: 0deg; --sx: 0px; --sy: 2px; --gx: 50%; --gy: 50%;
   --dur: 460ms; --spring: cubic-bezier(.34, 1.56, .64, 1);
@@ -573,13 +609,13 @@ html.calm a.row::after {
   transition: opacity 200ms ease;
   pointer-events: none;
 }
-html.calm a.row:hover {
+html.calm a.row:hover, html.calm a.row.held {
   color: var(--ink);
   background: var(--surface);
   border-color: var(--line-strong);
   box-shadow: 0 1px 0 var(--line), var(--sx) var(--sy) 18px rgba(var(--shadow), .10);
 }
-html.calm a.row:hover::after { opacity: 1; }
+html.calm a.row:hover::after, html.calm a.row.held::after { opacity: 1; }
 html.calm a.row:hover .grow { text-decoration: none; }
 html.calm .counts { font-weight: 400; font-size: .93rem; color: var(--muted); }
 html.calm li.token { padding: .8rem 0; }
@@ -761,4 +797,5 @@ html.calm main:has(.brand-big) { padding-top: 22vh; }
 @media (prefers-reduced-motion: reduce) {
   html.calm *, html.calm *::before, html.calm *::after { animation: none !important; transition: none !important; }
   html.calm .btn, html.calm button, html.calm a.row { transform: none !important; }
+  html.calm nav.top .tile { transform: scale(calc(.45 + var(--near) * .55)) !important; }
 }
