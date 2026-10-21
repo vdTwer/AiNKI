@@ -397,7 +397,10 @@ html.calm .btn.primary { --edge: var(--terra-edge); background: var(--surface); 
 html.calm .btn.primary:hover, html.calm .btn.primary.held { border-color: var(--terra); }
 html.calm .btn.again { --edge: var(--orchid-edge); }
 html.calm .btn.again:hover, html.calm .btn.again.held { border-color: var(--orchid); }
-html.calm .btn.danger { --edge: var(--terra-edge); color: var(--terra-deep); background: transparent; }
+/* Danger is quiet: a neutral edge and Terra words, so the accent rim
+   stays with the button you are meant to press. */
+html.calm .btn.danger { --edge: var(--line); color: var(--terra-deep); background: transparent; box-shadow: none; }
+html.calm .btn.danger:is(:hover, .held) { color: var(--terra-deep); background: transparent; box-shadow: 0 1px 0 var(--edge); }
 html.calm .btn.danger::before { display: none; }
 html.calm .btn.wide { display: flex; width: 100%; margin: 1.2rem 0; font-size: 1rem; }
 html.calm button.link { color: var(--muted); font-weight: 400; text-decoration: none; transition: color 140ms ease; }
