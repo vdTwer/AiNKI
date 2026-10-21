@@ -20,6 +20,9 @@
 
   var root = document.documentElement;
   var calm = root.classList.contains('calm');
+  // Card text longer than this is set smaller and left-aligned, when
+  // writing and when studying alike.
+  var LONG_TEXT = 90;
   var motion = !(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
 
   // Signup: send the browser's timezone along.
@@ -33,14 +36,14 @@
   var newDeckField = document.getElementById('new-deck-field');
   if (deckSelect && newDeckField) {
     var toggle = function () {
-      var isNew = deckSelect.value === 'new';
+      var isNew = deckSelect.value === deckSelect.getAttribute('data-new-deck-select');
       newDeckField.hidden = !isNew;
       var input = newDeckField.querySelector('input');
       if (input) input.required = isNew;
     };
     deckSelect.addEventListener('change', function () {
       toggle();
-      if (deckSelect.value === 'new') newDeckField.querySelector('input').focus();
+      if (newDeckField.hidden === false) newDeckField.querySelector('input').focus();
     });
     toggle();
   }
@@ -56,7 +59,7 @@
       var file = face.querySelector('input[type=file]');
       var preview = face.querySelector('.face-image.preview');
       var fit = function () {
-        text.classList.toggle('long', text.value.trim().length > 90);
+        text.classList.toggle('long', text.value.trim().length > LONG_TEXT);
         if (calm && !CSS.supports('field-sizing', 'content')) {
           text.style.height = 'auto';
           text.style.height = text.scrollHeight + 'px';
@@ -262,7 +265,7 @@
     // Long card text is set smaller and left-aligned.
     var faces = scope.querySelectorAll('section.face');
     for (var f = 0; f < faces.length; f++) {
-      if ((faces[f].textContent || '').trim().length > 90) faces[f].classList.add('long');
+      if ((faces[f].textContent || '').trim().length > LONG_TEXT) faces[f].classList.add('long');
     }
     if (calm && motion) {
       // Hidden buttons have no size yet; they are set up when shown.

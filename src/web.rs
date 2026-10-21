@@ -295,7 +295,7 @@ fn asset_version() -> &'static str {
     })
 }
 
-/// Where the Calm look may apply; must match static/theme.js.
+/// Where the Calm look may apply. theme.js reads it from the stylesheet link.
 const DESKTOP_MEDIA: &str = "(min-width: 60em) and (hover: hover) and (pointer: fine)";
 
 /// Nested Anki decks arrive as "Languages::Spanish". The parents are shown
@@ -373,7 +373,7 @@ fn page(nav: Option<Nav>, title: &str, user: Option<&User>, page_kind: Option<&s
                 link rel="stylesheet" href=(format!("/style.css?v={}", asset_version()));
                 // The Calm look: only on desktops, and only once theme.js
                 // has switched it on. Everything else gets style.css alone.
-                link rel="stylesheet" href=(format!("/calm.css?v={}", asset_version())) media=(DESKTOP_MEDIA);
+                link rel="stylesheet" href=(format!("/calm.css?v={}", asset_version())) media=(DESKTOP_MEDIA) data-calm;
                 script src=(format!("/theme.js?v={}", asset_version())) {}
                 @if (scale - 1.0).abs() > f64::EPSILON {
                     style { (PreEscaped(format!(":root{{--scale:{scale}}}"))) }
@@ -1480,7 +1480,7 @@ fn card_form(
             div.deck-line {
                 label.deck-pick { span.deck-label { "Deck" }
                     span.select {
-                        select name="deck" required data-new-deck-select {
+                        select name="deck" required data-new-deck-select=(NEW_DECK) {
                             @for d in decks { option value=(d.id) selected[!new_selected && Some(d.id) == deck_id] { (deck_plain(&d.name)) } }
                             @if allow_new_deck {
                                 option value=(NEW_DECK) selected[new_selected] { "New deck…" }

@@ -9,7 +9,9 @@
     else pref = localStorage.getItem('ainki.look');
   } catch (e) { /* storage blocked */ }
   if (!window.matchMedia) return;
-  var desktop = window.matchMedia('(min-width: 60em) and (hover: hover) and (pointer: fine)').matches;
+  // The query lives once, on the Calm stylesheet's <link> (web.rs).
+  var link = document.querySelector('link[data-calm]');
+  var desktop = !!link && window.matchMedia(link.media).matches;
   var eink = window.matchMedia('(update: slow)').matches || window.matchMedia('(monochrome)').matches;
   if (pref === 'simple' || !desktop || eink) return;
   root.classList.add('calm');
