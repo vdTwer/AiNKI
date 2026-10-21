@@ -123,9 +123,11 @@ pub fn router(app: AppState) -> Router {
         .route("/settings/password", post(password_update))
         .route("/settings/optimize", post(optimize))
         .route("/settings/reset-params", post(reset_params))
-        .route("/tokens", get(tokens_page))
-        .route("/tokens/new", get(|| async { Redirect::to("/tokens") }).post(token_create))
-        .route("/tokens/{id}/revoke", post(token_revoke))
+        .route("/access", get(access_page))
+        .route("/access/new", get(|| async { Redirect::to("/access") }).post(token_create))
+        .route("/access/{id}/revoke", post(token_revoke))
+        // The page used to be called Tokens.
+        .route("/tokens", get(|| async { Redirect::permanent("/access") }))
         .route("/stats", get(stats_page))
         .route("/media/{id}", get(media_file))
         .layer(small)
@@ -767,7 +769,7 @@ async fn home(State(app): State<AppState>, user: WebUser, Flash(msg): Flash) -> 
                 h2 { "Shared with you" }
                 ul.list {
                     @for sh in &shares {
-                        li.token {
+                        li.item {
                             div.grow {
                                 strong { (deck_title(&sh.deck_name)) } br;
                                 span.small { (sh.cards) (if sh.cards == 1 { " card" } else { " cards" }) " from " (sh.from) }
@@ -1359,7 +1361,7 @@ async fn deck_edit_view(
                 p { "Waiting for them to accept:" }
                 ul.list {
                     @for sh in &shares {
-                        li.token {
+                        li.item {
                             span.grow { (sh.to) }
                             form method="post" action=(format!("/shares/{}/cancel", sh.id)) {
                                 button.btn type="submit" { "Cancel" }
@@ -2136,7 +2138,7 @@ async fn settings_page(State(app): State<AppState>, user: WebUser, Flash(msg): F
             ul.list.links {
                 @for (href, name, sub) in [
                     ("/presets", "Presets", "How much to remember, daily limits"),
-                    ("/tokens", "Agent access", "Connect Claude and other agents"),
+                    ("/access", "Agent access", "Connect Claude and other agents"),
                     ("/import", "Import", "From Anki or a CSV file"),
                 ] {
                     li { a.row href=(href) { span.grow { span { (name) } span.sub.muted.small { (sub) } } span.chev aria-hidden="true" { "›" } } }
@@ -2295,7 +2297,7 @@ fn mcp_url(app: &AppState, headers: &HeaderMap) -> String {
     format!("{}/mcp", oauth::base_url(app, headers))
 }
 
-async fn tokens_page(
+async fn access_page(
     State(app): State<AppState>,
     user: WebUser,
     headers: HeaderMap,
@@ -2333,7 +2335,7 @@ async fn tokens_page(
             @if tokens.is_empty() { p.muted { "Nothing connected yet." } }
             ul.list hidden[tokens.is_empty()] {
                 @for (t, deck_names) in &tokens {
-                    li.token {
+                    li.item {
                         div.grow {
                             strong { (t.name) } " "
                             @if t.oauth_client_id.is_some() { span.small { "(connected app)" } } @else { code { (t.prefix) "…" } }
@@ -2350,7 +2352,7 @@ async fn tokens_page(
                                 (t.last_used_at.map(|ts| format::when(&clock, ts)).unwrap_or_else(|| "never".into()))
                             }
                         }
-                        form method="post" action=(format!("/tokens/{}/revoke", t.id)) {
+                        form method="post" action=(format!("/access/{}/revoke", t.id)) {
                             button.btn.danger type="submit" {
                                 (if t.oauth_client_id.is_some() { "Disconnect" } else { "Revoke" })
                             }
@@ -2361,14 +2363,14 @@ async fn tokens_page(
             details {
                 summary { "Create a token by hand" }
                 p.small { "For agents without OAuth support: they send the token as " code { "Authorization: Bearer <token>" } "." }
-                form method="post" action="/tokens/new" {
+                form method="post" action="/access/new" {
                     label { "Name" input type="text" name="name" required placeholder="e.g. Claude"; }
                     label.check { input type="checkbox" name="can_write" value="1" checked; " " (PERM_WRITE) }
                     label.check { input type="checkbox" name="can_review" value="1" checked; " " (PERM_REVIEW) }
                     fieldset {
                         legend { "Decks" }
-                        label.check { input type="radio" name="scope" value="all" checked; " " (PERM_ALL_DECKS) }
-                        label.check { input type="radio" name="scope" value="some"; " " (PERM_SOME_DECKS) }
+                        label.check { input type="radio" name="deck_scope" value="all" checked; " " (PERM_ALL_DECKS) }
+                        label.check { input type="radio" name="deck_scope" value="some"; " " (PERM_SOME_DECKS) }
                         @for d in &decks {
                             label.check.indent { input type="checkbox" name="decks" value=(d.id); " " (deck_plain(&d.name)) }
                         }
@@ -2386,7 +2388,7 @@ struct TokenForm {
     name: String,
     can_write: Option<String>,
     can_review: Option<String>,
-    scope: String,
+    deck_scope: String,
     #[serde(default)]
     decks: Vec<i64>,
 }
@@ -2397,13 +2399,13 @@ async fn token_create(
     headers: HeaderMap,
     Form(f): Form<TokenForm>,
 ) -> WebResult {
-    let decks = if f.scope == "all" { None } else { Some(f.decks) };
+    let decks = if f.deck_scope == "all" { None } else { Some(f.decks) };
     let (token, raw) = match app
         .create_token(user.0.id, &f.name, f.can_write.is_some(), f.can_review.is_some(), decks)
         .await
     {
         Ok(t) => t,
-        Err(e) => return or_back("/tokens", Err(e)),
+        Err(e) => return or_back("/access", Err(e)),
     };
     let url = mcp_url(&app, &headers);
     let config = serde_json::to_string_pretty(&serde_json::json!({
@@ -2433,16 +2435,16 @@ async fn token_create(
             pre.copy { "claude mcp add --transport http ainki " (url) " --header \"Authorization: Bearer " (raw) "\"" }
             p { "JSON config (Claude Desktop, Cursor and others):" }
             pre.copy { (config) }
-            p { a.btn href="/tokens" { "Done" } }
+            p { a.btn href="/access" { "Done" } }
         },
     )
     .into_response())
 }
 
 async fn token_revoke(State(app): State<AppState>, user: WebUser, Path(id): Path<i64>) -> WebResult {
-    or_back("/tokens", async {
+    or_back("/access", async {
         app.revoke_token(user.0.id, id).await?;
-        Ok(redirect_msg("/tokens", "Access removed."))
+        Ok(redirect_msg("/access", "Access removed."))
     }
     .await)
 }

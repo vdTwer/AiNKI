@@ -883,7 +883,7 @@ html.calm a.row:hover, html.calm a.row.held {
 html.calm a.row:hover::after, html.calm a.row.held::after { opacity: 1; }
 html.calm a.row:hover .grow { text-decoration: none; }
 html.calm .counts { font-weight: 400; font-size: .93rem; color: var(--muted); }
-html.calm li.token { padding: .8rem 0; }
+html.calm li.item { padding: .8rem 0; }
 /* Numbers stand on their own: large, with their name under them. */
 html.calm dl.stats-inline { gap: 0; margin: 1.6rem 0; }
 html.calm dl.stats-inline div { display: flex; flex-direction: column-reverse; gap: .1rem; padding: 0 0 0 1.4rem; border: 0; border-left: 1px solid var(--line); background: none; text-align: left; }

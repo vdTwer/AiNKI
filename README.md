@@ -6,7 +6,7 @@ An AI-native flashcard service. Like Anki, but:
 - **FSRS by default.** Scheduling uses FSRS-6 with researched defaults and presets for common situations. One button fits the parameters to your own memory.
 - **Simple cards.** A front and a back. Each is Markdown text plus an optional image. No note types, no templates.
 - **Web first, mobile first.** One website that works well on a phone and on e-ink readers: grayscale, high contrast, no animations, large tap targets, no JavaScript required. Images are dithered to 16 gray levels on upload. With JavaScript, studying never reloads the page.
-- **A warmer look on desktop.** On computers, AiNKI switches to a calm look: a quiet warm page, a serif for your cards, a side rail of dots that slides open under the cursor instead of a header, Terra Cotta and Wild Orchid accents, and buttons that tilt a little toward the cursor. Phones, e-readers and browsers without JavaScript always get the simple look, and anyone can choose it in settings.
+- **A warmer look on desktop.** On computers, AiNKI switches to a calm look: a quiet warm page, a serif for your cards, a side rail of dots that grow into small icons as the cursor comes near, instead of a header, Terra Cotta and Wild Orchid accents, and buttons that tilt a little toward the cursor. Phones, e-readers and browsers without JavaScript always get the simple look, and anyone can choose it in settings.
 
 Accounts are a username and password. Usernames get a Discord-style tag (`kolja#4821`), so two people can pick the same name.
 
@@ -150,7 +150,7 @@ The code:
 
 - `src/service.rs`: everything a user can do (decks, cards, studying, stats, optimizer). The website and MCP server are thin layers over it.
 - `src/scheduler.rs`: card lifecycle around FSRS (learning steps, day boundaries, fuzz, exam caps).
-- `src/web.rs`, `src/style.css`: the website (server-rendered with maud).
+- `src/web.rs`: the website (server-rendered with maud).
 - `src/mcp.rs`: the MCP server (rmcp, Streamable HTTP, stateless).
 - `src/oauth.rs`: OAuth 2.1 authorization server for MCP clients.
 - `src/share.rs`: deck sharing.
