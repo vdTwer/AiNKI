@@ -91,7 +91,7 @@ For agents without OAuth support, create a token by hand under **Settings → Ag
 
 Agents can never change your password or settings, or create tokens. Reviews done through an agent are labelled, and you can leave them out of FSRS optimization.
 
-Tools: `get_overview`, `list_decks`, `create_deck`, `update_deck`, `delete_deck`, `list_cards`, `get_card`, `create_cards`, `update_card`, `delete_cards`, `set_cards_suspended`, `reset_cards`, `upload_image`, `get_image`, `get_next_card`, `answer_card`, `undo_last_answer`, `get_stats`, `list_presets`, `create_preset`, `update_preset`, `delete_preset`, `optimize_fsrs`, `import_csv`, `import_apkg`, `export_deck_csv`, `share_deck`, `list_shares`, `accept_share`, `decline_share`.
+Tools: `get_overview`, `list_decks`, `create_deck`, `update_deck`, `delete_deck`, `list_cards`, `get_card`, `create_cards`, `update_card`, `delete_cards`, `set_cards_suspended`, `reset_cards`, `upload_image`, `get_image`, `get_next_card`, `answer_card`, `undo_last_answer`, `get_stats`, `list_presets`, `create_preset`, `update_preset`, `delete_preset`, `optimize_fsrs`, `import_csv`, `import_apkg`, `export_deck_csv`, `share_deck`, `list_shares`, `accept_share`, `decline_share`, `cancel_share`.
 
 ## Sharing decks
 
