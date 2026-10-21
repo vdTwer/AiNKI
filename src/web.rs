@@ -177,13 +177,24 @@ impl axum::extract::OptionalFromRequestParts<AppState> for WebUser {
     }
 }
 
+/// The login page, coming back here afterwards when this was a page view.
+fn login_url(parts: &Parts) -> String {
+    let here = parts.uri.path_and_query().map(|p| p.as_str()).unwrap_or("/");
+    match safe_next(Some(here)) {
+        Some(next) if parts.method == axum::http::Method::GET && next != "/" => {
+            format!("/login?next={}", urlenc(next))
+        }
+        _ => "/login".into(),
+    }
+}
+
 impl FromRequestParts<AppState> for WebUser {
     type Rejection = Response;
 
     async fn from_request_parts(parts: &mut Parts, app: &AppState) -> Result<Self, Self::Rejection> {
         match session_from_parts(parts, app).await {
             Some(user) => Ok(WebUser(user)),
-            None => Err(Redirect::to("/login").into_response()),
+            None => Err(Redirect::to(&login_url(parts)).into_response()),
         }
     }
 }
