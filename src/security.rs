@@ -207,7 +207,7 @@ impl<S: Send + Sync> FromRequestParts<S> for Flash {
     }
 }
 
-fn percent_decode(s: &str) -> String {
+pub(crate) fn percent_decode(s: &str) -> String {
     let b = s.as_bytes();
     let mut out = Vec::with_capacity(b.len());
     let mut i = 0;
