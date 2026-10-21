@@ -255,4 +255,4 @@ details.more summary { cursor: pointer; font-weight: 600; min-height: 2.5rem; di
 
 /* The page this one belongs to, above the heading. */
 .parent { margin: 1rem 0 -.5rem; font-size: .9rem; }
-.parent a { display: inline-flex; align-items: center; min-height: 2.5rem; }
+.parent a { display: inline-flex; align-items: center; gap: .3em; min-height: 2.5rem; }
