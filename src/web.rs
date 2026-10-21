@@ -803,7 +803,7 @@ async fn home(State(app): State<AppState>, user: WebUser, Flash(msg): Flash) -> 
                                     }
                                 }
                                 @if d.due_total() == 0 && d.total > 0 {
-                                    span.num.due.done title="Done for today" { span.tick aria-hidden="true" { "✓" } span.unit { " done for today" } }
+                                    span.num.due.done title="Done for today" { span.done-dot aria-hidden="true" {} span.unit { "done for today" } }
                                 } @else {
                                     span.num.due title="Due" { @if due > 0 { (due) span.unit { " due" } } @else { (format::NONE) } }
                                 }

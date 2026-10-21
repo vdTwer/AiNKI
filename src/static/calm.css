@@ -929,7 +929,25 @@ html.calm ul.decks a.row { display: grid; grid-template-columns: minmax(0, 1fr) 
 html.calm ul.decks a.row .grow { display: flex; flex-direction: column; justify-content: center; }
 html.calm ul.decks .deck-name { font-family: var(--serif); font-optical-sizing: auto; font-size: 1.13rem; line-height: 1.3; }
 html.calm ul.decks .num.done { color: var(--terra); font-weight: 400; }
-html.calm ul.decks .tick { font-size: .93rem; }
+/* Done for today: the Terra dot that marks "finished" elsewhere, a little
+   off-round and off-centre, wiggling just barely, like it was set by hand. */
+html.calm ul.decks .num.done { display: flex; align-items: center; justify-content: flex-end; }
+html.calm ul.decks .done-dot {
+  width: 6px;
+  height: 6px;
+  margin-right: 1px;
+  border-radius: 52% 46% 50% 48%;
+  background: var(--terra);
+  transform: translate(.5px, -.5px) rotate(-6deg);
+  animation: calm-wiggle 5.2s ease-in-out infinite;
+}
+@keyframes calm-wiggle {
+  0%, 100% { transform: translate(.5px, -.5px) rotate(-6deg); }
+  25% { transform: translate(-.3px, 0) rotate(5deg) scale(.94); }
+  50% { transform: translate(.9px, -.9px) rotate(-3deg) scale(1.04); }
+  75% { transform: translate(.2px, -.2px) rotate(8deg); }
+}
+
 html.calm ul.decks .sub { margin-top: .3rem; font-size: .87rem; line-height: 1.3; color: var(--muted); }
 
 /* Nested decks: the parents above in small type, the deck's own name below. */
