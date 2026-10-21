@@ -373,31 +373,58 @@ fn page(title: &str, user: Option<&User>, page_kind: Option<&str>, body: Markup)
     }
 }
 
-// The rail's icons: 24px line drawings in the text colour.
+// Icons: line drawings on a 24px grid in the text colour. The rail shows
+// them at 26px; in a page, next to a word, at 20px.
 const ICON_DECKS: &str = r#"<rect x="4" y="9.5" width="16" height="10.5" rx="2"/><path d="M6.5 6.5h11M9 3.5h6"/>"#;
 const ICON_STUDY: &str = r#"<rect x="5" y="3.5" width="14" height="17" rx="2.5"/><path d="M9 10.5l2 2 4-4"/><path d="M9 16.5h6"/>"#;
 const ICON_ADD: &str = r#"<path d="M12 5v14M5 12h14"/>"#;
 const ICON_STATS: &str = r#"<path d="M5 20V13M12 20V5M19 20v-9"/>"#;
 const ICON_SETTINGS: &str = r#"<path d="M5 7h8M17 7h2M5 17h2M11 17h8"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/>"#;
+const ICON_EDIT: &str = r#"<path d="M14.5 5.5l4 4L9 19H5v-4z"/><path d="M12.5 7.5l4 4"/>"#;
+const ICON_SHARE: &str = r#"<path d="M12 4v11M8 8l4-4 4 4"/><path d="M6 12v6.5A1.5 1.5 0 0 0 7.5 20h9a1.5 1.5 0 0 0 1.5-1.5V12"/>"#;
+const ICON_IMPORT: &str = r#"<path d="M12 4v11M8 11l4 4 4-4"/><path d="M5 16v2.5A1.5 1.5 0 0 0 6.5 20h11a1.5 1.5 0 0 0 1.5-1.5V16"/>"#;
+const ICON_EXPORT: &str = r#"<path d="M12 15V4M8 8l4-4 4 4"/><path d="M5 16v2.5A1.5 1.5 0 0 0 6.5 20h11a1.5 1.5 0 0 0 1.5-1.5V16"/>"#;
+const ICON_UNDO: &str = r#"<path d="M9 7L5 11l4 4"/><path d="M5 11h9a5 5 0 0 1 0 10h-2"/>"#;
+const ICON_IMAGE: &str = r#"<rect x="3.5" y="5" width="17" height="14" rx="2.5"/><circle cx="9" cy="10" r="1.6"/><path d="M4.5 17l4.5-4.2 3.2 3 2.6-2.2 4.7 4"/>"#;
+const ICON_FILE: &str = r#"<path d="M7 3.5h6.5L18 8v11a1.5 1.5 0 0 1-1.5 1.5h-9A1.5 1.5 0 0 1 6 19V5a1.5 1.5 0 0 1 1-1.5z"/><path d="M13 3.5V8h5"/>"#;
+
+const RAIL_ICON: u32 = 26;
+const PAGE_ICON: u32 = 20;
 
 /// An icon as a small solid object: the drawing repeated a little further
 /// back each time gives it depth, plus a soft shadow behind. calm.css
-/// spaces the layers out; elsewhere only the name shows.
-fn nav_icon(paths: &'static str) -> Markup {
+/// spaces the layers out and tilts it with its link; elsewhere it is
+/// hidden and only the words show. Lines stay 2px at every size.
+fn icon(paths: &'static str, size: u32) -> Markup {
+    let stroke = format!("{:.2}", 48.0 / size as f64);
     let layer = |class: &'static str, depth: u8| {
         html! {
-            svg class=(class) style=(format!("--z:{depth}")) viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" {
+            svg class=(class) style=(format!("--z:{depth}")) viewBox="0 0 24 24" width=(size) height=(size) fill="none" stroke="currentColor" stroke-width=(stroke) stroke-linecap="round" stroke-linejoin="round" {
                 (PreEscaped(paths))
             }
         }
     };
     html! {
-        span.tile aria-hidden="true" {
+        span.tile style=(format!("--size:{size}px")) aria-hidden="true" {
             (layer("shadow", 0))
             @for z in (1..=5).rev() { (layer("side", z)) }
             (layer("face", 0))
         }
     }
+}
+
+fn nav_icon(paths: &'static str) -> Markup {
+    icon(paths, RAIL_ICON)
+}
+
+/// A quiet link with a 3D icon in front of its words.
+fn icon_link(href: &str, paths: &'static str, label: &str) -> Markup {
+    html! { a.icon-link href=(href) { (icon(paths, PAGE_ICON)) span { (label) } } }
+}
+
+/// The same where the simple look shows a button.
+fn icon_btn(href: &str, paths: &'static str, label: &str) -> Markup {
+    html! { a.btn.icon-link href=(href) { (icon(paths, PAGE_ICON)) span { (label) } } }
 }
 
 fn flash(msg: &Option<String>) -> Markup {
@@ -726,10 +753,10 @@ async fn home(State(app): State<AppState>, user: WebUser, Flash(msg): Flash) -> 
                     }
                 }
             }
-            p.actions.quiet-links {
-                a.btn href="/cards/new" { "Add card" }
-                a.btn href="/decks/new" { "New deck" }
-                a.btn href="/import" { "Import from Anki" }
+            p.actions.icon-links {
+                (icon_btn("/cards/new", ICON_ADD, "Add card"))
+                (icon_btn("/decks/new", ICON_DECKS, "New deck"))
+                (icon_btn("/import", ICON_IMPORT, "Import from Anki"))
             }
         },
     )
@@ -771,9 +798,9 @@ fn study_foot(deck_name: &str, deck_id: i64, done: i64, total: i64, q_deck: Opti
             div.study-tools {
                 form method="post" action="/study/undo" {
                     @if let Some(d) = q_deck { input type="hidden" name="deck" value=(d); }
-                    button.link type="submit" { "Undo" }
+                    button.link.icon-link type="submit" { (icon(ICON_UNDO, PAGE_ICON)) span { "Undo" } }
                 }
-                @if let Some(id) = card_id { a href=(format!("/cards/{id}")) { "Edit card" } }
+                @if let Some(id) = card_id { (icon_link(&format!("/cards/{id}"), ICON_EDIT, "Edit card")) }
             }
         }
     }
@@ -966,6 +993,34 @@ fn preset_select(presets: &[crate::service::Preset], selected: Option<i64>) -> M
     }
 }
 
+/// A deck written as a sheet: its name large, a description, then its
+/// preset and (when editing) the exam date as lines.
+fn deck_sheet(
+    deck: Option<&crate::service::Deck>,
+    presets: &[crate::service::Preset],
+    selected: Option<i64>,
+) -> Markup {
+    html! {
+        div.sheet.form {
+            label.title { span.face-label { "Name" }
+                input type="text" name="name" required autofocus[deck.is_none()] placeholder="e.g. Spanish verbs" value=[deck.map(|d| &d.name)];
+            }
+            label.title { span.face-label { "Description " span.muted.optional { "(optional)" } }
+                textarea name="description" rows="2" placeholder="What it's for" { @if let Some(d) = deck { (d.description) } }
+            }
+            hr.divider;
+            label.line { "Preset" span.select { (preset_select(presets, selected)) } }
+            p.hint.muted.small { "How much you want to remember and your daily limits. " a href="/presets" { "About presets" } }
+            @if let Some(d) = deck {
+                label.line { span { "Exam date " span.muted { "(optional)" } }
+                    input type="date" name="exam_date" value=(d.exam_date.clone().unwrap_or_default());
+                }
+                p.hint.muted.small { "With an exam date, no card in this deck is scheduled after the exam." }
+            }
+        }
+    }
+}
+
 async fn deck_new_page(State(app): State<AppState>, user: WebUser) -> WebResult {
     let presets = app.list_presets(&user.access()).await?;
     Ok(layout(
@@ -973,13 +1028,9 @@ async fn deck_new_page(State(app): State<AppState>, user: WebUser) -> WebResult 
         Some(&user.0),
         html! {
             (add_tabs("deck"))
-            h1 { "New deck" }
             form method="post" action="/decks/new" {
-                label { "Name" input type="text" name="name" required autofocus; }
-                label { "Description " span.muted { "(optional)" } textarea name="description" rows="2" {} }
-                label { "Preset" (preset_select(&presets, presets.first().map(|p| p.id))) }
-                p.muted.small { "Presets set how much you want to remember and your daily limits. " a href="/presets" { "About presets" } }
-                button.btn.primary type="submit" { "Create deck" }
+                (deck_sheet(None, &presets, presets.first().map(|p| p.id)))
+                div.form-foot.end { button.btn.primary type="submit" { "Create deck" } }
             }
         },
     )
@@ -1060,11 +1111,11 @@ async fn deck_page(
             @if summary.due_total() > 0 {
                 a.btn.primary.wide href=(format!("/study?deck={id}")) { "Study" }
             }
-            p.actions {
-                a.btn href=(format!("/cards/new?deck={id}")) { "Add card" }
-                a.btn href=(format!("/decks/{id}/edit")) { "Edit deck" }
-                a.btn href=(format!("/decks/{id}/edit#share")) { "Share" }
-                a.btn href=(format!("/stats?deck={id}")) { "Stats" }
+            p.actions.icon-links {
+                (icon_btn(&format!("/cards/new?deck={id}"), ICON_ADD, "Add card"))
+                (icon_btn(&format!("/decks/{id}/edit"), ICON_EDIT, "Edit deck"))
+                (icon_btn(&format!("/decks/{id}/edit#share"), ICON_SHARE, "Share"))
+                (icon_btn(&format!("/stats?deck={id}"), ICON_STATS, "Stats"))
             }
             p.muted.small { "Preset: " a href=(format!("/presets/{}", d.preset_id)) { (summary.preset_name) } }
 
@@ -1099,7 +1150,7 @@ async fn deck_page(
                 @if page > 0 { a.btn href=(format!("{base}&page={}", page - 1)) { "Previous" } }
                 @if (page + 1) * per_page < total { a.btn href=(format!("{base}&page={}", page + 1)) { "Next" } }
             }
-            p { a href=(format!("/decks/{id}/export.csv")) { "Export as CSV" } }
+            p.icon-links { (icon_link(&format!("/decks/{id}/export.csv"), ICON_EXPORT, "Export as CSV")) }
         },
     )
     .into_response())
@@ -1136,23 +1187,18 @@ async fn deck_edit_page(
             (flash(&msg))
             h1 { "Edit deck" }
             form method="post" action=(format!("/decks/{id}/edit")) {
-                label { "Name" input type="text" name="name" required value=(deck.name); }
-                label { "Description" textarea name="description" rows="2" { (deck.description) } }
-                label { "Preset" (preset_select(&presets, Some(deck.preset_id))) }
-                label {
-                    "Exam date " span.muted { "(optional)" }
-                    input type="date" name="exam_date" value=(deck.exam_date.clone().unwrap_or_default());
-                }
-                p.muted.small { "With an exam date, no card in this deck is scheduled after the exam." }
-                button.btn.primary type="submit" { "Save" }
+                (deck_sheet(Some(&deck), &presets, Some(deck.preset_id)))
+                div.form-foot.end { button.btn.primary type="submit" { "Save" } }
             }
             h2 id="share" { "Share" }
             p { "Send a copy of this deck to someone. They get the cards with fresh progress; your deck stays as it is." }
             form method="post" action=(format!("/decks/{id}/share")) {
-                label { "Username" span.muted { " (name#1234)" }
-                    input type="text" name="user" required autocapitalize="none" autocorrect="off" placeholder="name#1234";
+                div.sheet.form {
+                    label.line { "Their username"
+                        input type="text" name="user" required autocapitalize="none" autocorrect="off" placeholder="name#1234";
+                    }
                 }
-                button.btn type="submit" { "Share" }
+                div.form-foot.end { button.btn type="submit" { "Share" } }
             }
             @if !shares.is_empty() {
                 p { "Waiting for them to accept:" }
@@ -1167,10 +1213,12 @@ async fn deck_edit_page(
                     }
                 }
             }
-            h2 { "Delete" }
-            form method="post" action=(format!("/decks/{id}/delete")) {
-                label.check { input type="checkbox" name="confirm" value="1" required; " Delete this deck and all its cards" }
-                button.btn.danger type="submit" { "Delete deck" }
+            details.danger {
+                summary { "Delete this deck…" }
+                form method="post" action=(format!("/decks/{id}/delete")) {
+                    label.check { input type="checkbox" name="confirm" value="1" required; " Yes, delete it and all its cards" }
+                    button.btn.danger type="submit" { "Delete deck" }
+                }
             }
         },
     )
@@ -1299,9 +1347,6 @@ fn add_tabs(current: &str) -> Markup {
 /// Value of the deck picker's "New deck…" option.
 const NEW_DECK: &str = "new";
 
-/// A small picture icon for "Add image".
-const IMAGE_ICON: &str = r#"<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="12" height="10" rx="2"/><circle cx="6" cy="6.6" r="1.1"/><path d="M2.6 11.6l3.4-3.2 2.4 2.2 1.9-1.6 3.1 2.6"/></svg>"#;
-
 /// One side of the card being written: its text, and an optional image
 /// that can be picked, dropped or pasted.
 fn face_field(side: &str, title: &str, placeholder: &str, text: &str, image: &Option<String>, autofocus: bool) -> Markup {
@@ -1319,8 +1364,8 @@ fn face_field(side: &str, title: &str, placeholder: &str, text: &str, image: &Op
                 img alt="";
                 button.link type="button" data-clear-image { "Remove" }
             }
-            label.file.attach {
-                span.icon { (PreEscaped(IMAGE_ICON)) }
+            label.file.attach.icon-link {
+                (icon(ICON_IMAGE, PAGE_ICON))
                 span.attach-text { @if image.is_some() { "Replace image" } @else { "Add image" } }
                 " " span.muted.optional { "(optional)" }
                 input type="file" name=(format!("{side}_image")) accept="image/*";
@@ -1589,12 +1634,16 @@ async fn presets_page(State(app): State<AppState>, user: WebUser, Flash(msg): Fl
             }
             h2 { "New preset" }
             form method="post" action="/presets" {
-                label { "Start from"
-                    select name="template" {
-                        @for t in presets::TEMPLATES { option value=(t.key) { (t.name) } }
+                div.sheet.form {
+                    label.line { "Start from"
+                        span.select {
+                            select name="template" {
+                                @for t in presets::TEMPLATES { option value=(t.key) { (t.name) } }
+                            }
+                        }
                     }
                 }
-                button.btn type="submit" { "Create" }
+                div.form-foot.end { button.btn type="submit" { "Create preset" } }
             }
             h2 { "How to choose" }
             ul.prose {
@@ -1640,29 +1689,38 @@ async fn preset_page(
         Some(&user.0),
         html! {
             (flash(&msg))
-            h1 { (p.name) }
-            @if !decks.is_empty() { p.muted { "Used by: " (decks.join(", ")) } }
+            h1 { "Edit preset" }
             form method="post" action=(format!("/presets/{id}")) {
-                label { "Name" input type="text" name="name" required value=(p.name); }
-                label { "Description" textarea name="description" rows="2" { (p.description) } }
-                label { "Desired retention (0.70–0.99)"
-                    input type="number" name="desired_retention" min="0.7" max="0.99" step="0.01" required value=(format!("{:.2}", p.desired_retention));
+                div.sheet.form {
+                    label.title { span.face-label { "Name" } input type="text" name="name" required value=(p.name); }
+                    label.title { span.face-label { "Description" }
+                        textarea name="description" rows="2" placeholder="When to use it" { (p.description) }
+                    }
+                    @if !decks.is_empty() { p.hint.muted.small { "Used by " (decks.iter().map(|d| deck_plain(d)).collect::<Vec<_>>().join(", ")) } }
+                    hr.divider;
+                    label.line { span { "Desired retention " span.muted { "(0.70–0.99)" } }
+                        input type="number" name="desired_retention" min="0.7" max="0.99" step="0.01" required value=(format!("{:.2}", p.desired_retention));
+                    }
+                    label.line { "New cards per day" input type="number" name="new_per_day" min="0" required value=(p.new_per_day); }
+                    label.line { "Maximum reviews per day" input type="number" name="reviews_per_day" min="0" required value=(p.reviews_per_day); }
+                    label.line { span { "Learning steps " span.muted { "(e.g. 10m or 1m 10m)" } }
+                        input type="text" name="learning_steps" value=(p.learning_steps);
+                    }
+                    label.line { "Relearning steps" input type="text" name="relearning_steps" value=(p.relearning_steps); }
+                    label.line { "Maximum interval (days)" input type="number" name="max_interval" min="1" required value=(p.max_interval); }
                 }
-                label { "New cards per day" input type="number" name="new_per_day" min="0" required value=(p.new_per_day); }
-                label { "Maximum reviews per day" input type="number" name="reviews_per_day" min="0" required value=(p.reviews_per_day); }
-                label { "Learning steps " span.muted { "(e.g. 10m or 1m 10m)" }
-                    input type="text" name="learning_steps" value=(p.learning_steps);
-                }
-                label { "Relearning steps" input type="text" name="relearning_steps" value=(p.relearning_steps); }
-                label { "Maximum interval (days)" input type="number" name="max_interval" min="1" required value=(p.max_interval); }
-                button.btn.primary type="submit" { "Save" }
+                div.form-foot.end { button.btn.primary type="submit" { "Save" } }
             }
             @if decks.is_empty() {
-                form method="post" action=(format!("/presets/{id}/delete")) {
-                    button.btn.danger type="submit" { "Delete preset" }
+                details.danger {
+                    summary { "Delete this preset…" }
+                    form method="post" action=(format!("/presets/{id}/delete")) {
+                        p { "No deck uses it, so nothing else changes." }
+                        button.btn.danger type="submit" { "Delete preset" }
+                    }
                 }
             }
-            p { a href="/presets" { "All presets" } }
+            p.muted.small { a href="/presets" { "All presets" } }
         },
     )
     .into_response())
@@ -1722,59 +1780,74 @@ async fn settings_page(State(app): State<AppState>, user: WebUser, Flash(msg): F
         html! {
             (flash(&msg))
             h1 { "Settings" }
-            p { "Logged in as " strong { (u.handle()) } }
-            p.actions {
-                a.btn href="/presets" { "Presets" }
-                a.btn href="/tokens" { "Agent access" }
-                a.btn href="/import" { "Import" }
+            p.muted { "Logged in as " strong { (u.handle()) } }
+            ul.list.links {
+                @for (href, name, sub) in [
+                    ("/presets", "Presets", "How much to remember, daily limits"),
+                    ("/tokens", "Agent access", "Connect Claude and other agents"),
+                    ("/import", "Import", "From Anki or a CSV file"),
+                ] {
+                    li { a.row href=(href) { span.grow { span { (name) } span.sub.muted.small { (sub) } } span.chev aria-hidden="true" { "›" } } }
+                }
             }
             h2 { "Preferences" }
             form method="post" action="/settings" {
-                label { "Timezone"
-                    input type="text" name="timezone" value=(u.timezone) list="tzs" required autocapitalize="none";
-                    datalist id="tzs" { @for tz in chrono_tz::TZ_VARIANTS.iter() { option value=(tz.name()); } }
+                div.sheet.form {
+                    label.line { "Timezone"
+                        input type="text" name="timezone" value=(u.timezone) list="tzs" required autocapitalize="none";
+                        datalist id="tzs" { @for tz in chrono_tz::TZ_VARIANTS.iter() { option value=(tz.name()); } }
+                    }
+                    label.line { "New day starts at (hour)" input type="number" name="rollover_hour" min="0" max="23" value=(u.rollover_hour); }
+                    label.line { "Text size (%)" input type="number" name="font_scale" min="80" max="200" step="10" value=(u.font_scale); }
+                    label.check { input type="checkbox" name="four_buttons" value="1" checked[u.four_buttons]; " Show Hard and Easy buttons" }
+                    label.check { input type="checkbox" name="optimize_include_agent" value="1" checked[u.optimize_include_agent]; " Use reviews done through agents when optimizing" }
+                    fieldset.line {
+                        legend { "Look on desktop computers" }
+                        span.choice {
+                            label.check { input type="radio" name="desktop_look" value="calm" checked[u.desktop_look != "simple"]; " Calm" }
+                            label.check { input type="radio" name="desktop_look" value="simple" checked[u.desktop_look == "simple"]; " Simple" }
+                        }
+                    }
+                    p.hint.muted.small { "Phones, e-readers and browsers without JavaScript always use the simple, high-contrast look." }
                 }
-                label { "New day starts at (hour)" input type="number" name="rollover_hour" min="0" max="23" value=(u.rollover_hour); }
-                label { "Text size (%)" input type="number" name="font_scale" min="80" max="200" step="10" value=(u.font_scale); }
-                label.check { input type="checkbox" name="four_buttons" value="1" checked[u.four_buttons]; " Show Hard and Easy buttons" }
-                label.check { input type="checkbox" name="optimize_include_agent" value="1" checked[u.optimize_include_agent]; " Use reviews done through agents when optimizing" }
-                fieldset {
-                    legend { "Look on desktop computers" }
-                    label.check { input type="radio" name="desktop_look" value="calm" checked[u.desktop_look != "simple"]; " Calm" }
-                    label.check { input type="radio" name="desktop_look" value="simple" checked[u.desktop_look == "simple"]; " Simple" }
-                    p.muted.small { "Phones, e-readers and browsers without JavaScript always use the simple, high-contrast look." }
-                }
-                button.btn.primary type="submit" { "Save" }
+                div.form-foot.end { button.btn.primary type="submit" { "Save" } }
             }
             h2 id="fsrs" { "FSRS" }
-            p {
-                @if custom {
-                    "Using parameters fitted to your reviews"
-                    @if let Some(t) = u.fsrs_params_updated_at { " (" (fmt_ts(t, &u.clock())) ")" }
-                    "."
-                } @else {
-                    "Using the FSRS-6 default parameters."
+            div.sheet.form {
+                div.line { "Parameters"
+                    span.value {
+                        @if custom {
+                            "Fitted to your reviews"
+                            @if let Some(t) = u.fsrs_params_updated_at { span.muted.small { " · " (fmt_ts(t, &u.clock())) } }
+                        } @else {
+                            "FSRS-6 defaults"
+                        }
+                    }
                 }
-                " You have " (reviews) " reviews."
+                div.line { "Reviews so far" span.value { (reviews) } }
+                @if reviews < 1000 {
+                    p.hint.muted.small { "Optimizing works best after about 1,000 reviews. Re-run it every month or so." }
+                }
             }
-            @if reviews < 1000 {
-                p.muted.small { "Optimizing works best after about 1,000 reviews. Re-run it every month or so." }
-            }
-            form.actions method="post" action="/settings/optimize" {
-                button.btn type="submit" { "Optimize now" }
-            }
-            @if custom {
-                form method="post" action="/settings/reset-params" {
-                    button.btn type="submit" { "Go back to defaults" }
+            div.form-foot.end {
+                @if custom {
+                    form method="post" action="/settings/reset-params" {
+                        button.btn type="submit" { "Go back to defaults" }
+                    }
+                }
+                form method="post" action="/settings/optimize" {
+                    button.btn type="submit" { "Optimize now" }
                 }
             }
             h2 { "Change password" }
             form method="post" action="/settings/password" {
-                label { "Current password" input type="password" name="current" required autocomplete="current-password"; }
-                label { "New password" input type="password" name="new" required minlength="8" autocomplete="new-password"; }
-                button.btn type="submit" { "Change password" }
+                div.sheet.form {
+                    label.line { "Current password" input type="password" name="current" required autocomplete="current-password"; }
+                    label.line { span { "New password " span.muted { "(8 or more characters)" } } input type="password" name="new" required minlength="8" autocomplete="new-password"; }
+                }
+                div.form-foot.end { button.btn type="submit" { "Change password" } }
             }
-            form method="post" action="/logout" { button.btn type="submit" { "Log out" } }
+            form.logout method="post" action="/logout" { button.btn type="submit" { "Log out" } }
         },
     )
     .into_response())
@@ -2007,8 +2080,13 @@ async fn import_page(State(app): State<AppState>, user: WebUser, Flash(msg): Fla
             p.muted.small { "Each card keeps the first two fields of its note, the first image of each side and its review history. Cloze notes become one card per gap. " code { ".colpkg" } " backups work too." }
             form method="post" action="/import" enctype="multipart/form-data" {
                 input type="hidden" name="kind" value="apkg";
-                label.file { "File" input type="file" name="file" accept=".apkg,.colpkg" required; }
-                button.btn.primary.wide type="submit" { "Import Anki deck" }
+                label.file.drop.icon-link {
+                    (icon(ICON_IMPORT, 28))
+                    span.drop-text { "Choose an Anki file" }
+                    span.muted.small { ".apkg or .colpkg, or drop it here" }
+                    input type="file" name="file" accept=".apkg,.colpkg" required;
+                }
+                div.form-foot.end { button.btn.primary type="submit" { "Import Anki deck" } }
             }
             h2 { "From a CSV file" }
             p { "One card per line: front, back. Commas, semicolons or tabs work. A header line \"front,back\" is skipped." }
@@ -2017,12 +2095,22 @@ async fn import_page(State(app): State<AppState>, user: WebUser, Flash(msg): Fla
             } @else {
                 form method="post" action="/import" enctype="multipart/form-data" {
                     input type="hidden" name="kind" value="csv";
-                    label { "Into deck"
-                        select name="deck" { @for d in &decks { option value=(d.id) { (deck_plain(&d.name)) } } }
+                    div.deck-line {
+                        label.deck-pick { span.deck-label { "Into deck" }
+                            span.select { select name="deck" { @for d in &decks { option value=(d.id) { (deck_plain(&d.name)) } } } }
+                        }
                     }
-                    label.file { "File" input type="file" name="file" accept=".csv,.tsv,.txt"; }
-                    label { "…or paste" textarea name="text" rows="5" placeholder="Hund,dog\nKatze,cat" {} }
-                    button.btn.primary type="submit" { "Import CSV" }
+                    div.sheet.paste {
+                        label.face-label for="csv-text" { "Paste the cards" }
+                        textarea.csv id="csv-text" name="text" rows="5" placeholder="Hund,dog\nKatze,cat" {}
+                        label.file.attach.icon-link {
+                            (icon(ICON_FILE, PAGE_ICON))
+                            span.attach-text { "Or choose a file" }
+                            " " span.muted.optional { "(.csv, .tsv, .txt)" }
+                            input type="file" name="file" accept=".csv,.tsv,.txt";
+                        }
+                    }
+                    div.form-foot.end { button.btn.primary type="submit" { "Import CSV" } }
                 }
             }
         },

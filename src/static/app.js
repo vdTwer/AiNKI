@@ -136,6 +136,25 @@
     for (var i = 0; i < links.length; i++) links[i].setAttribute('aria-current', 'page');
   })();
 
+  // Picking a file to import: the sheet names the file, and lights up
+  // while one is dragged over it.
+  Array.prototype.forEach.call(document.querySelectorAll('form:not(.card-form) label.file'), function (label) {
+    var input = label.querySelector('input[type=file]');
+    var text = label.querySelector('.drop-text, .attach-text');
+    if (!input || !text) return;
+    var empty = text.textContent;
+    input.addEventListener('change', function () {
+      var f = input.files && input.files[0];
+      text.textContent = f ? f.name : empty;
+      label.classList.toggle('chosen', !!f);
+    });
+    label.addEventListener('dragover', function () { label.classList.add('dropping'); });
+    label.addEventListener('dragleave', function (e) {
+      if (!label.contains(e.relatedTarget)) label.classList.remove('dropping');
+    });
+    label.addEventListener('drop', function () { label.classList.remove('dropping'); });
+  });
+
   // ----- page details (run again after every swap) --------------------------
 
   // Buttons are small cards: while the pointer is over one it tilts toward
@@ -191,12 +210,14 @@
   function tilt(el) {
     if (el.closest('.quiet-links')) return;
     var row = el.matches('a.row');
+    // An icon tilts on its own, with the close perspective of the rail.
+    var icon = el.matches('.icon-link');
     el.addEventListener('pointerenter', function () {
       letGo(el);
       el.classList.remove('held');
       held = held.filter(function (h) { return h !== el; });
       var w = el.getBoundingClientRect().width;
-      el.style.setProperty('--persp', (row ? 700 : Math.max(240, Math.min(700, w * 3))).toFixed(0) + 'px');
+      el.style.setProperty('--persp', (icon ? 240 : row ? 700 : Math.max(240, Math.min(700, w * 3))).toFixed(0) + 'px');
     });
     el.addEventListener('pointermove', function (e) { lean(el, e); });
     el.addEventListener('pointerleave', function (e) {
@@ -259,7 +280,7 @@
     }
     if (calm && motion) {
       // Hidden buttons have no size yet; they are set up when shown.
-      var els = scope.querySelectorAll('.btn, button:not(.link), a.row, nav.top a:not(.brand)');
+      var els = scope.querySelectorAll('.btn, button:not(.link), a.row, nav.top a:not(.brand), .icon-link');
       for (var t = 0; t < els.length; t++) {
         if (!els[t].closest('[hidden]') && !els[t].hasAttribute('data-tilt')) {
           els[t].setAttribute('data-tilt', '');
