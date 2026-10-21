@@ -113,8 +113,8 @@ pub fn router(app: AppState) -> Router {
         .route("/decks/{id}/delete", post(deck_delete))
         .route("/decks/{id}/export.csv", get(deck_export))
         .route("/decks/{id}/share", post(deck_share))
-        .route("/shares/{id}", post(share_action))
-        .route("/cards/{id}/action", post(card_action))
+        .route("/shares/{id}/{action}", post(share_action))
+        .route("/cards/{id}/{action}", post(card_action))
         .route("/presets", get(presets_page))
         .route("/presets/new", get(preset_new_page).post(preset_create))
         .route("/presets/{id}", get(preset_page).post(preset_update))
@@ -123,7 +123,8 @@ pub fn router(app: AppState) -> Router {
         .route("/settings/password", post(password_update))
         .route("/settings/optimize", post(optimize))
         .route("/settings/reset-params", post(reset_params))
-        .route("/tokens", get(tokens_page).post(token_create))
+        .route("/tokens", get(tokens_page))
+        .route("/tokens/new", get(|| async { Redirect::to("/tokens") }).post(token_create))
         .route("/tokens/{id}/revoke", post(token_revoke))
         .route("/stats", get(stats_page))
         .route("/media/{id}", get(media_file))
@@ -780,10 +781,10 @@ async fn home(State(app): State<AppState>, user: WebUser, Flash(msg): Flash) -> 
                                 strong { (deck_title(&sh.deck_name)) } br;
                                 span.small { (sh.cards) (if sh.cards == 1 { " card" } else { " cards" }) " from " (sh.from) }
                             }
-                            form method="post" action=(format!("/shares/{}", sh.id)) {
-                                button.btn.primary type="submit" name="action" value="accept" { "Accept" }
+                            form method="post" action=(format!("/shares/{}/accept", sh.id)) {
+                                button.btn.primary type="submit" { "Accept" }
                                 " "
-                                button.btn type="submit" name="action" value="decline" { "Decline" }
+                                button.btn type="submit" formaction=(format!("/shares/{}/decline", sh.id)) { "Decline" }
                             }
                         }
                     }
@@ -1367,8 +1368,8 @@ async fn deck_edit_view(
                     @for sh in &shares {
                         li.token {
                             span.grow { (sh.to) }
-                            form method="post" action=(format!("/shares/{}", sh.id)) {
-                                button.btn type="submit" name="action" value="cancel" { "Cancel" }
+                            form method="post" action=(format!("/shares/{}/cancel", sh.id)) {
+                                button.btn type="submit" { "Cancel" }
                             }
                         }
                     }
@@ -1750,20 +1751,16 @@ async fn card_view(app: &App, user: &User, id: i64, msg: &Option<String>, sent: 
                     dt { "Added" } dd { (source_label(&card.created_by)) }
                 }
             }
-            form.actions method="post" action=(format!("/cards/{id}/action")) {
-                @if card.suspended {
-                    button.btn type="submit" name="action" value="unsuspend" { "Unsuspend" }
-                } @else {
-                    button.btn type="submit" name="action" value="suspend" { "Suspend" }
-                }
+            form.actions method="post" action=(format!("/cards/{id}/{}", if card.suspended { "unsuspend" } else { "suspend" })) {
+                button.btn type="submit" { @if card.suspended { "Unsuspend" } @else { "Suspend" } }
             }
             details.danger {
                 summary { "Forget progress or delete this card…" }
-                form method="post" action=(format!("/cards/{id}/action")) {
+                form method="post" action=(format!("/cards/{id}/delete")) {
                     p { "Forgetting makes it a new card again. Deleting removes it and its history." }
                     div.actions {
-                        button.btn.danger type="submit" name="action" value="reset" { "Forget progress" }
-                        button.btn.danger type="submit" name="action" value="delete" { "Delete card" }
+                        button.btn.danger type="submit" formaction=(format!("/cards/{id}/forget")) { "Forget progress" }
+                        button.btn.danger type="submit" { "Delete card" }
                     }
                 }
             }
@@ -1837,20 +1834,14 @@ async fn card_update(State(app): State<AppState>, user: WebUser, Path(id): Path<
     }
 }
 
-#[derive(Deserialize)]
-struct ActionForm {
-    action: String,
-}
-
 async fn card_action(
     State(app): State<AppState>,
     user: WebUser,
-    Path(id): Path<i64>,
-    Form(f): Form<ActionForm>,
+    Path((id, action)): Path<(i64, String)>,
 ) -> WebResult {
     let access = user.access();
     or_back(format!("/cards/{id}"), async {
-        let msg = match f.action.as_str() {
+        let msg = match action.as_str() {
             "suspend" => {
                 app.set_suspended(&access, id, true).await?;
                 "Card suspended."
@@ -1859,7 +1850,7 @@ async fn card_action(
                 app.set_suspended(&access, id, false).await?;
                 "Card unsuspended."
             }
-            "reset" => {
+            "forget" => {
                 app.reset_card(&access, id).await?;
                 "Card progress forgotten; it's new again."
             }
@@ -2386,7 +2377,7 @@ async fn tokens_page(
             details {
                 summary { "Create a token by hand" }
                 p.small { "For agents without OAuth support: they send the token as " code { "Authorization: Bearer <token>" } "." }
-            form method="post" action="/tokens" {
+            form method="post" action="/tokens/new" {
                 label { "Name" input type="text" name="name" required placeholder="e.g. Claude"; }
                 label.check { input type="checkbox" name="can_write" value="1" checked; " " (PERM_WRITE) }
                 label.check { input type="checkbox" name="can_review" value="1" checked; " " (PERM_REVIEW) }
@@ -2683,12 +2674,11 @@ async fn deck_share(
 async fn share_action(
     State(app): State<AppState>,
     user: WebUser,
-    Path(id): Path<i64>,
-    Form(f): Form<ActionForm>,
+    Path((id, action)): Path<(i64, String)>,
 ) -> WebResult {
     let access = user.access();
     or_back("/", async {
-        match f.action.as_str() {
+        match action.as_str() {
             "accept" => {
                 let deck = app.accept_share(&access, id).await?;
                 Ok(redirect_msg(format!("/decks/{}", deck.id), "Shared deck added to your decks."))
