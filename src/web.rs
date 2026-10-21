@@ -814,13 +814,52 @@ fn study_foot(deck_name: &str, deck_id: i64, done: i64, total: i64, q_deck: Opti
     }
 }
 
+/// What people see for a card's state. Relearning counts as learning,
+/// as in the filter and the stats.
+fn state_label(state: CardState) -> &'static str {
+    match state {
+        CardState::New => "New",
+        CardState::Learning | CardState::Relearning => "Learning",
+        CardState::Review => "Review",
+    }
+}
+
+/// A card's state, or "Suspended", for lists.
+fn card_status(card: &Card) -> &'static str {
+    if card.suspended { "Suspended" } else { state_label(card.card_state()) }
+}
+
+/// Stored rating names as button words.
+fn rating_label(stored: &str) -> &str {
+    match stored {
+        "again" => "Again",
+        "hard" => "Hard",
+        "good" => "Good",
+        "easy" => "Easy",
+        "reset" => "Progress forgotten",
+        other => other,
+    }
+}
+
+/// Where a card or answer came from, in words.
+fn source_label(stored: &str) -> &str {
+    match stored {
+        "web" => "On the website",
+        "agent" => "By an agent",
+        "import" => "Imported",
+        "shared" => "From a shared deck",
+        "manual" => "On the website",
+        other => other,
+    }
+}
+
 fn state_tag(state: CardState) -> Markup {
-    let (class, label) = match state {
-        CardState::New => ("new", "New"),
-        CardState::Learning | CardState::Relearning => ("learning", "Learning"),
-        CardState::Review => ("review", "Review"),
+    let class = match state {
+        CardState::New => "new",
+        CardState::Learning | CardState::Relearning => "learning",
+        CardState::Review => "review",
     };
-    html! { p.card-state { span.dot.(class) aria-hidden="true" {} (label) } }
+    html! { p.card-state { span.dot.(class) aria-hidden="true" {} (state_label(state)) } }
 }
 
 /// One card. The answer side and the rating buttons are always on the page;
@@ -1147,7 +1186,7 @@ async fn deck_page(
                                 span.muted.small { (truncate(&c.back, 80)) }
                             }
                             span.counts.small {
-                                @if c.suspended { "suspended" } @else { (c.card_state().as_str()) }
+                                (card_status(c))
                             }
                         }
                     }
@@ -1512,7 +1551,7 @@ async fn card_page(
             (card_form(&format!("/cards/{id}"), &decks, Some(card.deck_id), &card.front, &card.back, &card.front_image, &card.back_image, "Save", false))
             h2 { "Scheduling" }
             dl.kv {
-                dt { "State" } dd { (card.card_state().as_str()) @if card.suspended { " (suspended)" } }
+                dt { "State" } dd { (state_label(card.card_state())) @if card.suspended { " (suspended)" } }
                 @if card.card_state() != CardState::New {
                     dt { "Due" } dd { (capitalize(&format::when(&clock, card.due))) }
                 }
@@ -1520,7 +1559,7 @@ async fn card_page(
                 @if let Some(d) = card.difficulty { dt { "Difficulty" } dd { (format!("{d:.1} / 10")) } }
                 @if let Some(r) = r { dt { "Recall chance now" } dd { (format::percent(Some(r as f64))) } }
                 dt { "Reviews / lapses" } dd { (card.reps) " / " (card.lapses) }
-                dt { "Added by" } dd { (card.created_by) }
+                dt { "Added" } dd { (source_label(&card.created_by)) }
             }
             form.actions method="post" action=(format!("/cards/{id}/action")) {
                 @if card.suspended {
@@ -1539,7 +1578,7 @@ async fn card_page(
                         @for h in history.iter().rev() {
                             tr {
                                 td { (capitalize(&format::when(&clock, h["timestamp"].as_i64().unwrap_or(0)))) }
-                                td { (h["rating"].as_str().unwrap_or("")) @if h["source"] == "agent" { " (agent)" } }
+                                td { (rating_label(h["rating"].as_str().unwrap_or(""))) @if h["source"] == "agent" { " (by an agent)" } }
                                 td { (h["next_interval"].as_str().unwrap_or("")) }
                             }
                         }
