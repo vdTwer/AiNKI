@@ -773,7 +773,7 @@ pub async fn authorize_page(
         html! { @if let Some(v) = v { input type="hidden" name=(name) value=(v); } }
     };
     layout(
-        "Connect",
+        "Connect an app",
         Some(&user),
         html! {
             h1 { "Connect an app" }

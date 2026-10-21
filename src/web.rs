@@ -233,7 +233,7 @@ impl IntoResponse for WebError {
             e => capitalize(&e.to_string()),
         };
         let body = layout(
-            "Error",
+            "Sorry",
             None,
             html! {
                 h1 { "Sorry" }
@@ -1075,6 +1075,7 @@ async fn deck_new_page(State(app): State<AppState>, user: WebUser) -> WebResult 
         Some(&user.0),
         html! {
             (add_tabs("deck"))
+            h1 { "New deck" }
             form method="post" action="/decks/new" {
                 (deck_sheet(None, &presets, presets.first().map(|p| p.id)))
                 div.form-foot.end { button.btn.primary type="submit" { "Create deck" } }
@@ -1821,7 +1822,7 @@ async fn preset_page(
         .map(|d| d.name)
         .collect();
     Ok(layout(
-        &p.name,
+        "Edit preset",
         Some(&user.0),
         html! {
             (flash(&msg))
