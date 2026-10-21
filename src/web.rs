@@ -1059,7 +1059,7 @@ fn deck_sheet(
             label.line { "Preset" span.select { (preset_select(presets, selected)) } }
             p.hint.muted.small { "How much you want to remember and how many cards a day. " a href="/presets" { "About presets" } }
             @if let Some(d) = deck {
-                label.line { span { "Exam date " span.muted { "(optional)" } }
+                label.line { span { "Exam date " span.muted.optional { "(optional)" } }
                     input type="date" name="exam_date" value=(d.exam_date.clone().unwrap_or_default());
                 }
                 p.hint.muted.small { "With an exam date, no card in this deck is scheduled after the exam." }
@@ -1730,7 +1730,7 @@ fn preset_sheet(p: &crate::service::Preset, used_by: &[String]) -> Markup {
     html! {
         div.sheet.form {
             label.title { span.face-label { "Name" } input type="text" name="name" required value=(p.name); }
-            label.title { span.face-label { "Description" }
+            label.title { span.face-label { "Description " span.muted.optional { "(optional)" } }
                 textarea name="description" rows="2" placeholder="When to use it" { (p.description) }
             }
             @if !used_by.is_empty() { p.hint.muted.small { "Used by " (used_by.iter().map(|d| deck_plain(d)).collect::<Vec<_>>().join(", ")) } }
