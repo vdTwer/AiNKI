@@ -1041,7 +1041,7 @@ fn preset_select(presets: &[crate::service::Preset], selected: Option<i64>) -> M
 }
 
 /// A deck written as a sheet: its name large, a description, then its
-/// preset and (when editing) the exam date as lines.
+/// preset and exam date as lines. The same sheet creates and edits.
 fn deck_sheet(
     deck: Option<&crate::service::Deck>,
     presets: &[crate::service::Preset],
@@ -1058,12 +1058,10 @@ fn deck_sheet(
             hr.divider;
             label.line { "Preset" span.select { (preset_select(presets, selected)) } }
             p.hint.muted.small { "How much you want to remember and how many cards a day. " a href="/presets" { "About presets" } }
-            @if let Some(d) = deck {
-                label.line { span { "Exam date " span.muted.optional { "(optional)" } }
-                    input type="date" name="exam_date" value=(d.exam_date.clone().unwrap_or_default());
-                }
-                p.hint.muted.small { "With an exam date, no card in this deck is scheduled after the exam." }
+            label.line { span { "Exam date " span.muted.optional { "(optional)" } }
+                input type="date" name="exam_date" value=(deck.and_then(|d| d.exam_date.clone()).unwrap_or_default());
             }
+            p.hint.muted.small { "With an exam date, no card in this deck is scheduled after the exam." }
         }
     }
 }
@@ -1095,9 +1093,11 @@ struct DeckCreateForm {
 }
 
 async fn deck_create(State(app): State<AppState>, user: WebUser, Form(f): Form<DeckCreateForm>) -> WebResult {
-    let deck = app
-        .create_deck(&user.access(), &f.name, &f.description, f.preset_id)
-        .await?;
+    let access = user.access();
+    let deck = app.create_deck(&access, &f.name, &f.description, f.preset_id).await?;
+    if let Some(exam) = f.exam_date.as_deref().filter(|e| !e.trim().is_empty()) {
+        app.update_deck(&access, deck.id, None, None, None, Some(exam)).await?;
+    }
     // Straight on to filling it.
     Ok(redirect_msg(format!("/cards/new?deck={}", deck.id), "Deck created. Add its first card."))
 }
