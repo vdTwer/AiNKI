@@ -1286,12 +1286,12 @@ async fn deck_update(
         Some(f.exam_date.as_deref().unwrap_or("")),
     )
     .await?;
-    Ok(redirect_msg(format!("/decks/{id}"), "Saved."))
+    Ok(redirect_msg(format!("/decks/{id}"), "Deck saved."))
 }
 
 async fn deck_delete(State(app): State<AppState>, user: WebUser, Path(id): Path<i64>) -> WebResult {
     let n = app.delete_deck(&user.access(), id).await?;
-    Ok(redirect_msg("/", &format!("Deck deleted ({n} cards).")))
+    Ok(redirect_msg("/", &format!("Deck deleted, with its {}.", count(n, "card"))))
 }
 
 async fn deck_export(State(app): State<AppState>, user: WebUser, Path(id): Path<i64>) -> WebResult {
@@ -1620,7 +1620,7 @@ async fn card_update(State(app): State<AppState>, user: WebUser, Path(id): Path<
             app.move_card(&access, id, deck).await?;
         }
     }
-    Ok(redirect_msg(format!("/cards/{id}"), "Saved."))
+    Ok(redirect_msg(format!("/cards/{id}"), "Card saved."))
 }
 
 #[derive(Deserialize)]
@@ -1638,15 +1638,15 @@ async fn card_action(
     let msg = match f.action.as_str() {
         "suspend" => {
             app.set_suspended(&access, id, true).await?;
-            "Suspended."
+            "Card suspended."
         }
         "unsuspend" => {
             app.set_suspended(&access, id, false).await?;
-            "Unsuspended."
+            "Card unsuspended."
         }
         "reset" => {
             app.reset_card(&access, id).await?;
-            "Progress reset; the card is new again."
+            "Card progress forgotten; it's new again."
         }
         "delete" => {
             let card = app.card(&access, id).await?;
@@ -1812,12 +1812,12 @@ async fn preset_update(
         },
     )
     .await?;
-    Ok(redirect_msg(format!("/presets/{id}"), "Saved."))
+    Ok(redirect_msg(format!("/presets/{id}"), "Preset saved."))
 }
 
 async fn preset_delete(State(app): State<AppState>, user: WebUser, Path(id): Path<i64>) -> WebResult {
     app.delete_preset(&user.access(), id).await?;
-    Ok(redirect_msg("/presets", "Deleted."))
+    Ok(redirect_msg("/presets", "Preset deleted."))
 }
 
 // ----- settings -----------------------------------------------------------
@@ -1927,7 +1927,7 @@ async fn settings_update(State(app): State<AppState>, user: WebUser, Form(f): Fo
         f.desktop_look.as_deref().unwrap_or("calm"),
     )
     .await?;
-    Ok(redirect_msg("/settings", "Saved."))
+    Ok(redirect_msg("/settings", "Settings saved."))
 }
 
 #[derive(Deserialize)]
@@ -1955,8 +1955,8 @@ async fn optimize(State(app): State<AppState>, user: WebUser) -> WebResult {
     let result = app.optimize_parameters(&user.access()).await;
     let msg = match result {
         Ok(v) => format!(
-            "Done. FSRS learned from {} reviews.",
-            v["reviews_used"].as_i64().unwrap_or(0)
+            "FSRS parameters fitted to {}.",
+            count(v["reviews_used"].as_i64().unwrap_or(0), "review")
         ),
         Err(AppError::BadRequest(m)) => capitalize(&m),
         Err(e) => return Err(e.into()),
@@ -1966,7 +1966,7 @@ async fn optimize(State(app): State<AppState>, user: WebUser) -> WebResult {
 
 async fn reset_params(State(app): State<AppState>, user: WebUser) -> WebResult {
     app.reset_parameters(&user.access()).await?;
-    Ok(redirect_msg("/settings#fsrs", "Using default parameters."))
+    Ok(redirect_msg("/settings#fsrs", "FSRS parameters reset to the defaults."))
 }
 
 // ----- tokens -------------------------------------------------------------
@@ -2321,7 +2321,7 @@ async fn share_action(
     match f.action.as_str() {
         "accept" => {
             let deck = app.accept_share(&access, id).await?;
-            Ok(redirect_msg(format!("/decks/{}", deck.id), "Added to your decks."))
+            Ok(redirect_msg(format!("/decks/{}", deck.id), "Shared deck added to your decks."))
         }
         "decline" => {
             app.decline_share(&access, id).await?;
