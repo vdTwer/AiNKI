@@ -253,3 +253,7 @@ label.drop .muted { display: block; font-weight: 400; }
 /* Hard values folded away. */
 details.more { margin: .5rem 0 1rem; }
 details.more summary { cursor: pointer; font-weight: 600; min-height: 2.5rem; display: flex; align-items: center; }
+
+/* The page this one belongs to, above the heading. */
+.parent { margin: 1rem 0 -.5rem; font-size: .9rem; }
+.parent a { display: inline-flex; align-items: center; min-height: 2.5rem; }

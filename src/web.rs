@@ -436,6 +436,12 @@ fn icon_btn(href: &str, paths: &'static str, label: &str) -> Markup {
     html! { a.btn.icon-link href=(href) { (icon(paths, PAGE_ICON)) span { (label) } } }
 }
 
+/// The page this one belongs to, as one quiet line above the heading:
+/// "‹ Spanish".
+fn parent(href: &str, label: &str) -> Markup {
+    html! { p.parent { a href=(href) { span aria-hidden="true" { "‹ " } (label) } } }
+}
+
 fn flash(msg: &Option<String>) -> Markup {
     html! {
         @if let Some(m) = msg.as_deref().filter(|m| !m.is_empty()) {
@@ -1233,6 +1239,7 @@ async fn deck_edit_page(
         Some(&user.0),
         html! {
             (flash(&msg))
+            (parent(&format!("/decks/{id}"), &deck_plain(&deck.name)))
             h1 { "Edit deck" }
             form method="post" action=(format!("/decks/{id}/edit")) {
                 (deck_sheet(Some(&deck), &presets, Some(deck.preset_id)))
@@ -1549,6 +1556,7 @@ async fn card_page(
         Some(&user.0),
         html! {
             (flash(&msg))
+            @if let Some(d) = decks.iter().find(|d| d.id == card.deck_id) { (parent(&format!("/decks/{}", d.id), &deck_plain(&d.name))) }
             h1 { "Edit card" }
             (card_form(&format!("/cards/{id}"), &decks, Some(card.deck_id), &card.front, &card.back, &card.front_image, &card.back_image, "Save", false))
             h2 { "Scheduling" }
@@ -1600,7 +1608,6 @@ async fn card_page(
                     }
                 }
             }
-            p { a href=(format!("/decks/{}", card.deck_id)) { "Back to deck" } }
         },
     )
     .into_response())
@@ -1682,6 +1689,7 @@ async fn presets_page(State(app): State<AppState>, user: WebUser, Flash(msg): Fl
         Some(&user.0),
         html! {
             (flash(&msg))
+            (parent("/settings", "Settings"))
             h1 { "Presets" }
             p {
                 "A preset sets how much you want to remember (desired retention) and your daily limits. "
@@ -1787,6 +1795,7 @@ async fn preset_new_page(user: WebUser, Query(q): Query<TemplateQuery>) -> WebRe
         "New preset",
         Some(&user.0),
         html! {
+            (parent("/presets", "Presets"))
             h1 { "New preset" }
             form method="post" action="/presets/new" {
                 input type="hidden" name="template" value=(t.key);
@@ -1826,6 +1835,7 @@ async fn preset_page(
         Some(&user.0),
         html! {
             (flash(&msg))
+            (parent("/presets", "Presets"))
             h1 { "Edit preset" }
             form method="post" action=(format!("/presets/{id}")) {
                 (preset_sheet(&p, &decks))
@@ -1840,7 +1850,6 @@ async fn preset_page(
                     }
                 }
             }
-            p.muted.small { a href="/presets" { "All presets" } }
         },
     )
     .into_response())
@@ -2075,6 +2084,7 @@ async fn tokens_page(
         Some(&user.0),
         html! {
             (flash(&msg))
+            (parent("/settings", "Settings"))
             h1 { "Agent access" }
             h2 { "Connect Claude" }
             ol.prose {
@@ -2322,7 +2332,8 @@ async fn stats_page(State(app): State<AppState>, user: WebUser, Query(q): Query<
         "Stats",
         Some(&user.0),
         html! {
-            h1 { "Stats" @if let Some(d) = &deck { ": " (deck_title(&d.name)) } }
+            @if let Some(d) = &deck { (parent(&format!("/decks/{}", d.id), &deck_plain(&d.name))) }
+            h1 { "Stats" }
             h2 { "Today" }
             dl.stats-inline {
                 div { dt { (format::plural(s.cards_today, "Card")) " studied" } dd { (s.cards_today) } }

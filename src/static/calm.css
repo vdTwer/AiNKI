@@ -154,6 +154,12 @@ html.calm :focus-visible { outline: 2px solid var(--terra); outline-offset: 3px;
 @keyframes calm-appear { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
 @keyframes calm-grow { from { transform: scaleX(0); } to { transform: scaleX(1); } }
 
+/* The page this one belongs to: a quiet line above the heading, like the
+   path of a nested deck. */
+html.calm .parent { margin: 0 0 .3rem; font-size: .87rem; }
+html.calm .parent a { min-height: 0; color: var(--muted); transition: color 140ms ease; }
+html.calm .parent a:hover { color: var(--terra-hover); }
+
 /* Flash messages: one quiet line with a dot. */
 html.calm .notice {
   display: flex;
