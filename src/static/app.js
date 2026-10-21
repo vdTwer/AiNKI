@@ -138,6 +138,7 @@
   var busy = false;
 
   // Put the page the server answered with in place of the current one.
+  // Returns a promise: the last answer of a session first fills the line.
   function swap(html, url) {
     var doc = new DOMParser().parseFromString(html, 'text/html');
     var next = doc.querySelector('main');
@@ -145,6 +146,51 @@
     var oldBar = document.querySelector('.study-foot .bar');
     var from = oldBar ? oldBar.getAttribute('data-progress') : null;
     var wasStudying = !!document.querySelector('main .study');
+    var ending = wasStudying && !!next.querySelector('.session-end .end-dot');
+    if (ending && oldBar && calm && motion) {
+      // The line fills up, then rises and closes into the dot.
+      oldBar.closest('.study').classList.add('closing');
+      oldBar.style.width = '100%';
+      return new Promise(function (done) { setTimeout(done, 380); }).then(function () {
+        var line = oldBar.parentNode.getBoundingClientRect();
+        place(doc, next, url);
+        var end = next.querySelector('.session-end');
+        end.classList.add('finishing', 'from-line');
+        var dot = end.querySelector('.end-dot div');
+        var d = dot.getBoundingClientRect();
+        var dx = line.left + line.width / 2 - (d.left + d.width / 2);
+        var dy = line.top + line.height / 2 - (d.top + d.height / 2);
+        if (!dot.animate) return;
+        dot.animate([
+          { width: line.width + 'px', height: '2px', borderRadius: '2px', transform: 'translate(' + dx + 'px,' + dy + 'px)' },
+          { width: '6px', height: '2px', borderRadius: '2px', transform: 'translate(0,0)', offset: 0.6 },
+          { width: '7px', height: '7px', borderRadius: '50%', transform: 'translate(0,0)' }
+        ], { duration: 680, easing: 'cubic-bezier(.6, 0, .2, 1)' });
+      });
+    }
+    place(doc, next, url);
+    // The progress line glides on from where it was; a miss slips back.
+    var bar = next.querySelector('.study-foot .bar');
+    if (bar && from !== null && calm) {
+      var to = bar.getAttribute('data-progress');
+      bar.style.transition = 'none';
+      bar.style.width = from + '%';
+      if (+to < +from) bar.classList.add('slip');
+      void bar.offsetWidth;
+      bar.style.transition = '';
+      requestAnimationFrame(function () {
+        bar.style.width = to + '%';
+        bar.classList.remove('slip');
+      });
+    }
+    if (next.querySelector('.study')) next.querySelector('.study').classList.add('entering');
+    // The closing animation is for the answer that ended the session, not
+    // for opening the page again later.
+    if (ending) next.querySelector('.session-end').classList.add('finishing');
+    return Promise.resolve();
+  }
+
+  function place(doc, next, url) {
     document.title = doc.title;
     var page = doc.body.getAttribute('data-page');
     if (page) document.body.setAttribute('data-page', page); else document.body.removeAttribute('data-page');
@@ -155,21 +201,6 @@
     if (url) history.replaceState(null, '', url.replace(/#.*$/, ''));
     window.scrollTo(0, 0);
     setup(next);
-    // The progress line glides on from where it was.
-    var bar = next.querySelector('.study-foot .bar');
-    if (bar && from !== null && calm) {
-      var to = bar.getAttribute('data-progress');
-      bar.style.transition = 'none';
-      bar.style.width = from + '%';
-      void bar.offsetWidth;
-      bar.style.transition = '';
-      requestAnimationFrame(function () { bar.style.width = to + '%'; });
-    }
-    if (next.querySelector('.study')) next.querySelector('.study').classList.add('entering');
-    // The closing animation is for the answer that ended the session, not
-    // for opening the page again later.
-    var end = next.querySelector('.session-end');
-    if (end && wasStudying) end.classList.add('finishing');
   }
 
   function send(form, submitter) {
@@ -186,7 +217,7 @@
       body: data
     }).then(function (r) {
       if (!r.ok || r.redirected && new URL(r.url).pathname !== '/study') throw new Error('unexpected answer');
-      return r.text().then(function (html) { swap(html, r.url); });
+      return r.text().then(function (html) { return swap(html, r.url); });
     }).catch(function () {
       // Something unusual (logged out, server error): do it the plain way.
       if (submitter && submitter.name) {
