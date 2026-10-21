@@ -1,6 +1,8 @@
 //! How numbers, intervals and dates are written. One place, so every page
 //! (and the MCP answers) says the same thing the same way.
 
+use chrono::Datelike;
+
 use crate::scheduler::Clock;
 
 /// "1 card", "3 cards". English plurals by adding "s"; every word we
@@ -51,18 +53,39 @@ pub fn long_date(clock: &Clock) -> String {
     clock.today().format("%A, %-d %B").to_string()
 }
 
-/// When something happens, in words: "today at 14:30", "tomorrow at 9:00",
-/// "on Friday, 24 October".
+/// A calendar day in words: "today", "tomorrow", "yesterday", or
+/// "Friday, 18 December" (with the year when it isn't this year).
+pub fn day(clock: &Clock, date: chrono::NaiveDate) -> String {
+    match (date - clock.today()).num_days() {
+        0 => "today".into(),
+        1 => "tomorrow".into(),
+        -1 => "yesterday".into(),
+        _ if date.year() == clock.today().year() => date.format("%A, %-d %B").to_string(),
+        _ => date.format("%A, %-d %B %Y").to_string(),
+    }
+}
+
+/// A short day label for charts: "Today", "Tue 22".
+pub fn short_day(clock: &Clock, date: chrono::NaiveDate) -> String {
+    match (date - clock.today()).num_days() {
+        0 => "Today".into(),
+        1 => "Tomorrow".into(),
+        _ => date.format("%a %-d").to_string(),
+    }
+}
+
+/// When something happens or happened, in words: "today at 14:30",
+/// "tomorrow at 9:00", "yesterday at 8:15", "on Friday, 24 October".
 pub fn when(clock: &Clock, ts: i64) -> String {
     let Some(local) = chrono::DateTime::from_timestamp(ts, 0).map(|t| t.with_timezone(&clock.tz)) else {
         return String::new();
     };
-    let days = (clock.date_of(ts) - clock.today()).num_days();
     let time = local.format("%-H:%M");
-    match days {
-        ..=0 => format!("today at {time}"),
+    match (clock.date_of(ts) - clock.today()).num_days() {
+        0 => format!("today at {time}"),
         1 => format!("tomorrow at {time}"),
-        _ => format!("on {}", local.format("%A, %-d %B")),
+        -1 => format!("yesterday at {time}"),
+        _ => format!("on {}", day(clock, clock.date_of(ts))),
     }
 }
 

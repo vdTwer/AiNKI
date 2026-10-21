@@ -320,6 +320,23 @@ pub fn deck_plain(name: &str) -> String {
     deck_parts(name).join(" › ")
 }
 
+/// "on Friday, 18 December" for a stored exam date.
+fn exam_words(user: &User, date: &str) -> String {
+    match chrono::NaiveDate::parse_from_str(date, "%Y-%m-%d") {
+        Ok(d) => match format::day(&user.clock(), d).as_str() {
+            w @ ("today" | "tomorrow" | "yesterday") => w.to_string(),
+            w => format!("on {w}"),
+        },
+        Err(_) => date.to_string(),
+    }
+}
+
+fn forecast_day(user: &User, date: &str) -> String {
+    chrono::NaiveDate::parse_from_str(date, "%Y-%m-%d")
+        .map(|d| format::short_day(&user.clock(), d))
+        .unwrap_or_else(|_| date.to_string())
+}
+
 pub fn layout(title: &str, user: Option<&User>, body: Markup) -> Markup {
     page(title, user, None, body)
 }
@@ -729,7 +746,7 @@ async fn home(State(app): State<AppState>, user: WebUser, Flash(msg): Flash) -> 
                                 span.grow {
                                     span.deck-name { (deck_title(&d.deck.name)) }
                                     @if let Some(exam) = &d.deck.exam_date {
-                                        span.sub { "Exam on " (exam) }
+                                        span.sub { "Exam " (exam_words(&user.0, exam)) }
                                     }
                                 }
                                 @if d.due_total() == 0 && d.total > 0 {
@@ -1098,7 +1115,7 @@ async fn deck_page(
                 div { dt { "Due" } dd { (summary.learning_due + summary.review_due) } }
                 div { dt { "Cards" } dd { (summary.total) } }
             }
-            @if let Some(exam) = &d.exam_date { p.muted { "Exam date: " (exam) } }
+            @if let Some(exam) = &d.exam_date { p.muted { "Exam " (exam_words(&user.0, exam)) } }
             @if summary.due_total() > 0 {
                 a.btn.primary.wide href=(format!("/study?deck={id}")) { "Study" }
             }
@@ -1498,7 +1515,7 @@ async fn card_page(
             dl.kv {
                 dt { "State" } dd { (card.card_state().as_str()) @if card.suspended { " (suspended)" } }
                 @if card.card_state() != CardState::New {
-                    dt { "Due" } dd { (format::iso(card.due, &clock)) }
+                    dt { "Due" } dd { (capitalize(&format::when(&clock, card.due))) }
                 }
                 @if let Some(s) = card.stability { dt { "Stability" } dd { (format!("{s:.1} days")) } }
                 @if let Some(d) = card.difficulty { dt { "Difficulty" } dd { (format!("{d:.1} / 10")) } }
@@ -1522,7 +1539,7 @@ async fn card_page(
                     tbody {
                         @for h in history.iter().rev() {
                             tr {
-                                td { (h["at"].as_str().unwrap_or("")) }
+                                td { (capitalize(&format::when(&clock, h["timestamp"].as_i64().unwrap_or(0)))) }
                                 td { (h["rating"].as_str().unwrap_or("")) @if h["source"] == "agent" { " (agent)" } }
                                 td { (h["next_interval"].as_str().unwrap_or("")) }
                             }
@@ -1816,7 +1833,7 @@ async fn settings_page(State(app): State<AppState>, user: WebUser, Flash(msg): F
                     span.value {
                         @if custom {
                             "Fitted to your reviews"
-                            @if let Some(t) = u.fsrs_params_updated_at { span.muted.small { " · " (format::iso(t, &u.clock())) } }
+                            @if let Some(t) = u.fsrs_params_updated_at { span.muted.small { " · " (format::when(&u.clock(), t)) } }
                         } @else {
                             "FSRS-6 defaults"
                         }
@@ -1969,8 +1986,8 @@ async fn tokens_page(
                             }
                             br;
                             span.muted.small {
-                                "Last used: "
-                                (t.last_used_at.map(|ts| format::iso(ts, &clock)).unwrap_or_else(|| "never".into()))
+                                "Last used "
+                                (t.last_used_at.map(|ts| format::when(&clock, ts)).unwrap_or_else(|| "never".into()))
                             }
                         }
                         form method="post" action=(format!("/tokens/{}/revoke", t.id)) {
@@ -2211,7 +2228,7 @@ async fn stats_page(State(app): State<AppState>, user: WebUser, Query(q): Query<
                 tbody {
                     @for (day, n) in &s.forecast {
                         tr {
-                            th scope="row" { (day) }
+                            th scope="row" { (forecast_day(&user.0, day)) }
                             td.bar-cell {
                                 @if *n > 0 { span.bar style=(format!("width:{}%", n * 100 / max)) {} }
                             }

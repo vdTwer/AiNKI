@@ -219,7 +219,8 @@ pub struct Stats {
     pub retention_sample_30d: i64,
     pub reviews_30d: i64,
     pub streak_days: i64,
-    /// Number of cards falling due on each of the next 14 days.
+    /// Number of cards falling due on each of the next 14 days, by date
+    /// ("2026-10-21").
     pub forecast: Vec<(String, i64)>,
     pub average_retrievability: Option<f64>,
     /// Typical thinking time per answer over the last 30 days, in seconds.
@@ -1259,6 +1260,7 @@ impl App {
             .map(|r| {
                 json!({
                     "at": crate::format::iso(r.reviewed_at, &clock),
+                    "timestamp": r.reviewed_at,
                     "rating": match r.rating { 0 => "reset", 1 => "again", 2 => "hard", 3 => "good", _ => "easy" },
                     "state_before": CardState::from_i64(r.state_before).as_str(),
                     "next_interval": (r.source != "import" && r.rating > 0)
@@ -1344,7 +1346,7 @@ impl App {
         stats.forecast = forecast
             .into_iter()
             .enumerate()
-            .map(|(i, n)| ((today + Duration::days(i as i64)).format("%a %d").to_string(), n))
+            .map(|(i, n)| ((today + Duration::days(i as i64)).format("%Y-%m-%d").to_string(), n))
             .collect();
         if r_n > 0 {
             stats.average_retrievability = Some(r_sum / r_n as f64);
