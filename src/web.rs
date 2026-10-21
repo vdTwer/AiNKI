@@ -1292,9 +1292,11 @@ async fn deck_page(
                     }
                 }
             }
-            p.actions {
-                @if page > 0 { a.btn href=(format!("{base}&page={}", page - 1)) { "Previous" } }
-                @if (page + 1) * per_page < total { a.btn href=(format!("{base}&page={}", page + 1)) { "Next" } }
+            @if page > 0 || (page + 1) * per_page < total {
+                nav.actions.quiet-links aria-label="Pages" {
+                    @if page > 0 { a.btn href=(format!("{base}&page={}", page - 1)) { "‹ Previous" } }
+                    @if (page + 1) * per_page < total { a.btn href=(format!("{base}&page={}", page + 1)) { "Next ›" } }
+                }
             }
             p.icon-links { (icon_link(&format!("/decks/{id}/export.csv"), ICON_EXPORT, "Export as CSV")) }
         },
