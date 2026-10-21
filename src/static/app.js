@@ -45,6 +45,83 @@
     toggle();
   }
 
+  // Card form: the sides grow with their text, long text is set as it
+  // will be when studying, an image can be picked, dropped or pasted onto
+  // a side, and Ctrl/Cmd+Enter adds the card.
+  var cardForm = document.querySelector('form.card-form');
+  if (cardForm) {
+    var faces = cardForm.querySelectorAll('.face-edit');
+    Array.prototype.forEach.call(faces, function (face) {
+      var text = face.querySelector('textarea');
+      var file = face.querySelector('input[type=file]');
+      var preview = face.querySelector('.face-image.preview');
+      var fit = function () {
+        text.classList.toggle('long', text.value.trim().length > 90);
+        if (calm && !CSS.supports('field-sizing', 'content')) {
+          text.style.height = 'auto';
+          text.style.height = text.scrollHeight + 'px';
+        }
+      };
+      text.addEventListener('input', fit);
+      fit();
+      var show = function () {
+        var f = file.files && file.files[0];
+        var img = preview.querySelector('img');
+        if (img.src) URL.revokeObjectURL(img.src);
+        if (f) {
+          img.src = URL.createObjectURL(f);
+          img.alt = f.name;
+        } else {
+          img.removeAttribute('src');
+        }
+        preview.hidden = !f;
+        face.classList.toggle('has-image', !!f);
+      };
+      file.addEventListener('change', show);
+      preview.querySelector('[data-clear-image]').addEventListener('click', function () {
+        file.value = '';
+        show();
+        file.focus();
+      });
+      var take = function (files) {
+        var f = files && Array.prototype.filter.call(files, function (x) { return /^image\//.test(x.type); })[0];
+        if (!f || typeof DataTransfer === 'undefined') return false;
+        var dt = new DataTransfer();
+        dt.items.add(f);
+        file.files = dt.files;
+        show();
+        return true;
+      };
+      text.addEventListener('paste', function (e) {
+        if (e.clipboardData && take(e.clipboardData.files)) e.preventDefault();
+      });
+      face.addEventListener('dragover', function (e) {
+        if (e.dataTransfer && Array.prototype.indexOf.call(e.dataTransfer.types, 'Files') >= 0) {
+          e.preventDefault();
+          face.classList.add('dropping');
+        }
+      });
+      face.addEventListener('dragleave', function (e) {
+        if (!face.contains(e.relatedTarget)) face.classList.remove('dropping');
+      });
+      face.addEventListener('drop', function (e) {
+        face.classList.remove('dropping');
+        if (e.dataTransfer && take(e.dataTransfer.files)) e.preventDefault();
+      });
+    });
+    var key = cardForm.querySelector('.submit-key');
+    if (key && calm) {
+      if (/Mac|iPhone|iPad/.test(navigator.platform || '')) key.textContent = '⌘ ⏎';
+      key.hidden = false;
+    }
+    cardForm.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault();
+        if (cardForm.requestSubmit) cardForm.requestSubmit(); else cardForm.submit();
+      }
+    });
+  }
+
   // Mark the current section in the menu.
   (function () {
     var path = location.pathname;

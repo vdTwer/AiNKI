@@ -1281,6 +1281,36 @@ fn add_tabs(current: &str) -> Markup {
 /// Value of the deck picker's "New deck…" option.
 const NEW_DECK: &str = "new";
 
+/// A small picture icon for "Add image".
+const IMAGE_ICON: &str = r#"<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="12" height="10" rx="2"/><circle cx="6" cy="6.6" r="1.1"/><path d="M2.6 11.6l3.4-3.2 2.4 2.2 1.9-1.6 3.1 2.6"/></svg>"#;
+
+/// One side of the card being written: its text, and an optional image
+/// that can be picked, dropped or pasted.
+fn face_field(side: &str, title: &str, placeholder: &str, text: &str, image: &Option<String>, autofocus: bool) -> Markup {
+    html! {
+        div.face-edit data-face=(side) {
+            label.face-label for=(side) { (title) }
+            textarea id=(side) name=(side) rows="3" placeholder=(placeholder) autofocus[autofocus] { (text) }
+            @if let Some(img) = image {
+                div.face-image.current {
+                    img.thumb src=(format!("/media/{img}")) alt=(format!("{title} image"));
+                    label.check { input type="checkbox" name=(format!("remove_{side}_image")) value="1"; " Remove image" }
+                }
+            }
+            div.face-image.preview hidden {
+                img alt="";
+                button.link type="button" data-clear-image { "Remove" }
+            }
+            label.file.attach {
+                span.icon { (PreEscaped(IMAGE_ICON)) }
+                span.attach-text { @if image.is_some() { "Replace image" } @else { "Add image" } }
+                " " span.muted.optional { "(optional)" }
+                input type="file" name=(format!("{side}_image")) accept="image/*";
+            }
+        }
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 fn card_form(
     action: &str,
@@ -1295,35 +1325,34 @@ fn card_form(
 ) -> Markup {
     let new_selected = allow_new_deck && (decks.is_empty() || deck_id.is_none());
     html! {
-        form method="post" action=(action) enctype="multipart/form-data" {
-            label { "Deck"
-                select name="deck" required data-new-deck-select {
-                    @for d in decks { option value=(d.id) selected[!new_selected && Some(d.id) == deck_id] { (deck_plain(&d.name)) } }
-                    @if allow_new_deck {
-                        option value=(NEW_DECK) selected[new_selected] { "New deck…" }
+        form.card-form method="post" action=(action) enctype="multipart/form-data" {
+            div.deck-line {
+                label.deck-pick { span.deck-label { "Deck" }
+                    span.select {
+                        select name="deck" required data-new-deck-select {
+                            @for d in decks { option value=(d.id) selected[!new_selected && Some(d.id) == deck_id] { (deck_plain(&d.name)) } }
+                            @if allow_new_deck {
+                                option value=(NEW_DECK) selected[new_selected] { "New deck…" }
+                            }
+                        }
+                    }
+                }
+                @if allow_new_deck {
+                    label.new-deck id="new-deck-field" {
+                        span.deck-label { "New deck name" }
+                        input type="text" name="new_deck" maxlength="200" placeholder="e.g. Spanish verbs";
                     }
                 }
             }
-            @if allow_new_deck {
-                label id="new-deck-field" {
-                    "New deck name"
-                    input type="text" name="new_deck" maxlength="200" placeholder="e.g. Spanish verbs";
-                }
+            div.sheet {
+                (face_field("front", "Front", "Question", front, front_image, true))
+                hr.divider;
+                (face_field("back", "Back", "Answer", back, back_image, false))
             }
-            label { "Front" textarea name="front" rows="4" autofocus { (front) } }
-            @if let Some(img) = front_image {
-                img.thumb src=(format!("/media/{img}")) alt="Front image";
-                label.check { input type="checkbox" name="remove_front_image" value="1"; " Remove image" }
+            div.form-foot {
+                p.muted.small { "Text supports Markdown: **bold**, *italic*, lists, `code`." }
+                button.btn.primary.wide type="submit" { (submit) span.key.submit-key hidden { "Ctrl ⏎" } }
             }
-            label.file { "Front image " span.muted { "(optional)" } input type="file" name="front_image" accept="image/*"; }
-            label { "Back" textarea name="back" rows="4" { (back) } }
-            @if let Some(img) = back_image {
-                img.thumb src=(format!("/media/{img}")) alt="Back image";
-                label.check { input type="checkbox" name="remove_back_image" value="1"; " Remove image" }
-            }
-            label.file { "Back image " span.muted { "(optional)" } input type="file" name="back_image" accept="image/*"; }
-            p.muted.small { "Text supports Markdown: **bold**, *italic*, lists, `code`." }
-            button.btn.primary.wide type="submit" { (submit) }
         }
     }
 }
