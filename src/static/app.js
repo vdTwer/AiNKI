@@ -122,20 +122,6 @@
     });
   }
 
-  // Mark the current section in the menu.
-  (function () {
-    var path = location.pathname;
-    var section =
-      path === '/' || path.indexOf('/decks/') === 0 && path !== '/decks/new' ? 'decks' :
-      path === '/study' ? 'study' :
-      path === '/cards/new' || path === '/decks/new' || path === '/import' ? 'add' :
-      path === '/stats' ? 'stats' :
-      path === '/settings' || path.indexOf('/presets') === 0 || path === '/tokens' ? 'settings' : null;
-    if (!section) return;
-    var links = document.querySelectorAll('nav.top a[data-nav="' + section + '"]');
-    for (var i = 0; i < links.length; i++) links[i].setAttribute('aria-current', 'page');
-  })();
-
   // Picking a file to import: the sheet names the file, and lights up
   // while one is dragged over it.
   Array.prototype.forEach.call(document.querySelectorAll('form:not(.card-form) label.file'), function (label) {

@@ -338,12 +338,29 @@ fn forecast_day(user: &User, date: &str) -> String {
         .unwrap_or_else(|_| date.to_string())
 }
 
+/// The menu entry a page belongs to; marked as the current one.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum Nav {
+    Decks,
+    Study,
+    Add,
+    Stats,
+    Settings,
+}
+
+/// A page outside the menu (login, errors).
 pub fn layout(title: &str, user: Option<&User>, body: Markup) -> Markup {
-    page(title, user, None, body)
+    page(None, title, user, None, body)
+}
+
+/// A page under one of the menu entries.
+pub fn layout_in(nav: Nav, title: &str, user: Option<&User>, body: Markup) -> Markup {
+    page(Some(nav), title, user, None, body)
 }
 
 /// `page_kind` marks special pages for app.js.
-fn page(title: &str, user: Option<&User>, page_kind: Option<&str>, body: Markup) -> Markup {
+fn page(nav: Option<Nav>, title: &str, user: Option<&User>, page_kind: Option<&str>, body: Markup) -> Markup {
+    let current = |n: Nav| (nav == Some(n)).then_some("page");
     let scale = user.map(|u| u.font_scale).unwrap_or(100) as f64 / 100.0;
     html! {
         (DOCTYPE)
@@ -367,12 +384,12 @@ fn page(title: &str, user: Option<&User>, page_kind: Option<&str>, body: Markup)
                 // dots on the left that become icons as the pointer nears.
                 @if user.is_some() {
                     nav.top aria-label="Main" {
-                        a.brand href="/" data-nav="decks" data-label="AiNKI" { "AiNKI" }
-                        a.rail-only href="/" data-nav="decks" data-label="Decks" { (nav_icon(ICON_DECKS)) "Decks" }
-                        a href="/study" data-nav="study" data-label="Study" { (nav_icon(ICON_STUDY)) "Study" }
-                        a href="/cards/new" data-nav="add" data-label="Add" { (nav_icon(ICON_ADD)) "Add" }
-                        a href="/stats" data-nav="stats" data-label="Stats" { (nav_icon(ICON_STATS)) "Stats" }
-                        a href="/settings" data-nav="settings" data-label="Settings" { (nav_icon(ICON_SETTINGS)) "Settings" }
+                        a.brand href="/" data-label="AiNKI" aria-current=[current(Nav::Decks)] { "AiNKI" }
+                        a.rail-only href="/" data-label="Decks" aria-current=[current(Nav::Decks)] { (nav_icon(ICON_DECKS)) "Decks" }
+                        a href="/study" data-label="Study" aria-current=[current(Nav::Study)] { (nav_icon(ICON_STUDY)) "Study" }
+                        a href="/cards/new" data-label="Add" aria-current=[current(Nav::Add)] { (nav_icon(ICON_ADD)) "Add" }
+                        a href="/stats" data-label="Stats" aria-current=[current(Nav::Stats)] { (nav_icon(ICON_STATS)) "Stats" }
+                        a href="/settings" data-label="Settings" aria-current=[current(Nav::Settings)] { (nav_icon(ICON_SETTINGS)) "Settings" }
                     }
                 }
                 main { (body) }
@@ -698,6 +715,7 @@ async fn home(State(app): State<AppState>, user: WebUser, Flash(msg): Flash) -> 
         facts.push(format!("{} in a row", count(stats.streak_days, "day")));
     }
     Ok(page(
+        Some(Nav::Decks),
         "Decks",
         Some(&user.0),
         Some("home"),
@@ -899,6 +917,7 @@ async fn study_card(
     };
     let deck_param = q_deck.map(|d| format!("&deck={d}")).unwrap_or_default();
     Ok(page(
+        Some(Nav::Study),
         "Study",
         Some(user),
         Some("study"),
@@ -952,6 +971,7 @@ async fn study(State(app): State<AppState>, user: WebUser, Flash(msg): Flash, Qu
         let stats = app.stats(&access, q.deck).await?;
         let next = app.next_review_at(&access, q.deck).await?;
         return Ok(page(
+            Some(Nav::Study),
             "Study",
             Some(&user.0),
             Some("study-done"),
@@ -1074,7 +1094,8 @@ fn deck_sheet(
 
 async fn deck_new_page(State(app): State<AppState>, user: WebUser) -> WebResult {
     let presets = app.list_presets(&user.access()).await?;
-    Ok(layout(
+    Ok(layout_in(
+        Nav::Add,
         "New deck",
         Some(&user.0),
         html! {
@@ -1149,7 +1170,8 @@ async fn deck_page(
         urlenc(q.q.as_deref().unwrap_or("")),
         urlenc(q.state.as_deref().unwrap_or(""))
     );
-    Ok(layout(
+    Ok(layout_in(
+        Nav::Decks,
         &deck_plain(&d.name),
         Some(&user.0),
         html! {
@@ -1244,7 +1266,8 @@ async fn deck_edit_page(
     let deck = app.deck(&access, id).await?;
     let presets = app.list_presets(&access).await?;
     let shares = app.outgoing_shares(&access, id).await?;
-    Ok(layout(
+    Ok(layout_in(
+        Nav::Decks,
         "Edit deck",
         Some(&user.0),
         html! {
@@ -1498,7 +1521,8 @@ async fn card_new_page(State(app): State<AppState>, user: WebUser, Flash(msg): F
         Some(id) => Some(id),
         None => app.last_used_deck(&access).await?.or_else(|| decks.first().map(|d| d.id)),
     };
-    Ok(layout(
+    Ok(layout_in(
+        Nav::Add,
         "Add card",
         Some(&user.0),
         html! {
@@ -1561,7 +1585,8 @@ async fn card_page(
     let clock = user.0.clock();
     let params = user.0.params();
     let r = scheduler::retrievability(&card.sched(), &params, &clock);
-    Ok(layout(
+    Ok(layout_in(
+        Nav::Decks,
         "Edit card",
         Some(&user.0),
         html! {
@@ -1694,7 +1719,8 @@ async fn card_action(
 
 async fn presets_page(State(app): State<AppState>, user: WebUser, Flash(msg): Flash) -> WebResult {
     let presets = app.list_presets(&user.access()).await?;
-    Ok(layout(
+    Ok(layout_in(
+        Nav::Settings,
         "Presets",
         Some(&user.0),
         html! {
@@ -1801,7 +1827,8 @@ fn preset_draft(t: &presets::PresetTemplate, user_id: i64) -> crate::service::Pr
 async fn preset_new_page(user: WebUser, Query(q): Query<TemplateQuery>) -> WebResult {
     let t = presets::template(q.template.as_deref().unwrap_or("standard")).ok_or(AppError::NotFound)?;
     let draft = preset_draft(t, user.0.id);
-    Ok(layout(
+    Ok(layout_in(
+        Nav::Settings,
         "New preset",
         Some(&user.0),
         html! {
@@ -1840,7 +1867,8 @@ async fn preset_page(
         .filter(|d| d.preset_id == id)
         .map(|d| d.name)
         .collect();
-    Ok(layout(
+    Ok(layout_in(
+        Nav::Settings,
         "Edit preset",
         Some(&user.0),
         html! {
@@ -1918,7 +1946,8 @@ async fn settings_page(State(app): State<AppState>, user: WebUser, Flash(msg): F
     let u = &user.0;
     let reviews = app.optimizable_reviews(&access).await?;
     let custom = !u.params().is_empty();
-    Ok(layout(
+    Ok(layout_in(
+        Nav::Settings,
         "Settings",
         Some(u),
         html! {
@@ -2089,7 +2118,8 @@ async fn tokens_page(
     let clock = user.0.clock();
     let url = mcp_url(&app, &headers);
     let https = url.starts_with("https://");
-    Ok(layout(
+    Ok(layout_in(
+        Nav::Settings,
         "Agent access",
         Some(&user.0),
         html! {
@@ -2193,7 +2223,8 @@ async fn token_create(
         }
     }))
     .unwrap_or_default();
-    Ok(layout(
+    Ok(layout_in(
+        Nav::Settings,
         "Token created",
         Some(&user.0),
         html! {
@@ -2224,7 +2255,8 @@ async fn token_revoke(State(app): State<AppState>, user: WebUser, Path(id): Path
 
 async fn import_page(State(app): State<AppState>, user: WebUser, Flash(msg): Flash) -> WebResult {
     let decks = app.decks(&user.access()).await?;
-    Ok(layout(
+    Ok(layout_in(
+        Nav::Add,
         "Import",
         Some(&user.0),
         html! {
@@ -2338,7 +2370,8 @@ async fn stats_page(State(app): State<AppState>, user: WebUser, Query(q): Query<
         None => None,
     };
     let max = s.forecast.iter().map(|(_, n)| *n).max().unwrap_or(0).max(1);
-    Ok(layout(
+    Ok(layout_in(
+        Nav::Stats,
         "Stats",
         Some(&user.0),
         html! {

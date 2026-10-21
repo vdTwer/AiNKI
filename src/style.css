@@ -76,6 +76,7 @@ nav.top a {
 }
 nav.top a.brand { font-weight: 800; letter-spacing: .05em; }
 nav.top a:hover, nav.top a:focus-visible { background: var(--fg); color: var(--bg); }
+nav.top a[aria-current="page"]:not(.brand) { text-decoration: underline; text-decoration-thickness: 3px; text-underline-offset: .3em; }
 .brand-big { font-size: 2.4rem; letter-spacing: .08em; margin-bottom: 0; }
 
 /* Controls */
