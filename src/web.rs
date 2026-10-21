@@ -1286,7 +1286,7 @@ async fn deck_update(
         Some(f.exam_date.as_deref().unwrap_or("")),
     )
     .await?;
-    Ok(redirect_msg(format!("/decks/{id}"), "Deck saved."))
+    Ok(redirect_msg(format!("/decks/{id}/edit"), "Deck saved."))
 }
 
 async fn deck_delete(State(app): State<AppState>, user: WebUser, Path(id): Path<i64>) -> WebResult {
