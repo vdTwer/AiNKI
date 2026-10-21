@@ -709,7 +709,9 @@ html.calm .study .answers .btn.again .ivl { color: var(--orchid-deep); }
 html.calm .study .answers .btn.primary .ivl { color: var(--terra-deep); }
 html.calm .study-foot { margin: 0; padding: 40px 0 36px; }
 html.calm .study-foot .progress { height: 2px; border-radius: 2px; background: var(--track); }
-html.calm .study-foot .bar { height: 2px; border-radius: 2px; background: var(--terra); transition: width 320ms var(--ease); }
+html.calm .study-foot .bar { height: 2px; border-radius: 2px; background: var(--terra); transition: width 320ms var(--ease), background-color 900ms var(--ease); }
+/* A miss takes its share back: the line slips back, briefly orchid. */
+html.calm .study-foot .bar.slip { background: var(--orchid); }
 html.calm .study-meta { margin: .6rem 0 0; font-size: .87rem; color: var(--muted); }
 html.calm .study-meta a { color: var(--muted); }
 html.calm .study-meta a:hover { color: var(--terra-hover); }
@@ -743,6 +745,12 @@ html.calm .session-end .end-links a:hover, html.calm .session-end .end-links but
 html.calm .session-end .btn { margin-top: 1rem; }
 
 html.calm .finishing .end-dot div { animation: calm-close-to-dot 620ms cubic-bezier(.6, 0, .2, 1) both; }
+html.calm .study.closing > :not(.study-foot), html.calm .study.closing .study-meta, html.calm .study.closing .study-tools {
+  filter: opacity(0); /* not opacity: their entry animations hold that */
+  transition: filter 260ms var(--ease);
+}
+/* Straight from studying, app.js lifts the progress line itself into the dot. */
+html.calm .finishing.from-line .end-dot div { animation: none; }
 html.calm .finishing h1 { animation: calm-appear 320ms var(--ease) 520ms both; }
 html.calm .finishing .summary, html.calm .finishing .end-links { animation: calm-appear 320ms var(--ease) 600ms both; }
 

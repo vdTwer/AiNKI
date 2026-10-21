@@ -548,6 +548,63 @@ impl App {
         Ok(out)
     }
 
+    /// How far into today's session, in half cards: (done, total cards).
+    /// A card studied today counts fully once it has left learning, half
+    /// while it is still being learned and the last answer was right, and
+    /// not at all after a miss. So the line only fills when the last card
+    /// has really been learned, and a miss takes its share back.
+    pub async fn session_progress(&self, access: &Access, deck_id: Option<i64>) -> Result<(i64, i64)> {
+        let summaries: Vec<DeckSummary> = self
+            .deck_summaries(access)
+            .await?
+            .into_iter()
+            .filter(|s| deck_id.is_none_or(|id| s.deck.id == id))
+            .collect();
+        let clock = access.user.clock();
+
+        #[derive(sqlx::FromRow)]
+        struct Touched {
+            deck_id: i64,
+            state: i64,
+            due: i64,
+            last_rating: i64,
+        }
+        let touched: Vec<Touched> = sqlx::query_as(
+            "SELECT c.deck_id, c.state, c.due,
+                (SELECT r.rating FROM review_log r
+                 WHERE r.card_id = c.id AND r.reviewed_at >= ? AND r.rating > 0 AND r.source != 'import'
+                 ORDER BY r.reviewed_at DESC, r.id DESC LIMIT 1) AS last_rating
+             FROM cards c
+             WHERE c.user_id = ? AND c.suspended = 0 AND c.id IN (
+                SELECT card_id FROM review_log
+                WHERE user_id = ? AND reviewed_at >= ? AND rating > 0 AND source != 'import')",
+        )
+        .bind(clock.start_of_today())
+        .bind(access.user_id())
+        .bind(access.user_id())
+        .bind(clock.start_of_today())
+        .fetch_all(&self.db)
+        .await?;
+
+        let (mut done, mut total, mut touched_due_now) = (0, 0, 0);
+        for t in touched.iter().filter(|t| summaries.iter().any(|s| s.deck.id == t.deck_id)) {
+            total += 1;
+            match CardState::from_i64(t.state) {
+                CardState::Learning | CardState::Relearning => {
+                    if t.due <= clock.now {
+                        touched_due_now += 1;
+                    }
+                    if t.last_rating != Rating::Again as i64 {
+                        done += 1;
+                    }
+                }
+                _ => done += 2,
+            }
+        }
+        let waiting: i64 = summaries.iter().map(|s| s.due_total()).sum();
+        Ok((done, total + (waiting - touched_due_now).max(0)))
+    }
+
     pub async fn create_deck(
         &self,
         access: &Access,

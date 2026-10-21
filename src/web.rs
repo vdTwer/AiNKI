@@ -726,24 +726,15 @@ fn study_url(deck: Option<i64>) -> String {
     }
 }
 
-/// How far into today's session: (answered so far, total for today).
-async fn session_progress(app: &App, access: &Access, deck: Option<i64>) -> Result<(i64, i64), AppError> {
-    let summaries = app.deck_summaries(access).await?;
-    let (done, left) = summaries
-        .iter()
-        .filter(|s| deck.is_none_or(|d| s.deck.id == d))
-        .fold((0, 0), |(done, left), s| (done + s.new_done_today + s.review_done_today, left + s.due_total()));
-    Ok((done, done + left))
-}
-
-/// The thin line and "14 of 32" under the card.
+/// The thin line and "14 of 32" under the card. `done` is in half cards
+/// (see `App::session_progress`).
 fn study_foot(deck_name: &str, deck_id: i64, done: i64, total: i64, q_deck: Option<i64>, card_id: Option<i64>) -> Markup {
-    let pct = if total > 0 { (done * 100 / total).clamp(0, 100) } else { 0 };
+    let pct = if total > 0 { (done * 50 / total).clamp(0, 100) } else { 0 };
     let total = total.max(1);
-    let position = (done + 1).min(total);
+    let position = (done / 2 + 1).min(total);
     html! {
         div.study-foot {
-            div.progress role="progressbar" aria-label="Today's progress" aria-valuemin="0" aria-valuemax=(total) aria-valuenow=(done) {
+            div.progress role="progressbar" aria-label="Today's progress" aria-valuemin="0" aria-valuemax=(total) aria-valuenow=(done / 2) {
                 div.bar data-progress=(pct) style=(format!("width:{pct}%")) {}
             }
             div.study-meta {
@@ -786,7 +777,7 @@ async fn study_card(
     revealed: bool,
 ) -> Result<Markup, AppError> {
     let previews = app.previews(access, card, deck).await?;
-    let (done, total) = session_progress(app, access, q_deck).await?;
+    let (done, total) = app.session_progress(access, q_deck).await?;
     let four = user.four_buttons;
     let buttons: Vec<(Rating, &str, &str)> = if four {
         vec![
