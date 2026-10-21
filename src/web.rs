@@ -115,7 +115,8 @@ pub fn router(app: AppState) -> Router {
         .route("/decks/{id}/share", post(deck_share))
         .route("/shares/{id}", post(share_action))
         .route("/cards/{id}/action", post(card_action))
-        .route("/presets", get(presets_page).post(preset_create))
+        .route("/presets", get(presets_page))
+        .route("/presets/new", get(preset_new_page).post(preset_create))
         .route("/presets/{id}", get(preset_page).post(preset_update))
         .route("/presets/{id}/delete", post(preset_delete))
         .route("/settings", get(settings_page).post(settings_update))
@@ -1694,7 +1695,7 @@ async fn presets_page(State(app): State<AppState>, user: WebUser, Flash(msg): Fl
                 }
             }
             h2 { "New preset" }
-            form method="post" action="/presets" {
+            form method="get" action="/presets/new" {
                 div.sheet.form {
                     label.line { "Start from"
                         span.select {
@@ -1704,7 +1705,7 @@ async fn presets_page(State(app): State<AppState>, user: WebUser, Flash(msg): Fl
                         }
                     }
                 }
-                div.form-foot.end { button.btn type="submit" { "Create preset" } }
+                div.form-foot.end { button.btn type="submit" { "New preset" } }
             }
             h2 { "How to choose" }
             ul.prose {
@@ -1718,16 +1719,79 @@ async fn presets_page(State(app): State<AppState>, user: WebUser, Flash(msg): Fl
     .into_response())
 }
 
-#[derive(Deserialize)]
-struct TemplateForm {
-    template: String,
+/// A preset written as a sheet: its name large, a description, then
+/// its numbers as lines.
+fn preset_sheet(p: &crate::service::Preset, used_by: &[String]) -> Markup {
+    html! {
+        div.sheet.form {
+            label.title { span.face-label { "Name" } input type="text" name="name" required value=(p.name); }
+            label.title { span.face-label { "Description" }
+                textarea name="description" rows="2" placeholder="When to use it" { (p.description) }
+            }
+            @if !used_by.is_empty() { p.hint.muted.small { "Used by " (used_by.iter().map(|d| deck_plain(d)).collect::<Vec<_>>().join(", ")) } }
+            hr.divider;
+            label.line { span { "Desired retention " span.muted { "(0.70–0.99)" } }
+                input type="number" name="desired_retention" min="0.7" max="0.99" step="0.01" required value=(format!("{:.2}", p.desired_retention));
+            }
+            label.line { "New cards per day" input type="number" name="new_per_day" min="0" required value=(p.new_per_day); }
+            label.line { "Maximum reviews per day" input type="number" name="reviews_per_day" min="0" required value=(p.reviews_per_day); }
+            label.line { span { "Learning steps " span.muted { "(e.g. 10m or 1m 10m)" } }
+                input type="text" name="learning_steps" value=(p.learning_steps);
+            }
+            label.line { "Relearning steps" input type="text" name="relearning_steps" value=(p.relearning_steps); }
+            label.line { "Maximum interval (days)" input type="number" name="max_interval" min="1" required value=(p.max_interval); }
+        }
+    }
 }
 
-async fn preset_create(State(app): State<AppState>, user: WebUser, Form(f): Form<TemplateForm>) -> WebResult {
+#[derive(Deserialize)]
+struct TemplateQuery {
+    template: Option<String>,
+}
+
+/// A preset as a template would make it, not saved yet.
+fn preset_draft(t: &presets::PresetTemplate, user_id: i64) -> crate::service::Preset {
+    crate::service::Preset {
+        id: 0,
+        user_id,
+        name: format!("{} (custom)", t.name),
+        description: t.description.to_string(),
+        desired_retention: t.desired_retention,
+        new_per_day: t.new_per_day,
+        reviews_per_day: t.reviews_per_day,
+        learning_steps: t.learning_steps.to_string(),
+        relearning_steps: t.relearning_steps.to_string(),
+        max_interval: t.max_interval,
+        created_at: 0,
+    }
+}
+
+/// A new preset, filled in from a template. Nothing is saved until the
+/// form is sent, like a new deck.
+async fn preset_new_page(user: WebUser, Query(q): Query<TemplateQuery>) -> WebResult {
+    let t = presets::template(q.template.as_deref().unwrap_or("standard")).ok_or(AppError::NotFound)?;
+    let draft = preset_draft(t, user.0.id);
+    Ok(layout(
+        "New preset",
+        Some(&user.0),
+        html! {
+            h1 { "New preset" }
+            form method="post" action="/presets/new" {
+                input type="hidden" name="template" value=(t.key);
+                (preset_sheet(&draft, &[]))
+                div.form-foot.end { button.btn.primary type="submit" { "Create preset" } }
+            }
+        },
+    )
+    .into_response())
+}
+
+async fn preset_create(State(app): State<AppState>, user: WebUser, Form(f): Form<PresetForm>) -> WebResult {
+    let template = f.template.clone();
     let p = app
-        .create_preset(&user.access(), Some(&f.template), PresetInput::default())
+        .create_preset(&user.access(), template.as_deref(), f.into_input())
         .await?;
-    Ok(redirect(format!("/presets/{}", p.id)))
+    Ok(redirect_msg(format!("/presets/{}", p.id), "Preset created."))
 }
 
 async fn preset_page(
@@ -1752,24 +1816,7 @@ async fn preset_page(
             (flash(&msg))
             h1 { "Edit preset" }
             form method="post" action=(format!("/presets/{id}")) {
-                div.sheet.form {
-                    label.title { span.face-label { "Name" } input type="text" name="name" required value=(p.name); }
-                    label.title { span.face-label { "Description" }
-                        textarea name="description" rows="2" placeholder="When to use it" { (p.description) }
-                    }
-                    @if !decks.is_empty() { p.hint.muted.small { "Used by " (decks.iter().map(|d| deck_plain(d)).collect::<Vec<_>>().join(", ")) } }
-                    hr.divider;
-                    label.line { span { "Desired retention " span.muted { "(0.70–0.99)" } }
-                        input type="number" name="desired_retention" min="0.7" max="0.99" step="0.01" required value=(format!("{:.2}", p.desired_retention));
-                    }
-                    label.line { "New cards per day" input type="number" name="new_per_day" min="0" required value=(p.new_per_day); }
-                    label.line { "Maximum reviews per day" input type="number" name="reviews_per_day" min="0" required value=(p.reviews_per_day); }
-                    label.line { span { "Learning steps " span.muted { "(e.g. 10m or 1m 10m)" } }
-                        input type="text" name="learning_steps" value=(p.learning_steps);
-                    }
-                    label.line { "Relearning steps" input type="text" name="relearning_steps" value=(p.relearning_steps); }
-                    label.line { "Maximum interval (days)" input type="number" name="max_interval" min="1" required value=(p.max_interval); }
-                }
+                (preset_sheet(&p, &decks))
                 div.form-foot.end { button.btn.primary type="submit" { "Save" } }
             }
             @if decks.is_empty() {
@@ -1789,6 +1836,8 @@ async fn preset_page(
 
 #[derive(Deserialize)]
 struct PresetForm {
+    #[serde(default)]
+    template: Option<String>,
     name: String,
     description: String,
     desired_retention: f64,
@@ -1799,26 +1848,28 @@ struct PresetForm {
     max_interval: i64,
 }
 
+impl PresetForm {
+    fn into_input(self) -> PresetInput {
+        PresetInput {
+            name: Some(self.name),
+            description: Some(self.description),
+            desired_retention: Some(self.desired_retention),
+            new_per_day: Some(self.new_per_day),
+            reviews_per_day: Some(self.reviews_per_day),
+            learning_steps: Some(self.learning_steps),
+            relearning_steps: Some(self.relearning_steps),
+            max_interval: Some(self.max_interval),
+        }
+    }
+}
+
 async fn preset_update(
     State(app): State<AppState>,
     user: WebUser,
     Path(id): Path<i64>,
     Form(f): Form<PresetForm>,
 ) -> WebResult {
-    app.update_preset(
-        &user.access(),
-        id,
-        PresetInput {
-            name: Some(f.name),
-            description: Some(f.description),
-            desired_retention: Some(f.desired_retention),
-            new_per_day: Some(f.new_per_day),
-            reviews_per_day: Some(f.reviews_per_day),
-            learning_steps: Some(f.learning_steps),
-            relearning_steps: Some(f.relearning_steps),
-            max_interval: Some(f.max_interval),
-        },
-    )
+    app.update_preset(&user.access(), id, f.into_input())
     .await?;
     Ok(redirect_msg(format!("/presets/{id}"), "Preset saved."))
 }
