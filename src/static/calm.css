@@ -331,7 +331,7 @@ html.calm .icon-link {
   font-weight: 400;
   transition: color 140ms ease;
 }
-html.calm .icon-link:hover, html.calm .icon-link.held { color: var(--ink); }
+html.calm .icon-link:hover, html.calm .icon-link.held { color: var(--terra-hover); }
 /* A button dressed as a quiet link: icon links, links under a list, Log out. */
 html.calm .btn.icon-link, html.calm button.link.icon-link,
 html.calm .actions.quiet-links .btn, html.calm form.logout .btn {
@@ -347,7 +347,7 @@ html.calm .actions.quiet-links .btn, html.calm form.logout .btn {
   transition: color 140ms ease;
 }
 html.calm .btn.icon-link::after, html.calm .actions.quiet-links .btn::after, html.calm form.logout .btn::after { display: none; }
-html.calm .btn.icon-link:is(:hover, .held, :active) { background: none; border: 0; box-shadow: none; transform: none; color: var(--ink); }
+html.calm .btn.icon-link:is(:hover, .held, :active) { background: none; border: 0; box-shadow: none; transform: none; color: var(--terra-hover); }
 html.calm .icon-links { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem 1.8rem; margin: 1.2rem 0; }
 
 /* ----- cards you can almost pick up -------------------------------------- */
@@ -851,7 +851,7 @@ html.calm nav.tabs a::after {
   transform-origin: left;
   transition: transform 220ms var(--ease);
 }
-html.calm nav.tabs a:hover { color: var(--ink); }
+html.calm nav.tabs a:hover { color: var(--terra-hover); }
 html.calm nav.tabs a[aria-current="page"] { background: none; color: var(--ink); }
 html.calm nav.tabs a[aria-current="page"]::after { transform: scaleX(1); }
 
