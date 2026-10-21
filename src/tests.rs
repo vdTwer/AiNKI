@@ -1,4 +1,5 @@
-//! Service-level tests against an in-memory database.
+//! Tests against an in-memory database: the service first, then the
+//! website and MCP over HTTP (the `http` module).
 
 use std::{str::FromStr, sync::Arc};
 
@@ -402,7 +403,7 @@ async fn oauth_flow() {
         .is_err());
 }
 
-// ----- HTTP-level security checks ------------------------------------------
+// ----- HTTP: security and the website flows ---------------------------------
 
 mod http {
     use super::*;
@@ -427,6 +428,156 @@ mod http {
         let user = app.find_user(name).await.unwrap();
         let token = app.create_session(user.id).await.unwrap();
         format!("{}={token}", app.config.session_cookie_name())
+    }
+
+    /// A same-site form post from a logged-in browser.
+    async fn submit(app: &Arc<App>, cookie: &str, path: &str, body: &str) -> axum::response::Response {
+        let req = form(path, "")
+            .header(header::ORIGIN, "https://cards.example.com")
+            .header(header::COOKIE, cookie)
+            .body(Body::from(body.to_string()))
+            .unwrap();
+        send(app, req).await
+    }
+
+    /// The same for a multipart form (the card form), text fields only.
+    async fn submit_multipart(app: &Arc<App>, cookie: &str, path: &str, fields: &[(&str, &str)]) -> axum::response::Response {
+        let mut body = String::new();
+        for (k, v) in fields {
+            body += &format!("--XX\r\nContent-Disposition: form-data; name=\"{k}\"\r\n\r\n{v}\r\n");
+        }
+        body += "--XX--\r\n";
+        let req = Request::post(path)
+            .header(header::HOST, "cards.example.com")
+            .header(header::ORIGIN, "https://cards.example.com")
+            .header(header::CONTENT_TYPE, "multipart/form-data; boundary=XX")
+            .header(header::COOKIE, cookie)
+            .body(Body::from(body))
+            .unwrap();
+        send(app, req).await
+    }
+
+    async fn text(res: axum::response::Response) -> String {
+        String::from_utf8_lossy(&axum::body::to_bytes(res.into_body(), usize::MAX).await.unwrap()).into_owned()
+    }
+
+    fn location(res: &axum::response::Response) -> &str {
+        res.headers()[header::LOCATION].to_str().unwrap()
+    }
+
+    /// The flash message a redirect carries, decoded.
+    fn flash(res: &axum::response::Response) -> String {
+        let c = res
+            .headers()
+            .get_all(header::SET_COOKIE)
+            .iter()
+            .map(|c| c.to_str().unwrap().to_string())
+            .find(|c| c.starts_with("ainki_flash="))
+            .unwrap_or_default();
+        let v = c.trim_start_matches("ainki_flash=").split(';').next().unwrap_or("");
+        crate::security::percent_decode(v)
+    }
+
+    #[tokio::test]
+    async fn card_create_and_edit_through_the_website() {
+        let app = app().await;
+        let a = user(&app, "kolja").await;
+        let deck = app.create_deck(&a, "Spanish", "", None).await.unwrap();
+        let cookie = login_cookie(&app, "kolja").await;
+        let d = deck.id.to_string();
+
+        let res = submit_multipart(&app, &cookie, "/cards/new", &[("deck", &d), ("front", "el gato"), ("back", "the cat")]).await;
+        assert_eq!(res.status(), StatusCode::SEE_OTHER);
+        assert_eq!(location(&res), format!("/cards/new?deck={d}"));
+        let (cards, _) = app.list_cards(&a, &CardFilter { deck_id: Some(deck.id), ..Default::default() }).await.unwrap();
+        assert_eq!(cards.len(), 1);
+        let id = cards[0].id;
+
+        // A mistake shows the form again with what was typed.
+        let res = submit_multipart(&app, &cookie, "/cards/new", &[("deck", &d), ("front", ""), ("back", "kept back")]).await;
+        assert_eq!(res.status(), StatusCode::BAD_REQUEST);
+        assert!(text(res).await.contains("kept back"));
+
+        let res = submit_multipart(&app, &cookie, &format!("/cards/{id}"), &[("deck", &d), ("front", "el gato negro"), ("back", "the black cat")]).await;
+        assert_eq!(res.status(), StatusCode::SEE_OTHER);
+        assert_eq!(app.card(&a, id).await.unwrap().front, "el gato negro");
+
+        let res = submit(&app, &cookie, &format!("/cards/{id}/suspend"), "").await;
+        assert_eq!(location(&res), format!("/cards/{id}"));
+        assert!(app.card(&a, id).await.unwrap().suspended);
+        let res = submit(&app, &cookie, &format!("/cards/{id}/delete"), "").await;
+        assert_eq!(location(&res), format!("/decks/{d}"));
+        assert_eq!(flash(&res), "Card deleted.");
+        assert!(app.card(&a, id).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn deck_edit_stays_on_the_deck_settings() {
+        let app = app().await;
+        let a = user(&app, "kolja").await;
+        let deck = app.create_deck(&a, "Spanish", "", None).await.unwrap();
+        let cookie = login_cookie(&app, "kolja").await;
+        let path = format!("/decks/{}/edit", deck.id);
+
+        let res = submit(&app, &cookie, &path, "name=Spanish+A1&description=&exam_date=").await;
+        assert_eq!(res.status(), StatusCode::SEE_OTHER);
+        assert_eq!(location(&res), path);
+        assert_eq!(flash(&res), "Deck saved.");
+        assert_eq!(app.deck(&a, deck.id).await.unwrap().name, "Spanish A1");
+
+        let res = submit(&app, &cookie, &path, "name=&description=still+here").await;
+        assert_eq!(res.status(), StatusCode::BAD_REQUEST);
+        assert!(text(res).await.contains("still here"));
+    }
+
+    #[tokio::test]
+    async fn presets_are_created_on_submit_and_deleted() {
+        let app = app().await;
+        let a = user(&app, "kolja").await;
+        let cookie = login_cookie(&app, "kolja").await;
+        let before = app.list_presets(&a).await.unwrap().len();
+
+        // Opening the form creates nothing.
+        let res = send(&app, Request::get("/presets/new").header(header::COOKIE, cookie.clone()).body(Body::empty()).unwrap()).await;
+        assert_eq!(res.status(), StatusCode::OK);
+        assert_eq!(app.list_presets(&a).await.unwrap().len(), before);
+
+        let body = "name=Exam&description=&desired_retention=93&new_per_day=30&reviews_per_day=300\
+                    &learning_steps=1m+10m&relearning_steps=10m&max_interval=180";
+        let res = submit(&app, &cookie, "/presets/new", body).await;
+        assert_eq!(res.status(), StatusCode::SEE_OTHER);
+        let presets = app.list_presets(&a).await.unwrap();
+        let p = presets.iter().find(|p| p.name == "Exam").unwrap();
+        // Retention is typed in percent.
+        assert!((p.desired_retention - 0.93).abs() < 1e-9);
+
+        let res = submit(&app, &cookie, &format!("/presets/{}/delete", p.id), "").await;
+        assert_eq!(location(&res), "/presets");
+        assert_eq!(app.list_presets(&a).await.unwrap().len(), before);
+    }
+
+    #[tokio::test]
+    async fn cancelling_a_share_goes_back_to_the_deck() {
+        let app = app().await;
+        let kolja = user(&app, "kolja").await;
+        let anna = user(&app, "anna").await;
+        let deck = app.create_deck(&kolja, "Spanish", "", None).await.unwrap();
+        let share = app.share_deck(&kolja, deck.id, &anna.user.handle()).await.unwrap();
+        let cookie = login_cookie(&app, "kolja").await;
+
+        let res = submit(&app, &cookie, &format!("/shares/{}/cancel", share.id), "").await;
+        assert_eq!(location(&res), format!("/decks/{}/edit#share", deck.id));
+        assert_eq!(flash(&res), "Share cancelled.");
+        assert!(app.incoming_shares(&anna).await.unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn logged_out_links_come_back_after_login() {
+        let app = app().await;
+        let res = send(&app, Request::get("/decks/7?q=perro").body(Body::empty()).unwrap()).await;
+        assert_eq!(location(&res), "/login?next=%2Fdecks%2F7%3Fq%3Dperro");
+        let res = send(&app, Request::get("/tokens").body(Body::empty()).unwrap()).await;
+        assert_eq!(location(&res), "/access");
     }
 
     #[tokio::test]

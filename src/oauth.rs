@@ -773,7 +773,7 @@ pub async fn authorize_page(
         html! { @if let Some(v) = v { input type="hidden" name=(name) value=(v); } }
     };
     layout(
-        "Connect",
+        "Connect an app",
         Some(&user),
         html! {
             h1 { "Connect an app" }
@@ -793,13 +793,13 @@ pub async fn authorize_page(
                 (hidden("scope", &p.scope))
                 (hidden("resource", &p.resource))
                 p { "It can always read your decks and cards. Also allow it to:" }
-                label.check { input type="checkbox" name="can_write" value="1" checked; " Add, edit and delete cards and decks" }
-                label.check { input type="checkbox" name="can_review" value="1" checked; " Quiz you and record your answers" }
+                label.check { input type="checkbox" name="can_write" value="1" checked; " " (crate::web::PERM_WRITE) }
+                label.check { input type="checkbox" name="can_review" value="1" checked; " " (crate::web::PERM_REVIEW) }
                 fieldset {
                     legend { "Decks" }
-                    label.check { input type="radio" name="scope_decks" value="all" checked; " All decks" }
+                    label.check { input type="radio" name="deck_scope" value="all" checked; " " (crate::web::PERM_ALL_DECKS) }
                     @if !decks.is_empty() {
-                        label.check { input type="radio" name="scope_decks" value="some"; " Only these:" }
+                        label.check { input type="radio" name="deck_scope" value="some"; " " (crate::web::PERM_SOME_DECKS) }
                         @for d in &decks {
                             label.check.indent { input type="checkbox" name="decks" value=(d.id); " " (crate::web::deck_plain(&d.name)) }
                         }
@@ -842,7 +842,7 @@ pub struct ConsentForm {
     pub decision: String,
     pub can_write: Option<String>,
     pub can_review: Option<String>,
-    pub scope_decks: Option<String>,
+    pub deck_scope: Option<String>,
     #[serde(default)]
     pub decks: Vec<i64>,
 }
@@ -858,7 +858,7 @@ pub async fn authorize_submit(State(app): State<AppState>, headers: HeaderMap, W
         params.push(("error", "access_denied"));
         params.push(("error_description", "the user declined"));
     }
-    let decks = if f.scope_decks.as_deref() == Some("some") { Some(f.decks.clone()) } else { None };
+    let decks = if f.deck_scope.as_deref() == Some("some") { Some(f.decks.clone()) } else { None };
     if decks.as_ref().is_some_and(|d| d.is_empty()) {
         return authorize_error_page(Some(&user), "Pick at least one deck, or allow all decks.");
     }

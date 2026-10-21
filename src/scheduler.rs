@@ -414,38 +414,9 @@ pub fn format_steps(steps: &[i64]) -> String {
 impl Outcome {
     pub fn label(&self) -> String {
         match self.interval_days {
-            Some(d) => format_days(d),
-            None => format_interval(self.interval_secs),
+            Some(d) => crate::format::days(d),
+            None => crate::format::interval(self.interval_secs),
         }
-    }
-}
-
-pub fn format_days(days: i64) -> String {
-    if days < 30 {
-        format!("{days}d")
-    } else if days < 365 {
-        format!("{:.1}mo", days as f64 / 30.44)
-    } else {
-        format!("{:.1}y", days as f64 / 365.25)
-    }
-}
-
-/// Short human label for an interval, e.g. "10m", "3d", "2.1mo".
-pub fn format_interval(secs: i64) -> String {
-    let secs = secs.max(0) as f64;
-    if secs < 60.0 {
-        "<1m".into()
-    } else if secs < 3600.0 {
-        format!("{:.0}m", secs / 60.0)
-    } else if secs < 86_400.0 {
-        format!("{:.0}h", secs / 3600.0)
-    } else if secs < 30.0 * 86_400.0 {
-        // Review cards are due at the start of a day, so round up.
-        format!("{:.0}d", ((secs - 60.0) / 86_400.0).ceil())
-    } else if secs < 365.0 * 86_400.0 {
-        format!("{:.1}mo", secs / (30.44 * 86_400.0))
-    } else {
-        format!("{:.1}y", secs / (365.25 * 86_400.0))
     }
 }
 

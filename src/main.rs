@@ -9,6 +9,7 @@ use tracing_subscriber::EnvFilter;
 
 mod auth;
 mod error;
+mod format;
 mod import;
 mod markdown;
 mod mcp;

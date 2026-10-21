@@ -76,6 +76,7 @@ nav.top a {
 }
 nav.top a.brand { font-weight: 800; letter-spacing: .05em; }
 nav.top a:hover, nav.top a:focus-visible { background: var(--fg); color: var(--bg); }
+nav.top a[aria-current="page"]:not(.brand) { text-decoration: underline; text-decoration-thickness: 3px; text-underline-offset: .3em; }
 .brand-big { font-size: 2.4rem; letter-spacing: .08em; margin-bottom: 0; }
 
 /* Controls */
@@ -99,7 +100,8 @@ nav.top a:hover, nav.top a:focus-visible { background: var(--fg); color: var(--b
 .btn.primary { background: var(--fg); color: var(--bg); }
 .btn.danger { border-style: dashed; }
 .btn.wide { display: flex; width: 100%; margin: 1rem 0; font-size: 1.1rem; }
-button.link { border: 0; padding: 0; min-height: 0; background: none; text-decoration: underline; font-weight: 400; }
+/* Looks like a link but keeps a full-size tap target. */
+button.link { border: 0; padding: 0 .2rem; min-height: 3rem; background: none; text-decoration: underline; font-weight: 400; }
 .btn:active { background: var(--fg); color: var(--bg); }
 .btn.primary:active { background: var(--bg); color: var(--fg); }
 :focus-visible { outline: 3px solid var(--fg); outline-offset: 3px; }
@@ -137,8 +139,8 @@ ul.list li { border-bottom: 2px solid var(--fg); }
 a.row { display: flex; gap: .75rem; align-items: center; padding: .8rem .2rem; text-decoration: none; min-height: 3.2rem; }
 a.row:hover .grow { text-decoration: underline; }
 .counts { white-space: nowrap; font-variant-numeric: tabular-nums; font-weight: 600; }
-li.token { display: flex; gap: .75rem; align-items: center; padding: .8rem .2rem; }
-li.token form { margin: 0; }
+li.item { display: flex; gap: .75rem; align-items: center; padding: .8rem .2rem; }
+li.item form { margin: 0; }
 ul.prose li { margin-bottom: .5rem; }
 
 form.search { display: flex; gap: .5rem; flex-wrap: wrap; }
@@ -152,7 +154,6 @@ nav.tabs a + a { border-left: 2px solid var(--fg); }
 nav.tabs a[aria-current="page"] { background: var(--fg); color: var(--bg); }
 
 /* Studying */
-.status { display: flex; justify-content: space-between; gap: 1rem; margin: .5rem 0; }
 section.face { font-size: 1.35rem; padding: 1rem 0; overflow-wrap: anywhere; }
 section.face img, img.thumb { display: block; max-width: 100%; height: auto; margin: 0 auto .75rem; filter: grayscale(1); }
 img.thumb { max-height: 10rem; margin: 0 0 .5rem; }
@@ -180,6 +181,16 @@ hr.divider { border-top: 3px dashed var(--fg); margin: .5rem 0; }
 .answers .ivl { font-size: .8rem; font-weight: 400; }
 .study-tools { display: flex; justify-content: space-between; align-items: center; }
 .study-tools form { margin: 0; }
+.card-state { margin: .5rem 0 0; font-size: .8rem; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+.study .reveal .show { display: flex; width: 100%; margin: 1rem 0; font-size: 1.1rem; }
+.study-foot { margin-top: 1.5rem; }
+.study-foot .progress { height: 4px; background: var(--soft); }
+.study-foot .bar { height: 4px; background: var(--fg); }
+.study-meta { display: flex; justify-content: space-between; gap: 1rem; margin: .4rem 0; font-size: .9rem; color: var(--muted); }
+.study-meta .count { font-variant-numeric: tabular-nums; }
+.session-end h1 { margin-top: 2rem; }
+.session-end .end-links { display: flex; margin: 1rem 0; align-items: center; gap: 1.5rem; flex-wrap: wrap; }
+.session-end .end-links form { margin: 0; }
 
 /* Stats */
 dl.stats-inline { display: grid; grid-template-columns: repeat(3, 1fr); gap: .5rem; margin: 1rem 0; }
@@ -203,7 +214,7 @@ table.forecast .num { text-align: right; padding-left: .5rem; font-variant-numer
 .today .date { margin: 1rem 0 0; color: var(--muted); }
 .today h1 { margin-top: .2rem; }
 .today .facts { margin: 0 0 .5rem; color: var(--muted); }
-.today .start { display: flex; width: 100%; font-size: 1.1rem; }
+.start { display: flex; width: 100%; font-size: 1.1rem; }
 .table-head { display: flex; gap: .75rem; margin-top: 2rem; padding: 0 .2rem .3rem; font-size: .8rem; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; }
 .table-head .num, .table-head .chev { display: none; }
 ul.decks a.row .deck-name { display: block; }
@@ -216,18 +227,6 @@ ul.decks a.row .deck-path, h1 .deck-path { display: block; font-size: .8rem; }
 ul.decks a.row .deck-path .sep:last-child, h1 .deck-path .sep:last-child { display: none; }
 ul.decks a.row .num { white-space: nowrap; font-variant-numeric: tabular-nums; font-weight: 600; font-size: .95rem; }
 ul.decks a.row .chev { display: none; }
-
-/* Studying */
-.card-state { margin: .5rem 0 0; font-size: .8rem; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
-.study .reveal .show { display: flex; width: 100%; margin: 1rem 0; font-size: 1.1rem; }
-.study-foot { margin-top: 1.5rem; }
-.study-foot .progress { height: 4px; background: var(--soft); }
-.study-foot .bar { height: 4px; background: var(--fg); }
-.study-meta { display: flex; justify-content: space-between; gap: 1rem; margin: .4rem 0; font-size: .9rem; color: var(--muted); }
-.study-meta .count { font-variant-numeric: tabular-nums; }
-.session-end h1 { margin-top: 2rem; }
-.session-end .end-links { display: flex; margin: 1rem 0; align-items: center; gap: 1.5rem; flex-wrap: wrap; }
-.session-end .end-links form { margin: 0; }
 
 @media (max-width: 360px) {
   html { font-size: calc(16px * var(--scale)); }
@@ -245,3 +244,15 @@ html:not(.calm) .sheet.form hr.divider { display: none; }
 ul.links a.row .grow > span { display: block; }
 label.drop .muted { display: block; font-weight: 400; }
 .sheet div.line { display: flex; justify-content: space-between; gap: 1rem; margin: .3rem 0; }
+
+/* A value with its unit after it: "90 %", "4 :00". */
+.field { display: flex; align-items: center; gap: .5rem; }
+.field input { flex: 1; }
+.field .unit { color: var(--muted); }
+/* Hard values folded away. */
+details.more { margin: .5rem 0 1rem; }
+details.more summary { cursor: pointer; font-weight: 600; min-height: 2.5rem; display: flex; align-items: center; }
+
+/* The page this one belongs to, above the heading. */
+.parent { margin: 1rem 0 -.5rem; font-size: .9rem; }
+.parent a { display: inline-flex; align-items: center; gap: .3em; min-height: 2.5rem; }

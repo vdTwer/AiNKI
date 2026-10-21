@@ -694,6 +694,13 @@ impl AinkiMcp {
         out(json!({ "declined": true }))
     }
 
+    #[tool(description = "Withdraw a deck offer the user sent that hasn't been accepted yet (outgoing in list_shares).")]
+    async fn cancel_share(&self, Parameters(p): Parameters<ShareIdParam>, Extension(parts): Extension<Parts>) -> ToolResult {
+        let a = access(&parts)?;
+        let deck_id = self.app.cancel_share(&a, p.share_id).await.map_err(err)?;
+        out(json!({ "cancelled": true, "deck_id": deck_id }))
+    }
+
     #[tool(description = "Export a deck's cards as CSV text (front,back).")]
     async fn export_deck_csv(&self, Parameters(p): Parameters<DeckIdParam>, Extension(parts): Extension<Parts>) -> ToolResult {
         let a = access(&parts)?;

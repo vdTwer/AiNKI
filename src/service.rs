@@ -104,7 +104,7 @@ impl Card {
         let due = if state == CardState::New {
             Value::Null
         } else {
-            json!(fmt_ts(self.due, clock))
+            json!(crate::format::iso(self.due, clock))
         };
         json!({
             "id": self.id,
@@ -126,12 +126,6 @@ impl Card {
             "created_by": self.created_by,
         })
     }
-}
-
-pub fn fmt_ts(ts: i64, clock: &Clock) -> String {
-    chrono::DateTime::from_timestamp(ts, 0)
-        .map(|t| t.with_timezone(&clock.tz).format("%Y-%m-%d %H:%M").to_string())
-        .unwrap_or_default()
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -225,7 +219,8 @@ pub struct Stats {
     pub retention_sample_30d: i64,
     pub reviews_30d: i64,
     pub streak_days: i64,
-    /// Number of cards falling due on each of the next 14 days.
+    /// Number of cards falling due on each of the next 14 days, by date
+    /// ("2026-10-21").
     pub forecast: Vec<(String, i64)>,
     pub average_retrievability: Option<f64>,
     /// Typical thinking time per answer over the last 30 days, in seconds.
@@ -399,7 +394,10 @@ impl App {
             .await?;
         if used > 0 {
             return Err(AppError::bad(format!(
-                "{used} deck(s) still use this preset; switch them to another preset first"
+                "{} still {} this preset; switch {} to another preset first",
+                crate::format::count(used, "deck"),
+                if used == 1 { "uses" } else { "use" },
+                if used == 1 { "it" } else { "them" }
             )));
         }
         sqlx::query("DELETE FROM presets WHERE id = ? AND user_id = ?")
@@ -684,13 +682,14 @@ impl App {
             };
         }
         sqlx::query(
-            "UPDATE decks SET name = ?, description = ?, preset_id = ?, exam_date = ? WHERE id = ?",
+            "UPDATE decks SET name = ?, description = ?, preset_id = ?, exam_date = ? WHERE id = ? AND user_id = ?",
         )
         .bind(&deck.name)
         .bind(&deck.description)
         .bind(deck.preset_id)
         .bind(&deck.exam_date)
         .bind(id)
+        .bind(access.user_id())
         .execute(&self.db)
         .await?;
         Ok(deck)
@@ -827,7 +826,7 @@ impl App {
         check_len("back", &card.back, MAX_CARD_TEXT)?;
         sqlx::query(
             "UPDATE cards SET front = ?, back = ?, front_image = ?, back_image = ?, updated_at = ?
-             WHERE id = ?",
+             WHERE id = ? AND user_id = ?",
         )
         .bind(&card.front)
         .bind(&card.back)
@@ -835,6 +834,7 @@ impl App {
         .bind(&card.back_image)
         .bind(now())
         .bind(id)
+        .bind(access.user_id())
         .execute(&self.db)
         .await?;
         self.card(access, id).await
@@ -843,8 +843,9 @@ impl App {
     pub async fn delete_card(&self, access: &Access, id: i64) -> Result<()> {
         access.require_write()?;
         self.card(access, id).await?;
-        sqlx::query("DELETE FROM cards WHERE id = ?")
+        sqlx::query("DELETE FROM cards WHERE id = ? AND user_id = ?")
             .bind(id)
+            .bind(access.user_id())
             .execute(&self.db)
             .await?;
         Ok(())
@@ -854,10 +855,11 @@ impl App {
         access.require_write()?;
         self.card(access, id).await?;
         self.deck(access, deck_id).await?;
-        sqlx::query("UPDATE cards SET deck_id = ?, updated_at = ? WHERE id = ?")
+        sqlx::query("UPDATE cards SET deck_id = ?, updated_at = ? WHERE id = ? AND user_id = ?")
             .bind(deck_id)
             .bind(now())
             .bind(id)
+            .bind(access.user_id())
             .execute(&self.db)
             .await?;
         self.card(access, id).await
@@ -866,10 +868,11 @@ impl App {
     pub async fn set_suspended(&self, access: &Access, id: i64, suspended: bool) -> Result<Card> {
         access.require_write()?;
         self.card(access, id).await?;
-        sqlx::query("UPDATE cards SET suspended = ?, updated_at = ? WHERE id = ?")
+        sqlx::query("UPDATE cards SET suspended = ?, updated_at = ? WHERE id = ? AND user_id = ?")
             .bind(suspended)
             .bind(now())
             .bind(id)
+            .bind(access.user_id())
             .execute(&self.db)
             .await?;
         self.card(access, id).await
@@ -883,10 +886,11 @@ impl App {
         let mut tx = self.db.begin().await?;
         sqlx::query(
             "UPDATE cards SET state = 0, step = 0, stability = NULL, difficulty = NULL, due = 0,
-                last_review = NULL, reps = 0, lapses = 0, updated_at = ? WHERE id = ?",
+                last_review = NULL, reps = 0, lapses = 0, updated_at = ? WHERE id = ? AND user_id = ?",
         )
         .bind(now())
         .bind(id)
+        .bind(access.user_id())
         .execute(&mut *tx)
         .await?;
         sqlx::query(
@@ -1107,7 +1111,7 @@ impl App {
         let updated = sqlx::query(
             "UPDATE cards SET state = ?, step = ?, stability = ?, difficulty = ?, due = ?,
                 last_review = ?, reps = ?, lapses = ?, updated_at = ?
-             WHERE id = ? AND reps = ?",
+             WHERE id = ? AND user_id = ? AND reps = ?",
         )
         .bind(c.state as i64)
         .bind(c.step)
@@ -1119,6 +1123,7 @@ impl App {
         .bind(c.lapses)
         .bind(clock.now)
         .bind(card.id)
+        .bind(access.user_id())
         .bind(card.reps)
         .execute(&mut *tx)
         .await?;
@@ -1193,7 +1198,7 @@ impl App {
         let mut tx = self.db.begin().await?;
         sqlx::query(
             "UPDATE cards SET state = ?, step = ?, stability = ?, difficulty = ?, due = ?,
-                last_review = ?, reps = ?, lapses = ?, updated_at = ? WHERE id = ?",
+                last_review = ?, reps = ?, lapses = ?, updated_at = ? WHERE id = ? AND user_id = ?",
         )
         .bind(prev.state as i64)
         .bind(prev.step)
@@ -1206,10 +1211,12 @@ impl App {
         .bind(prev.lapses)
         .bind(now())
         .bind(card.id)
+        .bind(access.user_id())
         .execute(&mut *tx)
         .await?;
-        sqlx::query("DELETE FROM review_log WHERE id = ?")
+        sqlx::query("DELETE FROM review_log WHERE id = ? AND user_id = ?")
             .bind(last.id)
+            .bind(access.user_id())
             .execute(&mut *tx)
             .await?;
         tx.commit().await?;
@@ -1261,11 +1268,12 @@ impl App {
             .into_iter()
             .map(|r| {
                 json!({
-                    "at": fmt_ts(r.reviewed_at, &clock),
+                    "at": crate::format::iso(r.reviewed_at, &clock),
+                    "timestamp": r.reviewed_at,
                     "rating": match r.rating { 0 => "reset", 1 => "again", 2 => "hard", 3 => "good", _ => "easy" },
                     "state_before": CardState::from_i64(r.state_before).as_str(),
                     "next_interval": (r.source != "import" && r.rating > 0)
-                        .then(|| scheduler::format_interval(r.scheduled_secs)),
+                        .then(|| crate::format::interval(r.scheduled_secs)),
                     "stability_days": r.stability.map(|s| (s * 100.0).round() / 100.0),
                     "source": r.source,
                 })
@@ -1347,7 +1355,7 @@ impl App {
         stats.forecast = forecast
             .into_iter()
             .enumerate()
-            .map(|(i, n)| ((today + Duration::days(i as i64)).format("%a %d").to_string(), n))
+            .map(|(i, n)| ((today + Duration::days(i as i64)).format("%Y-%m-%d").to_string(), n))
             .collect();
         if r_n > 0 {
             stats.average_retrievability = Some(r_sum / r_n as f64);
