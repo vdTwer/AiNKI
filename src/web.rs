@@ -25,7 +25,8 @@ use crate::{
     import, markdown, mcp, media, now, oauth, presets,
     security::{self, ClientIp, Flash},
     scheduler::{self, CardState, Rating},
-    service::{Card, CardFilter, CardInput, Deck, PresetInput, fmt_ts},
+    service::{Card, CardFilter, CardInput, Deck, PresetInput},
+    format::{self, count},
 };
 
 const CSS: &str = include_str!("style.css");
@@ -317,27 +318,6 @@ fn deck_title(name: &str) -> Markup {
 /// The same for places that only take text (titles, options, lists).
 pub fn deck_plain(name: &str) -> String {
     deck_parts(name).join(" › ")
-}
-
-/// "Tuesday, 20 October" in the user's timezone.
-fn long_date(user: &User) -> String {
-    user.clock().today().format("%A, %-d %B").to_string()
-}
-
-/// When something happens, in words: "at 14:30", "tomorrow at 9:00",
-/// "on Friday, 24 October".
-fn when_words(user: &User, ts: i64) -> String {
-    let clock = user.clock();
-    let Some(local) = chrono::DateTime::from_timestamp(ts, 0).map(|t| t.with_timezone(&clock.tz)) else {
-        return String::new();
-    };
-    let days = (clock.date_of(ts) - clock.today()).num_days();
-    let time = local.format("%-H:%M");
-    match days {
-        ..=0 => format!("today at {time}"),
-        1 => format!("tomorrow at {time}"),
-        _ => format!("on {}", local.format("%A, %-d %B")),
-    }
 }
 
 pub fn layout(title: &str, user: Option<&User>, body: Markup) -> Markup {
@@ -700,7 +680,7 @@ async fn home(State(app): State<AppState>, user: WebUser, Flash(msg): Flash) -> 
         html! {
             (flash(&msg))
             section.today aria-label="Today" {
-                p.date { (long_date(&user.0)) }
+                p.date { (format::long_date(&user.0.clock())) }
                 @if total_due > 0 {
                     h1 { span.count { (total_due) (if total_due == 1 { " card" } else { " cards" }) } " to study today" }
                 } @else if !decks.is_empty() {
@@ -928,7 +908,7 @@ async fn study(State(app): State<AppState>, user: WebUser, Flash(msg): Flash, Qu
                         }
                         p.summary {
                             @if let Some(t) = next {
-                                "Next cards are due " (when_words(&user.0, t)) "."
+                                "Next cards are due " (format::when(&user.0.clock(), t)) "."
                             } @else {
                                 "Nothing else is scheduled yet."
                             }
@@ -1140,7 +1120,7 @@ async fn deck_page(
                 }
                 button.btn type="submit" { "Find" }
             }
-            p.muted.small { (total) " card(s)" }
+            p.muted.small { (count(total, "card")) }
             ul.list.cards {
                 @for c in &cards {
                     li {
@@ -1518,7 +1498,7 @@ async fn card_page(
             dl.kv {
                 dt { "State" } dd { (card.card_state().as_str()) @if card.suspended { " (suspended)" } }
                 @if card.card_state() != CardState::New {
-                    dt { "Due" } dd { (fmt_ts(card.due, &clock)) }
+                    dt { "Due" } dd { (format::iso(card.due, &clock)) }
                 }
                 @if let Some(s) = card.stability { dt { "Stability" } dd { (format!("{s:.1} days")) } }
                 @if let Some(d) = card.difficulty { dt { "Difficulty" } dd { (format!("{d:.1} / 10")) } }
@@ -1836,7 +1816,7 @@ async fn settings_page(State(app): State<AppState>, user: WebUser, Flash(msg): F
                     span.value {
                         @if custom {
                             "Fitted to your reviews"
-                            @if let Some(t) = u.fsrs_params_updated_at { span.muted.small { " · " (fmt_ts(t, &u.clock())) } }
+                            @if let Some(t) = u.fsrs_params_updated_at { span.muted.small { " · " (format::iso(t, &u.clock())) } }
                         } @else {
                             "FSRS-6 defaults"
                         }
@@ -1990,7 +1970,7 @@ async fn tokens_page(
                             br;
                             span.muted.small {
                                 "Last used: "
-                                (t.last_used_at.map(|ts| fmt_ts(ts, &clock)).unwrap_or_else(|| "never".into()))
+                                (t.last_used_at.map(|ts| format::iso(ts, &clock)).unwrap_or_else(|| "never".into()))
                             }
                         }
                         form method="post" action=(format!("/tokens/{}/revoke", t.id)) {
@@ -2167,12 +2147,12 @@ async fn import_upload(State(app): State<AppState>, user: WebUser, mut mp: Multi
         }
         _ => return Err(AppError::bad("unknown import type").into()),
     };
-    let mut msg = format!("Imported {} card(s)", report.cards_imported);
+    let mut msg = format!("Imported {}", count(report.cards_imported, "card"));
     if report.reviews_imported > 0 {
-        msg += &format!(", {} review(s)", report.reviews_imported);
+        msg += &format!(", {}", count(report.reviews_imported, "review"));
     }
     if report.images_imported > 0 {
-        msg += &format!(", {} image(s)", report.images_imported);
+        msg += &format!(", {}", count(report.images_imported, "image"));
     }
     if !report.decks_created.is_empty() {
         let names: Vec<String> = report.decks_created.iter().map(|n| deck_plain(n)).collect();

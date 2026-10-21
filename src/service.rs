@@ -104,7 +104,7 @@ impl Card {
         let due = if state == CardState::New {
             Value::Null
         } else {
-            json!(fmt_ts(self.due, clock))
+            json!(crate::format::iso(self.due, clock))
         };
         json!({
             "id": self.id,
@@ -126,12 +126,6 @@ impl Card {
             "created_by": self.created_by,
         })
     }
-}
-
-pub fn fmt_ts(ts: i64, clock: &Clock) -> String {
-    chrono::DateTime::from_timestamp(ts, 0)
-        .map(|t| t.with_timezone(&clock.tz).format("%Y-%m-%d %H:%M").to_string())
-        .unwrap_or_default()
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -399,7 +393,10 @@ impl App {
             .await?;
         if used > 0 {
             return Err(AppError::bad(format!(
-                "{used} deck(s) still use this preset; switch them to another preset first"
+                "{} still {} this preset; switch {} to another preset first",
+                crate::format::count(used, "deck"),
+                if used == 1 { "uses" } else { "use" },
+                if used == 1 { "it" } else { "them" }
             )));
         }
         sqlx::query("DELETE FROM presets WHERE id = ? AND user_id = ?")
@@ -1261,11 +1258,11 @@ impl App {
             .into_iter()
             .map(|r| {
                 json!({
-                    "at": fmt_ts(r.reviewed_at, &clock),
+                    "at": crate::format::iso(r.reviewed_at, &clock),
                     "rating": match r.rating { 0 => "reset", 1 => "again", 2 => "hard", 3 => "good", _ => "easy" },
                     "state_before": CardState::from_i64(r.state_before).as_str(),
                     "next_interval": (r.source != "import" && r.rating > 0)
-                        .then(|| scheduler::format_interval(r.scheduled_secs)),
+                        .then(|| crate::format::interval(r.scheduled_secs)),
                     "stability_days": r.stability.map(|s| (s * 100.0).round() / 100.0),
                     "source": r.source,
                 })
