@@ -682,13 +682,13 @@ async fn home(State(app): State<AppState>, user: WebUser, Flash(msg): Flash) -> 
     let minutes = ((total_due as f64 * stats.seconds_per_review.unwrap_or(12.0)) / 60.0).ceil().max(1.0) as i64;
     let mut facts = Vec::new();
     if total_due > 0 {
-        facts.push(format!("About {minutes} minute{}", if minutes == 1 { "" } else { "s" }));
+        facts.push(format!("About {}", count(minutes, "minute")));
     }
     if let Some(r) = stats.true_retention_30d {
-        facts.push(format!("{:.0}% recalled last month", r * 100.0));
+        facts.push(format!("{} recalled when due, last 30 days", format::percent(Some(r))));
     }
     if stats.streak_days > 1 {
-        facts.push(format!("{}-day streak", stats.streak_days));
+        facts.push(format!("{} in a row", count(stats.streak_days, "day")));
     }
     Ok(page(
         "Decks",
@@ -752,9 +752,9 @@ async fn home(State(app): State<AppState>, user: WebUser, Flash(msg): Flash) -> 
                                 @if d.due_total() == 0 && d.total > 0 {
                                     span.num.due.done title="Done for today" { span.tick aria-hidden="true" { "✓" } span.unit { " done for today" } }
                                 } @else {
-                                    span.num.due title="due" { @if due > 0 { (due) span.unit { " due" } } @else { "—" } }
+                                    span.num.due title="Due" { @if due > 0 { (due) span.unit { " due" } } @else { (format::NONE) } }
                                 }
-                                span.num.new title="new" { @if d.new_today > 0 { span.dot aria-hidden="true" {} (d.new_today) span.unit { " new" } } @else { "—" } }
+                                span.num.new title="New" { @if d.new_today > 0 { span.dot aria-hidden="true" {} (d.new_today) span.unit { " new" } } @else { (format::NONE) } }
                                 span.chev aria-hidden="true" { "›" }
                             }
                         }
@@ -905,7 +905,6 @@ async fn study(State(app): State<AppState>, user: WebUser, Flash(msg): Flash, Qu
         let any_cards = decks.iter().any(|d| d.total > 0);
         let stats = app.stats(&access, q.deck).await?;
         let next = app.next_review_at(&access, q.deck).await?;
-        let minutes = stats.minutes_today.round() as i64;
         return Ok(page(
             "Study",
             Some(&user.0),
@@ -918,8 +917,8 @@ async fn study(State(app): State<AppState>, user: WebUser, Flash(msg): Flash, Qu
                         h1 { "All done." }
                         @if stats.cards_today > 0 {
                             p.summary {
-                                "Today you went through " (stats.cards_today) (if stats.cards_today == 1 { " card" } else { " cards" })
-                                @if minutes >= 1 { " in about " (minutes) (if minutes == 1 { " minute" } else { " minutes" }) }
+                                "Today you studied " (count(stats.cards_today, "card"))
+                                @if stats.minutes_today >= 0.5 { " in " (format::minutes(stats.minutes_today)) }
                                 "."
                             }
                         }
@@ -1519,7 +1518,7 @@ async fn card_page(
                 }
                 @if let Some(s) = card.stability { dt { "Stability" } dd { (format!("{s:.1} days")) } }
                 @if let Some(d) = card.difficulty { dt { "Difficulty" } dd { (format!("{d:.1} / 10")) } }
-                @if let Some(r) = r { dt { "Recall chance now" } dd { (format!("{:.0}%", r * 100.0)) } }
+                @if let Some(r) = r { dt { "Recall chance now" } dd { (format::percent(Some(r as f64))) } }
                 dt { "Reviews / lapses" } dd { (card.reps) " / " (card.lapses) }
                 dt { "Added by" } dd { (card.created_by) }
             }
@@ -2197,7 +2196,6 @@ async fn stats_page(State(app): State<AppState>, user: WebUser, Query(q): Query<
         None => None,
     };
     let max = s.forecast.iter().map(|(_, n)| *n).max().unwrap_or(0).max(1);
-    let pct = |v: Option<f64>| v.map(|v| format!("{:.1}%", v * 100.0)).unwrap_or_else(|| "–".into());
     Ok(layout(
         "Stats",
         Some(&user.0),
@@ -2205,15 +2203,15 @@ async fn stats_page(State(app): State<AppState>, user: WebUser, Query(q): Query<
             h1 { "Stats" @if let Some(d) = &deck { ": " (deck_title(&d.name)) } }
             h2 { "Today" }
             dl.stats-inline {
-                div { dt { "Reviews" } dd { (s.reviews_today) } }
-                div { dt { "Minutes" } dd { (s.minutes_today) } }
-                div { dt { "Streak" } dd { (s.streak_days) " d" } }
+                div { dt { (format::plural(s.cards_today, "Card")) " studied" } dd { (s.cards_today) } }
+                div { dt { (format::plural(s.minutes_today.round() as i64, "Minute")) } dd { (s.minutes_today.round() as i64) } }
+                div { dt { (format::plural(s.streak_days, "Day")) " in a row" } dd { (s.streak_days) } }
             }
             h2 { "Memory" }
             dl.kv {
                 dt { "Reviews, last 30 days" } dd { (s.reviews_30d) }
-                dt { "Recalled when due" } dd { (pct(s.true_retention_30d)) " (" (s.retention_sample_30d) (if s.retention_sample_30d == 1 { " review)" } else { " reviews)" }) }
-                dt { "Average recall chance now" } dd { (pct(s.average_retrievability)) }
+                dt { "Recalled when due, last 30 days" } dd { (format::percent(s.true_retention_30d)) " (" (count(s.retention_sample_30d, "review")) ")" }
+                dt { "Average recall chance now" } dd { (format::percent(s.average_retrievability)) }
             }
             h2 { "Cards" }
             dl.kv {

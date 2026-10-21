@@ -16,6 +16,20 @@ pub fn plural(n: i64, word: &str) -> String {
     if n == 1 { word.to_string() } else { format!("{word}s") }
 }
 
+/// Shown where a number has no value yet.
+pub const NONE: &str = "—";
+
+/// A share as a whole percent, "91%"; the dash when there's none.
+pub fn percent(v: Option<f64>) -> String {
+    v.map(|v| format!("{:.0}%", v * 100.0)).unwrap_or_else(|| NONE.into())
+}
+
+/// Whole minutes, rounded: "about 3 minutes"; "under a minute" below one.
+pub fn minutes(m: f64) -> String {
+    let n = m.round() as i64;
+    if n < 1 { "under a minute".into() } else { format!("about {}", count(n, "minute")) }
+}
+
 /// Short label for a wait, e.g. "10m", "3d", "2.1mo".
 pub fn interval(secs: i64) -> String {
     let secs = secs.max(0) as f64;
