@@ -773,7 +773,7 @@ async fn home(State(app): State<AppState>, user: WebUser, Flash(msg): Flash) -> 
                                 span.small { (sh.cards) (if sh.cards == 1 { " card" } else { " cards" }) " from " (sh.from) }
                             }
                             form method="post" action=(format!("/shares/{}/accept", sh.id)) {
-                                button.btn.primary type="submit" { "Accept" }
+                                button.btn type="submit" { "Accept" }
                                 " "
                                 button.btn type="submit" formaction=(format!("/shares/{}/decline", sh.id)) { "Decline" }
                             }
@@ -2359,20 +2359,20 @@ async fn tokens_page(
             details {
                 summary { "Create a token by hand" }
                 p.small { "For agents without OAuth support: they send the token as " code { "Authorization: Bearer <token>" } "." }
-            form method="post" action="/tokens/new" {
-                label { "Name" input type="text" name="name" required placeholder="e.g. Claude"; }
-                label.check { input type="checkbox" name="can_write" value="1" checked; " " (PERM_WRITE) }
-                label.check { input type="checkbox" name="can_review" value="1" checked; " " (PERM_REVIEW) }
-                fieldset {
-                    legend { "Decks" }
-                    label.check { input type="radio" name="scope" value="all" checked; " " (PERM_ALL_DECKS) }
-                    label.check { input type="radio" name="scope" value="some"; " " (PERM_SOME_DECKS) }
-                    @for d in &decks {
-                        label.check.indent { input type="checkbox" name="decks" value=(d.id); " " (deck_plain(&d.name)) }
+                form method="post" action="/tokens/new" {
+                    label { "Name" input type="text" name="name" required placeholder="e.g. Claude"; }
+                    label.check { input type="checkbox" name="can_write" value="1" checked; " " (PERM_WRITE) }
+                    label.check { input type="checkbox" name="can_review" value="1" checked; " " (PERM_REVIEW) }
+                    fieldset {
+                        legend { "Decks" }
+                        label.check { input type="radio" name="scope" value="all" checked; " " (PERM_ALL_DECKS) }
+                        label.check { input type="radio" name="scope" value="some"; " " (PERM_SOME_DECKS) }
+                        @for d in &decks {
+                            label.check.indent { input type="checkbox" name="decks" value=(d.id); " " (deck_plain(&d.name)) }
+                        }
                     }
+                    button.btn type="submit" { "Create token" }
                 }
-                button.btn.primary type="submit" { "Create token" }
-            }
             }
         },
     )
@@ -2492,7 +2492,7 @@ async fn import_page(State(app): State<AppState>, user: WebUser, Flash(msg): Fla
                             input type="file" name="file" accept=".csv,.tsv,.txt";
                         }
                     }
-                    div.form-foot.end { button.btn.primary type="submit" { "Import CSV" } }
+                    div.form-foot.end { button.btn type="submit" { "Import CSV" } }
                 }
             }
         },
