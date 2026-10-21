@@ -1567,8 +1567,16 @@ async fn card_page(
                 } @else {
                     button.btn type="submit" name="action" value="suspend" { "Suspend" }
                 }
-                button.btn type="submit" name="action" value="reset" { "Forget progress" }
-                button.btn.danger type="submit" name="action" value="delete" { "Delete" }
+            }
+            details.danger {
+                summary { "Forget progress or delete this card…" }
+                form method="post" action=(format!("/cards/{id}/action")) {
+                    p { "Forgetting makes it a new card again. Deleting removes it and its history." }
+                    div.actions {
+                        button.btn.danger type="submit" name="action" value="reset" { "Forget progress" }
+                        button.btn.danger type="submit" name="action" value="delete" { "Delete card" }
+                    }
+                }
             }
             @if !history.is_empty() {
                 h2 { "History" }
@@ -1883,13 +1891,17 @@ async fn settings_page(State(app): State<AppState>, user: WebUser, Flash(msg): F
                 }
             }
             div.form-foot.end {
-                @if custom {
-                    form method="post" action="/settings/reset-params" {
-                        button.btn type="submit" { "Go back to defaults" }
-                    }
-                }
                 form method="post" action="/settings/optimize" {
                     button.btn type="submit" { "Optimize now" }
+                }
+            }
+            @if custom {
+                details.danger {
+                    summary { "Go back to the default parameters…" }
+                    form method="post" action="/settings/reset-params" {
+                        p { "Your fitted parameters are dropped. You can optimize again any time." }
+                        button.btn.danger type="submit" { "Use defaults" }
+                    }
                 }
             }
             h2 { "Change password" }
