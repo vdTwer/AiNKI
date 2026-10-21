@@ -2157,7 +2157,8 @@ async fn import_upload(State(app): State<AppState>, user: WebUser, mut mp: Multi
         msg += &format!(", {} image(s)", report.images_imported);
     }
     if !report.decks_created.is_empty() {
-        msg += &format!(". New decks: {}", report.decks_created.join(", "));
+        let names: Vec<String> = report.decks_created.iter().map(|n| deck_plain(n)).collect();
+        msg += &format!(". New decks: {}", names.join(", "));
     }
     if report.skipped > 0 {
         msg += &format!(". Skipped {} empty", report.skipped);
