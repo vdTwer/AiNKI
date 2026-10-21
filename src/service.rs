@@ -682,13 +682,14 @@ impl App {
             };
         }
         sqlx::query(
-            "UPDATE decks SET name = ?, description = ?, preset_id = ?, exam_date = ? WHERE id = ?",
+            "UPDATE decks SET name = ?, description = ?, preset_id = ?, exam_date = ? WHERE id = ? AND user_id = ?",
         )
         .bind(&deck.name)
         .bind(&deck.description)
         .bind(deck.preset_id)
         .bind(&deck.exam_date)
         .bind(id)
+        .bind(access.user_id())
         .execute(&self.db)
         .await?;
         Ok(deck)
@@ -825,7 +826,7 @@ impl App {
         check_len("back", &card.back, MAX_CARD_TEXT)?;
         sqlx::query(
             "UPDATE cards SET front = ?, back = ?, front_image = ?, back_image = ?, updated_at = ?
-             WHERE id = ?",
+             WHERE id = ? AND user_id = ?",
         )
         .bind(&card.front)
         .bind(&card.back)
@@ -833,6 +834,7 @@ impl App {
         .bind(&card.back_image)
         .bind(now())
         .bind(id)
+        .bind(access.user_id())
         .execute(&self.db)
         .await?;
         self.card(access, id).await
@@ -841,8 +843,9 @@ impl App {
     pub async fn delete_card(&self, access: &Access, id: i64) -> Result<()> {
         access.require_write()?;
         self.card(access, id).await?;
-        sqlx::query("DELETE FROM cards WHERE id = ?")
+        sqlx::query("DELETE FROM cards WHERE id = ? AND user_id = ?")
             .bind(id)
+            .bind(access.user_id())
             .execute(&self.db)
             .await?;
         Ok(())
@@ -852,10 +855,11 @@ impl App {
         access.require_write()?;
         self.card(access, id).await?;
         self.deck(access, deck_id).await?;
-        sqlx::query("UPDATE cards SET deck_id = ?, updated_at = ? WHERE id = ?")
+        sqlx::query("UPDATE cards SET deck_id = ?, updated_at = ? WHERE id = ? AND user_id = ?")
             .bind(deck_id)
             .bind(now())
             .bind(id)
+            .bind(access.user_id())
             .execute(&self.db)
             .await?;
         self.card(access, id).await
@@ -864,10 +868,11 @@ impl App {
     pub async fn set_suspended(&self, access: &Access, id: i64, suspended: bool) -> Result<Card> {
         access.require_write()?;
         self.card(access, id).await?;
-        sqlx::query("UPDATE cards SET suspended = ?, updated_at = ? WHERE id = ?")
+        sqlx::query("UPDATE cards SET suspended = ?, updated_at = ? WHERE id = ? AND user_id = ?")
             .bind(suspended)
             .bind(now())
             .bind(id)
+            .bind(access.user_id())
             .execute(&self.db)
             .await?;
         self.card(access, id).await
@@ -881,10 +886,11 @@ impl App {
         let mut tx = self.db.begin().await?;
         sqlx::query(
             "UPDATE cards SET state = 0, step = 0, stability = NULL, difficulty = NULL, due = 0,
-                last_review = NULL, reps = 0, lapses = 0, updated_at = ? WHERE id = ?",
+                last_review = NULL, reps = 0, lapses = 0, updated_at = ? WHERE id = ? AND user_id = ?",
         )
         .bind(now())
         .bind(id)
+        .bind(access.user_id())
         .execute(&mut *tx)
         .await?;
         sqlx::query(
@@ -1105,7 +1111,7 @@ impl App {
         let updated = sqlx::query(
             "UPDATE cards SET state = ?, step = ?, stability = ?, difficulty = ?, due = ?,
                 last_review = ?, reps = ?, lapses = ?, updated_at = ?
-             WHERE id = ? AND reps = ?",
+             WHERE id = ? AND user_id = ? AND reps = ?",
         )
         .bind(c.state as i64)
         .bind(c.step)
@@ -1117,6 +1123,7 @@ impl App {
         .bind(c.lapses)
         .bind(clock.now)
         .bind(card.id)
+        .bind(access.user_id())
         .bind(card.reps)
         .execute(&mut *tx)
         .await?;
@@ -1191,7 +1198,7 @@ impl App {
         let mut tx = self.db.begin().await?;
         sqlx::query(
             "UPDATE cards SET state = ?, step = ?, stability = ?, difficulty = ?, due = ?,
-                last_review = ?, reps = ?, lapses = ?, updated_at = ? WHERE id = ?",
+                last_review = ?, reps = ?, lapses = ?, updated_at = ? WHERE id = ? AND user_id = ?",
         )
         .bind(prev.state as i64)
         .bind(prev.step)
@@ -1204,10 +1211,12 @@ impl App {
         .bind(prev.lapses)
         .bind(now())
         .bind(card.id)
+        .bind(access.user_id())
         .execute(&mut *tx)
         .await?;
-        sqlx::query("DELETE FROM review_log WHERE id = ?")
+        sqlx::query("DELETE FROM review_log WHERE id = ? AND user_id = ?")
             .bind(last.id)
+            .bind(access.user_id())
             .execute(&mut *tx)
             .await?;
         tx.commit().await?;

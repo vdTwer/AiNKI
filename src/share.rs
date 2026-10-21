@@ -86,8 +86,9 @@ impl App {
             .fetch_one(&self.db)
             .await?;
         self.deck(access, deck_id).await?;
-        sqlx::query("DELETE FROM deck_shares WHERE id = ?")
+        sqlx::query("DELETE FROM deck_shares WHERE id = ? AND from_user = ?")
             .bind(share_id)
+            .bind(access.user_id())
             .execute(&self.db)
             .await?;
         Ok(deck_id)
@@ -162,8 +163,9 @@ impl App {
             self.insert_card(access.user_id(), deck.id, &c.front, &c.back, front_image, back_image, "shared")
                 .await?;
         }
-        sqlx::query("DELETE FROM deck_shares WHERE id = ?")
+        sqlx::query("DELETE FROM deck_shares WHERE id = ? AND to_user = ?")
             .bind(share_id)
+            .bind(access.user_id())
             .execute(&self.db)
             .await?;
         Ok(deck)
