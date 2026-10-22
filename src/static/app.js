@@ -51,6 +51,26 @@
   // Files: every file field takes a dropped (or pasted) file the same
   // way. The first file that fits goes into the input as if it had been
   // picked, so the field's own change handler shows it.
+  // Card form: offer "Learn item by item" once the back has a numbered
+  // list with two or more items (the same rule as the server's).
+  var listToggle = document.querySelector('.card-form .list-toggle');
+  var backText = document.getElementById('back');
+  if (listToggle && backText) {
+    var listBox = listToggle.querySelector('input');
+    var hasList = function () {
+      var n = 0;
+      backText.value.split(/\r?\n/).forEach(function (line) { if (/^ {0,3}\d{1,3}[.)][ \t]+\S/.test(line)) n++; });
+      return n >= 2;
+    };
+    var offer = function () {
+      var show = hasList();
+      listToggle.hidden = !show;
+      listBox.disabled = !show;
+    };
+    backText.addEventListener('input', offer);
+    offer();
+  }
+
   function putFile(input, files, fits) {
     var f = files && Array.prototype.filter.call(files, fits)[0];
     if (!f || typeof DataTransfer === 'undefined') return false;
@@ -174,7 +194,7 @@
 
   function lean(el, e) {
     var r = el.getBoundingClientRect();
-    var row = el.matches('a.row');
+    var row = el.matches('.row');
     var base = row ? 3 : el.closest('.answers') ? 10 : 8;
     var max = row ? base : base * Math.max(1, Math.min(1.8, 220 / r.width));
     var x = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width));
@@ -211,7 +231,7 @@
 
   function tilt(el) {
     if (el.closest('.quiet-links')) return;
-    var row = el.matches('a.row');
+    var row = el.matches('.row');
     // An icon tilts on its own, with the close perspective of the rail.
     var icon = el.matches('.icon-link');
     el.addEventListener('pointerenter', function () {
@@ -282,7 +302,7 @@
     }
     if (calm && motion) {
       // Hidden buttons have no size yet; they are set up when shown.
-      var els = scope.querySelectorAll('.btn, button:not(.link), a.row, nav.top a:not(.brand), .icon-link');
+      var els = scope.querySelectorAll('.btn, button:not(.link), a.row, label.row, nav.top a:not(.brand), .icon-link');
       for (var t = 0; t < els.length; t++) {
         if (!els[t].closest('[hidden]') && !els[t].hasAttribute('data-tilt')) {
           els[t].setAttribute('data-tilt', '');
@@ -411,6 +431,16 @@
     if (show && reveal()) e.preventDefault();
   });
 
+  // A list card's Done says how many you remembered.
+  document.addEventListener('change', function (e) {
+    var box = e.target;
+    if (!box.matches || !box.matches('.list-items input[type=checkbox]')) return;
+    var boxes = box.form.querySelectorAll('.list-items input[type=checkbox]');
+    var missed = box.form.querySelectorAll('.list-items input[type=checkbox]:checked').length;
+    var count = box.form.querySelector('[data-remembered]');
+    if (count) count.textContent = missed ? (boxes.length - missed) + ' of ' + boxes.length + ' remembered' : 'All ' + boxes.length + ' remembered';
+  });
+
   document.addEventListener('submit', function (e) {
     var form = e.target;
     var action = form.getAttribute('action');
@@ -419,13 +449,15 @@
     send(form, e.submitter);
   });
 
-  // Keyboard: space shows the answer (then means Good), 1-4 answer.
+  // Keyboard: space shows the answer (then means Good, or Done on a list
+  // card), 1-4 answer; on a list card 1-9 mark items as missed.
   document.addEventListener('keydown', function (e) {
     if (e.ctrlKey || e.metaKey || e.altKey) return;
-    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') return;
+    var tag = e.target.tagName;
+    if ((tag === 'INPUT' && e.target.type !== 'checkbox') || tag === 'TEXTAREA' || tag === 'SELECT') return;
     if (!document.querySelector('main .study')) return;
     var k = e.key === ' ' || e.key === 'Enter' ? ' ' : e.key;
-    if (!/^[ 1-4]$/.test(k)) return;
+    if (!/^[ 1-9]$/.test(k)) return;
     e.preventDefault();
     if (busy) return;
     if (k === ' ' && reveal()) return;

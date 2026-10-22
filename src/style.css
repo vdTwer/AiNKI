@@ -256,3 +256,24 @@ details.more summary { cursor: pointer; font-weight: 600; min-height: 2.5rem; di
 /* The page this one belongs to, above the heading. */
 .parent { margin: 1rem 0 -.5rem; font-size: .9rem; }
 .parent a { display: inline-flex; align-items: center; gap: .3em; min-height: 2.5rem; }
+
+/* List cards: tick the items you missed. */
+.answers.cols-1 { grid-template-columns: 1fr; }
+.list-known { margin: .25rem 0 0; color: var(--muted); }
+.list-known p { margin: 0; font-size: .9rem; }
+.list-known ul { margin: .2rem 0; padding-left: 1.2rem; }
+.list-how { margin: 0 0 .3rem; font-size: .9rem; color: var(--muted); }
+ol.list-items { list-style: none; margin: 0; padding: 0; font-size: 1.1rem; }
+ol.list-items label.item, ol.list-items li.known { display: flex; align-items: center; gap: .7rem; min-height: 3rem; padding: .3rem 0; font-weight: 400; }
+ol.list-items label.item { cursor: pointer; }
+ol.list-items input { width: 1.4rem; height: 1.4rem; margin: 0; accent-color: var(--fg); flex: none; }
+ol.list-items li.known { padding-left: 2.1rem; font-size: .95rem; color: var(--muted); }
+ol.list-items .num { min-width: 1.3rem; color: var(--muted); font-size: .9rem; font-variant-numeric: tabular-nums; }
+ol.list-items .text { flex: 1; }
+ol.list-items .mark { display: none; font-size: .75rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
+ol.list-items label.item:has(input:checked) .mark { display: inline; }
+ol.list-items label.item:has(input:checked) .text { text-decoration: line-through; }
+.hint-inline { display: block; font-size: .85rem; color: var(--muted); }
+ol.item-recall { padding-left: 1.6rem; }
+ol.item-recall li { padding: .25rem 0; }
+ol.item-recall .chance { float: right; margin-left: 1rem; color: var(--muted); font-variant-numeric: tabular-nums; }

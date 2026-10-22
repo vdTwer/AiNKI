@@ -134,9 +134,10 @@ impl App {
             back: String,
             front_image: Option<String>,
             back_image: Option<String>,
+            is_list: bool,
         }
         let cards: Vec<Src> = sqlx::query_as(
-            "SELECT front, back, front_image, back_image FROM cards WHERE deck_id = ? ORDER BY position, id",
+            "SELECT front, back, front_image, back_image, is_list FROM cards WHERE deck_id = ? ORDER BY position, id",
         )
         .bind(share.deck_id)
         .fetch_all(&self.db)
@@ -160,8 +161,13 @@ impl App {
         for c in cards {
             let front_image = self.copy_image(access.user_id(), c.front_image, &mut images).await?;
             let back_image = self.copy_image(access.user_id(), c.back_image, &mut images).await?;
-            self.insert_card(access.user_id(), deck.id, &c.front, &c.back, front_image, back_image, "shared")
+            let id = self
+                .insert_card(access.user_id(), deck.id, &c.front, &c.back, front_image, back_image, "shared")
                 .await?;
+            if c.is_list {
+                let copy = self.card(access, id).await?;
+                self.sync_items(&copy, true).await?;
+            }
         }
         sqlx::query("DELETE FROM deck_shares WHERE id = ? AND to_user = ?")
             .bind(share_id)

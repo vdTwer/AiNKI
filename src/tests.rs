@@ -11,7 +11,7 @@ use crate::{
     error::AppError,
     now,
     scheduler::{CardState, Rating},
-    service::{CardFilter, PresetInput},
+    service::{CardFilter, CardInput, PresetInput},
 };
 
 async fn app() -> Arc<App> {
@@ -53,7 +53,7 @@ async fn study_flow_and_undo() {
     assert_eq!(app.list_presets(&a).await.unwrap().len(), 5);
     let deck = app.create_deck(&a, "German", "", None).await.unwrap();
     for (f, b) in [("Hund", "dog"), ("Katze", "cat"), ("Maus", "mouse")] {
-        app.create_card(&a, deck.id, f, b, None, None).await.unwrap();
+        app.create_card(&a, deck.id, f, b, None, None, false).await.unwrap();
     }
 
     let first = app.next_card(&a, None).await.unwrap().unwrap();
@@ -88,6 +88,89 @@ async fn study_flow_and_undo() {
 }
 
 #[tokio::test]
+async fn list_cards_remember_each_item() {
+    let app = app().await;
+    let a = user(&app, "kolja").await;
+    let deck = app.create_deck(&a, "Literary Studies", "", None).await.unwrap();
+    // Item by item needs a numbered list.
+    assert!(app.create_card(&a, deck.id, "q", "just text", None, None, true).await.is_err());
+    let back = "Cohen:\n1. Cultural body\n2. Always escapes\n3. Category crisis";
+    let card = app.create_card(&a, deck.id, "Theses on monsters?", back, None, None, true).await.unwrap();
+    assert!(card.is_list);
+    assert_eq!(card.card_state(), CardState::New);
+    let items = app.card_items(&card).await.unwrap();
+    assert_eq!(items.iter().map(|i| i.text.as_str()).collect::<Vec<_>>(), ["Cultural body", "Always escapes", "Category crisis"]);
+    assert_eq!(crate::lists::asked(&card, &items, now()), [true, true, true]);
+
+    // 1 of 3: the second and third were missed.
+    let r = app.answer_list(&a, card.id, vec![1, 2], None, Some(0)).await.unwrap();
+    let card = r.card;
+    assert_eq!(card.card_state(), CardState::Learning);
+    let items = app.card_items(&card).await.unwrap();
+    assert!(items.iter().all(|i| i.reps == 1));
+    assert!(items[1].due < items[0].due);
+    // Next time only the missed ones are asked; the other shows as known.
+    let asked = crate::lists::asked(&card, &items, now());
+    assert_eq!(asked, [false, true, true]);
+    assert!(app.answer_list(&a, card.id, vec![0], None, Some(card.reps)).await.is_err());
+    let r = app.answer_list(&a, card.id, vec![], None, Some(card.reps)).await.unwrap();
+    let items = app.card_items(&r.card).await.unwrap();
+    assert_eq!(items.iter().map(|i| i.reps).collect::<Vec<_>>(), [1, 2, 2]);
+    let history = app.card_history(&a, card.id).await.unwrap();
+    assert_eq!(history[0]["items_asked"], 3);
+    assert_eq!(history[0]["items_recalled"], 1);
+    assert_eq!(history[0]["rating"], "again");
+    assert_eq!(history[1]["items_asked"], 2);
+    // The optimizer learns from the items, not the card's summary.
+    assert_eq!(app.optimizable_reviews(&a).await.unwrap(), 5);
+
+    // Undo puts the items back too.
+    app.undo_last(&a).await.unwrap().unwrap();
+    let card = app.card(&a, card.id).await.unwrap();
+    let items = app.card_items(&card).await.unwrap();
+    assert_eq!(items.iter().map(|i| i.reps).collect::<Vec<_>>(), [1, 1, 1]);
+
+    // Editing keeps the memory of items that stay; a new one starts fresh.
+    let edited = format!("{back}\n4. Gates of difference");
+    let card = app
+        .update_card(&a, card.id, CardInput { back: Some(edited), ..Default::default() })
+        .await
+        .unwrap();
+    let items = app.card_items(&card).await.unwrap();
+    assert_eq!(items.iter().map(|i| i.reps).collect::<Vec<_>>(), [1, 1, 1, 0]);
+    // A plain rating counts for every asked item.
+    app.answer_card(&a, card.id, Rating::Again, None, None).await.unwrap();
+
+    // Switching it off makes a plain card that keeps its schedule.
+    let card = app
+        .update_card(&a, card.id, CardInput { is_list: Some(false), ..Default::default() })
+        .await
+        .unwrap();
+    assert!(!card.is_list);
+    assert!(app.card_items(&card).await.unwrap().is_empty());
+    assert_ne!(card.card_state(), CardState::New);
+}
+
+#[tokio::test]
+async fn a_studied_card_turned_into_a_list_keeps_its_memory() {
+    let app = app().await;
+    let a = user(&app, "kolja").await;
+    let deck = app.create_deck(&a, "Math", "", None).await.unwrap();
+    let card = app.create_card(&a, deck.id, "Operations on F^n?", "1. Scalar multiplication\n2. Addition", None, None, false).await.unwrap();
+    let card = app.answer_card(&a, card.id, Rating::Good, None, None).await.unwrap().card;
+    let list = app
+        .update_card(&a, card.id, CardInput { is_list: Some(true), ..Default::default() })
+        .await
+        .unwrap();
+    assert_eq!(list.due, card.due);
+    assert_eq!(list.card_state(), card.card_state());
+    let items = app.card_items(&list).await.unwrap();
+    assert!(items.iter().all(|i| i.stability == card.stability && i.due == card.due));
+    // A list in review asks for every item.
+    assert_eq!(crate::lists::asked(&list, &items, now()), [true, true]);
+}
+
+#[tokio::test]
 async fn daily_new_limit_is_respected() {
     let app = app().await;
     let a = user(&app, "kolja").await;
@@ -97,7 +180,7 @@ async fn daily_new_limit_is_respected() {
         .unwrap();
     let deck = app.create_deck(&a, "Small", "", Some(preset.id)).await.unwrap();
     for f in ["a", "b", "c"] {
-        app.create_card(&a, deck.id, f, "x", None, None).await.unwrap();
+        app.create_card(&a, deck.id, f, "x", None, None, false).await.unwrap();
     }
     let sc = app.next_card(&a, Some(deck.id)).await.unwrap().unwrap();
     app.answer_card(&a, sc.card.id, Rating::Good, None, None).await.unwrap();
@@ -114,7 +197,7 @@ async fn token_permissions() {
     let other = user(&app, "eve").await;
     let d1 = app.create_deck(&a, "One", "", None).await.unwrap();
     let d2 = app.create_deck(&a, "Two", "", None).await.unwrap();
-    let c2 = app.create_card(&a, d2.id, "secret", "x", None, None).await.unwrap();
+    let c2 = app.create_card(&a, d2.id, "secret", "x", None, None, false).await.unwrap();
 
     let (_, raw) = app
         .create_token(a.user_id(), "reader", false, false, Some(vec![d1.id]))
@@ -125,7 +208,7 @@ async fn token_permissions() {
     assert_eq!(app.decks(&t).await.unwrap().len(), 1);
     assert!(matches!(app.card(&t, c2.id).await, Err(AppError::NotFound)));
     assert!(matches!(
-        app.create_card(&t, d1.id, "q", "a", None, None).await,
+        app.create_card(&t, d1.id, "q", "a", None, None, false).await,
         Err(AppError::Forbidden(_))
     ));
     assert!(matches!(app.create_deck(&t, "New", "", None).await, Err(AppError::Forbidden(_))));
@@ -139,7 +222,7 @@ async fn token_permissions() {
     // A writer agent's cards are labelled.
     let (tok, raw) = app.create_token(a.user_id(), "writer", true, true, None).await.unwrap();
     let w = app.token_access(&raw).await.unwrap();
-    let c = app.create_card(&w, d1.id, "from agent", "", None, None).await.unwrap();
+    let c = app.create_card(&w, d1.id, "from agent", "", None, None, false).await.unwrap();
     assert_eq!(c.created_by, "agent");
 
     app.revoke_token(a.user_id(), tok.id).await.unwrap();
@@ -168,7 +251,7 @@ async fn optimizer_fits_parameters() {
     // Synthetic history: 300 cards, reviews at growing intervals with some lapses.
     for i in 0..300i64 {
         let card = app
-            .create_card(&a, deck.id, &format!("q{i}"), "a", None, None)
+            .create_card(&a, deck.id, &format!("q{i}"), "a", None, None, false)
             .await
             .unwrap();
         let mut t = start + i * 600;
@@ -231,7 +314,7 @@ async fn sharing_gives_an_independent_copy() {
     let deck = app.create_deck(&kolja, "Spanish", "verbs", None).await.unwrap();
     let img = app.store_image(&kolja, tiny_png()).await.unwrap();
     let c = app
-        .create_card(&kolja, deck.id, "hablar", "to speak", Some(img.id.clone()), None)
+        .create_card(&kolja, deck.id, "hablar", "to speak", Some(img.id.clone()), None, false)
         .await
         .unwrap();
     app.answer_card(&kolja, c.id, Rating::Good, None, None).await.unwrap();
@@ -294,7 +377,7 @@ async fn oauth_flow() {
     let app = app().await;
     let a = user(&app, "kolja").await;
     let deck = app.create_deck(&a, "D", "", None).await.unwrap();
-    app.create_card(&a, deck.id, "q", "a", None, None).await.unwrap();
+    app.create_card(&a, deck.id, "q", "a", None, None, false).await.unwrap();
 
     let reg = app
         .register_client(crate::oauth::RegistrationRequest {
@@ -751,7 +834,7 @@ mod http {
         let app = app().await;
         let a = user(&app, "kolja").await;
         let deck = app.create_deck(&a, "Languages::Spanish", "", None).await.unwrap();
-        app.create_card(&a, deck.id, "el perro", "the dog", None, None).await.unwrap();
+        app.create_card(&a, deck.id, "el perro", "the dog", None, None, false).await.unwrap();
         let cookie = login_cookie(&app, "kolja").await;
         let res = send(&app, Request::get("/study").header(header::COOKIE, cookie).body(Body::empty()).unwrap()).await;
         let html = String::from_utf8_lossy(&axum::body::to_bytes(res.into_body(), usize::MAX).await.unwrap()).into_owned();
@@ -763,6 +846,42 @@ mod http {
         assert!(!html.contains("Languages::Spanish"));
         assert!(html.contains(r#"<span class="deck-leaf">Spanish</span>"#));
         assert!(!html.contains("/offline"));
+    }
+
+    #[tokio::test]
+    async fn list_cards_through_the_website() {
+        let app = app().await;
+        let a = user(&app, "kolja").await;
+        let deck = app.create_deck(&a, "Literary Studies", "", None).await.unwrap();
+        let cookie = login_cookie(&app, "kolja").await;
+        let d = deck.id.to_string();
+        let back = "1. Cultural body\n2. Always escapes\n3. Category crisis";
+
+        // The switch is only on the page once the back has a list.
+        let res = send(&app, Request::get("/cards/new").header(header::COOKIE, &cookie).body(Body::empty()).unwrap()).await;
+        assert!(text(res).await.contains(r#"<label class="check list-toggle" hidden>"#));
+        let res = submit_multipart(&app, &cookie, "/cards/new", &[("deck", &d), ("front", "Theses?"), ("back", back), ("list", "1")]).await;
+        assert_eq!(res.status(), StatusCode::SEE_OTHER);
+        let (cards, _) = app.list_cards(&a, &CardFilter { deck_id: Some(deck.id), ..Default::default() }).await.unwrap();
+        let card = &cards[0];
+        assert!(card.is_list);
+        let res = send(&app, Request::get(format!("/cards/{}", card.id)).header(header::COOKIE, &cookie).body(Body::empty()).unwrap()).await;
+        let html = text(res).await;
+        assert!(html.contains(r#"<label class="check list-toggle"><input type="checkbox" name="list" value="1" checked>"#));
+        assert!(html.contains("Always escapes"));
+
+        // Studying: one row per item, one Done.
+        let res = send(&app, Request::get("/study").header(header::COOKIE, &cookie).body(Body::empty()).unwrap()).await;
+        let html = text(res).await;
+        assert!(html.contains(r#"<form class="list-answer" method="post" action="/study/answer">"#));
+        assert!(html.contains(r#"<input type="checkbox" name="missed" value="2">"#));
+        assert!(html.contains("All 3 remembered"));
+        let res = submit(&app, &cookie, "/study/answer", &format!("card={}&reps=0&missed=0&missed=2", card.id)).await;
+        assert_eq!(location(&res), "/study");
+        let history = app.card_history(&a, card.id).await.unwrap();
+        assert_eq!(history[0]["items_recalled"], 1);
+        let res = send(&app, Request::get(format!("/cards/{}", card.id)).header(header::COOKIE, &cookie).body(Body::empty()).unwrap()).await;
+        assert!(text(res).await.contains("1 of 3 remembered"));
     }
 
     #[tokio::test]

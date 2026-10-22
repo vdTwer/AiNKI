@@ -22,7 +22,7 @@ use crate::{
     App, AppState,
     auth::{Access, User},
     error::AppError,
-    import, markdown, mcp, media, now, oauth, presets,
+    import, lists, markdown, mcp, media, now, oauth, presets,
     security::{self, ClientIp, Flash},
     scheduler::{self, CardState, Rating},
     service::{Card, CardFilter, CardInput, Deck, PresetInput},
@@ -946,6 +946,24 @@ async fn study_card(
         vec![(Rating::Again, "Again", "1"), (Rating::Good, "Good", "3")]
     };
     let deck_param = q_deck.map(|d| format!("&deck={d}")).unwrap_or_default();
+    let show_href = format!("/study?card={}&show=1&t={}{}#answer", card.id, shown, deck_param);
+    if card.is_list {
+        let items = app.card_items(card).await?;
+        let body = list_study(card, &items, q_deck, shown, revealed, &show_href);
+        return Ok(page(
+            Some(Nav::Study),
+            "Study",
+            Some(user),
+            Some("study"),
+            html! {
+                (flash(msg))
+                section.study.revealed[revealed] {
+                    (body)
+                    (study_foot(&deck.name, deck.id, done, total, q_deck, Some(card.id)))
+                }
+            },
+        ));
+    }
     Ok(page(
         Some(Nav::Study),
         "Study",
@@ -960,11 +978,7 @@ async fn study_card(
                     hr.divider hidden[!revealed];
                     section.face.back id="answer" hidden[!revealed] { (face(&card.back, &card.back_image)) }
                 }
-                p.reveal hidden[revealed] {
-                    a.btn.primary.show data-key=" " href=(format!("/study?card={}&show=1&t={}{}#answer", card.id, shown, deck_param)) {
-                        "Show answer" span.key { "space" }
-                    }
-                }
+                (reveal_button(&show_href, revealed))
                 form.answers.cols-2[!four].cols-4[four] method="post" action="/study/answer" hidden[!revealed] {
                     input type="hidden" name="card" value=(card.id);
                     input type="hidden" name="reps" value=(card.reps);
@@ -982,6 +996,87 @@ async fn study_card(
             }
         },
     ))
+}
+
+fn reveal_button(href: &str, revealed: bool) -> Markup {
+    html! {
+        p.reveal hidden[revealed] {
+            a.btn.primary.show data-key=" " href=(href) { "Show answer" span.key { "space" } }
+        }
+    }
+}
+
+/// One item's Markdown, without the paragraph around it when it is a
+/// single line, so it sits inside a row.
+fn item_md(text: &str) -> Markup {
+    let html = markdown::render(text);
+    let t = html.trim();
+    let inner = t
+        .strip_prefix("<p>")
+        .and_then(|x| x.strip_suffix("</p>"))
+        .filter(|x| !x.contains("<p>"));
+    PreEscaped(inner.unwrap_or(t).to_string())
+}
+
+/// A list card: the front (with the items you already know while
+/// relearning), then every item as a row to tap when you missed it, and
+/// one Done. It is all one form, so it also works without JavaScript.
+fn list_study(card: &Card, items: &[lists::CardItem], q_deck: Option<i64>, shown: i64, revealed: bool, show_href: &str) -> Markup {
+    let asked = lists::asked(card, items, now());
+    let n_asked = asked.iter().filter(|a| **a).count();
+    let known: Vec<&lists::CardItem> = items.iter().zip(&asked).filter(|(_, a)| !**a).map(|(i, _)| i).collect();
+    let intro = lists::parse(&card.back).map(|l| l.intro).unwrap_or_default();
+    html! {
+        form.list-answer method="post" action="/study/answer" {
+            input type="hidden" name="card" value=(card.id);
+            input type="hidden" name="reps" value=(card.reps);
+            input type="hidden" name="t" value=(shown);
+            @if let Some(d) = q_deck { input type="hidden" name="deck" value=(d); }
+            div.card-area {
+                (state_tag(card.card_state()))
+                section.face.front { (face(&card.front, &card.front_image)) }
+                @if !known.is_empty() {
+                    div.list-known {
+                        p.known-label { "You know" }
+                        ul { @for i in &known { li { (item_md(&i.text)) } } }
+                        p.more { "and " (n_asked) " more?" }
+                    }
+                }
+                hr.divider hidden[!revealed];
+                section.face.back.list id="answer" hidden[!revealed] {
+                    @if let Some(img) = &card.back_image { img src=(format!("/media/{img}")) alt=""; }
+                    @if !intro.is_empty() { div.md { (PreEscaped(markdown::render(&intro))) } }
+                    p.list-how { "Tap the ones you missed." }
+                    ol.list-items {
+                        @for (n, item) in items.iter().enumerate() {
+                            @if asked[n] {
+                                li {
+                                    label.row.item data-key=[(n < 9).then(|| (n + 1).to_string())] {
+                                        input type="checkbox" name="missed" value=(n);
+                                        span.num { (n + 1) }
+                                        span.text { (item_md(&item.text)) }
+                                        span.mark { "Missed" }
+                                    }
+                                }
+                            } @else {
+                                li.known {
+                                    span.num { (n + 1) }
+                                    span.text { (item_md(&item.text)) }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            (reveal_button(show_href, revealed))
+            div.answers.cols-1 hidden[!revealed] {
+                button.btn.primary type="submit" data-key=" " {
+                    span.label { "Done" " " span.key { "space" } }
+                    span.ivl data-remembered=(n_asked) { "All " (n_asked) " remembered" }
+                }
+            }
+        }
+    }
 }
 
 async fn study(State(app): State<AppState>, user: WebUser, Flash(msg): Flash, Query(q): Query<StudyQuery>) -> WebResult {
@@ -1048,20 +1143,27 @@ async fn study(State(app): State<AppState>, user: WebUser, Flash(msg): Flash, Qu
 #[derive(Deserialize)]
 struct AnswerForm {
     card: i64,
-    rating: i64,
+    /// Plain cards: the button pressed.
+    rating: Option<i64>,
+    /// List cards: positions of the items marked missed.
+    #[serde(default)]
+    missed: Vec<usize>,
     reps: i64,
     t: Option<i64>,
     deck: Option<i64>,
 }
 
 async fn study_answer(State(app): State<AppState>, user: WebUser, Form(f): Form<AnswerForm>) -> WebResult {
-    let rating = Rating::from_i64(f.rating).ok_or_else(|| AppError::bad("invalid rating"))?;
     // Like Anki, cap the counted thinking time at 60 seconds.
     let duration = f.t.map(|t| ((now() - t).clamp(0, 60)) * 1000);
-    match app
-        .answer_card(&user.access(), f.card, rating, duration, Some(f.reps))
-        .await
-    {
+    let answered = match f.rating {
+        Some(r) => {
+            let rating = Rating::from_i64(r).ok_or_else(|| AppError::bad("invalid rating"))?;
+            app.answer_card(&user.access(), f.card, rating, duration, Some(f.reps)).await
+        }
+        None => app.answer_list(&user.access(), f.card, f.missed, duration, Some(f.reps)).await,
+    };
+    match answered {
         Ok(_) | Err(AppError::Conflict(_)) => Ok(redirect(study_url(f.deck))),
         Err(e) => Err(e.into()),
     }
@@ -1459,6 +1561,8 @@ struct CardFormData {
     back_upload: Option<Vec<u8>>,
     remove_front_image: bool,
     remove_back_image: bool,
+    /// "Learn item by item" is switched on.
+    list: bool,
     /// An image was picked; it can't be refilled if the form comes back.
     had_upload: bool,
 }
@@ -1492,6 +1596,7 @@ async fn read_card_form(mp: Multipart) -> Result<CardFormData, AppError> {
         back: text("back"),
         remove_front_image: fields.contains_key("remove_front_image"),
         remove_back_image: fields.contains_key("remove_back_image"),
+        list: fields.contains_key("list"),
         ..Default::default()
     };
     f.front_upload = fields.remove("front_image").filter(|d| !d.is_empty());
@@ -1554,6 +1659,7 @@ struct CardDraft<'a> {
     back: &'a str,
     front_image: &'a Option<String>,
     back_image: &'a Option<String>,
+    is_list: bool,
 }
 
 fn card_form(action: &str, decks: &[crate::service::Deck], c: &CardDraft, submit: &str, allow_new_deck: bool) -> Markup {
@@ -1582,6 +1688,13 @@ fn card_form(action: &str, decks: &[crate::service::Deck], c: &CardDraft, submit
                 (face_field("front", "Front", "Question", c.front, c.front_image, true))
                 hr.divider;
                 (face_field("back", "Back", "Answer", c.back, c.back_image, false))
+                // Offered once the back has a numbered list; app.js shows and
+                // hides it while you write.
+                @let has_list = lists::parse(c.back).is_some();
+                label.check.list-toggle hidden[!has_list && !c.is_list] {
+                    input type="checkbox" name="list" value="1" checked[c.is_list];
+                    span { "Learn item by item" span.hint-inline { "You mark what you missed; each item gets its own schedule." } }
+                }
             }
             div.form-foot {
                 p.muted.small { "Text supports Markdown: **bold**, *italic*, lists, `code`." }
@@ -1619,7 +1732,7 @@ async fn card_new_page(State(app): State<AppState>, user: WebUser, Flash(msg): F
         Some(id) => Some(id),
         None => app.last_used_deck(&access).await?.or_else(|| decks.first().map(|d| d.id)),
     };
-    let draft = CardDraft { deck, new_deck: "", front: "", back: "", front_image: &None, back_image: &None };
+    let draft = CardDraft { deck, new_deck: "", front: "", back: "", front_image: &None, back_image: &None, is_list: false };
     Ok(card_new_view(&user.0, &decks, &draft, &msg, None).into_response())
 }
 
@@ -1661,7 +1774,7 @@ async fn card_create(State(app): State<AppState>, user: WebUser, mp: Multipart) 
             Some(d) => Some(app.store_image(&access, d).await?.id),
             None => None,
         };
-        app.create_card(&access, deck, &f.front, &f.back, front_image, back_image).await?;
+        app.create_card(&access, deck, &f.front, &f.back, front_image, back_image, f.list).await?;
         Ok((deck, msg))
     }
     .await;
@@ -1677,6 +1790,7 @@ async fn card_create(State(app): State<AppState>, user: WebUser, mp: Multipart) 
                 back: &f.back,
                 front_image: &None,
                 back_image: &None,
+                is_list: f.list,
             };
             Ok(form_again(card_new_view(&user.0, &decks, &draft, &None, Some(&msg))))
         }
@@ -1689,6 +1803,7 @@ async fn card_view(app: &App, user: &User, id: i64, msg: &Option<String>, sent: 
     let card = app.card(&access, id).await?;
     let decks = app.decks(&access).await?;
     let history = app.card_history(&access, id).await?;
+    let items = app.card_items(&card).await?;
     let clock = user.clock();
     let params = user.params();
     let r = scheduler::retrievability(&card.sched(), &params, &clock);
@@ -1700,6 +1815,7 @@ async fn card_view(app: &App, user: &User, id: i64, msg: &Option<String>, sent: 
             back: &f.back,
             front_image: if f.remove_front_image { &None } else { &card.front_image },
             back_image: if f.remove_back_image { &None } else { &card.back_image },
+            is_list: f.list,
         },
         None => CardDraft {
             deck: Some(card.deck_id),
@@ -1708,6 +1824,7 @@ async fn card_view(app: &App, user: &User, id: i64, msg: &Option<String>, sent: 
             back: &card.back,
             front_image: &card.front_image,
             back_image: &card.back_image,
+            is_list: card.is_list,
         },
     };
     Ok(layout_in(
@@ -1726,7 +1843,23 @@ async fn card_view(app: &App, user: &User, id: i64, msg: &Option<String>, sent: 
                 @if card.card_state() != CardState::New {
                     dt { "Due" } dd { (capitalize(&format::when(&clock, card.due))) }
                 }
-                @if let Some(r) = r { dt { "Recall chance now" } dd { (format::percent(Some(r as f64))) } }
+                @if let Some(r) = r { dt { @if card.is_list { "Weakest item now" } @else { "Recall chance now" } } dd { (format::percent(Some(r as f64))) } }
+            }
+            @if !items.is_empty() {
+                h2 { "Items" }
+                ol.item-recall {
+                    @for i in &items {
+                        li {
+                            span.text { (i.text.lines().next().unwrap_or("")) }
+                            span.chance {
+                                @match scheduler::retrievability(&i.sched(), &params, &clock) {
+                                    Some(r) => (format::percent(Some(r as f64))),
+                                    None => "New",
+                                }
+                            }
+                        }
+                    }
+                }
             }
             details.more {
                 summary { "Scheduling details" }
@@ -1758,7 +1891,14 @@ async fn card_view(app: &App, user: &User, id: i64, msg: &Option<String>, sent: 
                         @for h in history.iter().rev() {
                             tr {
                                 td { (capitalize(&format::when(&clock, h["timestamp"].as_i64().unwrap_or(0)))) }
-                                td { (rating_label(h["rating"].as_str().unwrap_or(""))) @if h["source"] == "agent" { " (by an agent)" } }
+                                td {
+                                    @if let (Some(asked), Some(recalled)) = (h["items_asked"].as_i64(), h["items_recalled"].as_i64()) {
+                                        (recalled) " of " (asked) " remembered"
+                                    } @else {
+                                        (rating_label(h["rating"].as_str().unwrap_or("")))
+                                    }
+                                    @if h["source"] == "agent" { " (by an agent)" }
+                                }
                                 td { (h["next_interval"].as_str().unwrap_or("")) }
                             }
                         }
@@ -1800,6 +1940,7 @@ async fn card_update(State(app): State<AppState>, user: WebUser, Path(id): Path<
                 back: Some(f.back.clone()),
                 front_image,
                 back_image,
+                is_list: Some(f.list),
             },
         )
         .await?;
