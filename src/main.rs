@@ -11,6 +11,7 @@ mod auth;
 mod error;
 mod format;
 mod import;
+mod lists;
 mod markdown;
 mod mcp;
 mod oauth;

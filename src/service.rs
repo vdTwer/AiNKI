@@ -13,6 +13,7 @@ use crate::{
     auth::{Access, Actor},
     error::{AppError, Result},
     now, presets,
+    lists::Missed,
     scheduler::{self, CardSched, CardState, Clock, Rating, SchedConfig},
 };
 
@@ -78,6 +79,8 @@ pub struct Card {
     pub created_by: String,
     pub created_at: i64,
     pub updated_at: i64,
+    /// Learned item by item; see `lists`.
+    pub is_list: bool,
 }
 
 impl Card {
@@ -124,6 +127,7 @@ impl Card {
             "reps": self.reps,
             "lapses": self.lapses,
             "created_by": self.created_by,
+            "is_list": self.is_list,
         })
     }
 }
@@ -173,6 +177,8 @@ pub struct CardInput {
     /// `Some(None)` clears the image.
     pub front_image: Option<Option<String>>,
     pub back_image: Option<Option<String>>,
+    /// Learn the back's numbered list item by item.
+    pub is_list: Option<bool>,
 }
 
 #[derive(Debug, Default, Clone, Deserialize)]
@@ -738,6 +744,7 @@ impl App {
         Ok(())
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub async fn create_card(
         &self,
         access: &Access,
@@ -746,11 +753,15 @@ impl App {
         back: &str,
         front_image: Option<String>,
         back_image: Option<String>,
+        is_list: bool,
     ) -> Result<Card> {
         access.require_write()?;
         self.deck(access, deck_id).await?;
         if front.trim().is_empty() && front_image.is_none() {
             return Err(AppError::bad("the front needs text or an image"));
+        }
+        if is_list && crate::lists::parse(back).is_none() {
+            return Err(crate::lists::no_list());
         }
         check_len("front", front, MAX_CARD_TEXT)?;
         check_len("back", back, MAX_CARD_TEXT)?;
@@ -763,7 +774,12 @@ impl App {
         let id = self
             .insert_card(access.user_id(), deck_id, front, back, front_image, back_image, source)
             .await?;
-        self.card(access, id).await
+        let card = self.card(access, id).await?;
+        if is_list {
+            self.sync_items(&card, true).await?;
+            return self.card(access, id).await;
+        }
+        Ok(card)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -805,6 +821,8 @@ impl App {
     pub async fn update_card(&self, access: &Access, id: i64, input: CardInput) -> Result<Card> {
         access.require_write()?;
         let mut card = self.card(access, id).await?;
+        let was_list = card.is_list;
+        let is_list = input.is_list.unwrap_or(was_list);
         if let Some(f) = input.front {
             card.front = f.trim().to_string();
         }
@@ -824,6 +842,9 @@ impl App {
         }
         check_len("front", &card.front, MAX_CARD_TEXT)?;
         check_len("back", &card.back, MAX_CARD_TEXT)?;
+        if is_list && crate::lists::parse(&card.back).is_none() {
+            return Err(crate::lists::no_list());
+        }
         sqlx::query(
             "UPDATE cards SET front = ?, back = ?, front_image = ?, back_image = ?, updated_at = ?
              WHERE id = ? AND user_id = ?",
@@ -837,6 +858,9 @@ impl App {
         .bind(access.user_id())
         .execute(&self.db)
         .await?;
+        if is_list || was_list {
+            self.sync_items(&card, is_list).await?;
+        }
         self.card(access, id).await
     }
 
@@ -891,6 +915,13 @@ impl App {
         .bind(now())
         .bind(id)
         .bind(access.user_id())
+        .execute(&mut *tx)
+        .await?;
+        sqlx::query(
+            "UPDATE card_items SET state = 0, step = 0, stability = NULL, difficulty = NULL, due = 0,
+                last_review = NULL, reps = 0, lapses = 0 WHERE card_id = ?",
+        )
+        .bind(id)
         .execute(&mut *tx)
         .await?;
         sqlx::query(
@@ -1098,6 +1129,12 @@ impl App {
                 return Err(AppError::Conflict("this card was already answered".into()));
             }
         }
+        if card.is_list {
+            // A plain rating on a list card: Again missed every asked item,
+            // anything else remembered them all.
+            let missed = if rating == Rating::Again { Missed::All } else { Missed::These(vec![]) };
+            return self.answer_items(access, &card, missed, duration_ms).await;
+        }
         let deck = self.deck(access, card.deck_id).await?;
         let cfg = self.sched_config(access, &deck).await?;
         let params = access.user.params();
@@ -1159,6 +1196,29 @@ impl App {
         })
     }
 
+    /// Answer a list card by naming the items that were missed (positions
+    /// from 0); every other asked item was remembered.
+    pub async fn answer_list(
+        &self,
+        access: &Access,
+        card_id: i64,
+        missed: Vec<usize>,
+        duration_ms: Option<i64>,
+        expected_reps: Option<i64>,
+    ) -> Result<AnswerResult> {
+        access.require_review()?;
+        let card = self.card(access, card_id).await?;
+        if !card.is_list {
+            return Err(AppError::bad("this card is not learned item by item; answer it with a rating"));
+        }
+        if let Some(reps) = expected_reps {
+            if reps != card.reps {
+                return Err(AppError::Conflict("this card was already answered".into()));
+            }
+        }
+        self.answer_items(access, &card, Missed::These(missed), duration_ms).await
+    }
+
     /// Undo the most recent answer made through the same channel (web or
     /// this agent). Returns the restored card.
     pub async fn undo_last(&self, access: &Access) -> Result<Option<Card>> {
@@ -1168,9 +1228,10 @@ impl App {
             id: i64,
             card_id: i64,
             prev_card: Option<String>,
+            prev_items: Option<String>,
         }
         let last: Option<Last> = sqlx::query_as(
-            "SELECT id, card_id, prev_card FROM review_log
+            "SELECT id, card_id, prev_card, prev_items FROM review_log
              WHERE user_id = ? AND source = ? AND rating > 0 AND reviewed_at > ?
              ORDER BY id DESC LIMIT 1",
         )
@@ -1214,6 +1275,9 @@ impl App {
         .bind(access.user_id())
         .execute(&mut *tx)
         .await?;
+        if let Some(items) = &last.prev_items {
+            self.restore_items(&mut tx, card.id, items).await?;
+        }
         sqlx::query("DELETE FROM review_log WHERE id = ? AND user_id = ?")
             .bind(last.id)
             .bind(access.user_id())
@@ -1255,9 +1319,12 @@ impl App {
             scheduled_secs: i64,
             stability: Option<f64>,
             source: String,
+            items_asked: Option<i64>,
+            items_recalled: Option<i64>,
         }
         let rows: Vec<Row> = sqlx::query_as(
-            "SELECT rating, reviewed_at, state_before, scheduled_secs, stability, source
+            "SELECT rating, reviewed_at, state_before, scheduled_secs, stability, source,
+                items_asked, items_recalled
              FROM review_log WHERE card_id = ? ORDER BY reviewed_at, id",
         )
         .bind(card_id)
@@ -1276,6 +1343,8 @@ impl App {
                         .then(|| crate::format::interval(r.scheduled_secs)),
                     "stability_days": r.stability.map(|s| (s * 100.0).round() / 100.0),
                     "source": r.source,
+                    "items_asked": r.items_asked,
+                    "items_recalled": r.items_recalled,
                 })
             })
             .collect())
@@ -1473,8 +1542,10 @@ impl App {
     /// Count of reviews the optimizer would learn from.
     pub async fn optimizable_reviews(&self, access: &Access) -> Result<i64> {
         Ok(sqlx::query_scalar(
-            "SELECT COUNT(*) FROM review_log WHERE user_id = ? AND rating > 0
-             AND (source != 'agent' OR ?)",
+            "SELECT (SELECT COUNT(*) FROM review_log WHERE user_id = ?1 AND rating > 0
+                    AND items_asked IS NULL AND (source != 'agent' OR ?2))
+                  + (SELECT COUNT(*) FROM item_review_log i JOIN review_log r ON r.id = i.review_log_id
+                    WHERE r.user_id = ?1 AND (r.source != 'agent' OR ?2))",
         )
         .bind(access.user_id())
         .bind(access.user.optimize_include_agent)
@@ -1493,10 +1564,19 @@ impl App {
             reviewed_at: i64,
             state_before: i64,
         }
+        // A list card's own rows only summarize its items, so the optimizer
+        // learns from the items instead: each item is a card of its own
+        // (keyed by its negative id), reset along with its card.
         let rows: Vec<Row> = sqlx::query_as(
             "SELECT card_id, rating, reviewed_at, state_before FROM review_log
-             WHERE user_id = ? AND (source != 'agent' OR ?)
-             ORDER BY card_id, reviewed_at, id",
+             WHERE user_id = ?1 AND (source != 'agent' OR ?2) AND items_asked IS NULL
+             UNION ALL
+             SELECT -i.item_id, i.rating, i.reviewed_at, i.state_before
+             FROM item_review_log i JOIN review_log r ON r.id = i.review_log_id
+             WHERE r.user_id = ?1 AND (r.source != 'agent' OR ?2)
+               AND i.reviewed_at > COALESCE((SELECT MAX(x.reviewed_at) FROM review_log x
+                   WHERE x.card_id = r.card_id AND x.rating = 0), -1)
+             ORDER BY 1, 3",
         )
         .bind(access.user_id())
         .bind(access.user.optimize_include_agent)
