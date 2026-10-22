@@ -874,9 +874,9 @@ mod http {
         let res = send(&app, Request::get("/study").header(header::COOKIE, &cookie).body(Body::empty()).unwrap()).await;
         let html = text(res).await;
         assert!(html.contains(r#"<form class="list-answer" method="post" action="/study/answer">"#));
-        assert!(html.contains(r#"<input type="checkbox" name="missed" value="2">"#));
-        assert!(html.contains("All 3 remembered"));
-        let res = submit(&app, &cookie, "/study/answer", &format!("card={}&reps=0&missed=0&missed=2", card.id)).await;
+        assert!(html.contains(r#"<input type="checkbox" name="recalled" value="2">"#));
+        assert!(html.contains("0 of 3 remembered"));
+        let res = submit(&app, &cookie, "/study/answer", &format!("card={}&reps=0&asked=0&asked=1&asked=2&recalled=1", card.id)).await;
         assert_eq!(location(&res), "/study");
         let history = app.card_history(&a, card.id).await.unwrap();
         assert_eq!(history[0]["items_recalled"], 1);

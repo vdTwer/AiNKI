@@ -1019,7 +1019,7 @@ fn item_md(text: &str) -> Markup {
 }
 
 /// A list card: the front (with the items you already know while
-/// relearning), then every item as a row to tap when you missed it, and
+/// relearning), then every item as a row to tap when you remembered it, and
 /// one Done. It is all one form, so it also works without JavaScript.
 fn list_study(card: &Card, items: &[lists::CardItem], q_deck: Option<i64>, shown: i64, revealed: bool, show_href: &str) -> Markup {
     let asked = lists::asked(card, items, now());
@@ -1046,16 +1046,17 @@ fn list_study(card: &Card, items: &[lists::CardItem], q_deck: Option<i64>, shown
                 section.face.back.list id="answer" hidden[!revealed] {
                     @if let Some(img) = &card.back_image { img src=(format!("/media/{img}")) alt=""; }
                     @if !intro.is_empty() { div.md { (PreEscaped(markdown::render(&intro))) } }
-                    p.list-how { "Tap the ones you missed." }
+                    p.list-how { "Tap the ones you remembered." }
                     ol.list-items {
                         @for (n, item) in items.iter().enumerate() {
                             @if asked[n] {
                                 li {
+                                    input type="hidden" name="asked" value=(n);
                                     label.row.item data-key=[(n < 9).then(|| (n + 1).to_string())] {
-                                        input type="checkbox" name="missed" value=(n);
+                                        input type="checkbox" name="recalled" value=(n);
                                         span.num { (n + 1) }
                                         span.text { (item_md(&item.text)) }
-                                        span.mark { "Missed" }
+                                        span.mark { "Remembered" }
                                     }
                                 }
                             } @else {
@@ -1072,7 +1073,7 @@ fn list_study(card: &Card, items: &[lists::CardItem], q_deck: Option<i64>, shown
             div.answers.cols-1 hidden[!revealed] {
                 button.btn.primary type="submit" data-key=" " {
                     span.label { "Done" " " span.key { "space" } }
-                    span.ivl data-remembered=(n_asked) { "All " (n_asked) " remembered" }
+                    span.ivl data-remembered=(n_asked) { "0 of " (n_asked) " remembered" }
                 }
             }
         }
@@ -1145,9 +1146,12 @@ struct AnswerForm {
     card: i64,
     /// Plain cards: the button pressed.
     rating: Option<i64>,
-    /// List cards: positions of the items marked missed.
+    /// List cards: positions of the items asked, and of those tapped as
+    /// remembered; the rest of the asked ones were missed.
     #[serde(default)]
-    missed: Vec<usize>,
+    asked: Vec<usize>,
+    #[serde(default)]
+    recalled: Vec<usize>,
     reps: i64,
     t: Option<i64>,
     deck: Option<i64>,
@@ -1161,7 +1165,10 @@ async fn study_answer(State(app): State<AppState>, user: WebUser, Form(f): Form<
             let rating = Rating::from_i64(r).ok_or_else(|| AppError::bad("invalid rating"))?;
             app.answer_card(&user.access(), f.card, rating, duration, Some(f.reps)).await
         }
-        None => app.answer_list(&user.access(), f.card, f.missed, duration, Some(f.reps)).await,
+        None => {
+            let missed = f.asked.into_iter().filter(|n| !f.recalled.contains(n)).collect();
+            app.answer_list(&user.access(), f.card, missed, duration, Some(f.reps)).await
+        }
     };
     match answered {
         Ok(_) | Err(AppError::Conflict(_)) => Ok(redirect(study_url(f.deck))),
@@ -1693,7 +1700,7 @@ fn card_form(action: &str, decks: &[crate::service::Deck], c: &CardDraft, submit
                 @let has_list = lists::parse(c.back).is_some();
                 label.check.list-toggle hidden[!has_list && !c.is_list] {
                     input type="checkbox" name="list" value="1" checked[c.is_list];
-                    span { "Learn item by item" span.hint-inline { "You mark what you missed; each item gets its own schedule." } }
+                    span { "Learn item by item" span.hint-inline { "You mark what you remembered; each item gets its own schedule." } }
                 }
             }
             div.form-foot {

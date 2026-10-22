@@ -1093,7 +1093,7 @@ html.calm main:has(.brand-big) { padding-top: 22vh; }
 
 /* ----- list cards ------------------------------------------------------------
    The front can carry the items you already know; the back is a column of
-   rows you tap when you missed one. Rows hover like buttons. */
+   rows you tap when you remembered one. Rows hover like buttons. */
 html.calm .list-known { margin: 1.4rem 0 0; font-family: var(--serif); font-optical-sizing: auto; color: var(--muted); }
 html.calm .list-known .known-label { margin: 0 0 .4rem; font-family: var(--sans); font-size: .8rem; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--faint); }
 html.calm .list-known ul { display: flex; flex-wrap: wrap; justify-content: center; gap: .15rem 1.1rem; margin: 0; padding: 0; list-style: none; font-size: 1.13rem; line-height: 1.4; }
@@ -1135,10 +1135,11 @@ html.calm ol.list-items input { position: absolute; width: 1px; height: 1px; opa
 html.calm ol.list-items label.item:has(input:focus-visible) { outline: 2px solid var(--terra); outline-offset: 2px; }
 html.calm ol.list-items .num { min-width: 1.1rem; font-family: var(--sans); font-size: .87rem; color: var(--faint); text-align: right; }
 html.calm ol.list-items .text { font-family: var(--serif); font-optical-sizing: auto; }
-html.calm ol.list-items .mark { font-family: var(--sans); font-size: .75rem; font-weight: 600; color: var(--orchid-deep); }
-html.calm ol.list-items label.item:has(input:checked) { background: color-mix(in srgb, var(--orchid) 9%, transparent); border-color: var(--orchid-edge); }
-html.calm ol.list-items label.item:has(input:checked) .text { text-decoration: none; color: var(--orchid-deep); }
-html.calm ol.list-items label.item:has(input:checked) .num { color: var(--orchid-deep); }
+html.calm ol.list-items .mark { font-family: var(--sans); font-size: .75rem; font-weight: 600; color: var(--terra-deep); }
+html.calm ol.list-items label.item:has(input:checked) { background: color-mix(in srgb, var(--terra) 9%, transparent); border-color: var(--terra-edge); }
+html.calm ol.list-items label.item:has(input:checked) .text { color: var(--terra-deep); }
+html.calm ol.list-items label.item:has(input:checked) .mark { display: inline; }
+html.calm ol.list-items label.item:has(input:checked) .num { color: var(--terra-deep); }
 html.calm ol.list-items li.known { color: var(--faint); }
 html.calm ol.list-items li.known .text { font-family: var(--serif); }
 html.calm .study .answers.cols-1 { grid-template-columns: minmax(0, 22rem); justify-content: center; margin-top: 2rem; }
