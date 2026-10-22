@@ -5,7 +5,7 @@ An AI-native flashcard service. Like Anki, but:
 - **AI-native.** Agents get a full MCP API. Anything you can do on the website, an agent can do too, within the permissions you give it. Connecting Claude takes a URL and one click.
 - **FSRS by default.** Scheduling uses FSRS-6 with researched defaults and presets for common situations. One button fits the parameters to your own memory.
 - **Simple cards.** A front and a back. Each is Markdown text plus an optional image. No note types, no templates.
-- **Lists, item by item.** When the back is a numbered list, a card can be learned item by item: after the reveal you tap what you missed, every item gets its own schedule, and the next round asks only for the ones you missed. Agents grade these per item too.
+- **Lists, item by item.** When the back is a numbered list, a card can be learned item by item: after the reveal you tap what you remembered, every item gets its own schedule, and the next round asks only for the ones you missed. Agents grade these per item too.
 - **Web first, mobile first.** One website that works well on a phone and on e-ink readers: grayscale, high contrast, no animations, large tap targets, no JavaScript required. Images are dithered to 16 gray levels on upload. With JavaScript, studying never reloads the page.
 - **A warmer look on desktop.** On computers, AiNKI switches to a calm look: a quiet warm page, a serif for your cards, a side rail of dots that grow into small icons as the cursor comes near, instead of a header, Terra Cotta and Wild Orchid accents, and buttons that tilt a little toward the cursor. Phones, e-readers and browsers without JavaScript always get the simple look, and anyone can choose it in settings.
 

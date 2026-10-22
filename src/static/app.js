@@ -436,9 +436,9 @@
     var box = e.target;
     if (!box.matches || !box.matches('.list-items input[type=checkbox]')) return;
     var boxes = box.form.querySelectorAll('.list-items input[type=checkbox]');
-    var missed = box.form.querySelectorAll('.list-items input[type=checkbox]:checked').length;
+    var got = box.form.querySelectorAll('.list-items input[type=checkbox]:checked').length;
     var count = box.form.querySelector('[data-remembered]');
-    if (count) count.textContent = missed ? (boxes.length - missed) + ' of ' + boxes.length + ' remembered' : 'All ' + boxes.length + ' remembered';
+    if (count) count.textContent = got === boxes.length ? 'All ' + got + ' remembered' : got + ' of ' + boxes.length + ' remembered';
   });
 
   document.addEventListener('submit', function (e) {
@@ -450,7 +450,7 @@
   });
 
   // Keyboard: space shows the answer (then means Good, or Done on a list
-  // card), 1-4 answer; on a list card 1-9 mark items as missed.
+  // card), 1-4 answer; on a list card 1-9 mark items as remembered.
   document.addEventListener('keydown', function (e) {
     if (e.ctrlKey || e.metaKey || e.altKey) return;
     var tag = e.target.tagName;
