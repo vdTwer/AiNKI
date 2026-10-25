@@ -208,7 +208,7 @@ table.forecast .bar { display: block; height: 1.1rem; background: var(--fg); min
 table.forecast .num { text-align: right; padding-left: .5rem; font-variant-numeric: tabular-nums; }
 
 /* Calm-only pieces (side rail extras, key hints, the closing dot). */
-.rail-only, .key, .end-dot { display: none; }
+.rail-only, .key, .end-mark, .done-check { display: none; }
 
 /* Decks home */
 .today .date { margin: 1rem 0 0; color: var(--muted); }

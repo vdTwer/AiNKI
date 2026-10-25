@@ -490,6 +490,16 @@ fn icon_link(href: &str, paths: &'static str, label: &str) -> Markup {
     html! { a.icon-link href=(href) { (icon(paths, PAGE_ICON)) span { (label) } } }
 }
 
+/// The "done" tick: Terra, drawn by hand rather than set like an icon.
+/// pathLength lets calm.css draw it in from 1 to 0 at any size.
+fn done_check(size: u32, class: &'static str) -> Markup {
+    html! {
+        svg class=(class) viewBox="0 0 24 24" width=(size) height=(size) fill="none" stroke="currentColor" stroke-width=(format!("{:.2}", 48.0 / size as f64)) stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" {
+            path d="M4.5 12.8 9.6 17.6 19.5 6.8" pathLength="1" {}
+        }
+    }
+}
+
 /// The same where the simple look shows a button.
 fn icon_btn(href: &str, paths: &'static str, label: &str) -> Markup {
     html! { a.btn.icon-link href=(href) { (icon(paths, PAGE_ICON)) span { (label) } } }
@@ -808,7 +818,7 @@ async fn home(State(app): State<AppState>, user: WebUser, Flash(msg): Flash) -> 
                                     }
                                 }
                                 @if d.due_total() == 0 && d.total > 0 {
-                                    span.num.due.done title="Done for today" { span.done-dot aria-hidden="true" {} span.unit { "done for today" } }
+                                    span.num.due.done title="Done for today" { (done_check(13, "done-check")) span.unit { "done for today" } }
                                 } @else {
                                     span.num.due title="Due" { @if due > 0 { (due) span.unit { " due" } } @else { (format::NONE) } }
                                 }
@@ -1108,7 +1118,7 @@ async fn study(State(app): State<AppState>, user: WebUser, Flash(msg): Flash, Qu
                 (flash(&msg))
                 section.session-end {
                     @if any_cards {
-                        div.end-dot aria-hidden="true" { div {} }
+                        div.end-mark aria-hidden="true" { div.line {} (done_check(26, "check")) }
                         h1 { "All done." }
                         @if stats.cards_today > 0 {
                             p.summary {

@@ -935,15 +935,12 @@ html.calm ul.decks a.row { display: grid; grid-template-columns: minmax(0, 1fr) 
 html.calm ul.decks a.row .grow { display: flex; flex-direction: column; justify-content: center; }
 html.calm ul.decks .deck-name { font-family: var(--serif); font-optical-sizing: auto; font-size: 1.13rem; line-height: 1.3; }
 html.calm ul.decks .num.done { color: var(--terra); font-weight: 400; }
-/* Done for today: the Terra dot that marks "finished" elsewhere, a little
-   off-round and off-centre, wiggling just barely, like it was set by hand. */
+/* Done for today: the Terra tick, a little off-straight, wiggling just
+   barely, like it was set by hand. */
 html.calm ul.decks .num.done { display: flex; align-items: center; justify-content: flex-end; }
-html.calm ul.decks .done-dot {
-  width: 6px;
-  height: 6px;
-  margin-right: 1px;
-  border-radius: 52% 46% 50% 48%;
-  background: var(--terra);
+html.calm ul.decks .done-check {
+  display: block;
+  color: var(--terra);
   transform: translate(.5px, -.5px) rotate(-6deg);
   animation: calm-wiggle 5.2s ease-in-out infinite;
 }
@@ -1052,14 +1049,16 @@ html.calm .study-foot .study-tools { justify-content: flex-start; gap: 1.2rem; m
 html.calm .study-foot .study-tools a, html.calm .study-foot .study-tools button.link { color: var(--muted); }
 html.calm .study-foot .study-tools a:hover, html.calm .study-foot .study-tools button.link:hover { color: var(--terra-hover); }
 
-/* The end of a session: the progress line closes into a dot, then a single
-   calm line. It plays only when a session has just ended (app.js adds
-   .finishing); opening the page later shows the dot at rest. */
-@keyframes calm-close-to-dot {
-  0% { width: 560px; height: 2px; border-radius: 2px; }
-  55% { width: 6px; height: 2px; border-radius: 2px; }
-  100% { width: 7px; height: 7px; border-radius: 50%; }
+/* The end of a session: the progress line closes up and a tick draws out
+   of it, then a single calm line. It plays only when a session has just
+   ended (app.js adds .finishing); opening the page later shows the tick at
+   rest. */
+@keyframes calm-close-line {
+  0% { width: 560px; margin-left: -280px; opacity: 1; }
+  65% { width: 8px; margin-left: -4px; opacity: 1; }
+  100% { width: 4px; margin-left: -2px; opacity: 0; }
 }
+@keyframes calm-draw { from { stroke-dashoffset: 1; } to { stroke-dashoffset: 0; } }
 html.calm .session-end {
   min-height: 100vh;
   display: flex;
@@ -1068,8 +1067,20 @@ html.calm .session-end {
   justify-content: center;
   text-align: center;
 }
-html.calm .end-dot { display: flex; align-items: center; justify-content: center; height: 7px; }
-html.calm .end-dot div { width: 7px; height: 7px; border-radius: 50%; background: var(--terra); }
+html.calm .end-mark { position: relative; display: block; width: 26px; height: 26px; color: var(--terra); }
+html.calm .end-mark .check { display: block; }
+html.calm .end-mark .check path { stroke-dasharray: 1; stroke-dashoffset: 0; }
+html.calm .end-mark .line {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 4px;
+  height: 2px;
+  margin: -1px 0 0 -2px;
+  border-radius: 2px;
+  background: var(--terra);
+  opacity: 0;
+}
 html.calm .session-end h1 { margin: 1.8rem 0 0; font-size: 1.73rem; line-height: 1.3; }
 html.calm .session-end .summary { margin: .4rem 0 0; color: var(--muted); }
 html.calm .session-end .end-links { justify-content: center; gap: 1.4rem; margin-top: 1.4rem; font-size: .93rem; }
@@ -1077,13 +1088,14 @@ html.calm .session-end .end-links a, html.calm .session-end .end-links button.li
 html.calm .session-end .end-links a:hover, html.calm .session-end .end-links button.link:hover { color: var(--terra-hover); }
 html.calm .session-end .btn { margin-top: 1rem; }
 
-html.calm .finishing .end-dot div { animation: calm-close-to-dot 620ms cubic-bezier(.6, 0, .2, 1) both; }
+html.calm .finishing .end-mark .line { animation: calm-close-line 560ms cubic-bezier(.6, 0, .2, 1) both; }
+html.calm .finishing .end-mark .check path { animation: calm-draw 340ms var(--ease) 400ms both; }
 html.calm .study.closing > :not(.study-foot), html.calm .study.closing .study-meta, html.calm .study.closing .study-tools {
   filter: opacity(0); /* not opacity: their entry animations hold that */
   transition: filter 260ms var(--ease);
 }
-/* Straight from studying, app.js lifts the progress line itself into the dot. */
-html.calm .finishing.from-line .end-dot div { animation: none; }
+/* Straight from studying, app.js lifts the progress line itself into place. */
+html.calm .finishing.from-line .end-mark .line { animation: none; }
 html.calm .finishing h1 { animation: calm-appear 320ms var(--ease) 520ms both; }
 html.calm .finishing .summary, html.calm .finishing .end-links { animation: calm-appear 320ms var(--ease) 600ms both; }
 
