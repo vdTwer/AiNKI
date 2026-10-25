@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1
-FROM rust:1.97-slim-trixie AS build
+FROM rust:1.98-slim-trixie AS build
 WORKDIR /src
 
 # Build dependencies first so code changes don't rebuild them.
