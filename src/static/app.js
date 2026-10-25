@@ -341,9 +341,9 @@
     var oldBar = document.querySelector('.study-foot .bar');
     var from = oldBar ? oldBar.getAttribute('data-progress') : null;
     var wasStudying = !!document.querySelector('main .study');
-    var ending = wasStudying && !!next.querySelector('.session-end .end-dot');
+    var ending = wasStudying && !!next.querySelector('.session-end .end-mark');
     if (ending && oldBar && calm && motion) {
-      // The line fills up, then rises and closes into the dot.
+      // The line fills up, then rises and closes up; the tick draws out of it.
       oldBar.closest('.study').classList.add('closing');
       oldBar.style.width = '100%';
       return new Promise(function (done) { setTimeout(done, 380); }).then(function () {
@@ -351,16 +351,16 @@
         place(doc, next, url);
         var end = next.querySelector('.session-end');
         end.classList.add('finishing', 'from-line');
-        var dot = end.querySelector('.end-dot div');
-        var d = dot.getBoundingClientRect();
+        var bit = end.querySelector('.end-mark .line');
+        var d = bit.getBoundingClientRect();
         var dx = line.left + line.width / 2 - (d.left + d.width / 2);
         var dy = line.top + line.height / 2 - (d.top + d.height / 2);
-        if (!dot.animate) return;
-        dot.animate([
-          { width: line.width + 'px', height: '2px', borderRadius: '2px', transform: 'translate(' + dx + 'px,' + dy + 'px)' },
-          { width: '6px', height: '2px', borderRadius: '2px', transform: 'translate(0,0)', offset: 0.6 },
-          { width: '7px', height: '7px', borderRadius: '50%', transform: 'translate(0,0)' }
-        ], { duration: 680, easing: 'cubic-bezier(.6, 0, .2, 1)' });
+        if (!bit.animate) return;
+        bit.animate([
+          { width: line.width + 'px', marginLeft: -line.width / 2 + 'px', opacity: 1, transform: 'translate(' + dx + 'px,' + dy + 'px)' },
+          { width: '8px', marginLeft: '-4px', opacity: 1, transform: 'translate(0,0)', offset: 0.65 },
+          { width: '4px', marginLeft: '-2px', opacity: 0, transform: 'translate(0,0)' }
+        ], { duration: 620, easing: 'cubic-bezier(.6, 0, .2, 1)' });
       });
     }
     place(doc, next, url);

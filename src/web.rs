@@ -453,15 +453,18 @@ const ICON_UNDO: &str = r#"<path d="M9 7L5 11l4 4"/><path d="M5 11h9a5 5 0 0 1 0
 const ICON_IMAGE: &str = r#"<rect x="3.5" y="5" width="17" height="14" rx="2.5"/><circle cx="9" cy="10" r="1.6"/><path d="M4.5 17l4.5-4.2 3.2 3 2.6-2.2 4.7 4"/>"#;
 const ICON_FILE: &str = r#"<path d="M7 3.5h6.5L18 8v11a1.5 1.5 0 0 1-1.5 1.5h-9A1.5 1.5 0 0 1 6 19V5a1.5 1.5 0 0 1 1-1.5z"/><path d="M13 3.5V8h5"/>"#;
 
-const RAIL_ICON: u32 = 26;
+const RAIL_ICON: u32 = 30;
 const PAGE_ICON: u32 = 20;
+const DROP_ICON: u32 = 34;
 
 /// An icon as a small solid object: the drawing repeated a little further
 /// back each time gives it depth, plus a soft shadow behind. calm.css
 /// spaces the layers out and tilts it with its link; elsewhere it is
-/// hidden and only the words show. Lines stay 2px at every size.
+/// hidden and only the words show. Large icons draw with 2px lines; small
+/// ones next to words with finer 1.5px lines, so they don't look heavy.
 fn icon(paths: &'static str, size: u32) -> Markup {
-    let stroke = format!("{:.2}", 48.0 / size as f64);
+    let line = if size < 24 { 1.5 } else { 2.0 };
+    let stroke = format!("{:.2}", line * 24.0 / size as f64);
     let layer = |class: &'static str, depth: u8| {
         html! {
             svg class=(class) style=(format!("--z:{depth}")) viewBox="0 0 24 24" width=(size) height=(size) fill="none" stroke="currentColor" stroke-width=(stroke) stroke-linecap="round" stroke-linejoin="round" {
@@ -485,6 +488,16 @@ fn nav_icon(paths: &'static str) -> Markup {
 /// A quiet link with a 3D icon in front of its words.
 fn icon_link(href: &str, paths: &'static str, label: &str) -> Markup {
     html! { a.icon-link href=(href) { (icon(paths, PAGE_ICON)) span { (label) } } }
+}
+
+/// The "done" tick: Terra, drawn by hand rather than set like an icon.
+/// pathLength lets calm.css draw it in from 1 to 0 at any size.
+fn done_check(size: u32, class: &'static str) -> Markup {
+    html! {
+        svg class=(class) viewBox="0 0 24 24" width=(size) height=(size) fill="none" stroke="currentColor" stroke-width=(format!("{:.2}", 48.0 / size as f64)) stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" {
+            path d="M4.5 12.8 9.6 17.6 19.5 6.8" pathLength="1" {}
+        }
+    }
 }
 
 /// The same where the simple look shows a button.
@@ -805,7 +818,7 @@ async fn home(State(app): State<AppState>, user: WebUser, Flash(msg): Flash) -> 
                                     }
                                 }
                                 @if d.due_total() == 0 && d.total > 0 {
-                                    span.num.due.done title="Done for today" { span.done-dot aria-hidden="true" {} span.unit { "done for today" } }
+                                    span.num.due.done title="Done for today" { (done_check(13, "done-check")) span.unit { "done for today" } }
                                 } @else {
                                     span.num.due title="Due" { @if due > 0 { (due) span.unit { " due" } } @else { (format::NONE) } }
                                 }
@@ -1105,7 +1118,7 @@ async fn study(State(app): State<AppState>, user: WebUser, Flash(msg): Flash, Qu
                 (flash(&msg))
                 section.session-end {
                     @if any_cards {
-                        div.end-dot aria-hidden="true" { div {} }
+                        div.end-mark aria-hidden="true" { div.line {} (done_check(26, "check")) }
                         h1 { "All done." }
                         @if stats.cards_today > 0 {
                             p.summary {
@@ -2615,7 +2628,7 @@ async fn import_page(State(app): State<AppState>, user: WebUser, Flash(msg): Fla
             form method="post" action="/import" enctype="multipart/form-data" {
                 input type="hidden" name="kind" value="apkg";
                 label.file.drop.icon-link {
-                    (icon(ICON_IMPORT, 28))
+                    (icon(ICON_IMPORT, DROP_ICON))
                     span.drop-text { "Choose an Anki file" }
                     span.muted.small { ".apkg or .colpkg, or drop it here" }
                     input type="file" name="file" accept=".apkg,.colpkg" required;
