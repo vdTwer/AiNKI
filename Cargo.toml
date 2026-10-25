@@ -20,7 +20,7 @@ image = { version = "0.25", default-features = false, features = ["png", "jpeg",
 maud = { version = "0.27", features = ["axum"] }
 pulldown-cmark = { version = "0.13", default-features = false, features = ["html"] }
 ammonia = "4"
-rand = "0.8"
+rand = "0.10"
 rmcp = { version = "3.6", features = ["server", "macros", "transport-streamable-http-server"] }
 schemars = "1"
 serde = { version = "1", features = ["derive"] }
