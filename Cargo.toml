@@ -7,7 +7,7 @@ description = "AI-native, web-first, e-ink-friendly spaced repetition flashcards
 
 [dependencies]
 anyhow = "1"
-argon2 = "0.5"
+argon2 = "0.6"
 axum = { version = "0.8", features = ["multipart", "macros"] }
 axum-extra = { version = "0.10", features = ["cookie", "form"] }
 base64 = "0.22"
