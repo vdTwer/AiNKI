@@ -143,6 +143,12 @@ html.calm h2 {
   padding-bottom: .5rem;
   border-bottom: 1px solid var(--line);
 }
+/* A card block right under a heading has its own edge; a hairline above it
+   would be one line too many. */
+html.calm h2:has(+ :is(.sheet, form.search, label.drop), + form > :is(.sheet, label.drop):first-child) {
+  padding-bottom: .15rem;
+  border-bottom: 0;
+}
 html.calm a { text-decoration: none; color: inherit; }
 html.calm p a, html.calm .small a, html.calm label a { color: var(--terra-deep); }
 html.calm a:hover { color: var(--terra-hover); }
