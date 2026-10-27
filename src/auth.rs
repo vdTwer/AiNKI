@@ -346,7 +346,10 @@ impl App {
 
     pub async fn set_password(&self, user_id: i64, password: &str) -> Result<()> {
         validate_password(password)?;
-        let hash = hash_password(password)?;
+        let pw = password.to_string();
+        let hash = tokio::task::spawn_blocking(move || hash_password(&pw))
+            .await
+            .map_err(|e| AppError::Internal(e.into()))??;
         sqlx::query("UPDATE users SET password_hash = ? WHERE id = ?")
             .bind(hash)
             .bind(user_id)
@@ -356,7 +359,11 @@ impl App {
     }
 
     pub async fn change_password(&self, user: &User, current: &str, new: &str) -> Result<()> {
-        if current.len() > MAX_PASSWORD_BYTES || !verify_password(current, &user.password_hash) {
+        // Argon2 takes tens of milliseconds: off the request threads, as at login.
+        let (pw, hash) = (current.to_string(), user.password_hash.clone());
+        let ok = current.len() <= MAX_PASSWORD_BYTES
+            && tokio::task::spawn_blocking(move || verify_password(&pw, &hash)).await.unwrap_or(false);
+        if !ok {
             return Err(AppError::bad("current password is wrong"));
         }
         self.set_password(user.id, new).await?;
