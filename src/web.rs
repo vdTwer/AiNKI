@@ -847,9 +847,9 @@ async fn home(State(app): State<AppState>, user: WebUser, Flash(msg): Flash) -> 
                                 @if d.due_total() == 0 && d.total > d.suspended {
                                     span.num.due.done title="Done for today" { (done_check(13, "done-check")) span.unit { "done for today" } }
                                 } @else {
-                                    span.num.due title="Due" { @if due > 0 { (due) span.unit { " due" } } @else { (format::NONE) } }
+                                    span.num.due title="Due" { @if due > 0 { (format::number(due)) span.unit { " due" } } @else { (format::NONE) } }
                                 }
-                                span.num.new title="New" { @if d.new_today > 0 { span.dot aria-hidden="true" {} (d.new_today) span.unit { " new" } } @else { (format::NONE) } }
+                                span.num.new title="New" { @if d.new_today > 0 { span.dot aria-hidden="true" {} (format::number(d.new_today)) span.unit { " new" } } @else { (format::NONE) } }
                                 span.chev aria-hidden="true" { "›" }
                             }
                         }
@@ -1467,9 +1467,9 @@ async fn deck_page(
             h1 { (deck_title(&d.name)) }
             @if !d.description.is_empty() { p { (d.description) } }
             dl.stats-inline {
-                div { dt { "New today" } dd { (summary.new_today) } }
-                div { dt { "Due" } dd { (summary.learning_due + summary.review_due) } }
-                div { dt { "Cards" } dd { (summary.total) } }
+                div { dt { "New today" } dd { (format::number(summary.new_today)) } }
+                div { dt { "Due" } dd { (format::number(summary.learning_due + summary.review_due)) } }
+                div { dt { "Cards" } dd { (format::number(summary.total)) } }
             }
             @if let Some(exam) = &d.exam_date { p.muted { "Exam " (exam_words(&user.0, exam)) } }
             @if summary.due_total() > 0 {
@@ -2500,7 +2500,7 @@ async fn settings_page(State(app): State<AppState>, user: WebUser, Flash(msg): F
                         }
                     }
                 }
-                div.line { "Reviews so far" span.value { (reviews) } }
+                div.line { "Reviews so far" span.value { (format::number(reviews)) } }
                 @if reviews < 1000 {
                     p.hint.muted.small { "Optimizing works best after about 1,000 reviews. Re-run it every month or so." }
                 }
@@ -2903,23 +2903,23 @@ async fn stats_page(State(app): State<AppState>, user: WebUser, Query(q): Query<
             h1 { "Stats" }
             h2 { "Today" }
             dl.stats-inline {
-                div { dt { (format::plural(s.cards_today, "Card")) " studied" } dd { (s.cards_today) } }
+                div { dt { (format::plural(s.cards_today, "Card")) " studied" } dd { (format::number(s.cards_today)) } }
                 div { dt { (format::plural(s.minutes_today.round() as i64, "Minute")) } dd { (s.minutes_today.round() as i64) } }
                 div { dt { (format::plural(s.streak_days, "Day")) " in a row" } dd { (s.streak_days) } }
             }
             h2 { "Memory" }
             dl.kv {
-                dt { "Reviews, last 30 days" } dd { (s.reviews_30d) }
+                dt { "Reviews, last 30 days" } dd { (format::number(s.reviews_30d)) }
                 dt { "Recalled when due, last 30 days" } dd { (format::percent(s.true_retention_30d)) " (" (count(s.retention_sample_30d, "review")) ")" }
                 dt { "Average recall chance now" } dd { (format::percent(s.average_retrievability)) }
             }
             h2 { "Cards" }
             dl.kv {
-                dt { "New" } dd { (s.new) }
-                dt { "Learning" } dd { (s.learning) }
-                dt { "Review" } dd { (s.review) }
-                dt { "Suspended" } dd { (s.suspended) }
-                dt { "Total" } dd { (s.total) }
+                dt { "New" } dd { (format::number(s.new)) }
+                dt { "Learning" } dd { (format::number(s.learning)) }
+                dt { "Review" } dd { (format::number(s.review)) }
+                dt { "Suspended" } dd { (format::number(s.suspended)) }
+                dt { "Total" } dd { (format::number(s.total)) }
             }
             h2 { "Due in the next two weeks" }
             table.forecast {
@@ -2930,7 +2930,7 @@ async fn stats_page(State(app): State<AppState>, user: WebUser, Query(q): Query<
                             td.bar-cell {
                                 @if *n > 0 { span.bar style=(format!("width:{}%", n * 100 / max)) {} }
                             }
-                            td.num { (n) }
+                            td.num { (format::number(*n)) }
                         }
                     }
                 }

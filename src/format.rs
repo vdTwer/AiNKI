@@ -8,7 +8,20 @@ use crate::scheduler::Clock;
 /// "1 card", "3 cards". English plurals by adding "s"; every word we
 /// count with takes that.
 pub fn count(n: i64, word: &str) -> String {
-    format!("{n} {}", plural(n, word))
+    format!("{} {}", number(n), plural(n, word))
+}
+
+/// A whole number with thousands separators: "20,000".
+pub fn number(n: i64) -> String {
+    let digits = n.unsigned_abs().to_string();
+    let mut out = String::new();
+    for (i, c) in digits.chars().enumerate() {
+        if i > 0 && (digits.len() - i) % 3 == 0 {
+            out.push(',');
+        }
+        out.push(c);
+    }
+    if n < 0 { format!("-{out}") } else { out }
 }
 
 /// The word alone, singular or plural for `n`.
@@ -116,6 +129,10 @@ mod tests {
     fn plurals_and_intervals() {
         assert_eq!(count(1, "card"), "1 card");
         assert_eq!(count(0, "card"), "0 cards");
+        assert_eq!(count(20_000, "card"), "20,000 cards");
+        assert_eq!(number(999), "999");
+        assert_eq!(number(1_000), "1,000");
+        assert_eq!(number(-1_234_567), "-1,234,567");
         assert_eq!(interval(30), "<1m");
         assert_eq!(interval(600), "10m");
         assert_eq!(interval(3 * 86_400), "3d");
