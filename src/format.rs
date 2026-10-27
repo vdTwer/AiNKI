@@ -90,12 +90,17 @@ pub fn short_day(clock: &Clock, date: chrono::NaiveDate) -> String {
 
 /// When something happens or happened, in words: "today at 14:30",
 /// "tomorrow at 9:00", "yesterday at 8:15", "on Friday, 24 October".
+/// With a time named, "today" is the calendar day, not the study day: at
+/// 23:00, 0:30 is "tomorrow" even if the new study day starts at 4:00.
 pub fn when(clock: &Clock, ts: i64) -> String {
     let Some(local) = chrono::DateTime::from_timestamp(ts, 0).map(|t| t.with_timezone(&clock.tz)) else {
         return String::new();
     };
+    let Some(now) = chrono::DateTime::from_timestamp(clock.now, 0).map(|t| t.with_timezone(&clock.tz)) else {
+        return String::new();
+    };
     let time = local.format("%-H:%M");
-    match (clock.date_of(ts) - clock.today()).num_days() {
+    match (local.date_naive() - now.date_naive()).num_days() {
         0 => format!("today at {time}"),
         1 => format!("tomorrow at {time}"),
         -1 => format!("yesterday at {time}"),
@@ -117,5 +122,14 @@ mod tests {
         assert_eq!(days(3), "3d");
         assert_eq!(days(29), interval(29 * 86_400));
         assert_eq!(days(90), "3.0mo");
+    }
+
+    #[test]
+    fn when_uses_the_calendar_day() {
+        // 23:00 UTC with the study day starting at 4:00: 0:30 is tomorrow.
+        let now = 1_761_606_000; // 2025-10-27 23:00 UTC
+        let clock = Clock::new(now, chrono_tz::UTC, 4);
+        assert_eq!(when(&clock, now + 5_400), "tomorrow at 0:30");
+        assert_eq!(when(&clock, now + 1_800), "today at 23:30");
     }
 }
