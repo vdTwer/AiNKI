@@ -1395,42 +1395,64 @@ impl App {
             return Ok(stats);
         }
         let ph = placeholders(deck_ids.len());
+        // Everything is counted in the database: a long-time Anki user has
+        // tens of thousands of cards and hundreds of thousands of reviews,
+        // and loading them all made the home page take seconds.
+        let rows: Vec<(i64, i64, i64, i64)> = {
+            let sql = format!(
+                "SELECT state, suspended, COUNT(*), SUM(due <= ?) FROM cards
+                 WHERE user_id = ? AND deck_id IN ({ph}) GROUP BY state, suspended"
+            );
+            let mut q = sqlx::query_as::<_, (i64, i64, i64, i64)>(&sql).bind(clock.now).bind(access.user_id());
+            for id in &deck_ids {
+                q = q.bind(id);
+            }
+            q.fetch_all(&self.db).await?
+        };
+        for (state, suspended, n, due_now) in rows {
+            stats.total += n;
+            if suspended != 0 {
+                stats.suspended += n;
+                continue;
+            }
+            match CardState::from_i64(state) {
+                CardState::New => stats.new += n,
+                CardState::Learning | CardState::Relearning => stats.learning += n,
+                CardState::Review => stats.review += n,
+            }
+            if CardState::from_i64(state) != CardState::New {
+                stats.due_now += due_now;
+            }
+        }
 
-        let sql = format!("SELECT * FROM cards WHERE user_id = ? AND deck_id IN ({ph})");
-        let mut q = sqlx::query_as::<_, Card>(&sql).bind(access.user_id());
+        // Forecast and recall chance: only the few numbers they need.
+        let horizon = 14;
+        let today = clock.today();
+        let horizon_end = clock.day_start(today + Duration::days(horizon as i64));
+        let sql = format!(
+            "SELECT due, stability, last_review FROM cards
+             WHERE user_id = ? AND deck_id IN ({ph}) AND state != 0 AND suspended = 0"
+        );
+        let mut q = sqlx::query_as::<_, (i64, Option<f64>, Option<i64>)>(&sql).bind(access.user_id());
         for id in &deck_ids {
             q = q.bind(id);
         }
-        let cards = q.fetch_all(&self.db).await?;
-        let params = access.user.params();
-        let horizon = 14;
+        let learned = q.fetch_all(&self.db).await?;
+        let decay = scheduler::decay_for(&access.user.params());
         let mut forecast = vec![0i64; horizon];
-        let mut r_sum = 0.0;
-        let mut r_n = 0;
-        let today = clock.today();
-        for c in &cards {
-            stats.total += 1;
-            if c.suspended {
-                stats.suspended += 1;
-                continue;
-            }
-            match c.card_state() {
-                CardState::New => stats.new += 1,
-                CardState::Learning | CardState::Relearning => stats.learning += 1,
-                CardState::Review => stats.review += 1,
-            }
-            if c.card_state() != CardState::New {
-                if c.due <= clock.now {
-                    stats.due_now += 1;
-                }
-                let day = (clock.date_of(c.due) - today).num_days().max(0) as usize;
+        let (mut r_sum, mut r_n) = (0.0, 0);
+        for (due, stability, last_review) in learned {
+            if due < horizon_end {
+                let day = (clock.date_of(due) - today).num_days().max(0) as usize;
                 if day < horizon {
                     forecast[day] += 1;
                 }
-                if let Some(r) = scheduler::retrievability(&c.sched(), &params, &clock) {
-                    r_sum += r as f64;
-                    r_n += 1;
-                }
+            }
+            if let (Some(s), Some(last)) = (stability, last_review) {
+                let elapsed = ((clock.now - last).max(0) as f32) / 86_400.0;
+                let memory = fsrs::MemoryState { stability: s as f32, difficulty: 5.0 };
+                r_sum += fsrs::current_retrievability(memory, elapsed, decay) as f64;
+                r_n += 1;
             }
         }
         stats.forecast = forecast
@@ -1442,67 +1464,61 @@ impl App {
             stats.average_retrievability = Some(r_sum / r_n as f64);
         }
 
-        #[derive(sqlx::FromRow)]
-        struct Log {
-            card_id: i64,
-            rating: i64,
-            reviewed_at: i64,
-            state_before: i64,
-            duration_ms: Option<i64>,
-        }
-        let sql = format!(
-            "SELECT card_id, rating, reviewed_at, state_before, duration_ms FROM review_log
-             WHERE user_id = ? AND rating > 0 AND deck_id IN ({ph}) AND reviewed_at >= ?"
-        );
-        let mut q = sqlx::query_as::<_, Log>(&sql).bind(access.user_id());
-        for id in &deck_ids {
-            q = q.bind(id);
-        }
-        let logs = q
-            .bind(clock.day_start(today - Duration::days(365)))
-            .fetch_all(&self.db)
-            .await?;
-        let start_today = clock.start_of_today();
-        let start_30 = clock.day_start(today - Duration::days(30));
-        let mut passed = 0;
-        let (mut timed_ms, mut timed) = (0i64, 0i64);
-        let mut review_total = 0;
-        let mut days = std::collections::HashSet::new();
-        let mut cards_today = std::collections::HashSet::new();
-        for l in &logs {
-            days.insert(clock.date_of(l.reviewed_at));
-            if l.reviewed_at >= start_today {
-                stats.reviews_today += 1;
-                cards_today.insert(l.card_id);
-                stats.minutes_today += l.duration_ms.unwrap_or(0) as f64 / 60_000.0;
-            }
-            if l.reviewed_at >= start_30 {
-                stats.reviews_30d += 1;
-                if let Some(ms) = l.duration_ms.filter(|ms| *ms > 0) {
-                    timed_ms += ms;
-                    timed += 1;
+        // Reviews: today, the last 30 days, and the streak.
+        let since = |from: i64| {
+            let sql = format!(
+                "SELECT COUNT(*), COUNT(DISTINCT card_id), COALESCE(SUM(duration_ms), 0),
+                    COALESCE(SUM(state_before = 2), 0), COALESCE(SUM(state_before = 2 AND rating > 1), 0),
+                    COALESCE(SUM(CASE WHEN duration_ms > 0 THEN duration_ms END), 0),
+                    COALESCE(SUM(duration_ms > 0), 0)
+                 FROM review_log
+                 WHERE user_id = ? AND rating > 0 AND reviewed_at >= ? AND deck_id IN ({ph})"
+            );
+            let user_id = access.user_id();
+            let deck_ids = deck_ids.clone();
+            async move {
+                let mut q = sqlx::query_as::<_, (i64, i64, i64, i64, i64, i64, i64)>(&sql).bind(user_id).bind(from);
+                for id in &deck_ids {
+                    q = q.bind(id);
                 }
-                if l.state_before == CardState::Review as i64 {
-                    review_total += 1;
-                    if l.rating > 1 {
-                        passed += 1;
-                    }
-                }
+                q.fetch_one(&self.db).await
             }
-        }
+        };
+        let (n, cards, ms, ..) = since(clock.start_of_today()).await?;
+        stats.reviews_today = n;
+        stats.cards_today = cards;
+        stats.minutes_today = (ms as f64 / 60_000.0 * 10.0).round() / 10.0;
+        let (n, _, _, review_total, passed, timed_ms, timed) =
+            since(clock.day_start(today - Duration::days(30))).await?;
+        stats.reviews_30d = n;
+        stats.retention_sample_30d = review_total;
         if review_total > 0 {
             stats.true_retention_30d = Some(passed as f64 / review_total as f64);
         }
-        stats.retention_sample_30d = review_total;
-        stats.cards_today = cards_today.len() as i64;
-        let mut day = if days.contains(&today) { today } else { today - Duration::days(1) };
-        while days.contains(&day) {
-            stats.streak_days += 1;
-            day -= Duration::days(1);
-        }
-        stats.minutes_today = (stats.minutes_today * 10.0).round() / 10.0;
         if timed >= 10 {
             stats.seconds_per_review = Some(timed_ms as f64 / timed as f64 / 1000.0);
+        }
+
+        // Days in a row with a review, up to a year back; today counts once
+        // it has one, and doesn't break the streak before it has.
+        let sql = format!(
+            "SELECT EXISTS (SELECT 1 FROM review_log
+                WHERE user_id = ? AND rating > 0 AND reviewed_at >= ? AND reviewed_at < ? AND deck_id IN ({ph}))"
+        );
+        let studied = |day: NaiveDate| {
+            let mut q = sqlx::query_scalar::<_, bool>(&sql)
+                .bind(access.user_id())
+                .bind(clock.day_start(day))
+                .bind(clock.day_start(day + Duration::days(1)));
+            for id in &deck_ids {
+                q = q.bind(id);
+            }
+            q.fetch_one(&self.db)
+        };
+        let mut day = if studied(today).await? { today } else { today - Duration::days(1) };
+        while today - day <= Duration::days(365) && studied(day).await? {
+            stats.streak_days += 1;
+            day -= Duration::days(1);
         }
         Ok(stats)
     }

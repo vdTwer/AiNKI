@@ -4,7 +4,7 @@
 
 use std::path::PathBuf;
 
-use image::{GrayImage, ImageReader, Luma, imageops::FilterType};
+use image::{GrayImage, ImageDecoder, ImageReader, Luma, imageops::FilterType};
 use serde::Serialize;
 
 use crate::{
@@ -83,9 +83,13 @@ pub fn process_image(data: &[u8]) -> Result<(Vec<u8>, u32, u32)> {
     limits.max_image_height = Some(MAX_DECODE_DIMENSION);
     limits.max_alloc = Some(256 * 1024 * 1024);
     reader.limits(limits);
-    let img = reader
-        .decode()
-        .map_err(|e| AppError::bad(format!("unsupported or broken image: {e}")))?;
+    let broken = |e: image::ImageError| AppError::bad(format!("unsupported or broken image: {e}"));
+    let mut decoder = reader.into_decoder().map_err(broken)?;
+    // Phones store photos as the sensor saw them plus a note on how to turn
+    // them; without it a portrait photo lies on its side.
+    let orientation = decoder.orientation().unwrap_or(image::metadata::Orientation::NoTransforms);
+    let mut img = image::DynamicImage::from_decoder(decoder).map_err(broken)?;
+    img.apply_orientation(orientation);
     let img = if img.width() > MAX_DIMENSION || img.height() > MAX_DIMENSION {
         img.resize(MAX_DIMENSION, MAX_DIMENSION, FilterType::Lanczos3)
     } else {
@@ -165,6 +169,44 @@ impl App {
         self.media(access.user_id(), id).await
     }
 
+    /// Remove images no card shows any more (replaced, removed, or their
+    /// card or deck deleted) that are older than `before`. Newer ones are
+    /// kept: an agent uploads first and makes the card after.
+    pub async fn delete_unused_images(&self, before: i64) -> Result<usize> {
+        let used: std::collections::HashSet<String> = sqlx::query_as::<_, (Option<String>, Option<String>)>(
+            "SELECT front_image, back_image FROM cards WHERE front_image IS NOT NULL OR back_image IS NOT NULL",
+        )
+        .fetch_all(&self.db)
+        .await?
+        .into_iter()
+        .flat_map(|(f, b)| [f, b])
+        .flatten()
+        .collect();
+        let old: Vec<String> = sqlx::query_scalar("SELECT id FROM media WHERE created_at < ?")
+            .bind(before)
+            .fetch_all(&self.db)
+            .await?;
+        let mut n = 0;
+        for id in old.into_iter().filter(|id| !used.contains(id)) {
+            // Checked again in the delete, in case a card took it up just
+            // now; the row goes first, as a row without its file would show
+            // a broken image.
+            let gone = sqlx::query(
+                "DELETE FROM media WHERE id = ?1
+                 AND NOT EXISTS (SELECT 1 FROM cards WHERE front_image = ?1 OR back_image = ?1)",
+            )
+            .bind(&id)
+            .execute(&self.db)
+            .await?
+            .rows_affected();
+            if gone > 0 {
+                let _ = tokio::fs::remove_file(self.media_path(&id)).await;
+                n += 1;
+            }
+        }
+        Ok(n)
+    }
+
     pub async fn media(&self, user_id: i64, id: &str) -> Result<(Media, Vec<u8>)> {
         let m: Media = sqlx::query_as("SELECT * FROM media WHERE id = ? AND user_id = ?")
             .bind(id)
@@ -206,6 +248,23 @@ mod tests {
         img.write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png).unwrap();
         assert!(png.len() < 100_000);
         assert!(process_image(&png).is_err());
+    }
+
+    #[test]
+    fn turns_photos_upright() {
+        // A 4x2 JPEG whose EXIF says "rotate 90 degrees clockwise".
+        let mut img = image::RgbImage::new(4, 2);
+        img.put_pixel(0, 0, image::Rgb([255, 255, 255]));
+        let mut jpg = Vec::new();
+        let mut enc = image::codecs::jpeg::JpegEncoder::new(&mut jpg);
+        // EXIF: big-endian TIFF, one IFD entry: Orientation (0x0112) = 6.
+        let exif: Vec<u8> = vec![
+            b'M', b'M', 0, 42, 0, 0, 0, 8, 0, 1, 0x01, 0x12, 0, 3, 0, 0, 0, 1, 0, 6, 0, 0, 0, 0, 0, 0, 0, 0,
+        ];
+        image::ImageEncoder::set_exif_metadata(&mut enc, exif).unwrap();
+        image::ImageEncoder::write_image(enc, &img, 4, 2, image::ExtendedColorType::Rgb8).unwrap();
+        let (_, w, h) = process_image(&jpg).unwrap();
+        assert_eq!((w, h), (2, 4));
     }
 
     #[test]

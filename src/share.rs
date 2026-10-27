@@ -128,6 +128,36 @@ impl App {
             .into_iter()
             .find(|s| s.id == share_id)
             .ok_or(AppError::NotFound)?;
+        // Claim the offer first, so a second press (a double click, a slow
+        // phone) finds nothing instead of making a second copy.
+        let claimed = sqlx::query("DELETE FROM deck_shares WHERE id = ? AND to_user = ?")
+            .bind(share_id)
+            .bind(access.user_id())
+            .execute(&self.db)
+            .await?
+            .rows_affected();
+        if claimed == 0 {
+            return Err(AppError::NotFound);
+        }
+        let copied = self.copy_shared_deck(access, &share).await;
+        if copied.is_err() {
+            // Offer it again, so it can be tried once more.
+            let _ = sqlx::query(
+                "INSERT OR IGNORE INTO deck_shares (id, deck_id, from_user, to_user, created_at)
+                 SELECT ?, ?, id, ?, ? FROM users WHERE id = (SELECT user_id FROM decks WHERE id = ?)",
+            )
+            .bind(share_id)
+            .bind(share.deck_id)
+            .bind(access.user_id())
+            .bind(share.created_at)
+            .bind(share.deck_id)
+            .execute(&self.db)
+            .await;
+        }
+        copied
+    }
+
+    async fn copy_shared_deck(&self, access: &Access, share: &IncomingShare) -> Result<Deck> {
         #[derive(sqlx::FromRow)]
         struct Src {
             front: String,
@@ -169,11 +199,6 @@ impl App {
                 self.sync_items(&copy, c.multi).await?;
             }
         }
-        sqlx::query("DELETE FROM deck_shares WHERE id = ? AND to_user = ?")
-            .bind(share_id)
-            .bind(access.user_id())
-            .execute(&self.db)
-            .await?;
         Ok(deck)
     }
 

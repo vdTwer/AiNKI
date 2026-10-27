@@ -498,6 +498,8 @@
     var tag = e.target.tagName;
     if ((tag === 'INPUT' && e.target.type !== 'checkbox') || tag === 'TEXTAREA' || tag === 'SELECT') return;
     if (!document.querySelector('main .study')) return;
+    // Enter and space on a focused link or button do what it says.
+    if ((e.key === ' ' || e.key === 'Enter') && (tag === 'A' || tag === 'BUTTON') && !e.target.matches('.reveal a.show')) return;
     var k = e.key === ' ' || e.key === 'Enter' ? ' ' : e.key;
     if (!/^[ 1-9]$/.test(k)) return;
     e.preventDefault();

@@ -405,6 +405,40 @@ fn tiny_png() -> Vec<u8> {
 }
 
 #[tokio::test]
+async fn unused_images_are_removed_after_a_day() {
+    let app = app().await;
+    let a = user(&app, "kolja").await;
+    let deck = app.create_deck(&a, "Spanish", "", None).await.unwrap();
+    let kept = app.store_image(&a, tiny_png()).await.unwrap();
+    let dropped = app.store_image(&a, tiny_png()).await.unwrap();
+    let fresh = app.store_image(&a, tiny_png()).await.unwrap();
+    app.create_card(&a, deck.id, "gato", "cat", Some(kept.id.clone()), None, None).await.unwrap();
+    sqlx::query("UPDATE media SET created_at = created_at - 2 * 86400 WHERE id != ?")
+        .bind(&fresh.id)
+        .execute(&app.db)
+        .await
+        .unwrap();
+    assert_eq!(app.delete_unused_images(now() - 86_400).await.unwrap(), 1);
+    assert!(app.media(a.user_id(), &kept.id).await.is_ok());
+    assert!(app.media(a.user_id(), &fresh.id).await.is_ok());
+    assert!(app.media(a.user_id(), &dropped.id).await.is_err());
+    assert!(!app.media_path(&dropped.id).exists());
+}
+
+#[tokio::test]
+async fn accepting_a_share_twice_makes_one_copy() {
+    let app = app().await;
+    let kolja = user(&app, "kolja").await;
+    let anna = user(&app, "anna").await;
+    let deck = app.create_deck(&kolja, "Spanish", "", None).await.unwrap();
+    app.create_card(&kolja, deck.id, "hablar", "to speak", None, None, None).await.unwrap();
+    let share = app.share_deck(&kolja, deck.id, &anna.user.handle()).await.unwrap();
+    let (first, second) = tokio::join!(app.accept_share(&anna, share.id), app.accept_share(&anna, share.id));
+    assert!(first.is_ok() != second.is_ok());
+    assert_eq!(app.decks(&anna).await.unwrap().len(), 1);
+}
+
+#[tokio::test]
 async fn oauth_flow() {
     use base64::Engine;
     use sha2::Digest;
@@ -703,6 +737,62 @@ mod http {
         assert_eq!(location(&res), format!("/decks/{}/edit#share", deck.id));
         assert_eq!(flash(&res), "Share cancelled.");
         assert!(app.incoming_shares(&anna).await.unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn sessions_in_use_stay_alive() {
+        let app = app().await;
+        user(&app, "kolja").await;
+        let cookie = login_cookie(&app, "kolja").await;
+        let get = |c: &str| Request::get("/").header(header::COOKIE, c.to_string()).body(Body::empty()).unwrap();
+        // Fresh: nothing to renew.
+        let res = send(&app, get(&cookie)).await;
+        assert_eq!(res.status(), StatusCode::OK);
+        assert!(!res.headers().contains_key(header::SET_COOKIE));
+        // Ten days later the session gets its full lifetime again.
+        sqlx::query("UPDATE sessions SET expires_at = expires_at - 10 * 86400").execute(&app.db).await.unwrap();
+        let res = send(&app, get(&cookie)).await;
+        assert!(res.headers()[header::SET_COOKIE].to_str().unwrap().starts_with("ainki_session="));
+        let left: i64 = sqlx::query_scalar("SELECT expires_at - ? FROM sessions").bind(now()).fetch_one(&app.db).await.unwrap();
+        assert!(left > (crate::auth::SESSION_DAYS - 1) * 86_400);
+    }
+
+    #[tokio::test]
+    async fn settings_with_a_cleared_number_keep_its_value() {
+        let app = app().await;
+        user(&app, "kolja").await;
+        let cookie = login_cookie(&app, "kolja").await;
+        let res = submit(&app, &cookie, "/settings", "timezone=Europe%2FBerlin&rollover_hour=&font_scale=120").await;
+        assert_eq!(location(&res), "/settings");
+        let u = app.find_user("kolja").await.unwrap();
+        assert_eq!((u.rollover_hour, u.font_scale), (4, 120));
+    }
+
+    #[tokio::test]
+    async fn exported_file_keeps_the_deck_name() {
+        let app = app().await;
+        let a = user(&app, "kolja").await;
+        let deck = app.create_deck(&a, "Español", "", None).await.unwrap();
+        let cookie = login_cookie(&app, "kolja").await;
+        let req = Request::get(format!("/decks/{}/export.csv", deck.id)).header(header::COOKIE, cookie).body(Body::empty()).unwrap();
+        let res = send(&app, req).await;
+        let d = res.headers()[header::CONTENT_DISPOSITION].to_str().unwrap();
+        assert_eq!(d, "attachment; filename=\"Espa_ol.csv\"; filename*=UTF-8''Espa%C3%B1ol.csv");
+    }
+
+    #[tokio::test]
+    async fn favicons_and_the_build_on_settings() {
+        let app = app().await;
+        for path in ["/favicon.ico", "/favicon.svg", "/apple-touch-icon.png"] {
+            let res = send(&app, Request::get(path).body(Body::empty()).unwrap()).await;
+            assert_eq!(res.status(), StatusCode::OK, "{path}");
+        }
+        user(&app, "kolja").await;
+        let cookie = login_cookie(&app, "kolja").await;
+        let res = send(&app, Request::get("/settings").header(header::COOKIE, cookie).body(Body::empty()).unwrap()).await;
+        let page = text(res).await;
+        assert!(page.contains(&format!("Build {}", env!("AINKI_BUILD"))));
+        assert!(page.contains(r#"rel="icon""#));
     }
 
     #[tokio::test]

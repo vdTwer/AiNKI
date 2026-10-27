@@ -391,6 +391,30 @@ impl App {
         .await?)
     }
 
+    /// Keep a session that is in use alive: its expiry moves back to
+    /// `SESSION_DAYS` from now, at most once a day. True when it moved, so
+    /// the cookie can be sent again with the new lifetime.
+    pub async fn renew_session(&self, token: &str) -> Result<bool> {
+        let id = sha256_hex(token);
+        let t = now();
+        let expires: Option<i64> = sqlx::query_scalar("SELECT expires_at FROM sessions WHERE id = ?")
+            .bind(&id)
+            .fetch_optional(&self.db)
+            .await?;
+        let full = t + SESSION_DAYS * 86_400;
+        match expires {
+            Some(e) if e > t && e < full - 86_400 => {
+                sqlx::query("UPDATE sessions SET expires_at = ? WHERE id = ?")
+                    .bind(full)
+                    .bind(&id)
+                    .execute(&self.db)
+                    .await?;
+                Ok(true)
+            }
+            _ => Ok(false),
+        }
+    }
+
     pub async fn delete_session(&self, token: &str) -> Result<()> {
         sqlx::query("DELETE FROM sessions WHERE id = ?")
             .bind(sha256_hex(token))

@@ -33,6 +33,10 @@ const CSS: &str = include_str!("style.css");
 const CALM_CSS: &str = include_str!("static/calm.css");
 const THEME_JS: &str = include_str!("static/theme.js");
 const APP_JS: &str = include_str!("static/app.js");
+// Two cards, Wild Orchid behind Terra Cotta, with the "done" tick.
+const FAVICON_SVG: &str = include_str!("static/favicon.svg");
+const FAVICON_PNG: &[u8] = include_bytes!("static/favicon-32.png");
+const TOUCH_ICON_PNG: &[u8] = include_bytes!("static/apple-touch-icon.png");
 const FONTS: &[(&str, &[u8])] = &[
     ("newsreader-italic-latin-ext.woff2", include_bytes!("static/fonts/newsreader-italic-latin-ext.woff2")),
     ("newsreader-italic-latin.woff2", include_bytes!("static/fonts/newsreader-italic-latin.woff2")),
@@ -140,13 +144,18 @@ pub fn router(app: AppState) -> Router {
                 .post(import_upload)
                 .layer(DefaultBodyLimit::max(import::MAX_IMPORT_BYTES + 1024 * 1024)),
         )
-        .layer(middleware::from_fn_with_state(app.clone(), security::check_origin));
+        .layer(middleware::from_fn_with_state(app.clone(), security::check_origin))
+        .layer(middleware::from_fn_with_state(app.clone(), renew_session));
     let static_routes = Router::new()
         .route("/style.css", get(|q: RawQuery| asset(q, "text/css; charset=utf-8", CSS)))
         .route("/calm.css", get(|q: RawQuery| asset(q, "text/css; charset=utf-8", CALM_CSS)))
         .route("/theme.js", get(|q: RawQuery| asset(q, "text/javascript; charset=utf-8", THEME_JS)))
         .route("/app.js", get(|q: RawQuery| asset(q, "text/javascript; charset=utf-8", APP_JS)))
         .route("/fonts/{name}", get(font_file))
+        .route("/favicon.svg", get(|| async { static_file("image/svg+xml", FAVICON_SVG.as_bytes(), false) }))
+        // Browsers ask for /favicon.ico on their own; a PNG there works everywhere.
+        .route("/favicon.ico", get(|| async { static_file("image/png", FAVICON_PNG, false) }))
+        .route("/apple-touch-icon.png", get(|| async { static_file("image/png", TOUCH_ICON_PNG, false) }))
         .route("/healthz", get(|| async { "ok" }));
     Router::new()
         .merge(browser_routes)
@@ -409,6 +418,9 @@ fn page(nav: Option<Nav>, title: &str, user: Option<&User>, page_kind: Option<&s
                 meta name="viewport" content="width=device-width, initial-scale=1";
                 meta name="color-scheme" content="light dark";
                 title { (title) " · AiNKI" }
+                link rel="icon" href="/favicon.ico" sizes="32x32";
+                link rel="icon" href="/favicon.svg" type="image/svg+xml";
+                link rel="apple-touch-icon" href="/apple-touch-icon.png";
                 link rel="stylesheet" href=(format!("/style.css?v={}", asset_version()));
                 // The Calm look: only on desktops, and only once theme.js
                 // has switched it on. Everything else gets style.css alone.
@@ -539,6 +551,20 @@ fn session_cookie(app: &AppState, token: String) -> Cookie<'static> {
         .secure(app.config.secure())
         .max_age(time_days(crate::auth::SESSION_DAYS))
         .build()
+}
+
+/// Someone who keeps using AiNKI stays logged in: once a day their session
+/// and its cookie get the full lifetime again.
+async fn renew_session(State(app): State<AppState>, jar: CookieJar, req: axum::extract::Request, next: middleware::Next) -> Response {
+    let mut res = next.run(req).await;
+    if let Some(c) = jar.get(app.config.session_cookie_name()) {
+        if app.renew_session(c.value()).await.unwrap_or(false) {
+            if let Ok(v) = HeaderValue::from_str(&session_cookie(&app, c.value().to_string()).to_string()) {
+                res.headers_mut().append(header::SET_COOKIE, v);
+            }
+        }
+    }
+    res
 }
 
 fn time_days(days: i64) -> time::Duration {
@@ -1628,17 +1654,15 @@ async fn deck_export(State(app): State<AppState>, user: WebUser, Path(id): Path<
     let access = user.access();
     let deck = app.deck(&access, id).await?;
     let csv = app.export_csv(&access, id).await?;
-    let filename: String = deck
-        .name
-        .chars()
-        .map(|c| if c.is_alphanumeric() { c } else { '_' })
-        .collect();
+    let name = deck_plain(&deck.name);
+    // Plain ASCII for old browsers, the real name (UTF-8) for the rest.
+    let ascii: String = name.chars().map(|c| if c.is_ascii_alphanumeric() { c } else { '_' }).collect();
     Ok((
         [
             (header::CONTENT_TYPE, "text/csv; charset=utf-8".to_string()),
             (
                 header::CONTENT_DISPOSITION,
-                format!("attachment; filename=\"{filename}.csv\""),
+                format!("attachment; filename=\"{ascii}.csv\"; filename*=UTF-8''{}.csv", urlenc(&name)),
             ),
         ],
         csv,
@@ -2504,6 +2528,7 @@ async fn settings_page(State(app): State<AppState>, user: WebUser, Flash(msg): F
                 div.form-foot.end { button.btn type="submit" { "Change password" } }
             }
             form.logout method="post" action="/logout" { button.btn type="submit" { "Log out" } }
+            p.muted.small.build { "Build " (env!("AINKI_BUILD")) }
         },
     )
     .into_response())
@@ -2512,8 +2537,12 @@ async fn settings_page(State(app): State<AppState>, user: WebUser, Flash(msg): F
 #[derive(Deserialize)]
 struct SettingsForm {
     timezone: String,
-    rollover_hour: i64,
-    font_scale: i64,
+    /// Numbers as typed: a cleared field keeps the current value instead of
+    /// failing the whole form.
+    #[serde(default)]
+    rollover_hour: String,
+    #[serde(default)]
+    font_scale: String,
     four_buttons: Option<String>,
     optimize_include_agent: Option<String>,
     desktop_look: Option<String>,
@@ -2524,9 +2553,9 @@ async fn settings_update(State(app): State<AppState>, user: WebUser, Form(f): Fo
         app.update_settings(
             user.0.id,
             f.timezone.trim(),
-            f.rollover_hour,
+            f.rollover_hour.trim().parse().unwrap_or(user.0.rollover_hour),
             f.four_buttons.is_some(),
-            f.font_scale,
+            f.font_scale.trim().parse().unwrap_or(user.0.font_scale),
             f.optimize_include_agent.is_some(),
             f.desktop_look.as_deref().unwrap_or("calm"),
         )

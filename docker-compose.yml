@@ -1,6 +1,10 @@
 services:
   ainki:
-    build: .
+    build:
+      context: .
+      args:
+        # Which commit this is, shown on the settings page (set by the deploy).
+        AINKI_BUILD: "${AINKI_BUILD:-}"
     image: ainki:latest
     restart: unless-stopped
     ports:
