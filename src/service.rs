@@ -143,7 +143,8 @@ pub struct DeckSummary {
     pub total: i64,
     pub new: i64,
     pub suspended: i64,
-    /// Learning cards due now.
+    /// Learning cards due now, or soon enough that studying shows them
+    /// already (see `LEARN_AHEAD_SECS`).
     pub learning_due: i64,
     /// Review cards due now, capped by the daily limit.
     pub review_due: i64,
@@ -487,12 +488,15 @@ impl App {
             suspended: bool,
             cnt: i64,
             due_now: i64,
+            due_soon: i64,
         }
         let rows: Vec<Row> = sqlx::query_as(
-            "SELECT deck_id, state, suspended, COUNT(*) AS cnt, SUM(due <= ?) AS due_now
+            "SELECT deck_id, state, suspended, COUNT(*) AS cnt, SUM(due <= ?) AS due_now,
+                    SUM(due <= ?) AS due_soon
              FROM cards WHERE user_id = ? GROUP BY deck_id, state, suspended",
         )
         .bind(n)
+        .bind(n + LEARN_AHEAD_SECS)
         .bind(access.user_id())
         .fetch_all(&self.db)
         .await?;
@@ -536,7 +540,10 @@ impl App {
                 }
                 match CardState::from_i64(r.state) {
                     CardState::New => s.new += r.cnt,
-                    CardState::Learning | CardState::Relearning => s.learning_due += r.due_now,
+                    // Studying learns ahead, so these count as due too;
+                    // otherwise a left session reads "all done" while
+                    // studying still has cards to show.
+                    CardState::Learning | CardState::Relearning => s.learning_due += r.due_soon,
                     CardState::Review => s.review_due += r.due_now,
                 }
             }
@@ -599,7 +606,7 @@ impl App {
             total += 1;
             match CardState::from_i64(t.state) {
                 CardState::Learning | CardState::Relearning => {
-                    if t.due <= clock.now {
+                    if t.due <= clock.now + LEARN_AHEAD_SECS {
                         touched_due_now += 1;
                     }
                     if t.last_rating != Rating::Again as i64 {

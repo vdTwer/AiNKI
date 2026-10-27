@@ -877,7 +877,7 @@ fn study_foot(deck_name: &str, deck_id: i64, done: i64, total: i64, q_deck: Opti
                     @if let Some(d) = q_deck { input type="hidden" name="deck" value=(d); }
                     button.link.icon-link type="submit" { (icon(ICON_UNDO, PAGE_ICON)) span { "Undo last answer" } }
                 }
-                @if let Some(id) = card_id { (icon_link(&format!("/cards/{id}"), ICON_EDIT, "Edit card")) }
+                @if let Some(id) = card_id { (icon_link(&format!("/cards/{id}{}", CardFrom::study(q_deck).query()), ICON_EDIT, "Edit card")) }
             }
         }
     }
@@ -1909,8 +1909,42 @@ async fn card_create(State(app): State<AppState>, user: WebUser, mp: Multipart) 
     }
 }
 
+/// Where the card page was opened from. Opened while studying, it leads
+/// back to the session, and saving returns there too.
+#[derive(Deserialize, Default)]
+struct CardFrom {
+    study: Option<u8>,
+    deck: Option<i64>,
+}
+
+impl CardFrom {
+    fn study(deck: Option<i64>) -> Self {
+        CardFrom { study: Some(1), deck }
+    }
+
+    fn query(&self) -> String {
+        match (self.study, self.deck) {
+            (Some(1), Some(d)) => format!("?study=1&deck={d}"),
+            (Some(1), None) => "?study=1".into(),
+            _ => String::new(),
+        }
+    }
+
+    fn study_url(&self) -> Option<String> {
+        (self.study == Some(1)).then(|| study_url(self.deck))
+    }
+}
+
 /// The card page; `sent` and `error` when an edit comes back with a problem.
-async fn card_view(app: &App, user: &User, id: i64, msg: &Option<String>, sent: Option<&CardFormData>, error: Option<&str>) -> Result<Markup, AppError> {
+async fn card_view(
+    app: &App,
+    user: &User,
+    id: i64,
+    from: &CardFrom,
+    msg: &Option<String>,
+    sent: Option<&CardFormData>,
+    error: Option<&str>,
+) -> Result<Markup, AppError> {
     let access = Access::web(user.clone());
     let card = app.card(&access, id).await?;
     let decks = app.decks(&access).await?;
@@ -1945,10 +1979,14 @@ async fn card_view(app: &App, user: &User, id: i64, msg: &Option<String>, sent: 
         Some(user),
         html! {
             (flash(msg))
-            @if let Some(d) = decks.iter().find(|d| d.id == card.deck_id) { (parent(&format!("/decks/{}", d.id), &deck_plain(&d.name))) }
+            @if let Some(url) = from.study_url() {
+                (parent(&url, "Back to studying"))
+            } @else if let Some(d) = decks.iter().find(|d| d.id == card.deck_id) {
+                (parent(&format!("/decks/{}", d.id), &deck_plain(&d.name)))
+            }
             h1 { "Edit card" }
             (form_error(error))
-            (card_form(&format!("/cards/{id}"), &decks, &draft, "Save", false))
+            (card_form(&format!("/cards/{id}{}", from.query()), &decks, &draft, "Save", false))
             h2 { "Scheduling" }
             dl.kv {
                 dt { "State" } dd { (state_label(card.card_state())) @if card.suspended { " (suspended)" } }
@@ -2025,12 +2063,19 @@ async fn card_page(
     State(app): State<AppState>,
     user: WebUser,
     Path(id): Path<i64>,
+    Query(from): Query<CardFrom>,
     Flash(msg): Flash,
 ) -> WebResult {
-    Ok(card_view(&app, &user.0, id, &msg, None, None).await?.into_response())
+    Ok(card_view(&app, &user.0, id, &from, &msg, None, None).await?.into_response())
 }
 
-async fn card_update(State(app): State<AppState>, user: WebUser, Path(id): Path<i64>, mp: Multipart) -> WebResult {
+async fn card_update(
+    State(app): State<AppState>,
+    user: WebUser,
+    Path(id): Path<i64>,
+    Query(from): Query<CardFrom>,
+    mp: Multipart,
+) -> WebResult {
     let access = user.access();
     let mut f = read_card_form(mp).await?;
     let result = async {
@@ -2065,10 +2110,10 @@ async fn card_update(State(app): State<AppState>, user: WebUser, Path(id): Path<
     }
     .await;
     match result {
-        Ok(()) => Ok(redirect_msg(format!("/cards/{id}"), "Card saved.")),
+        Ok(()) => Ok(redirect_msg(from.study_url().unwrap_or_else(|| format!("/cards/{id}")), "Card saved.")),
         Err(e) => {
             let msg = with_image_hint(fixable(&e).ok_or(e)?, &f);
-            Ok(form_again(card_view(&app, &user.0, id, &None, Some(&f), Some(&msg)).await?))
+            Ok(form_again(card_view(&app, &user.0, id, &from, &None, Some(&f), Some(&msg)).await?))
         }
     }
 }
