@@ -341,6 +341,10 @@ pub struct PresetFields {
     pub relearning_steps: Option<String>,
     /// Maximum interval in days.
     pub max_interval: Option<i64>,
+    /// Seconds to answer a card seen before on the website, 0 for no limit. A timeout counts as Again.
+    pub time_limit: Option<i64>,
+    /// Ask for a typed answer on the website before the answer is shown.
+    pub typed_answers: Option<bool>,
 }
 
 impl From<PresetFields> for PresetInput {
@@ -354,6 +358,8 @@ impl From<PresetFields> for PresetInput {
             learning_steps: p.learning_steps,
             relearning_steps: p.relearning_steps,
             max_interval: p.max_interval,
+            time_limit: p.time_limit,
+            typed_answers: p.typed_answers,
         }
     }
 }

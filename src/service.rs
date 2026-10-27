@@ -43,6 +43,10 @@ pub struct Preset {
     pub fsrs_params: String,
     #[serde(skip)]
     pub fsrs_params_updated_at: Option<i64>,
+    /// Seconds to answer a card you have seen before; 0 for no limit.
+    pub time_limit: i64,
+    /// Type the answer before it is shown.
+    pub typed_answers: bool,
 }
 
 impl Preset {
@@ -186,6 +190,8 @@ pub struct PresetInput {
     pub learning_steps: Option<String>,
     pub relearning_steps: Option<String>,
     pub max_interval: Option<i64>,
+    pub time_limit: Option<i64>,
+    pub typed_answers: Option<bool>,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -303,6 +309,9 @@ impl App {
         if p.max_interval < 1 {
             return Err(AppError::bad("maximum interval must be at least 1 day"));
         }
+        if !(0..=600).contains(&p.time_limit) {
+            return Err(AppError::bad("time limit must be between 0 (none) and 600 seconds"));
+        }
         let learning = scheduler::parse_steps(&p.learning_steps).map_err(AppError::BadRequest)?;
         let relearning = scheduler::parse_steps(&p.relearning_steps).map_err(AppError::BadRequest)?;
         p.learning_steps = scheduler::format_steps(&learning);
@@ -335,6 +344,12 @@ impl App {
         if let Some(v) = input.max_interval {
             p.max_interval = v;
         }
+        if let Some(v) = input.time_limit {
+            p.time_limit = v;
+        }
+        if let Some(v) = input.typed_answers {
+            p.typed_answers = v;
+        }
     }
 
     /// Create a preset, starting from a built-in template (default: standard).
@@ -363,13 +378,16 @@ impl App {
             template: None,
             fsrs_params: "[]".into(),
             fsrs_params_updated_at: None,
+            time_limit: 0,
+            typed_answers: false,
         };
         Self::apply_preset_input(&mut p, input);
         Self::validate_preset(&mut p)?;
         let id: i64 = sqlx::query_scalar(
             "INSERT INTO presets (user_id, name, description, desired_retention, new_per_day,
-                reviews_per_day, learning_steps, relearning_steps, max_interval, created_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id",
+                reviews_per_day, learning_steps, relearning_steps, max_interval, created_at,
+                time_limit, typed_answers)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id",
         )
         .bind(p.user_id)
         .bind(&p.name)
@@ -381,6 +399,8 @@ impl App {
         .bind(&p.relearning_steps)
         .bind(p.max_interval)
         .bind(p.created_at)
+        .bind(p.time_limit)
+        .bind(p.typed_answers)
         .fetch_one(&self.db)
         .await?;
         self.preset(access, id).await
@@ -394,7 +414,8 @@ impl App {
         Self::validate_preset(&mut p)?;
         sqlx::query(
             "UPDATE presets SET name = ?, description = ?, desired_retention = ?, new_per_day = ?,
-                reviews_per_day = ?, learning_steps = ?, relearning_steps = ?, max_interval = ?
+                reviews_per_day = ?, learning_steps = ?, relearning_steps = ?, max_interval = ?,
+                time_limit = ?, typed_answers = ?
              WHERE id = ? AND user_id = ?",
         )
         .bind(&p.name)
@@ -405,6 +426,8 @@ impl App {
         .bind(&p.learning_steps)
         .bind(&p.relearning_steps)
         .bind(p.max_interval)
+        .bind(p.time_limit)
+        .bind(p.typed_answers)
         .bind(id)
         .bind(access.user_id())
         .execute(&self.db)

@@ -38,6 +38,18 @@ pub struct User {
     pub optimized_reviews: i64,
     /// What the last optimization did, in a sentence.
     pub optimize_note: Option<String>,
+    /// Quiet hours, whole hours in the user's timezone (see `study`).
+    pub quiet_from: Option<i64>,
+    pub quiet_to: Option<i64>,
+    pub quiet_lifted_until: Option<i64>,
+    /// Suggest a break after this many minutes of studying; 0 for never.
+    pub session_minutes: i64,
+    pub break_skipped_at: Option<i64>,
+    /// Catch-up mode: no new cards, at most `catch_up_reviews` a day.
+    pub catch_up: bool,
+    pub catch_up_reviews: i64,
+    /// Ask "sure or not?" before showing the answer.
+    pub confidence_check: bool,
 }
 
 impl User {

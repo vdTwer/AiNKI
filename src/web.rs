@@ -2561,6 +2561,21 @@ fn preset_sheet(p: &crate::service::Preset, used_by: &[String]) -> Markup {
             }
             label.line { "New cards per day" input type="number" name="new_per_day" min="0" required value=(p.new_per_day); }
             label.line { "Reviews per day, at most" input type="number" name="reviews_per_day" min="0" required value=(p.reviews_per_day); }
+            hr.divider;
+            label.line { "Time to answer"
+                span.select {
+                    select name="time_limit" {
+                        @for secs in TIME_LIMITS {
+                            option value=(secs) selected[*secs == p.time_limit] { (time_limit_words(*secs)) }
+                        }
+                        @if !TIME_LIMITS.contains(&p.time_limit) {
+                            option value=(p.time_limit) selected { (time_limit_words(p.time_limit)) }
+                        }
+                    }
+                }
+            }
+            p.hint.muted.small { "Only for cards you have seen before. When time runs out the card counts as forgotten. You can add 10 seconds once per card." }
+            label.check { input type="checkbox" name="typed_answers" value="1" checked[p.typed_answers]; " Type the answer before it's shown" }
             // The hard values sit under a fold; most people never need them.
             details.more {
                 summary { "Learning steps and longest gap" }
@@ -2574,6 +2589,13 @@ fn preset_sheet(p: &crate::service::Preset, used_by: &[String]) -> Markup {
             }
         }
     }
+}
+
+/// The time limits offered for a preset, in seconds; 0 is none.
+const TIME_LIMITS: &[i64] = &[0, 5, 8, 10, 15, 20, 30, 45, 60];
+
+fn time_limit_words(secs: i64) -> String {
+    if secs == 0 { "No limit".into() } else { format!("{secs} seconds") }
 }
 
 #[derive(Deserialize)]
@@ -2598,6 +2620,8 @@ fn preset_draft(t: &presets::PresetTemplate, user_id: i64) -> crate::service::Pr
         template: None,
         fsrs_params: "[]".into(),
         fsrs_params_updated_at: None,
+        time_limit: 0,
+        typed_answers: false,
     }
 }
 
@@ -2747,6 +2771,9 @@ struct PresetForm {
     learning_steps: String,
     relearning_steps: String,
     max_interval: i64,
+    #[serde(default)]
+    time_limit: i64,
+    typed_answers: Option<String>,
 }
 
 impl PresetForm {
@@ -2761,6 +2788,8 @@ impl PresetForm {
             learning_steps: Some(self.learning_steps),
             relearning_steps: Some(self.relearning_steps),
             max_interval: Some(self.max_interval),
+            time_limit: Some(self.time_limit),
+            typed_answers: Some(self.typed_answers.is_some()),
         }
     }
 
@@ -2781,6 +2810,8 @@ impl PresetForm {
             template: None,
             fsrs_params: "[]".into(),
             fsrs_params_updated_at: None,
+            time_limit: self.time_limit,
+            typed_answers: self.typed_answers.is_some(),
         }
     }
 }
