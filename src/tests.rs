@@ -88,6 +88,21 @@ async fn study_flow_and_undo() {
 }
 
 #[tokio::test]
+async fn a_learning_card_studied_ahead_still_counts_as_due() {
+    let app = app().await;
+    let a = user(&app, "kolja").await;
+    let deck = app.create_deck(&a, "German", "", None).await.unwrap();
+    let card = app.create_card(&a, deck.id, "Hund", "dog", None, None, false).await.unwrap();
+    app.answer_card(&a, card.id, Rating::Again, None, None).await.unwrap();
+
+    // Due in ten minutes, so studying shows it already; the home page and
+    // the deck list must not call the day done meanwhile.
+    assert_eq!(app.next_card(&a, None).await.unwrap().unwrap().card.id, card.id);
+    let decks = app.deck_summaries(&a).await.unwrap();
+    assert_eq!(decks[0].due_total(), 1);
+}
+
+#[tokio::test]
 async fn list_cards_remember_each_item() {
     let app = app().await;
     let a = user(&app, "kolja").await;
