@@ -12,6 +12,7 @@ mod coach;
 mod error;
 mod format;
 mod import;
+mod insight;
 mod multi;
 mod markdown;
 mod mcp;

@@ -1382,3 +1382,40 @@ async fn sure_or_not_is_kept_with_the_answer() {
     assert_eq!((c.sure, c.sure_recalled, c.unsure, c.unsure_recalled), (2, 1, 1, 1));
     assert_eq!(c.sure_pct(), Some(50.0));
 }
+
+#[tokio::test]
+async fn the_week_compares_retention_with_the_aim() {
+    let app = app().await;
+    let a = user(&app, "kolja").await;
+    let deck = app.create_deck(&a, "Facts", "", None).await.unwrap();
+    let card = app.create_card(&a, deck.id, "q", "a", None, None, None).await.unwrap();
+    // 25 reviews of a learned card over two days, 15 remembered: 60%
+    // against the Standard aim of 90%.
+    for n in 0..25 {
+        sqlx::query(
+            "INSERT INTO review_log (user_id, card_id, deck_id, rating, reviewed_at, state_before,
+                elapsed_days, scheduled_secs, duration_ms, source)
+             VALUES (?, ?, ?, ?, ?, 2, 3, 0, 6000, 'web')",
+        )
+        .bind(a.user_id())
+        .bind(card.id)
+        .bind(deck.id)
+        .bind(if n < 15 { 3 } else { 1 })
+        .bind(now() - (n % 2) * 86_400 - 60)
+        .execute(&app.db)
+        .await
+        .unwrap();
+    }
+    let w = app.week(&a).await.unwrap();
+    assert_eq!((w.reviews, w.retention_sample, w.new_cards), (25, 25, 0));
+    assert!(w.days_studied >= 1 && w.days_studied <= 3);
+    assert!((w.retention.unwrap() - 0.6).abs() < 1e-9);
+    assert!((w.target.unwrap() - 0.9).abs() < 1e-9);
+    assert_eq!(w.tip, crate::insight::Tip::BelowTarget);
+    assert!((w.minutes - 2.5).abs() < 1e-9);
+
+    let r = app.deck_retention(&a).await.unwrap();
+    assert_eq!(r.len(), 1);
+    assert_eq!(r[0].reviews, 25);
+    assert!(r[0].short());
+}
