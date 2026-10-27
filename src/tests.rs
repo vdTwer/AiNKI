@@ -600,6 +600,13 @@ mod http {
         assert_eq!(res.status(), StatusCode::SEE_OTHER);
         assert_eq!(app.card(&a, id).await.unwrap().front, "el gato negro");
 
+        // Opened from studying, saving goes back to the session.
+        let res = submit_multipart(&app, &cookie, &format!("/cards/{id}?study=1&deck={d}"), &[("deck", &d), ("front", "el gato"), ("back", "the cat")]).await;
+        assert_eq!(location(&res), format!("/study?deck={d}"));
+        assert_eq!(flash(&res), "Card saved.");
+        let page = text(send(&app, Request::get(format!("/cards/{id}?study=1")).header(header::COOKIE, cookie.clone()).body(Body::empty()).unwrap()).await).await;
+        assert!(page.contains(r#"href="/study""#) && page.contains("Back to studying"));
+
         let res = submit(&app, &cookie, &format!("/cards/{id}/suspend"), "").await;
         assert_eq!(location(&res), format!("/cards/{id}"));
         assert!(app.card(&a, id).await.unwrap().suspended);
