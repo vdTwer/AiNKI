@@ -1161,6 +1161,56 @@ mod http {
         assert_eq!(html.matches(r#"<ol class="list-items">"#).count(), 2);
     }
 
+    /// Call an MCP tool with a token and return its structured result.
+    async fn mcp_tool(app: &Arc<App>, token: &str, name: &str, args: serde_json::Value) -> serde_json::Value {
+        let body = serde_json::json!({ "jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": { "name": name, "arguments": args } });
+        let res = send(
+            app,
+            Request::post("/mcp")
+                .header(header::HOST, "cards.example.com")
+                .header(header::CONTENT_TYPE, "application/json")
+                .header(header::ACCEPT, "application/json, text/event-stream")
+                .header(header::AUTHORIZATION, format!("Bearer {token}"))
+                .body(Body::from(body.to_string()))
+                .unwrap(),
+        )
+        .await;
+        let v: serde_json::Value = serde_json::from_str(&text(res).await).unwrap();
+        let content = v["result"]["content"][0]["text"].as_str().unwrap_or_else(|| panic!("{v}"));
+        serde_json::from_str(content).unwrap()
+    }
+
+    #[tokio::test]
+    async fn agents_respect_quiet_hours_and_see_the_coach_and_lessons() {
+        use chrono::{TimeZone, Timelike};
+        let app = app().await;
+        let a = user(&app, "kolja").await;
+        let deck = app.create_deck(&a, "Facts", "", None).await.unwrap();
+        app.create_card(&a, deck.id, "Hund", "dog", None, None, None).await.unwrap();
+        let (_, token) = app.create_token(a.user_id(), "test", true, true, None).await.unwrap();
+
+        let next = mcp_tool(&app, &token, "get_next_card", serde_json::json!({})).await;
+        assert_eq!(next["done"], false);
+        let hour = a.user.tz().timestamp_opt(now(), 0).unwrap().hour() as i64;
+        app.update_study_settings(a.user_id(), Some((hour, (hour + 1) % 24)), 0, false, 100, false).await.unwrap();
+        let next = mcp_tool(&app, &token, "get_next_card", serde_json::json!({})).await;
+        assert_eq!((next["done"].clone(), next["quiet_hours"].clone()), (serde_json::json!(true), serde_json::json!(true)));
+        let overview = mcp_tool(&app, &token, "get_overview", serde_json::json!({})).await;
+        assert_eq!(overview["studying"]["quiet_now"], true);
+
+        let lessons = mcp_tool(&app, &token, "list_lessons", serde_json::json!({})).await;
+        assert_eq!(lessons["lessons"].as_array().unwrap().len(), crate::lessons::all().len());
+        let lesson = mcp_tool(&app, &token, "get_lesson", serde_json::json!({ "slug": "learning-styles" })).await;
+        assert_eq!(lesson["evidence"], "Not supported by evidence");
+
+        let attention = mcp_tool(&app, &token, "list_cards_needing_attention", serde_json::json!({})).await;
+        assert!(attention["cards"].as_array().unwrap().is_empty());
+        let insights = mcp_tool(&app, &token, "get_insights", serde_json::json!({})).await;
+        assert_eq!(insights["week"]["reviews"], 0);
+        let work = mcp_tool(&app, &token, "get_workload", serde_json::json!({ "preset_id": deck.preset_id })).await;
+        assert!(work["options"].as_array().unwrap().len() >= 4);
+    }
+
     #[tokio::test]
     async fn mcp_requires_a_token() {
         let app = app().await;
