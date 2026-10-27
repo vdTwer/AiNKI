@@ -3660,6 +3660,7 @@ async fn stats_page(State(app): State<AppState>, user: WebUser, Query(q): Query<
     let access = user.access();
     let s = app.stats(&access, q.deck).await?;
     let cal = app.calibration(&access, q.deck).await?;
+    let sure = app.confidence(&access, q.deck).await?;
     let deck = match q.deck {
         Some(id) => Some(app.deck(&access, id).await?),
         None => None,
@@ -3716,6 +3717,23 @@ async fn stats_page(State(app): State<AppState>, user: WebUser, Query(q): Query<
                     }
                 }
                 p.muted.small { a href="/learn/optimizing" { "What this means" } }
+            }
+            @if sure.sure + sure.unsure > 0 {
+                h2 id="sure" { "When you felt sure" }
+                p {
+                    @if let Some(p) = sure.sure_pct() {
+                        "When you felt sure, you remembered " (format!("{p:.0}%")) " (" (count(sure.sure, "answer")) "). "
+                    }
+                    @if let Some(p) = sure.unsure_pct() {
+                        "When you weren't, " (format!("{p:.0}%")) " (" (count(sure.unsure, "answer")) ")."
+                    }
+                }
+                @if let (Some(a), Some(b)) = (sure.sure_pct(), sure.unsure_pct()) {
+                    p.muted.small {
+                        @if a - b >= 15.0 { "Your sense of what you know is a good guide." }
+                        @else { "Feeling sure says little about whether you remember. Testing yourself is the better guide." }
+                    }
+                }
             }
             h2 { "Due in the next two weeks" }
             table.forecast {
