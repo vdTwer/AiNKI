@@ -33,6 +33,10 @@ const CSS: &str = include_str!("style.css");
 const CALM_CSS: &str = include_str!("static/calm.css");
 const THEME_JS: &str = include_str!("static/theme.js");
 const APP_JS: &str = include_str!("static/app.js");
+// Two cards, Wild Orchid behind Terra Cotta, with the "done" tick.
+const FAVICON_SVG: &str = include_str!("static/favicon.svg");
+const FAVICON_PNG: &[u8] = include_bytes!("static/favicon-32.png");
+const TOUCH_ICON_PNG: &[u8] = include_bytes!("static/apple-touch-icon.png");
 const FONTS: &[(&str, &[u8])] = &[
     ("newsreader-italic-latin-ext.woff2", include_bytes!("static/fonts/newsreader-italic-latin-ext.woff2")),
     ("newsreader-italic-latin.woff2", include_bytes!("static/fonts/newsreader-italic-latin.woff2")),
@@ -148,6 +152,10 @@ pub fn router(app: AppState) -> Router {
         .route("/theme.js", get(|q: RawQuery| asset(q, "text/javascript; charset=utf-8", THEME_JS)))
         .route("/app.js", get(|q: RawQuery| asset(q, "text/javascript; charset=utf-8", APP_JS)))
         .route("/fonts/{name}", get(font_file))
+        .route("/favicon.svg", get(|| async { static_file("image/svg+xml", FAVICON_SVG.as_bytes(), false) }))
+        // Browsers ask for /favicon.ico on their own; a PNG there works everywhere.
+        .route("/favicon.ico", get(|| async { static_file("image/png", FAVICON_PNG, false) }))
+        .route("/apple-touch-icon.png", get(|| async { static_file("image/png", TOUCH_ICON_PNG, false) }))
         .route("/healthz", get(|| async { "ok" }));
     Router::new()
         .merge(browser_routes)
@@ -410,6 +418,9 @@ fn page(nav: Option<Nav>, title: &str, user: Option<&User>, page_kind: Option<&s
                 meta name="viewport" content="width=device-width, initial-scale=1";
                 meta name="color-scheme" content="light dark";
                 title { (title) " · AiNKI" }
+                link rel="icon" href="/favicon.ico" sizes="32x32";
+                link rel="icon" href="/favicon.svg" type="image/svg+xml";
+                link rel="apple-touch-icon" href="/apple-touch-icon.png";
                 link rel="stylesheet" href=(format!("/style.css?v={}", asset_version()));
                 // The Calm look: only on desktops, and only once theme.js
                 // has switched it on. Everything else gets style.css alone.
