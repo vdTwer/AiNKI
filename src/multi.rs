@@ -1,11 +1,16 @@
-//! List cards. A card whose back is a numbered list can be learned item by
-//! item: after the reveal you mark the items you missed, and every item keeps
-//! its own FSRS memory. The card's own scheduling fields always hold a
-//! summary of its items (see [`summarize`]), so queues, counts and stats work
-//! as for any other card.
+//! Multicards. A card whose back holds several things to recall (the items
+//! of a list, the sections under its headings, or parts between `---`
+//! lines) can be learned item by item: after the reveal you mark the items
+//! you remembered, and every item keeps its own FSRS memory. Everything on
+//! the back that is not an item (a line above a group, a closing remark)
+//! stays and is shown with the answer. The card's own scheduling fields
+//! always hold a summary of its items (see [`summarize`]), so queues, counts
+//! and stats work as for any other card.
 
 use std::cmp::Ordering;
+use std::ops::Range;
 
+use pulldown_cmark::{Event, HeadingLevel, Parser, Tag};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
@@ -13,56 +18,215 @@ use crate::{
     App,
     auth::Access,
     error::{AppError, Result},
-    format,
+    format, markdown,
     scheduler::{self, CardSched, CardState, Clock, Rating},
     service::{AnswerResult, Card},
 };
 
-/// A back split into the text before its numbered list and the list's items.
-#[derive(Debug, Clone, PartialEq)]
-pub struct ListBack {
-    pub intro: String,
-    pub items: Vec<String>,
+/// Raised whenever splitting changes, so stored items are matched to the
+/// backs again on the next start (see [`App::resplit_multicards`]).
+const SPLIT_VERSION: i64 = 1;
+
+/// How a multicard's back is split into items.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, sqlx::Type, schemars::JsonSchema)]
+#[serde(rename_all = "lowercase")]
+#[sqlx(type_name = "TEXT", rename_all = "lowercase")]
+pub enum Split {
+    /// The items of the back's lists, numbered or not. Sub-items belong to
+    /// their item.
+    List,
+    /// One item per heading, down to the next heading of the same level.
+    Sections,
+    /// The parts between `---` lines.
+    Parts,
 }
 
-/// The text after "3." or "3)" when a line starts a numbered item.
-fn item_start(line: &str) -> Option<&str> {
-    let t = line.trim_start();
-    if line.len() - t.len() > 3 {
-        return None;
-    }
-    let digits = t.bytes().take_while(u8::is_ascii_digit).count();
-    if digits == 0 || digits > 3 {
-        return None;
-    }
-    let rest = &t[digits..];
-    let rest = rest.strip_prefix('.').or_else(|| rest.strip_prefix(')'))?;
-    if !rest.starts_with([' ', '\t']) {
-        return None;
-    }
-    Some(rest.trim()).filter(|text| !text.is_empty())
-}
+impl Split {
+    pub const ALL: [Split; 3] = [Split::List, Split::Sections, Split::Parts];
 
-/// The back's numbered list, if it has one with at least two items. Lines
-/// after an item that don't start a new one belong to that item.
-pub fn parse(back: &str) -> Option<ListBack> {
-    let mut intro = Vec::new();
-    let mut items: Vec<String> = Vec::new();
-    for line in back.lines() {
-        match (item_start(line), items.last_mut()) {
-            (Some(text), _) => items.push(text.to_string()),
-            (None, Some(item)) if !line.trim().is_empty() => {
-                item.push('\n');
-                item.push_str(line.trim());
-            }
-            (None, Some(_)) => {}
-            (None, None) => intro.push(line),
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Split::List => "list",
+            Split::Sections => "sections",
+            Split::Parts => "parts",
         }
     }
-    (items.len() >= 2).then(|| ListBack {
-        intro: intro.join("\n").trim().to_string(),
-        items,
+
+    pub fn parse(s: &str) -> Option<Split> {
+        Split::ALL.into_iter().find(|k| k.as_str() == s)
+    }
+
+    /// What the editor calls it.
+    pub fn label(self) -> &'static str {
+        match self {
+            Split::List => "List items",
+            Split::Sections => "Sections",
+            Split::Parts => "Parts",
+        }
+    }
+}
+
+/// A piece of a multicard's back, in order: text shown as it is, or an
+/// item to recall. Both are Markdown.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Piece {
+    Text(String),
+    Item(String),
+}
+
+/// The back split into pieces, if the split finds at least two items.
+pub fn split(back: &str, how: Split) -> Option<Vec<Piece>> {
+    let back = &markdown::tidy(back);
+    let items = match how {
+        Split::List => list_items(back),
+        Split::Sections => sections(back),
+        Split::Parts => parts(back),
+    };
+    if items.len() < 2 {
+        return None;
+    }
+    let mut pieces = Vec::new();
+    let mut at = 0;
+    for (range, text) in items {
+        let gap = back[at..range.start].trim();
+        if !gap.is_empty() {
+            pieces.push(Piece::Text(gap.to_string()));
+        }
+        pieces.push(Piece::Item(text));
+        at = range.end;
+    }
+    let rest = back[at..].trim();
+    if !rest.is_empty() {
+        pieces.push(Piece::Text(rest.to_string()));
+    }
+    Some(pieces)
+}
+
+/// The items alone.
+pub fn items(back: &str, how: Split) -> Option<Vec<String>> {
+    split(back, how).map(|p| {
+        p.into_iter()
+            .filter_map(|p| match p {
+                Piece::Item(t) => Some(t),
+                Piece::Text(_) => None,
+            })
+            .collect()
     })
+}
+
+/// The splits this back allows.
+pub fn splits(back: &str) -> Vec<Split> {
+    Split::ALL.into_iter().filter(|&k| split(back, k).is_some()).collect()
+}
+
+/// Every event of the back with its source range and how deep it sits: 0
+/// for the blocks at the top, 1 for what they hold directly, and so on. An
+/// end tag has the depth of its start.
+fn walk(src: &str, mut f: impl FnMut(usize, &Event, Range<usize>)) {
+    let mut depth = 0usize;
+    for (event, range) in Parser::new_ext(src, markdown::options()).into_offset_iter() {
+        match &event {
+            Event::Start(_) => {
+                f(depth, &event, range);
+                depth += 1;
+            }
+            Event::End(_) => {
+                depth = depth.saturating_sub(1);
+                f(depth, &event, range);
+            }
+            _ => f(depth, &event, range),
+        }
+    }
+}
+
+/// The items of the lists at the top of the back, without their markers and
+/// with their own lines unindented.
+fn list_items(src: &str) -> Vec<(Range<usize>, String)> {
+    let mut in_list = false;
+    let mut out = Vec::new();
+    walk(src, |depth, e, range| match (depth, e) {
+        (0, Event::Start(tag)) => in_list = matches!(tag, Tag::List(_)),
+        (1, Event::Start(Tag::Item)) if in_list => {
+            let text = item_text(src, range.clone());
+            if !text.is_empty() {
+                out.push((range, text));
+            }
+        }
+        _ => {}
+    });
+    out
+}
+
+/// A list item's text: the marker is dropped, and the lines after the first
+/// lose the indent that put them inside the item.
+fn item_text(src: &str, range: Range<usize>) -> String {
+    let line_start = src[..range.start].rfind('\n').map_or(0, |i| i + 1);
+    let col = src[line_start..range.start].chars().count();
+    let raw = &src[range];
+    // "-", "*", "+", or digits and "." or ")".
+    let digits = raw.bytes().take_while(u8::is_ascii_digit).count();
+    let marker = if digits > 0 { digits + 1 } else { 1 };
+    let after = &raw[marker.min(raw.len())..];
+    let gap = after.len() - after.trim_start_matches([' ', '\t']).len();
+    let indent = col + marker + if (1..=4).contains(&gap) { gap } else { 1 };
+    let mut lines = after.lines();
+    let mut out = lines.next().unwrap_or("").trim().to_string();
+    for line in lines {
+        let lead = line.len() - line.trim_start_matches(' ').len();
+        out.push('\n');
+        out.push_str(&line[lead.min(indent)..]);
+    }
+    out.trim().to_string()
+}
+
+/// One item per heading of the highest level used at the top of the back,
+/// each running to the next such heading.
+fn sections(src: &str) -> Vec<(Range<usize>, String)> {
+    let mut heads: Vec<(HeadingLevel, usize)> = Vec::new();
+    walk(src, |depth, e, range| {
+        if let (0, Event::Start(Tag::Heading { level, .. })) = (depth, e) {
+            heads.push((*level, range.start));
+        }
+    });
+    let Some(top) = heads.iter().map(|h| h.0).min() else { return vec![] };
+    let starts: Vec<usize> = heads.iter().filter(|h| h.0 == top).map(|h| h.1).collect();
+    starts
+        .iter()
+        .enumerate()
+        .map(|(n, &s)| {
+            let e = starts.get(n + 1).copied().unwrap_or(src.len());
+            (s..e, src[s..e].trim().to_string())
+        })
+        .collect()
+}
+
+/// The parts between thematic breaks (`---`, `***`) at the top of the back.
+fn parts(src: &str) -> Vec<(Range<usize>, String)> {
+    let mut rules: Vec<Range<usize>> = Vec::new();
+    walk(src, |depth, e, range| {
+        if depth == 0 && matches!(e, Event::Rule) {
+            rules.push(range);
+        }
+    });
+    if rules.is_empty() {
+        return vec![];
+    }
+    let mut out = Vec::new();
+    let mut at = 0;
+    for r in rules.iter().cloned().chain(std::iter::once(src.len()..src.len())) {
+        // The rule after a part goes with it, so it isn't shown as text.
+        let text = src[at..r.start].trim();
+        if !text.is_empty() {
+            out.push((at..r.end, text.to_string()));
+        }
+        at = r.end;
+    }
+    out
+}
+
+/// A short name for an item: its first line, without a heading's `#`s.
+pub fn title(text: &str) -> &str {
+    text.lines().next().unwrap_or("").trim_start_matches('#').trim()
 }
 
 /// Items match across edits by their words, ignoring case and spacing.
@@ -181,7 +345,7 @@ impl App {
     /// A list card's items in list order (empty for other cards). The caller
     /// has already checked that the card is visible.
     pub async fn card_items(&self, card: &Card) -> Result<Vec<CardItem>> {
-        if !card.is_list {
+        if card.multi.is_none() {
             return Ok(vec![]);
         }
         Ok(sqlx::query_as("SELECT * FROM card_items WHERE card_id = ? ORDER BY position, id")
@@ -190,29 +354,48 @@ impl App {
             .await?)
     }
 
-    /// Make the card a list card, or a plain card again, and match its items
-    /// to the back. Items whose words stay the same keep their memory; a
-    /// studied card that becomes a list starts every item from its memory.
-    pub(crate) async fn sync_items(&self, card: &Card, is_list: bool) -> Result<()> {
+    /// Make the card a multicard split as `multi`, or a plain card again,
+    /// and match its items to the back. Items whose words stay the same keep
+    /// their memory, and so does an item that only gained or lost words at
+    /// its end; a studied card that becomes a multicard starts every item
+    /// from its memory.
+    pub(crate) async fn sync_items(&self, card: &Card, multi: Option<Split>) -> Result<()> {
         let mut tx = self.db.begin().await?;
-        if !is_list {
+        let Some(how) = multi else {
             sqlx::query("DELETE FROM card_items WHERE card_id = ?").bind(card.id).execute(&mut *tx).await?;
-            sqlx::query("UPDATE cards SET is_list = 0 WHERE id = ?").bind(card.id).execute(&mut *tx).await?;
+            sqlx::query("UPDATE cards SET multi = NULL WHERE id = ?").bind(card.id).execute(&mut *tx).await?;
             tx.commit().await?;
             return Ok(());
-        }
-        let list = parse(&card.back).ok_or_else(no_list)?;
+        };
+        let texts = items(&card.back, how).ok_or_else(|| no_items(how))?;
         let old: Vec<CardItem> = sqlx::query_as("SELECT * FROM card_items WHERE card_id = ? ORDER BY position, id")
             .bind(card.id)
             .fetch_all(&mut *tx)
             .await?;
         let first_time = old.is_empty();
         let mut used = vec![false; old.len()];
-        for (pos, text) in list.items.iter().enumerate() {
-            let k = key(text);
-            match (0..old.len()).find(|&n| !used[n] && key(&old[n].text) == k) {
+        // Same words first, then the same start at the same place.
+        let keys: Vec<String> = texts.iter().map(|t| key(t)).collect();
+        let mut pick: Vec<Option<usize>> = keys
+            .iter()
+            .map(|k| {
+                let n = (0..old.len()).find(|&n| !used[n] && key(&old[n].text) == *k)?;
+                used[n] = true;
+                Some(n)
+            })
+            .collect();
+        for (pos, k) in keys.iter().enumerate() {
+            if pick[pos].is_none() && pos < old.len() && !used[pos] {
+                let o = key(&old[pos].text);
+                if !k.is_empty() && !o.is_empty() && (o.starts_with(k.as_str()) || k.starts_with(o.as_str())) {
+                    used[pos] = true;
+                    pick[pos] = Some(pos);
+                }
+            }
+        }
+        for (pos, text) in texts.iter().enumerate() {
+            match pick[pos] {
                 Some(n) => {
-                    used[n] = true;
                     sqlx::query("UPDATE card_items SET position = ?, text = ? WHERE id = ?")
                         .bind(pos as i64)
                         .bind(text)
@@ -253,7 +436,8 @@ impl App {
             .fetch_all(&mut *tx)
             .await?;
         let s = summarize(&items, &card.sched());
-        sqlx::query("UPDATE cards SET is_list = 1, state = ?, step = ?, stability = ?, difficulty = ?, due = ? WHERE id = ?")
+        sqlx::query("UPDATE cards SET multi = ?, state = ?, step = ?, stability = ?, difficulty = ?, due = ? WHERE id = ?")
+            .bind(how)
             .bind(s.state as i64)
             .bind(s.step)
             .bind(s.stability.map(|v| v as f64))
@@ -278,7 +462,7 @@ impl App {
     ) -> Result<AnswerResult> {
         let mut items = self.card_items(card).await?;
         if items.is_empty() {
-            return Err(AppError::bad("this list card has no items"));
+            return Err(AppError::bad("this multicard has no items"));
         }
         let clock = access.user.clock();
         let asked = asked(card, &items, clock.now);
@@ -420,6 +604,26 @@ impl App {
         })
     }
 
+    /// Split every multicard's back again, once after an update that
+    /// changed how backs are split (`SPLIT_VERSION`), so items match the
+    /// backs as they are now shown. Items keep their memory (see
+    /// [`App::sync_items`]).
+    pub async fn resplit_multicards(&self) -> Result<()> {
+        let version: i64 = sqlx::query_scalar("PRAGMA user_version").fetch_one(&self.db).await?;
+        if version >= SPLIT_VERSION {
+            return Ok(());
+        }
+        let cards: Vec<Card> = sqlx::query_as("SELECT * FROM cards WHERE multi IS NOT NULL").fetch_all(&self.db).await?;
+        for card in &cards {
+            let how = card.multi.filter(|&h| split(&card.back, h).is_some());
+            if let Err(e) = self.sync_items(card, how).await {
+                tracing::warn!("card {}: could not split its back again: {e}", card.id);
+            }
+        }
+        sqlx::query(&format!("PRAGMA user_version = {SPLIT_VERSION}")).execute(&self.db).await?;
+        Ok(())
+    }
+
     /// Put items back as they were before an answer (undo).
     pub(crate) async fn restore_items(
         &self,
@@ -450,8 +654,13 @@ impl App {
     }
 }
 
-pub fn no_list() -> AppError {
-    AppError::bad("learning item by item needs a numbered list with at least two items on the back")
+pub fn no_items(how: Split) -> AppError {
+    let what = match how {
+        Split::List => "list items",
+        Split::Sections => "sections with headings",
+        Split::Parts => "parts between --- lines",
+    };
+    AppError::bad(format!("learning item by item this way needs at least two {what} on the back"))
 }
 
 /// Items as the MCP API shows them: numbered from 1, with recall chances,
@@ -480,15 +689,59 @@ pub fn items_json(items: &[CardItem], asked: Option<&[bool]>, clock: &Clock, par
 mod tests {
     use super::*;
 
+    fn texts(back: &str, how: Split) -> Vec<String> {
+        items(back, how).unwrap_or_default()
+    }
+
     #[test]
-    fn finds_numbered_lists() {
-        let l = parse("Cohen says:\r\n1. One\r\n2) Two\r\n   still two\r\n\r\n3. Three").unwrap();
-        assert_eq!(l.intro, "Cohen says:");
-        assert_eq!(l.items, vec!["One", "Two\nstill two", "Three"]);
-        assert!(parse("1. Only one").is_none());
-        assert!(parse("2026. was a year\nno list").is_none());
-        assert!(parse("- a\n- b").is_none());
-        assert!(parse("1.5 is a number\n2.5 too").is_none());
+    fn finds_list_items() {
+        let back = "Cohen says:\r\n1. One\r\n2) Two\r\n   still two\r\n\r\n3. Three";
+        assert_eq!(texts(back, Split::List), ["One", "Two\nstill two", "Three"]);
+        assert_eq!(texts("- a\n- b\n  - b1\n  - b2", Split::List), ["a", "b\n- b1\n- b2"]);
+        assert!(split("1. Only one", Split::List).is_none());
+        assert!(split("2026. was a year\nno list", Split::List).is_none());
+        assert!(split("1.5 is a number\n2.5 too", Split::List).is_none());
+        // A list inside a quote is text.
+        assert!(split("> - a\n> - b", Split::List).is_none());
+    }
+
+    #[test]
+    fn keeps_what_is_not_an_item() {
+        let back = "will\n    - decisions made now: I'll give you a hand.\n    - guesses: I think I'll make it.\n\n\
+            be going to\n    - intentions: We're going to have a barbecue.\n\n\
+            ⚠️ Remark: will is for spontaneous decisions.\nOther future forms: the present simple.";
+        let pieces = split(back, Split::List).unwrap();
+        assert_eq!(
+            pieces,
+            [
+                Piece::Text("will".into()),
+                Piece::Item("decisions made now: I'll give you a hand.".into()),
+                Piece::Item("guesses: I think I'll make it.".into()),
+                Piece::Text("be going to".into()),
+                Piece::Item("intentions: We're going to have a barbecue.".into()),
+                Piece::Text("⚠️ Remark: will is for spontaneous decisions.\nOther future forms: the present simple.".into()),
+            ]
+        );
+    }
+
+    #[test]
+    fn finds_sections_and_parts() {
+        let back = "Intro\n\n## will\nnow\n### detail\nx\n\n## going to\nplanned";
+        assert_eq!(
+            split(back, Split::Sections).unwrap(),
+            [
+                Piece::Text("Intro".into()),
+                Piece::Item("## will\nnow\n### detail\nx".into()),
+                Piece::Item("## going to\nplanned".into()),
+            ]
+        );
+        assert!(split("# only one\ntext", Split::Sections).is_none());
+        let back = "one\n\n---\n\ntwo\nlines\n\n***\n\nthree";
+        assert_eq!(texts(back, Split::Parts), ["one", "two\nlines", "three"]);
+        assert!(split(back, Split::Parts).unwrap().iter().all(|p| matches!(p, Piece::Item(_))));
+        // Text right above --- is a heading, not a part.
+        assert!(split("one\n---\ntwo", Split::Parts).is_none());
+        assert_eq!(splits("- a\n- b"), [Split::List]);
     }
 
     #[test]

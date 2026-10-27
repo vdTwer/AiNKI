@@ -134,10 +134,10 @@ impl App {
             back: String,
             front_image: Option<String>,
             back_image: Option<String>,
-            is_list: bool,
+            multi: Option<crate::multi::Split>,
         }
         let cards: Vec<Src> = sqlx::query_as(
-            "SELECT front, back, front_image, back_image, is_list FROM cards WHERE deck_id = ? ORDER BY position, id",
+            "SELECT front, back, front_image, back_image, multi FROM cards WHERE deck_id = ? ORDER BY position, id",
         )
         .bind(share.deck_id)
         .fetch_all(&self.db)
@@ -164,9 +164,9 @@ impl App {
             let id = self
                 .insert_card(access.user_id(), deck.id, &c.front, &c.back, front_image, back_image, "shared")
                 .await?;
-            if c.is_list {
+            if c.multi.is_some() {
                 let copy = self.card(access, id).await?;
-                self.sync_items(&copy, true).await?;
+                self.sync_items(&copy, c.multi).await?;
             }
         }
         sqlx::query("DELETE FROM deck_shares WHERE id = ? AND to_user = ?")

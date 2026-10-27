@@ -13,7 +13,8 @@ use crate::{
     auth::{Access, Actor},
     error::{AppError, Result},
     now, presets,
-    lists::Missed,
+    markdown,
+    multi::{Missed, Split},
     scheduler::{self, CardSched, CardState, Clock, Rating, SchedConfig},
 };
 
@@ -79,8 +80,9 @@ pub struct Card {
     pub created_by: String,
     pub created_at: i64,
     pub updated_at: i64,
-    /// Learned item by item; see `lists`.
-    pub is_list: bool,
+    /// How a multicard's back is split into items; `None` for a plain card.
+    /// See `multi`.
+    pub multi: Option<Split>,
 }
 
 impl Card {
@@ -127,7 +129,8 @@ impl Card {
             "reps": self.reps,
             "lapses": self.lapses,
             "created_by": self.created_by,
-            "is_list": self.is_list,
+            "multi": self.multi.map(Split::as_str),
+            "is_list": self.multi.is_some(),
         })
     }
 }
@@ -177,8 +180,9 @@ pub struct CardInput {
     /// `Some(None)` clears the image.
     pub front_image: Option<Option<String>>,
     pub back_image: Option<Option<String>>,
-    /// Learn the back's numbered list item by item.
-    pub is_list: Option<bool>,
+    /// Learn the back item by item, split this way; `Some(None)` makes it a
+    /// plain card again.
+    pub multi: Option<Option<Split>>,
 }
 
 #[derive(Debug, Default, Clone, Deserialize)]
@@ -753,15 +757,16 @@ impl App {
         back: &str,
         front_image: Option<String>,
         back_image: Option<String>,
-        is_list: bool,
+        multi: Option<Split>,
     ) -> Result<Card> {
         access.require_write()?;
         self.deck(access, deck_id).await?;
         if front.trim().is_empty() && front_image.is_none() {
             return Err(AppError::bad("the front needs text or an image"));
         }
-        if is_list && crate::lists::parse(back).is_none() {
-            return Err(crate::lists::no_list());
+        let (front, back) = (&markdown::tidy(front), &markdown::tidy(back));
+        if let Some(how) = multi {
+            crate::multi::split(back, how).ok_or_else(|| crate::multi::no_items(how))?;
         }
         check_len("front", front, MAX_CARD_TEXT)?;
         check_len("back", back, MAX_CARD_TEXT)?;
@@ -775,8 +780,8 @@ impl App {
             .insert_card(access.user_id(), deck_id, front, back, front_image, back_image, source)
             .await?;
         let card = self.card(access, id).await?;
-        if is_list {
-            self.sync_items(&card, true).await?;
+        if multi.is_some() {
+            self.sync_items(&card, multi).await?;
             return self.card(access, id).await;
         }
         Ok(card)
@@ -821,13 +826,13 @@ impl App {
     pub async fn update_card(&self, access: &Access, id: i64, input: CardInput) -> Result<Card> {
         access.require_write()?;
         let mut card = self.card(access, id).await?;
-        let was_list = card.is_list;
-        let is_list = input.is_list.unwrap_or(was_list);
+        let was = card.multi;
+        let multi = input.multi.unwrap_or(was);
         if let Some(f) = input.front {
-            card.front = f.trim().to_string();
+            card.front = markdown::tidy(f.trim());
         }
         if let Some(b) = input.back {
-            card.back = b.trim().to_string();
+            card.back = markdown::tidy(b.trim());
         }
         if let Some(img) = input.front_image {
             self.check_media(access, &img).await?;
@@ -842,8 +847,8 @@ impl App {
         }
         check_len("front", &card.front, MAX_CARD_TEXT)?;
         check_len("back", &card.back, MAX_CARD_TEXT)?;
-        if is_list && crate::lists::parse(&card.back).is_none() {
-            return Err(crate::lists::no_list());
+        if let Some(how) = multi {
+            crate::multi::split(&card.back, how).ok_or_else(|| crate::multi::no_items(how))?;
         }
         sqlx::query(
             "UPDATE cards SET front = ?, back = ?, front_image = ?, back_image = ?, updated_at = ?
@@ -858,8 +863,8 @@ impl App {
         .bind(access.user_id())
         .execute(&self.db)
         .await?;
-        if is_list || was_list {
-            self.sync_items(&card, is_list).await?;
+        if multi.is_some() || was.is_some() {
+            self.sync_items(&card, multi).await?;
         }
         self.card(access, id).await
     }
@@ -1129,8 +1134,8 @@ impl App {
                 return Err(AppError::Conflict("this card was already answered".into()));
             }
         }
-        if card.is_list {
-            // A plain rating on a list card: Again missed every asked item,
+        if card.multi.is_some() {
+            // A plain rating on a multicard: Again missed every asked item,
             // anything else remembered them all.
             let missed = if rating == Rating::Again { Missed::All } else { Missed::These(vec![]) };
             return self.answer_items(access, &card, missed, duration_ms).await;
@@ -1208,7 +1213,7 @@ impl App {
     ) -> Result<AnswerResult> {
         access.require_review()?;
         let card = self.card(access, card_id).await?;
-        if !card.is_list {
+        if card.multi.is_none() {
             return Err(AppError::bad("this card is not learned item by item; answer it with a rating"));
         }
         if let Some(reps) = expected_reps {

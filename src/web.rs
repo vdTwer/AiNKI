@@ -22,7 +22,7 @@ use crate::{
     App, AppState,
     auth::{Access, User},
     error::AppError,
-    import, lists, markdown, mcp, media, now, oauth, presets,
+    import, markdown, mcp, media, multi::{self, Piece, Split}, now, oauth, presets,
     security::{self, ClientIp, Flash},
     scheduler::{self, CardState, Rating},
     service::{Card, CardFilter, CardInput, Deck, PresetInput},
@@ -131,6 +131,7 @@ pub fn router(app: AppState) -> Router {
         .route("/stats", get(stats_page))
         .route("/media/{id}", get(media_file))
         .layer(small)
+        .route("/cards/preview", post(card_preview_json))
         .route("/cards/new", get(card_new_page).post(card_create).layer(card_upload))
         .route("/cards/{id}", get(card_page).post(card_update).layer(card_upload))
         .route(
@@ -960,9 +961,9 @@ async fn study_card(
     };
     let deck_param = q_deck.map(|d| format!("&deck={d}")).unwrap_or_default();
     let show_href = format!("/study?card={}&show=1&t={}{}#answer", card.id, shown, deck_param);
-    if card.is_list {
+    if let Some(how) = card.multi {
         let items = app.card_items(card).await?;
-        let body = list_study(card, &items, q_deck, shown, revealed, &show_href);
+        let body = multi_study(card, how, &items, q_deck, shown, revealed, &show_href);
         return Ok(page(
             Some(Nav::Study),
             "Study",
@@ -1031,14 +1032,76 @@ fn item_md(text: &str) -> Markup {
     PreEscaped(inner.unwrap_or(t).to_string())
 }
 
-/// A list card: the front (with the items you already know while
-/// relearning), then every item as a row to tap when you remembered it, and
-/// one Done. It is all one form, so it also works without JavaScript.
-fn list_study(card: &Card, items: &[lists::CardItem], q_deck: Option<i64>, shown: i64, revealed: bool, show_href: &str) -> Markup {
-    let asked = lists::asked(card, items, now());
+/// A multicard's back as it is studied: everything on it in order, every
+/// item a row. Asked items are rows to tap when you remembered them (when
+/// `tap`; the editor's preview only shows them), the others show as known.
+fn multi_back(pieces: &[Piece], asked: &[bool], tap: bool) -> Markup {
+    // Items next to each other share one list: a block is text, or items
+    // with their numbers.
+    type Block<'a> = (Option<&'a str>, Vec<(usize, &'a str)>);
+    let mut blocks: Vec<Block> = Vec::new();
+    let mut n = 0;
+    for p in pieces {
+        match p {
+            Piece::Text(t) => blocks.push((Some(t), vec![])),
+            Piece::Item(t) => {
+                match blocks.last_mut() {
+                    Some((None, items)) => items.push((n, t)),
+                    _ => blocks.push((None, vec![(n, t)])),
+                }
+                n += 1;
+            }
+        }
+    }
+    html! {
+        @for (text, items) in &blocks {
+            @if let Some(t) = text {
+                div.md { (PreEscaped(markdown::render(t))) }
+            } @else {
+                ol.list-items {
+                    @for (n, text) in items {
+                        @let n = *n;
+                        @if asked.get(n).copied().unwrap_or(true) && tap {
+                            li {
+                                input type="hidden" name="asked" value=(n);
+                                label.row.item data-key=[(n < 9).then(|| (n + 1).to_string())] {
+                                    input type="checkbox" name="recalled" value=(n);
+                                    span.num { (n + 1) }
+                                    span.text { (item_md(text)) }
+                                    span.mark { "Remembered" }
+                                }
+                            }
+                        } @else {
+                            li.known[tap].shown[!tap] {
+                                span.num { (n + 1) }
+                                span.text { (item_md(text)) }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// The back's pieces for its stored items. Should the back no longer split
+/// into those (it always does after a save), the items alone are shown.
+fn pieces_for(card: &Card, how: Split, items: &[multi::CardItem]) -> Vec<Piece> {
+    match multi::split(&card.back, how) {
+        Some(p) if p.iter().filter(|p| matches!(p, Piece::Item(_))).count() == items.len() => p,
+        _ => items.iter().map(|i| Piece::Item(i.text.clone())).collect(),
+    }
+}
+
+/// A multicard: the front (with the items you already know while
+/// relearning), then the whole back with every item as a row to tap when
+/// you remembered it, and one Done. It is all one form, so it also works
+/// without JavaScript.
+fn multi_study(card: &Card, how: Split, items: &[multi::CardItem], q_deck: Option<i64>, shown: i64, revealed: bool, show_href: &str) -> Markup {
+    let asked = multi::asked(card, items, now());
     let n_asked = asked.iter().filter(|a| **a).count();
-    let known: Vec<&lists::CardItem> = items.iter().zip(&asked).filter(|(_, a)| !**a).map(|(i, _)| i).collect();
-    let intro = lists::parse(&card.back).map(|l| l.intro).unwrap_or_default();
+    let known: Vec<&multi::CardItem> = items.iter().zip(&asked).filter(|(_, a)| !**a).map(|(i, _)| i).collect();
+    let pieces = pieces_for(card, how, items);
     html! {
         form.list-answer method="post" action="/study/answer" {
             input type="hidden" name="card" value=(card.id);
@@ -1051,35 +1114,15 @@ fn list_study(card: &Card, items: &[lists::CardItem], q_deck: Option<i64>, shown
                 @if !known.is_empty() {
                     div.list-known {
                         p.known-label { "You know" }
-                        ul { @for i in &known { li { (item_md(&i.text)) } } }
+                        ul { @for i in &known { li { (item_md(multi::title(&i.text))) } } }
                         p.more { "and " (n_asked) " more?" }
                     }
                 }
                 hr.divider hidden[!revealed];
                 section.face.back.list id="answer" hidden[!revealed] {
                     @if let Some(img) = &card.back_image { img src=(format!("/media/{img}")) alt=""; }
-                    @if !intro.is_empty() { div.md { (PreEscaped(markdown::render(&intro))) } }
                     p.list-how { "Tap the ones you remembered." }
-                    ol.list-items {
-                        @for (n, item) in items.iter().enumerate() {
-                            @if asked[n] {
-                                li {
-                                    input type="hidden" name="asked" value=(n);
-                                    label.row.item data-key=[(n < 9).then(|| (n + 1).to_string())] {
-                                        input type="checkbox" name="recalled" value=(n);
-                                        span.num { (n + 1) }
-                                        span.text { (item_md(&item.text)) }
-                                        span.mark { "Remembered" }
-                                    }
-                                }
-                            } @else {
-                                li.known {
-                                    span.num { (n + 1) }
-                                    span.text { (item_md(&item.text)) }
-                                }
-                            }
-                        }
-                    }
+                    (multi_back(&pieces, &asked, true))
                 }
             }
             (reveal_button(show_href, revealed))
@@ -1091,6 +1134,41 @@ fn list_study(card: &Card, items: &[lists::CardItem], q_deck: Option<i64>, shown
             }
         }
     }
+}
+
+/// The card being written as it will look when studied.
+fn card_preview(front: &str, back: &str, how: Option<Split>) -> Markup {
+    let pieces = how.and_then(|h| multi::split(back, h));
+    html! {
+        section.face.front { (face(front, &None)) }
+        hr.divider;
+        @match &pieces {
+            Some(p) => section.face.back.list { (multi_back(p, &[], false)) },
+            None => section.face.back { (face(back, &None)) },
+        }
+    }
+}
+
+#[derive(Deserialize)]
+struct PreviewForm {
+    #[serde(default)]
+    front: String,
+    #[serde(default)]
+    back: String,
+    #[serde(default)]
+    multi: String,
+}
+
+/// For the card form while you write: how the card will look, and which
+/// ways the back can be learned item by item.
+async fn card_preview_json(_user: WebUser, Form(f): Form<PreviewForm>) -> Response {
+    let splits: Vec<&str> = multi::splits(&f.back).into_iter().map(Split::as_str).collect();
+    let html = card_preview(&f.front, &f.back, Split::parse(&f.multi)).into_string();
+    (
+        [(header::CONTENT_TYPE, "application/json")],
+        serde_json::json!({ "splits": splits, "html": html }).to_string(),
+    )
+        .into_response()
 }
 
 async fn study(State(app): State<AppState>, user: WebUser, Flash(msg): Flash, Query(q): Query<StudyQuery>) -> WebResult {
@@ -1581,8 +1659,8 @@ struct CardFormData {
     back_upload: Option<Vec<u8>>,
     remove_front_image: bool,
     remove_back_image: bool,
-    /// "Learn item by item" is switched on.
-    list: bool,
+    /// How to learn it item by item, if at all.
+    multi: Option<Split>,
     /// An image was picked; it can't be refilled if the form comes back.
     had_upload: bool,
 }
@@ -1616,7 +1694,8 @@ async fn read_card_form(mp: Multipart) -> Result<CardFormData, AppError> {
         back: text("back"),
         remove_front_image: fields.contains_key("remove_front_image"),
         remove_back_image: fields.contains_key("remove_back_image"),
-        list: fields.contains_key("list"),
+        // "list" is what the form sent before multicards.
+        multi: Split::parse(&text("multi")).or(fields.contains_key("list").then_some(Split::List)),
         ..Default::default()
     };
     f.front_upload = fields.remove("front_image").filter(|d| !d.is_empty());
@@ -1679,7 +1758,7 @@ struct CardDraft<'a> {
     back: &'a str,
     front_image: &'a Option<String>,
     back_image: &'a Option<String>,
-    is_list: bool,
+    multi: Option<Split>,
 }
 
 fn card_form(action: &str, decks: &[crate::service::Deck], c: &CardDraft, submit: &str, allow_new_deck: bool) -> Markup {
@@ -1708,16 +1787,29 @@ fn card_form(action: &str, decks: &[crate::service::Deck], c: &CardDraft, submit
                 (face_field("front", "Front", "Question", c.front, c.front_image, true))
                 hr.divider;
                 (face_field("back", "Back", "Answer", c.back, c.back_image, false))
-                // Offered once the back has a numbered list; app.js shows and
-                // hides it while you write.
-                @let has_list = lists::parse(c.back).is_some();
-                label.check.list-toggle hidden[!has_list && !c.is_list] {
-                    input type="checkbox" name="list" value="1" checked[c.is_list];
-                    span { "Learn item by item" span.hint-inline { "You mark what you remembered; each item gets its own schedule." } }
+                // The ways the back can be split are offered; app.js keeps
+                // them up to date while you write.
+                @let splits = multi::splits(c.back);
+                fieldset.line.multi-pick hidden[splits.is_empty() && c.multi.is_none()] {
+                    legend { "Learn" }
+                    span.choice {
+                        label.check { input type="radio" name="multi" value="" checked[c.multi.is_none()]; " As one card" }
+                        @for k in Split::ALL {
+                            label.check data-split=(k.as_str()) hidden[!splits.contains(&k) && c.multi != Some(k)] {
+                                input type="radio" name="multi" value=(k.as_str()) checked[c.multi == Some(k)];
+                                " " (k.label())
+                            }
+                        }
+                    }
+                    p.hint-inline { "Item by item: you mark what you remembered, and each item gets its own schedule." }
                 }
             }
+            div.sheet.card-preview hidden {}
             div.form-foot {
-                p.muted.small { "Text supports Markdown: **bold**, *italic*, lists, `code`." }
+                p.muted.small {
+                    "Text supports Markdown: **bold**, *italic*, lists, # headings, `code`."
+                    " " button.link.preview-toggle type="button" hidden { "Preview" }
+                }
                 button.btn.primary.wide type="submit" { (submit) span.key.submit-key hidden { "Ctrl ⏎" } }
             }
         }
@@ -1752,7 +1844,7 @@ async fn card_new_page(State(app): State<AppState>, user: WebUser, Flash(msg): F
         Some(id) => Some(id),
         None => app.last_used_deck(&access).await?.or_else(|| decks.first().map(|d| d.id)),
     };
-    let draft = CardDraft { deck, new_deck: "", front: "", back: "", front_image: &None, back_image: &None, is_list: false };
+    let draft = CardDraft { deck, new_deck: "", front: "", back: "", front_image: &None, back_image: &None, multi: None };
     Ok(card_new_view(&user.0, &decks, &draft, &msg, None).into_response())
 }
 
@@ -1794,7 +1886,7 @@ async fn card_create(State(app): State<AppState>, user: WebUser, mp: Multipart) 
             Some(d) => Some(app.store_image(&access, d).await?.id),
             None => None,
         };
-        app.create_card(&access, deck, &f.front, &f.back, front_image, back_image, f.list).await?;
+        app.create_card(&access, deck, &f.front, &f.back, front_image, back_image, f.multi).await?;
         Ok((deck, msg))
     }
     .await;
@@ -1810,7 +1902,7 @@ async fn card_create(State(app): State<AppState>, user: WebUser, mp: Multipart) 
                 back: &f.back,
                 front_image: &None,
                 back_image: &None,
-                is_list: f.list,
+                multi: f.multi,
             };
             Ok(form_again(card_new_view(&user.0, &decks, &draft, &None, Some(&msg))))
         }
@@ -1835,7 +1927,7 @@ async fn card_view(app: &App, user: &User, id: i64, msg: &Option<String>, sent: 
             back: &f.back,
             front_image: if f.remove_front_image { &None } else { &card.front_image },
             back_image: if f.remove_back_image { &None } else { &card.back_image },
-            is_list: f.list,
+            multi: f.multi,
         },
         None => CardDraft {
             deck: Some(card.deck_id),
@@ -1844,7 +1936,7 @@ async fn card_view(app: &App, user: &User, id: i64, msg: &Option<String>, sent: 
             back: &card.back,
             front_image: &card.front_image,
             back_image: &card.back_image,
-            is_list: card.is_list,
+            multi: card.multi,
         },
     };
     Ok(layout_in(
@@ -1863,14 +1955,14 @@ async fn card_view(app: &App, user: &User, id: i64, msg: &Option<String>, sent: 
                 @if card.card_state() != CardState::New {
                     dt { "Due" } dd { (capitalize(&format::when(&clock, card.due))) }
                 }
-                @if let Some(r) = r { dt { @if card.is_list { "Weakest item now" } @else { "Recall chance now" } } dd { (format::percent(Some(r as f64))) } }
+                @if let Some(r) = r { dt { @if card.multi.is_some() { "Weakest item now" } @else { "Recall chance now" } } dd { (format::percent(Some(r as f64))) } }
             }
             @if !items.is_empty() {
                 h2 { "Items" }
                 ol.item-recall {
                     @for i in &items {
                         li {
-                            span.text { (i.text.lines().next().unwrap_or("")) }
+                            span.text { (multi::title(&i.text)) }
                             span.chance {
                                 @match scheduler::retrievability(&i.sched(), &params, &clock) {
                                     Some(r) => (format::percent(Some(r as f64))),
@@ -1960,7 +2052,7 @@ async fn card_update(State(app): State<AppState>, user: WebUser, Path(id): Path<
                 back: Some(f.back.clone()),
                 front_image,
                 back_image,
-                is_list: Some(f.list),
+                multi: Some(f.multi),
             },
         )
         .await?;
