@@ -4,7 +4,7 @@
 
 use std::path::PathBuf;
 
-use image::{GrayImage, ImageReader, Luma, imageops::FilterType};
+use image::{GrayImage, ImageDecoder, ImageReader, Luma, imageops::FilterType};
 use serde::Serialize;
 
 use crate::{
@@ -83,9 +83,13 @@ pub fn process_image(data: &[u8]) -> Result<(Vec<u8>, u32, u32)> {
     limits.max_image_height = Some(MAX_DECODE_DIMENSION);
     limits.max_alloc = Some(256 * 1024 * 1024);
     reader.limits(limits);
-    let img = reader
-        .decode()
-        .map_err(|e| AppError::bad(format!("unsupported or broken image: {e}")))?;
+    let broken = |e: image::ImageError| AppError::bad(format!("unsupported or broken image: {e}"));
+    let mut decoder = reader.into_decoder().map_err(broken)?;
+    // Phones store photos as the sensor saw them plus a note on how to turn
+    // them; without it a portrait photo lies on its side.
+    let orientation = decoder.orientation().unwrap_or(image::metadata::Orientation::NoTransforms);
+    let mut img = image::DynamicImage::from_decoder(decoder).map_err(broken)?;
+    img.apply_orientation(orientation);
     let img = if img.width() > MAX_DIMENSION || img.height() > MAX_DIMENSION {
         img.resize(MAX_DIMENSION, MAX_DIMENSION, FilterType::Lanczos3)
     } else {
@@ -206,6 +210,23 @@ mod tests {
         img.write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png).unwrap();
         assert!(png.len() < 100_000);
         assert!(process_image(&png).is_err());
+    }
+
+    #[test]
+    fn turns_photos_upright() {
+        // A 4x2 JPEG whose EXIF says "rotate 90 degrees clockwise".
+        let mut img = image::RgbImage::new(4, 2);
+        img.put_pixel(0, 0, image::Rgb([255, 255, 255]));
+        let mut jpg = Vec::new();
+        let mut enc = image::codecs::jpeg::JpegEncoder::new(&mut jpg);
+        // EXIF: big-endian TIFF, one IFD entry: Orientation (0x0112) = 6.
+        let exif: Vec<u8> = vec![
+            b'M', b'M', 0, 42, 0, 0, 0, 8, 0, 1, 0x01, 0x12, 0, 3, 0, 0, 0, 1, 0, 6, 0, 0, 0, 0, 0, 0, 0, 0,
+        ];
+        image::ImageEncoder::set_exif_metadata(&mut enc, exif).unwrap();
+        image::ImageEncoder::write_image(enc, &img, 4, 2, image::ExtendedColorType::Rgb8).unwrap();
+        let (_, w, h) = process_image(&jpg).unwrap();
+        assert_eq!((w, h), (2, 4));
     }
 
     #[test]
