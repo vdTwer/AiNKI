@@ -411,6 +411,19 @@ async fn unused_images_are_removed_after_a_day() {
 }
 
 #[tokio::test]
+async fn accepting_a_share_twice_makes_one_copy() {
+    let app = app().await;
+    let kolja = user(&app, "kolja").await;
+    let anna = user(&app, "anna").await;
+    let deck = app.create_deck(&kolja, "Spanish", "", None).await.unwrap();
+    app.create_card(&kolja, deck.id, "hablar", "to speak", None, None, None).await.unwrap();
+    let share = app.share_deck(&kolja, deck.id, &anna.user.handle()).await.unwrap();
+    let (first, second) = tokio::join!(app.accept_share(&anna, share.id), app.accept_share(&anna, share.id));
+    assert!(first.is_ok() != second.is_ok());
+    assert_eq!(app.decks(&anna).await.unwrap().len(), 1);
+}
+
+#[tokio::test]
 async fn oauth_flow() {
     use base64::Engine;
     use sha2::Digest;
