@@ -1493,3 +1493,39 @@ async fn the_week_compares_retention_with_the_aim() {
     assert_eq!(r[0].reviews, 25);
     assert!(r[0].short());
 }
+
+/// Run with `cargo test --release big_collection -- --ignored --nocapture`.
+#[tokio::test]
+#[ignore]
+async fn big_collection_stays_fast() {
+    let app = app().await;
+    let a = user(&app, "kolja").await;
+    let deck = app.create_deck(&a, "Big", "", None).await.unwrap();
+    let mut tx = app.db.begin().await.unwrap();
+    for n in 0..20_000i64 {
+        sqlx::query(
+            "INSERT INTO cards (user_id, deck_id, front, back, state, stability, difficulty, due, last_review, reps, lapses, position, created_at, updated_at)
+             VALUES (?, ?, ?, 'back', 2, 20.0, 5.0, ?, ?, 5, ?, ?, 0, 0)",
+        )
+        .bind(a.user_id())
+        .bind(deck.id)
+        .bind(format!("front number {n}"))
+        .bind(now() + 86_400)
+        .bind(now() - 86_400)
+        .bind(if n % 7 == 0 { 2 + n % 5 } else { 0 })
+        .bind(n)
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+    }
+    tx.commit().await.unwrap();
+    let t = std::time::Instant::now();
+    let found = app.attention(&a, None).await.unwrap();
+    println!("attention: {} cards in {:?}", found.len(), t.elapsed());
+    let t = std::time::Instant::now();
+    app.week(&a).await.unwrap();
+    println!("week: {:?}", t.elapsed());
+    let t = std::time::Instant::now();
+    app.overdue(&a).await.unwrap();
+    println!("overdue: {:?}", t.elapsed());
+}
