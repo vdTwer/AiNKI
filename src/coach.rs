@@ -290,11 +290,16 @@ impl App {
 
     /// Every visible card's id, deck and normalized front.
     async fn fronts(&self, access: &Access) -> Result<Vec<(i64, i64, String)>> {
+        // One row of JSON instead of a row per card: decoding rows one by
+        // one is what costs time with tens of thousands of cards.
+        let json: String = sqlx::query_scalar(
+            "SELECT COALESCE(json_group_array(json_array(id, deck_id, front)), '[]') FROM cards WHERE user_id = ?",
+        )
+        .bind(access.user_id())
+        .fetch_one(&self.db)
+        .await?;
         let rows: Vec<(i64, i64, String)> =
-            sqlx::query_as("SELECT id, deck_id, front FROM cards WHERE user_id = ?")
-                .bind(access.user_id())
-                .fetch_all(&self.db)
-                .await?;
+            serde_json::from_str(&json).map_err(|e| AppError::Internal(anyhow::anyhow!("card fronts: {e}")))?;
         Ok(rows
             .into_iter()
             .filter(|(_, deck, _)| access.can_see_deck(*deck))
@@ -368,19 +373,46 @@ impl App {
         let in_scope = |deck: i64| deck_id.is_none_or(|d| d == deck) && access.can_see_deck(deck);
 
         // Leech and split candidates: anything forgotten at least twice.
-        let candidates: Vec<Card> = sqlx::query_as(
-            "SELECT * FROM cards WHERE user_id = ? AND suspended = 0
+        // First only what the rules need (as one row of JSON, which is much
+        // quicker to read than a row per card), then whole cards only for
+        // those that may get a flag.
+        let light: String = sqlx::query_scalar(
+            "SELECT COALESCE(json_group_array(json_array(id, deck_id, lapses, multi IS NOT NULL,
+                CASE WHEN lapses >= ? AND multi IS NULL THEN back END)), '[]')
+             FROM cards WHERE user_id = ? AND suspended = 0
              AND (lapses >= ? OR (multi IS NOT NULL AND EXISTS
                  (SELECT 1 FROM card_items i WHERE i.card_id = cards.id AND i.lapses >= ?)))",
         )
+        .bind(SPLIT_LAPSES)
         .bind(access.user_id())
         .bind(SLOW_LAPSES.min(SPLIT_LAPSES))
         .bind(LEECH_LAPSES)
-        .fetch_all(&self.db)
+        .fetch_one(&self.db)
         .await?;
-        let candidates: Vec<Card> = candidates.into_iter().filter(|c| in_scope(c.deck_id)).collect();
-        let ids: Vec<i64> = candidates.iter().map(|c| c.id).collect();
+        let light: Vec<(i64, i64, i64, i64, Option<String>)> =
+            serde_json::from_str(&light).map_err(|e| AppError::Internal(anyhow::anyhow!("coach candidates: {e}")))?;
+        let light: Vec<_> = light.into_iter().filter(|c| in_scope(c.1)).collect();
+        let ids: Vec<i64> = light.iter().map(|c| c.0).collect();
         let secs = self.answer_seconds(&ids).await?;
+        let maybe: Vec<i64> = light
+            .iter()
+            .filter(|(id, _, lapses, multi, back)| {
+                *lapses >= LEECH_LAPSES
+                    || *multi == 1
+                    || back.as_deref().is_some_and(|b| list_items(b) >= 2)
+                    || secs.get(id).is_some_and(|s| *s >= SLOW_SECS)
+            })
+            .map(|c| c.0)
+            .collect();
+        let mut candidates: Vec<Card> = Vec::new();
+        for chunk in maybe.chunks(500) {
+            let sql = format!("SELECT * FROM cards WHERE id IN ({})", placeholders(chunk.len()));
+            let mut q = sqlx::query_as::<_, Card>(&sql);
+            for id in chunk {
+                q = q.bind(id);
+            }
+            candidates.extend(q.fetch_all(&self.db).await?);
+        }
 
         // Each flag with the lapse count it is judged by.
         let mut found: HashMap<i64, (Option<Card>, Vec<(Flag, i64)>)> = HashMap::new();
