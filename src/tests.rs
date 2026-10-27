@@ -702,6 +702,17 @@ mod http {
     }
 
     #[tokio::test]
+    async fn settings_with_a_cleared_number_keep_its_value() {
+        let app = app().await;
+        user(&app, "kolja").await;
+        let cookie = login_cookie(&app, "kolja").await;
+        let res = submit(&app, &cookie, "/settings", "timezone=Europe%2FBerlin&rollover_hour=&font_scale=120").await;
+        assert_eq!(location(&res), "/settings");
+        let u = app.find_user("kolja").await.unwrap();
+        assert_eq!((u.rollover_hour, u.font_scale), (4, 120));
+    }
+
+    #[tokio::test]
     async fn logged_out_links_come_back_after_login() {
         let app = app().await;
         let res = send(&app, Request::get("/decks/7?q=perro").body(Body::empty()).unwrap()).await;

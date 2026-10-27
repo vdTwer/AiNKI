@@ -2482,8 +2482,12 @@ async fn settings_page(State(app): State<AppState>, user: WebUser, Flash(msg): F
 #[derive(Deserialize)]
 struct SettingsForm {
     timezone: String,
-    rollover_hour: i64,
-    font_scale: i64,
+    /// Numbers as typed: a cleared field keeps the current value instead of
+    /// failing the whole form.
+    #[serde(default)]
+    rollover_hour: String,
+    #[serde(default)]
+    font_scale: String,
     four_buttons: Option<String>,
     optimize_include_agent: Option<String>,
     desktop_look: Option<String>,
@@ -2494,9 +2498,9 @@ async fn settings_update(State(app): State<AppState>, user: WebUser, Form(f): Fo
         app.update_settings(
             user.0.id,
             f.timezone.trim(),
-            f.rollover_hour,
+            f.rollover_hour.trim().parse().unwrap_or(user.0.rollover_hour),
             f.four_buttons.is_some(),
-            f.font_scale,
+            f.font_scale.trim().parse().unwrap_or(user.0.font_scale),
             f.optimize_include_agent.is_some(),
             f.desktop_look.as_deref().unwrap_or("calm"),
         )
