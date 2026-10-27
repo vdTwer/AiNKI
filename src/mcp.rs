@@ -612,6 +612,14 @@ impl AinkiMcp {
     #[tool(description = "Get the next card to study (respects daily limits). Returns front AND back: show the user only the front until they have answered.")]
     async fn get_next_card(&self, Parameters(p): Parameters<OptionalDeckParam>, Extension(parts): Extension<Parts>) -> ToolResult {
         let a = access(&parts)?;
+        if let Some(until) = crate::study::quiet_until(&a.user, crate::now()) {
+            let when = crate::format::when(&a.user.clock(), until);
+            return out(json!({
+                "done": true,
+                "quiet_hours": true,
+                "message": format!("Quiet hours until {when}. The user asked not to be quizzed now; don't start a quiz."),
+            }));
+        }
         match self.app.next_card(&a, p.deck_id).await.map_err(err)? {
             None => out(json!({ "done": true, "message": "Nothing is due right now." })),
             Some(sc) => {
