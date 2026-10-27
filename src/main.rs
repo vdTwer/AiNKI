@@ -22,6 +22,7 @@ mod scheduler;
 mod security;
 mod service;
 mod share;
+mod study;
 #[cfg(test)]
 mod tests;
 mod tuning;

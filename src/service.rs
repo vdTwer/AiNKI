@@ -600,6 +600,17 @@ impl App {
             }
             out.push(s);
         }
+        // Catch-up mode: no new cards, and one review budget for all decks.
+        let user = &access.user;
+        if user.catch_up {
+            let done: i64 = out.iter().map(|s| s.review_done_today).sum();
+            let mut budget = (user.catch_up_reviews - done).max(0);
+            for s in &mut out {
+                s.new_today = 0;
+                s.review_due = s.review_due.min(budget);
+                budget -= s.review_due;
+            }
+        }
         Ok(out)
     }
 
@@ -1106,7 +1117,14 @@ impl App {
         };
 
         let learning = pick(&all_ids, "state IN (1, 3) AND due <= ?", "due").await?;
-        let review = pick(&review_ids, "state = 2 AND due <= ?", "due, id").await?;
+        // Catching up, the cards most likely still remembered come first:
+        // the least time gone relative to their stability.
+        let review_order = if access.user.catch_up {
+            format!("({n} - last_review) / MAX(stability, 0.1), id")
+        } else {
+            "due, id".to_string()
+        };
+        let review = pick(&review_ids, "state = 2 AND due <= ?", &review_order).await?;
         let new = pick(&new_ids, "state = 0 AND ? IS NOT NULL", "position, id").await?;
 
         // Interleave new cards with reviews so both progress at the same rate.

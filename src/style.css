@@ -300,3 +300,18 @@ table.workload, table.calibration { width: 100%; border-collapse: collapse; }
 table.workload :is(th, td), table.calibration :is(th, td) { text-align: left; padding: .45rem .3rem; border-bottom: 1px solid var(--fg); }
 table.workload .num, table.calibration .num { text-align: right; font-variant-numeric: tabular-nums; }
 table.workload tr.current th { font-weight: 700; }
+
+/* Timed cards, typed answers, the sure check */
+.timer { margin: 1rem 0 0; }
+.timer-line { height: 4px; background: var(--soft); }
+.timer-fill { height: 4px; width: 100%; background: var(--fg); }
+.timer-meta { display: flex; justify-content: space-between; margin: .3rem 0 0; font-size: .9rem; font-variant-numeric: tabular-nums; }
+.reveal-form .typed-answer { display: block; margin: 1rem 0 0; }
+.reveal-form .typed-answer input { width: 100%; font-size: 1.1rem; }
+.reveal-form .sure-ask { margin: 1rem 0 .4rem; font-weight: 700; }
+.reveal-form .sure-buttons { display: grid; grid-template-columns: 1fr 1fr; gap: .5rem; }
+.reveal-form .sure-buttons .btn { min-height: 3.5rem; }
+.typed-echo { margin: 0 0 1rem; padding: .5rem; border: 2px dashed var(--fg); text-align: left; }
+.typed-echo .typed-text { margin: .2rem 0 0; white-space: pre-wrap; }
+.timeout-note { margin: 1rem 0 .5rem; font-weight: 700; }
+.timed-out .list-items label.row { pointer-events: none; }

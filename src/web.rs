@@ -882,6 +882,34 @@ struct StudyQuery {
     card: Option<i64>,
     show: Option<u8>,
     t: Option<i64>,
+    /// From the reveal form: felt sure (1) or not (0), and what was typed.
+    sure: Option<u8>,
+    typed: Option<String>,
+}
+
+/// How a card is on the page: since when, whether turned over, and what
+/// came with turning it (the sure check, a typed answer).
+struct Shown {
+    at: i64,
+    revealed: bool,
+    sure: Option<bool>,
+    typed: Option<String>,
+}
+
+impl Shown {
+    fn front(at: i64) -> Self {
+        Shown { at, revealed: false, sure: None, typed: None }
+    }
+}
+
+/// What a card's study page adds around the card itself.
+struct StudyExtras {
+    /// The plain "Show answer" link, inside a multicard's form; empty when
+    /// the reveal is a form of its own (typed answers, the sure check).
+    reveal_inside: Markup,
+    sure_field: Markup,
+    echo: Markup,
+    timed_out: bool,
 }
 
 fn study_url(deck: Option<i64>) -> String {
@@ -980,10 +1008,19 @@ async fn study_card(
     card: &Card,
     deck: &Deck,
     q_deck: Option<i64>,
-    shown: i64,
-    revealed: bool,
+    shown: &Shown,
 ) -> Result<Markup, AppError> {
+    let revealed = shown.revealed;
     let previews = app.previews(access, card, deck).await?;
+    let preset = app.preset(access, deck.preset_id).await?;
+    // Time limits, typing and the sure check are for cards seen before;
+    // a new card can't be known yet.
+    let seen = card.card_state() != CardState::New;
+    let limit = if seen { preset.time_limit } else { 0 };
+    let typed = seen && preset.typed_answers;
+    let ask_sure = seen && user.confidence_check;
+    // Without JavaScript the time counts until the answer is shown.
+    let timed_out = revealed && limit > 0 && now() - shown.at > limit + 1;
     let (done, total) = app.session_progress(access, q_deck).await?;
     let leech = app.leech_note(card).await?.is_some();
     let four = user.four_buttons;
@@ -998,10 +1035,44 @@ async fn study_card(
         vec![(Rating::Again, "Again", "1"), (Rating::Good, "Good", "3")]
     };
     let deck_param = q_deck.map(|d| format!("&deck={d}")).unwrap_or_default();
-    let show_href = format!("/study?card={}&show=1&t={}{}#answer", card.id, shown, deck_param);
+    let show_href = format!("/study?card={}&show=1&t={}{}#answer", card.id, shown.at, deck_param);
+    let reveal_form = typed || ask_sure;
+    let reveal = if reveal_form {
+        reveal_controls(card.id, shown.at, q_deck, revealed, typed, ask_sure)
+    } else {
+        reveal_button(&show_href, revealed)
+    };
+    let sure_value = match shown.sure {
+        Some(true) => "1",
+        Some(false) => "0",
+        None => "",
+    };
+    let sure_field = html! { input.sure-field type="hidden" name="sure" value=(sure_value); };
+    let echo = typed_echo(typed, shown.typed.as_deref());
+    let timer = timer_box(limit, revealed);
+    let timeout = html! {
+        form.timeout-form method="post" action="/study/answer" hidden[!timed_out] data-stay {
+            input type="hidden" name="card" value=(card.id);
+            input type="hidden" name="reps" value=(card.reps);
+            input type="hidden" name="t" value=(shown.at);
+            input type="hidden" name="timeout" value="1";
+            @if let Some(d) = q_deck { input type="hidden" name="deck" value=(d); }
+            (sure_field)
+            p.timeout-note { "Time's up. This one counts as forgotten." }
+            div.answers.cols-1 {
+                button.btn.again type="submit" data-key=" " { span.label { "Continue" " " span.key { "space" } } }
+            }
+        }
+    };
     if let Some(how) = card.multi {
         let items = app.card_items(card).await?;
-        let body = multi_study(card, how, &items, q_deck, shown, revealed, &show_href);
+        let extras = StudyExtras {
+            reveal_inside: if reveal_form { html! {} } else { reveal.clone() },
+            sure_field: sure_field.clone(),
+            echo: echo.clone(),
+            timed_out,
+        };
+        let body = multi_study(card, how, &items, q_deck, shown, &extras);
         return Ok(page(
             Some(Nav::Study),
             "Study",
@@ -1009,8 +1080,11 @@ async fn study_card(
             Some("study"),
             html! {
                 (flash(msg))
-                section.study.revealed[revealed] {
+                section.study.revealed[revealed].timed-out[timed_out] {
                     (body)
+                    (timer)
+                    @if reveal_form { (reveal) }
+                    (timeout)
                     (study_foot(&deck.name, deck.id, done, total, q_deck, Some(card.id), leech))
                 }
             },
@@ -1023,19 +1097,25 @@ async fn study_card(
         Some("study"),
         html! {
             (flash(msg))
-            section.study.revealed[revealed] {
+            section.study.revealed[revealed].timed-out[timed_out] {
                 div.card-area {
                     (state_tag(card.card_state()))
                     section.face.front { (face(&card.front, &card.front_image)) }
                     hr.divider hidden[!revealed];
-                    section.face.back id="answer" hidden[!revealed] { (face(&card.back, &card.back_image)) }
+                    section.face.back id="answer" hidden[!revealed] {
+                        (echo)
+                        (face(&card.back, &card.back_image))
+                    }
                 }
-                (reveal_button(&show_href, revealed))
-                form.answers.cols-2[!four].cols-4[four] method="post" action="/study/answer" hidden[!revealed] {
+                (timer)
+                (reveal)
+                (timeout)
+                form.answers.cols-2[!four].cols-4[four] method="post" action="/study/answer" hidden[!revealed || timed_out] {
                     input type="hidden" name="card" value=(card.id);
                     input type="hidden" name="reps" value=(card.reps);
-                    input type="hidden" name="t" value=(shown);
+                    input type="hidden" name="t" value=(shown.at);
                     @if let Some(d) = q_deck { input type="hidden" name="deck" value=(d); }
+                    (sure_field)
                     @for (rating, label, key) in &buttons {
                         @let preview = previews.iter().find(|(r, _)| r == rating).map(|(_, p)| p.as_str()).unwrap_or("");
                         button.btn.primary[*rating == Rating::Good].again[*rating == Rating::Again] type="submit" name="rating" value=(*rating as i64) data-key=(key) {
@@ -1048,6 +1128,66 @@ async fn study_card(
             }
         },
     ))
+}
+
+/// The countdown for a timed card. Without JavaScript it only names the
+/// limit, and the time counts until the answer is shown.
+fn timer_box(limit: i64, revealed: bool) -> Markup {
+    if limit <= 0 {
+        return html! {};
+    }
+    html! {
+        div.timer data-limit=(limit) hidden[revealed] data-stay {
+            div.timer-line aria-hidden="true" { div.timer-fill {} }
+            div.timer-meta {
+                span.timer-secs role="timer" { (limit) " s" }
+                button.link.extend type="button" data-key="+" hidden { "+10 s" }
+            }
+        }
+    }
+}
+
+/// "Show answer" as a form: with a box for the typed answer, or as the
+/// sure check's two buttons. Without JavaScript it loads the answer side.
+fn reveal_controls(card_id: i64, at: i64, q_deck: Option<i64>, revealed: bool, typed: bool, ask_sure: bool) -> Markup {
+    html! {
+        form.reveal.reveal-form method="get" action="/study#answer" hidden[revealed] {
+            input type="hidden" name="card" value=(card_id);
+            input type="hidden" name="show" value="1";
+            input type="hidden" name="t" value=(at);
+            @if let Some(d) = q_deck { input type="hidden" name="deck" value=(d); }
+            @if typed {
+                label.typed-answer {
+                    span.face-label { "Your answer" }
+                    input type="text" name="typed" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="500" placeholder="Type it, then Enter";
+                }
+            }
+            @if ask_sure {
+                p.sure-ask { "Do you know it?" }
+                div.sure-buttons {
+                    button.btn.primary type="submit" name="sure" value="1" data-key="s" { span.label { "Sure" " " span.key { "S" } } }
+                    button.btn type="submit" name="sure" value="0" data-key="u" { span.label { "Not sure" " " span.key { "U" } } }
+                }
+            } @else {
+                button.btn.primary.show type="submit" data-key=" " { "Show answer" span.key { "space" } }
+            }
+        }
+    }
+}
+
+/// What was typed, shown above the answer to compare. Filled in by app.js
+/// when it reveals the card.
+fn typed_echo(typed: bool, text: Option<&str>) -> Markup {
+    if !typed {
+        return html! {};
+    }
+    let text = text.map(str::trim).filter(|t| !t.is_empty());
+    html! {
+        div.typed-echo hidden[text.is_none()] data-stay {
+            span.face-label { "You wrote" }
+            p.typed-text { (text.unwrap_or("")) }
+        }
+    }
 }
 
 fn reveal_button(href: &str, revealed: bool) -> Markup {
@@ -1135,7 +1275,8 @@ fn pieces_for(card: &Card, how: Split, items: &[multi::CardItem]) -> Vec<Piece> 
 /// relearning), then the whole back with every item as a row to tap when
 /// you remembered it, and one Done. It is all one form, so it also works
 /// without JavaScript.
-fn multi_study(card: &Card, how: Split, items: &[multi::CardItem], q_deck: Option<i64>, shown: i64, revealed: bool, show_href: &str) -> Markup {
+fn multi_study(card: &Card, how: Split, items: &[multi::CardItem], q_deck: Option<i64>, shown: &Shown, extras: &StudyExtras) -> Markup {
+    let revealed = shown.revealed;
     let asked = multi::asked(card, items, now());
     let n_asked = asked.iter().filter(|a| **a).count();
     let known: Vec<&multi::CardItem> = items.iter().zip(&asked).filter(|(_, a)| !**a).map(|(i, _)| i).collect();
@@ -1144,8 +1285,9 @@ fn multi_study(card: &Card, how: Split, items: &[multi::CardItem], q_deck: Optio
         form.list-answer method="post" action="/study/answer" {
             input type="hidden" name="card" value=(card.id);
             input type="hidden" name="reps" value=(card.reps);
-            input type="hidden" name="t" value=(shown);
+            input type="hidden" name="t" value=(shown.at);
             @if let Some(d) = q_deck { input type="hidden" name="deck" value=(d); }
+            (extras.sure_field)
             div.card-area {
                 (state_tag(card.card_state()))
                 section.face.front { (face(&card.front, &card.front_image)) }
@@ -1158,13 +1300,14 @@ fn multi_study(card: &Card, how: Split, items: &[multi::CardItem], q_deck: Optio
                 }
                 hr.divider hidden[!revealed];
                 section.face.back.list id="answer" hidden[!revealed] {
+                    (extras.echo)
                     @if let Some(img) = &card.back_image { img src=(format!("/media/{img}")) alt=""; }
                     p.list-how { "Tap the ones you remembered." }
                     (multi_back(&pieces, &asked, true))
                 }
             }
-            (reveal_button(show_href, revealed))
-            div.answers.cols-1 hidden[!revealed] {
+            (extras.reveal_inside)
+            div.answers.cols-1 hidden[!revealed || extras.timed_out] {
                 button.btn.primary type="submit" data-key=" " {
                     span.label { "Done" " " span.key { "space" } }
                     span.ivl data-remembered=(n_asked) { "0 of " (n_asked) " remembered" }
@@ -1220,8 +1363,13 @@ async fn study(State(app): State<AppState>, user: WebUser, Flash(msg): Flash, Qu
     if let (Some(card_id), Some(1)) = (q.card, q.show) {
         let card = app.card(&access, card_id).await?;
         let deck = app.deck(&access, card.deck_id).await?;
-        let shown = q.t.unwrap_or_else(now);
-        return Ok(study_card(&app, &access, &user.0, &msg, &card, &deck, q.deck, shown, true).await?.into_response());
+        let shown = Shown {
+            at: q.t.unwrap_or_else(now),
+            revealed: true,
+            sure: q.sure.map(|s| s == 1),
+            typed: q.typed.clone(),
+        };
+        return Ok(study_card(&app, &access, &user.0, &msg, &card, &deck, q.deck, &shown).await?.into_response());
     }
 
     let Some(sc) = app.next_card(&access, q.deck).await? else {
@@ -1271,7 +1419,7 @@ async fn study(State(app): State<AppState>, user: WebUser, Flash(msg): Flash, Qu
         )
         .into_response());
     };
-    Ok(study_card(&app, &access, &user.0, &msg, &sc.card, &sc.deck, q.deck, now(), false).await?.into_response())
+    Ok(study_card(&app, &access, &user.0, &msg, &sc.card, &sc.deck, q.deck, &Shown::front(now())).await?.into_response())
 }
 
 #[derive(Deserialize)]
@@ -1288,12 +1436,25 @@ struct AnswerForm {
     reps: i64,
     t: Option<i64>,
     deck: Option<i64>,
+    /// The sure check: "1" sure, "0" not, empty when not asked.
+    sure: Option<String>,
+    /// Time ran out on a timed card: it counts as Again.
+    timeout: Option<u8>,
 }
 
 async fn study_answer(State(app): State<AppState>, user: WebUser, Form(f): Form<AnswerForm>) -> WebResult {
     // Like Anki, cap the counted thinking time at 60 seconds.
     let duration = f.t.map(|t| ((now() - t).clamp(0, 60)) * 1000);
+    let access = user.access();
+    let timed_out = f.timeout == Some(1);
+    let sure = match f.sure.as_deref() {
+        Some("1") => Some(true),
+        Some("0") => Some(false),
+        _ => None,
+    };
     let answered = match f.rating {
+        // A timeout misses a multicard's asked items all at once too.
+        _ if timed_out => app.answer_card(&access, f.card, Rating::Again, duration, Some(f.reps)).await,
         Some(r) => {
             let rating = Rating::from_i64(r).ok_or_else(|| AppError::bad("invalid rating"))?;
             app.answer_card(&user.access(), f.card, rating, duration, Some(f.reps)).await
@@ -1303,6 +1464,9 @@ async fn study_answer(State(app): State<AppState>, user: WebUser, Form(f): Form<
             app.answer_list(&user.access(), f.card, missed, duration, Some(f.reps)).await
         }
     };
+    if answered.is_ok() {
+        app.note_answer(&access, f.card, sure, timed_out).await?;
+    }
     match answered {
         Ok(_) | Err(AppError::Conflict(_)) => Ok(redirect(study_url(f.deck))),
         Err(e) => Err(e.into()),

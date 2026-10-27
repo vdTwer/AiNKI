@@ -1219,3 +1219,29 @@ html.calm :is(table.workload, table.calibration) :is(th, td) { padding: .55rem .
 html.calm :is(table.workload, table.calibration) thead th { font-size: .8rem; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
 html.calm :is(table.workload, table.calibration) .num { text-align: right; font-variant-numeric: tabular-nums; }
 html.calm table.workload tr.current th { color: var(--terra-deep); }
+
+/* ----- timed cards, typed answers, the sure check ------------------------ */
+/* The countdown is a thin Terra line that drains, and turns Orchid in its
+   last seconds. */
+html.calm .timer { width: min(22rem, 100%); margin: 1.4rem auto 0; }
+html.calm .timer-line { height: 2px; border-radius: 2px; background: var(--track); overflow: hidden; }
+html.calm .timer-fill { height: 2px; width: 100%; border-radius: 2px; background: var(--terra); transition: background-color 400ms var(--ease); }
+html.calm .timer.low .timer-fill { background: var(--orchid); }
+html.calm .timer-meta { display: flex; justify-content: space-between; align-items: baseline; margin: .45rem 0 0; font-size: .87rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+html.calm .timer.low .timer-secs { color: var(--orchid-deep); }
+html.calm .timer .extend { color: var(--muted); font-size: .87rem; }
+html.calm .timer .extend:hover { color: var(--terra-hover); }
+html.calm .study .reveal-form { flex-direction: column; align-items: center; gap: 1rem; width: min(26rem, 100%); margin: 1.6rem auto 0; }
+html.calm .reveal-form .typed-answer { display: flex; flex-direction: column; width: 100%; text-align: left; }
+html.calm .reveal-form .typed-answer .face-label { margin-bottom: .3rem; }
+html.calm .reveal-form .typed-answer input { width: 100%; font-family: var(--serif); font-size: 1.15rem; }
+html.calm .reveal-form .sure-ask { margin: 0; color: var(--muted); font-size: .93rem; }
+html.calm .reveal-form .sure-buttons { display: grid; grid-template-columns: 1fr 1fr; gap: .8rem; width: 100%; }
+html.calm .reveal-form .sure-buttons .btn { min-height: 56px; }
+html.calm .reveal-form .sure-buttons .label { display: inline-flex; align-items: center; gap: 8px; }
+html.calm .typed-echo { margin: 0 auto 1.4rem; padding: .8rem 1rem; max-width: 30rem; border: 0; border-radius: 10px; background: color-mix(in srgb, var(--orchid) 7%, transparent); text-align: left; }
+html.calm .typed-echo .face-label { color: var(--orchid-deep); }
+html.calm .typed-echo .typed-text { margin: .25rem 0 0; font-family: var(--serif); white-space: pre-wrap; }
+html.calm .timeout-form { text-align: center; animation: calm-appear 220ms var(--ease) both; }
+html.calm .timeout-note { margin: 1.6rem 0 0; color: var(--orchid-deep); font-size: .93rem; }
+html.calm .timed-out ol.list-items label.row { pointer-events: none; }
