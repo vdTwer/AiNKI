@@ -3,7 +3,7 @@ use std::{path::PathBuf, str::FromStr, sync::Arc};
 use anyhow::Context;
 use sqlx::{
     SqlitePool,
-    sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions},
+    sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions, SqliteSynchronous},
 };
 use tracing_subscriber::EnvFilter;
 
@@ -151,6 +151,10 @@ async fn open_db(config: &Config) -> anyhow::Result<SqlitePool> {
     let opts = SqliteConnectOptions::from_str(&format!("sqlite://{}", path.display()))?
         .create_if_missing(true)
         .journal_mode(SqliteJournalMode::Wal)
+        // What SQLite recommends with WAL: no disk sync on every commit,
+        // only at checkpoints. A crash can't corrupt the database; at worst
+        // the last moment of writes is lost on a power cut.
+        .synchronous(SqliteSynchronous::Normal)
         .foreign_keys(true)
         .busy_timeout(std::time::Duration::from_secs(10));
     let pool = SqlitePoolOptions::new().max_connections(8).connect_with(opts).await?;
