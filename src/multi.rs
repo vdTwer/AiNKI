@@ -481,7 +481,7 @@ impl App {
         };
         let deck = self.deck(access, card.deck_id).await?;
         let cfg = self.sched_config(access, &deck).await?;
-        let fsrs = scheduler::fsrs_for(&access.user.params());
+        let fsrs = scheduler::fsrs_for(&self.deck_params(access, deck.id).await?);
         let before_items = serde_json::to_string(&items).ok();
         let mut item_logs = Vec::new();
         for (n, item) in items.iter_mut().enumerate() {

@@ -128,7 +128,7 @@ impl AinkiMcp {
     /// (`studying`) which of them are asked.
     async fn card_json(&self, a: &Access, card: &crate::service::Card, studying: bool) -> Result<Value, String> {
         let clock = a.user.clock();
-        let params = a.user.params();
+        let params = self.app.deck_params(a, card.deck_id).await.map_err(err)?;
         let mut v = card.to_json(&clock, &params);
         if card.multi.is_some() {
             let items = self.app.card_items(card).await.map_err(err)?;
@@ -484,10 +484,10 @@ impl AinkiMcp {
         };
         let (cards, total) = self.app.list_cards(&a, &filter).await.map_err(err)?;
         let clock = a.user.clock();
-        let params = a.user.params();
+        let book = self.app.param_book(&a).await.map_err(err)?;
         out(json!({
             "total": total,
-            "cards": cards.iter().map(|c| c.to_json(&clock, &params)).collect::<Vec<Value>>(),
+            "cards": cards.iter().map(|c| c.to_json(&clock, book.for_deck(c.deck_id))).collect::<Vec<Value>>(),
         }))
     }
 

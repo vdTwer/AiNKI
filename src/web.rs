@@ -2038,7 +2038,7 @@ async fn card_view(
         .map(|text| WriteHint { text, href: None })
         .collect();
     let clock = user.clock();
-    let params = user.params();
+    let params = app.deck_params(&access, card.deck_id).await?;
     let r = scheduler::retrievability(&card.sched(), &params, &clock);
     let draft = match sent {
         Some(f) => CardDraft {
@@ -2547,6 +2547,9 @@ fn preset_draft(t: &presets::PresetTemplate, user_id: i64) -> crate::service::Pr
         relearning_steps: t.relearning_steps.to_string(),
         max_interval: t.max_interval,
         created_at: 0,
+        template: None,
+        fsrs_params: "[]".into(),
+        fsrs_params_updated_at: None,
     }
 }
 
@@ -2683,6 +2686,9 @@ impl PresetForm {
             relearning_steps: self.relearning_steps.clone(),
             max_interval: self.max_interval,
             created_at: 0,
+            template: None,
+            fsrs_params: "[]".into(),
+            fsrs_params_updated_at: None,
         }
     }
 }

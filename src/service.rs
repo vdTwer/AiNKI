@@ -35,6 +35,20 @@ pub struct Preset {
     pub relearning_steps: String,
     pub max_interval: i64,
     pub created_at: i64,
+    /// The built-in template this preset is (`None` for one made by hand).
+    pub template: Option<String>,
+    /// FSRS parameters of its own, when it has enough reviews; otherwise
+    /// the user's apply (see `tuning`).
+    #[serde(skip)]
+    pub fsrs_params: String,
+    #[serde(skip)]
+    pub fsrs_params_updated_at: Option<i64>,
+}
+
+impl Preset {
+    pub fn has_own_params(&self) -> bool {
+        self.fsrs_params.trim() != "[]" && !self.fsrs_params.trim().is_empty()
+    }
 }
 
 #[derive(Debug, Clone, sqlx::FromRow, Serialize)]
@@ -346,6 +360,9 @@ impl App {
             relearning_steps: t.relearning_steps.to_string(),
             max_interval: t.max_interval,
             created_at: now(),
+            template: None,
+            fsrs_params: "[]".into(),
+            fsrs_params_updated_at: None,
         };
         Self::apply_preset_input(&mut p, input);
         Self::validate_preset(&mut p)?;
@@ -1112,7 +1129,7 @@ impl App {
 
     pub async fn previews(&self, access: &Access, card: &Card, deck: &Deck) -> Result<Vec<(Rating, String)>> {
         let cfg = self.sched_config(access, deck).await?;
-        let params = access.user.params();
+        let params = self.deck_params(access, deck.id).await?;
         let fsrs = scheduler::fsrs_for(&params);
         let clock = access.user.clock();
         let sched = card.sched();
@@ -1149,7 +1166,7 @@ impl App {
         }
         let deck = self.deck(access, card.deck_id).await?;
         let cfg = self.sched_config(access, &deck).await?;
-        let params = access.user.params();
+        let params = self.deck_params(access, deck.id).await?;
         let fsrs = scheduler::fsrs_for(&params);
         let clock = access.user.clock();
         let before = card.sched();
@@ -1430,18 +1447,20 @@ impl App {
         let today = clock.today();
         let horizon_end = clock.day_start(today + Duration::days(horizon as i64));
         let sql = format!(
-            "SELECT due, stability, last_review FROM cards
+            "SELECT deck_id, due, stability, last_review FROM cards
              WHERE user_id = ? AND deck_id IN ({ph}) AND state != 0 AND suspended = 0"
         );
-        let mut q = sqlx::query_as::<_, (i64, Option<f64>, Option<i64>)>(&sql).bind(access.user_id());
+        let mut q = sqlx::query_as::<_, (i64, i64, Option<f64>, Option<i64>)>(&sql).bind(access.user_id());
         for id in &deck_ids {
             q = q.bind(id);
         }
         let learned = q.fetch_all(&self.db).await?;
-        let decay = scheduler::decay_for(&access.user.params());
+        let book = self.param_book(access).await?;
+        let decays: HashMap<i64, f32> = deck_ids.iter().map(|&d| (d, scheduler::decay_for(book.for_deck(d)))).collect();
         let mut forecast = vec![0i64; horizon];
         let (mut r_sum, mut r_n) = (0.0, 0);
-        for (due, stability, last_review) in learned {
+        for (deck, due, stability, last_review) in learned {
+            let decay = decays.get(&deck).copied().unwrap_or(fsrs::FSRS6_DEFAULT_DECAY);
             if due < horizon_end {
                 let day = (clock.date_of(due) - today).num_days().max(0) as usize;
                 if day < horizon {
@@ -1565,122 +1584,5 @@ impl App {
             .execute(&self.db)
             .await?;
         Ok(())
-    }
-
-    /// Count of reviews the optimizer would learn from.
-    pub async fn optimizable_reviews(&self, access: &Access) -> Result<i64> {
-        Ok(sqlx::query_scalar(
-            "SELECT (SELECT COUNT(*) FROM review_log WHERE user_id = ?1 AND rating > 0
-                    AND items_asked IS NULL AND (source != 'agent' OR ?2))
-                  + (SELECT COUNT(*) FROM item_review_log i JOIN review_log r ON r.id = i.review_log_id
-                    WHERE r.user_id = ?1 AND (r.source != 'agent' OR ?2))",
-        )
-        .bind(access.user_id())
-        .bind(access.user.optimize_include_agent)
-        .fetch_one(&self.db)
-        .await?)
-    }
-
-    /// Fit FSRS parameters to the user's own review history.
-    pub async fn optimize_parameters(&self, access: &Access) -> Result<Value> {
-        access.require_write()?;
-        access.require_all_decks()?;
-        #[derive(sqlx::FromRow)]
-        struct Row {
-            card_id: i64,
-            rating: i64,
-            reviewed_at: i64,
-            state_before: i64,
-        }
-        // A list card's own rows only summarize its items, so the optimizer
-        // learns from the items instead: each item is a card of its own
-        // (keyed by its negative id), reset along with its card.
-        let rows: Vec<Row> = sqlx::query_as(
-            "SELECT card_id, rating, reviewed_at, state_before FROM review_log
-             WHERE user_id = ?1 AND (source != 'agent' OR ?2) AND items_asked IS NULL
-             UNION ALL
-             SELECT -i.item_id, i.rating, i.reviewed_at, i.state_before
-             FROM item_review_log i JOIN review_log r ON r.id = i.review_log_id
-             WHERE r.user_id = ?1 AND (r.source != 'agent' OR ?2)
-               AND i.reviewed_at > COALESCE((SELECT MAX(x.reviewed_at) FROM review_log x
-                   WHERE x.card_id = r.card_id AND x.rating = 0), -1)
-             ORDER BY 1, 3",
-        )
-        .bind(access.user_id())
-        .bind(access.user.optimize_include_agent)
-        .fetch_all(&self.db)
-        .await?;
-        let clock = access.user.clock();
-
-        let mut by_card: Vec<(i64, Vec<&Row>)> = Vec::new();
-        for r in &rows {
-            match by_card.last_mut() {
-                Some((id, v)) if *id == r.card_id => v.push(r),
-                _ => by_card.push((r.card_id, vec![r])),
-            }
-        }
-        let mut items = Vec::new();
-        let mut card_ids = Vec::new();
-        let mut reviews_used = 0;
-        for (card_id, logs) in by_card {
-            // Only use history after the last reset, and only if it starts
-            // from the card being new (otherwise the memory state is unknown).
-            let start = logs.iter().rposition(|l| l.rating == 0).map(|i| i + 1).unwrap_or(0);
-            let logs = &logs[start..];
-            if logs.first().is_none_or(|l| l.state_before != CardState::New as i64) {
-                continue;
-            }
-            let mut reviews = Vec::new();
-            let mut prev: Option<i64> = None;
-            for l in logs {
-                let delta = prev.map(|p| clock.days_between(p, l.reviewed_at).max(0)).unwrap_or(0);
-                reviews.push(fsrs::FSRSReview {
-                    rating: l.rating.clamp(1, 4) as u32,
-                    delta_t: delta as u32,
-                });
-                prev = Some(l.reviewed_at);
-            }
-            reviews_used += reviews.len();
-            for i in 1..reviews.len() {
-                if reviews[i].delta_t > 0 {
-                    items.push(fsrs::FSRSItem {
-                        reviews: reviews[..=i].to_vec(),
-                    });
-                    card_ids.push(card_id);
-                }
-            }
-        }
-        if items.is_empty() {
-            return Err(AppError::bad(
-                "not enough review history yet (cards need reviews on at least two different days)",
-            ));
-        }
-        let n_items = items.len();
-        let params = tokio::task::spawn_blocking(move || {
-            fsrs::compute_parameters(fsrs::ComputeParametersInput {
-                train_set: items,
-                card_ids: Some(card_ids),
-                ..Default::default()
-            })
-        })
-        .await
-        .map_err(|e| AppError::Internal(e.into()))?
-        .map_err(|e| match e {
-            fsrs::FSRSError::NotEnoughData => {
-                AppError::bad("not enough review history yet to optimize; keep studying")
-            }
-            e => e.into(),
-        })?;
-        sqlx::query("UPDATE users SET fsrs_params = ?, fsrs_params_updated_at = ? WHERE id = ?")
-            .bind(serde_json::to_string(&params).unwrap_or_else(|_| "[]".into()))
-            .bind(now())
-            .bind(access.user_id())
-            .execute(&self.db)
-            .await?;
-        Ok(json!({
-            "parameters": params,
-            "reviews_used": reviews_used,
-            "training_items": n_items,
-        }))
     }
 }

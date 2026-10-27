@@ -24,6 +24,7 @@ mod service;
 mod share;
 #[cfg(test)]
 mod tests;
+mod tuning;
 mod web;
 
 #[derive(Debug, Clone)]
@@ -122,6 +123,7 @@ impl App {
         sqlx::query("DELETE FROM oauth_codes WHERE expires_at < ?").bind(t).execute(&self.db).await?;
         sqlx::query("DELETE FROM oauth_tokens WHERE expires_at < ?").bind(t).execute(&self.db).await?;
         self.delete_unused_images(t - 86_400).await?;
+        self.auto_optimize().await?;
         if let Ok(mut dir) = tokio::fs::read_dir(self.config.data_dir.join("tmp")).await {
             while let Ok(Some(entry)) = dir.next_entry().await {
                 let old = entry

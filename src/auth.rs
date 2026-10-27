@@ -31,6 +31,13 @@ pub struct User {
     /// 'calm' or 'simple'; only matters on desktop computers.
     pub desktop_look: String,
     pub created_at: i64,
+    /// Re-optimize FSRS about once a month (see `tuning`).
+    pub auto_optimize: bool,
+    pub optimized_at: Option<i64>,
+    /// Reviews there were at the last optimization.
+    pub optimized_reviews: i64,
+    /// What the last optimization did, in a sentence.
+    pub optimize_note: Option<String>,
 }
 
 impl User {
@@ -267,8 +274,8 @@ impl App {
         for t in presets::TEMPLATES {
             sqlx::query(
                 "INSERT INTO presets (user_id, name, description, desired_retention, new_per_day,
-                    reviews_per_day, learning_steps, relearning_steps, max_interval, created_at)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    reviews_per_day, learning_steps, relearning_steps, max_interval, created_at, template)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             )
             .bind(id)
             .bind(t.name)
@@ -280,6 +287,7 @@ impl App {
             .bind(t.relearning_steps)
             .bind(t.max_interval)
             .bind(now())
+            .bind(t.key)
             .execute(&mut *tx)
             .await?;
         }

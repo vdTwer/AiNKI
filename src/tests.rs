@@ -314,8 +314,28 @@ async fn optimizer_fits_parameters() {
     }
     let result = app.optimize_parameters(&a).await.unwrap();
     assert_eq!(result["parameters"].as_array().unwrap().len(), 21);
+    assert_eq!(result["changed"], true);
     let user = app.user(a.user_id()).await.unwrap();
     assert_eq!(user.params().len(), 21);
+    assert!(user.optimize_note.is_some() && user.optimized_at.is_some());
+
+    // The deck's preset has well over 400 reviews: it was fitted on its own,
+    // starting from the user's parameters, and kept only if better.
+    let preset = app.preset(&a, deck.preset_id).await.unwrap();
+    let presets = result["presets"].as_array().unwrap();
+    assert_eq!(presets.len(), 1);
+    assert_eq!(preset.has_own_params(), presets[0]["changed"] == true);
+
+    // Running it again right away finds nothing better.
+    let again = app.optimize_parameters(&Access::web(user.clone())).await.unwrap();
+    assert_eq!(again["changed"], false);
+
+    // What the preset costs at each retention: more remembered costs more time.
+    let w = app.workload(&Access::web(user.clone()), deck.preset_id, 30).await.unwrap();
+    assert_eq!(w.iter().map(|w| w.retention).collect::<Vec<_>>(), vec![0.80, 0.85, 0.90, 0.95]);
+    assert!(w.iter().filter(|w| w.current).count() == 1);
+    assert!(w[3].reviews_per_day > w[0].reviews_per_day, "{w:?}");
+    assert!(w[3].remembered > w[0].remembered, "{w:?}");
 
     app.reset_parameters(&Access::web(user)).await.unwrap();
     assert!(app.user(a.user_id()).await.unwrap().params().is_empty());
@@ -1143,4 +1163,38 @@ async fn the_coach_flags_leeches_lists_and_duplicates() {
         .unwrap();
     assert_eq!(new.len(), 3);
     assert!(app.card(&a, list.id).await.is_err());
+}
+
+#[tokio::test]
+async fn calibration_compares_predicted_and_actual_recall() {
+    let app = app().await;
+    let a = user(&app, "kolja").await;
+    let deck = app.create_deck(&a, "Facts", "", None).await.unwrap();
+    let card = app.create_card(&a, deck.id, "q", "a", None, None, None).await.unwrap();
+    // 20 reviews nine days after the last, of a card with a ten-day memory
+    // (a little over 90% predicted): 15 remembered.
+    let t = now() - 86_400;
+    for n in 0..20 {
+        let prev = format!(r#"{{"state":"review","step":0,"stability":10.0,"difficulty":5.0,"due":0,"last_review":{},"reps":3,"lapses":0}}"#, t - 9 * 86_400);
+        sqlx::query(
+            "INSERT INTO review_log (user_id, card_id, deck_id, rating, reviewed_at, state_before,
+                elapsed_days, scheduled_secs, source, prev_card)
+             VALUES (?, ?, ?, ?, ?, 2, 10, 0, 'web', ?)",
+        )
+        .bind(a.user_id())
+        .bind(card.id)
+        .bind(deck.id)
+        .bind(if n < 15 { 3 } else { 1 })
+        .bind(t)
+        .bind(prev)
+        .execute(&app.db)
+        .await
+        .unwrap();
+    }
+    let c = app.calibration(&a, None).await.unwrap();
+    assert_eq!(c.reviews, 20);
+    assert!((c.actual - 0.75).abs() < 1e-9);
+    assert!(c.predicted > 0.9 && c.predicted < 0.93, "{c:?}");
+    assert_eq!(c.bins.len(), 1);
+    assert_eq!((c.bins[0].from, c.bins[0].to), (90, 95));
 }
