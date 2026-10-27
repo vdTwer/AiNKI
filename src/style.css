@@ -325,3 +325,6 @@ table.retention tr.short td { font-weight: 700; }
 .lesson .md li { margin-bottom: .4rem; }
 .lesson-deck { margin: 2rem 0 1rem; padding-top: 1rem; border-top: 2px solid var(--fg); }
 .lesson-deck form { margin: 0; }
+.timer-meta button.link { width: auto; margin: 0; }
+.typed-echo .face-label { display: block; font-size: .8rem; font-weight: 700; text-transform: uppercase; }
+.timer-meta { align-items: center; }
