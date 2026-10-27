@@ -140,7 +140,8 @@ pub fn router(app: AppState) -> Router {
                 .post(import_upload)
                 .layer(DefaultBodyLimit::max(import::MAX_IMPORT_BYTES + 1024 * 1024)),
         )
-        .layer(middleware::from_fn_with_state(app.clone(), security::check_origin));
+        .layer(middleware::from_fn_with_state(app.clone(), security::check_origin))
+        .layer(middleware::from_fn_with_state(app.clone(), renew_session));
     let static_routes = Router::new()
         .route("/style.css", get(|q: RawQuery| asset(q, "text/css; charset=utf-8", CSS)))
         .route("/calm.css", get(|q: RawQuery| asset(q, "text/css; charset=utf-8", CALM_CSS)))
@@ -539,6 +540,20 @@ fn session_cookie(app: &AppState, token: String) -> Cookie<'static> {
         .secure(app.config.secure())
         .max_age(time_days(crate::auth::SESSION_DAYS))
         .build()
+}
+
+/// Someone who keeps using AiNKI stays logged in: once a day their session
+/// and its cookie get the full lifetime again.
+async fn renew_session(State(app): State<AppState>, jar: CookieJar, req: axum::extract::Request, next: middleware::Next) -> Response {
+    let mut res = next.run(req).await;
+    if let Some(c) = jar.get(app.config.session_cookie_name()) {
+        if app.renew_session(c.value()).await.unwrap_or(false) {
+            if let Ok(v) = HeaderValue::from_str(&session_cookie(&app, c.value().to_string()).to_string()) {
+                res.headers_mut().append(header::SET_COOKIE, v);
+            }
+        }
+    }
+    res
 }
 
 fn time_days(days: i64) -> time::Duration {

@@ -241,7 +241,12 @@ pub async fn flash(mut req: Request, next: Next) -> Response {
     let had = msg.is_some();
     req.extensions_mut().insert(Flash(msg.map(|m| m.chars().take(500).collect())));
     let mut res = next.run(req).await;
-    if had && !res.status().is_redirection() && !res.headers().contains_key(header::SET_COOKIE) {
+    let sets_flash = res
+        .headers()
+        .get_all(header::SET_COOKIE)
+        .iter()
+        .any(|v| v.as_bytes().starts_with(format!("{FLASH_COOKIE}=").as_bytes()));
+    if had && !res.status().is_redirection() && !sets_flash {
         res.headers_mut().append(
             header::SET_COOKIE,
             HeaderValue::from_str(&format!("{FLASH_COOKIE}=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax"))

@@ -684,6 +684,24 @@ mod http {
     }
 
     #[tokio::test]
+    async fn sessions_in_use_stay_alive() {
+        let app = app().await;
+        user(&app, "kolja").await;
+        let cookie = login_cookie(&app, "kolja").await;
+        let get = |c: &str| Request::get("/").header(header::COOKIE, c.to_string()).body(Body::empty()).unwrap();
+        // Fresh: nothing to renew.
+        let res = send(&app, get(&cookie)).await;
+        assert_eq!(res.status(), StatusCode::OK);
+        assert!(!res.headers().contains_key(header::SET_COOKIE));
+        // Ten days later the session gets its full lifetime again.
+        sqlx::query("UPDATE sessions SET expires_at = expires_at - 10 * 86400").execute(&app.db).await.unwrap();
+        let res = send(&app, get(&cookie)).await;
+        assert!(res.headers()[header::SET_COOKIE].to_str().unwrap().starts_with("ainki_session="));
+        let left: i64 = sqlx::query_scalar("SELECT expires_at - ? FROM sessions").bind(now()).fetch_one(&app.db).await.unwrap();
+        assert!(left > (crate::auth::SESSION_DAYS - 1) * 86_400);
+    }
+
+    #[tokio::test]
     async fn logged_out_links_come_back_after_login() {
         let app = app().await;
         let res = send(&app, Request::get("/decks/7?q=perro").body(Body::empty()).unwrap()).await;
