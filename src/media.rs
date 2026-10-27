@@ -169,6 +169,44 @@ impl App {
         self.media(access.user_id(), id).await
     }
 
+    /// Remove images no card shows any more (replaced, removed, or their
+    /// card or deck deleted) that are older than `before`. Newer ones are
+    /// kept: an agent uploads first and makes the card after.
+    pub async fn delete_unused_images(&self, before: i64) -> Result<usize> {
+        let used: std::collections::HashSet<String> = sqlx::query_as::<_, (Option<String>, Option<String>)>(
+            "SELECT front_image, back_image FROM cards WHERE front_image IS NOT NULL OR back_image IS NOT NULL",
+        )
+        .fetch_all(&self.db)
+        .await?
+        .into_iter()
+        .flat_map(|(f, b)| [f, b])
+        .flatten()
+        .collect();
+        let old: Vec<String> = sqlx::query_scalar("SELECT id FROM media WHERE created_at < ?")
+            .bind(before)
+            .fetch_all(&self.db)
+            .await?;
+        let mut n = 0;
+        for id in old.into_iter().filter(|id| !used.contains(id)) {
+            // Checked again in the delete, in case a card took it up just
+            // now; the row goes first, as a row without its file would show
+            // a broken image.
+            let gone = sqlx::query(
+                "DELETE FROM media WHERE id = ?1
+                 AND NOT EXISTS (SELECT 1 FROM cards WHERE front_image = ?1 OR back_image = ?1)",
+            )
+            .bind(&id)
+            .execute(&self.db)
+            .await?
+            .rows_affected();
+            if gone > 0 {
+                let _ = tokio::fs::remove_file(self.media_path(&id)).await;
+                n += 1;
+            }
+        }
+        Ok(n)
+    }
+
     pub async fn media(&self, user_id: i64, id: &str) -> Result<(Media, Vec<u8>)> {
         let m: Media = sqlx::query_as("SELECT * FROM media WHERE id = ? AND user_id = ?")
             .bind(id)

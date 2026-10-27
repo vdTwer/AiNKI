@@ -390,6 +390,27 @@ fn tiny_png() -> Vec<u8> {
 }
 
 #[tokio::test]
+async fn unused_images_are_removed_after_a_day() {
+    let app = app().await;
+    let a = user(&app, "kolja").await;
+    let deck = app.create_deck(&a, "Spanish", "", None).await.unwrap();
+    let kept = app.store_image(&a, tiny_png()).await.unwrap();
+    let dropped = app.store_image(&a, tiny_png()).await.unwrap();
+    let fresh = app.store_image(&a, tiny_png()).await.unwrap();
+    app.create_card(&a, deck.id, "gato", "cat", Some(kept.id.clone()), None, None).await.unwrap();
+    sqlx::query("UPDATE media SET created_at = created_at - 2 * 86400 WHERE id != ?")
+        .bind(&fresh.id)
+        .execute(&app.db)
+        .await
+        .unwrap();
+    assert_eq!(app.delete_unused_images(now() - 86_400).await.unwrap(), 1);
+    assert!(app.media(a.user_id(), &kept.id).await.is_ok());
+    assert!(app.media(a.user_id(), &fresh.id).await.is_ok());
+    assert!(app.media(a.user_id(), &dropped.id).await.is_err());
+    assert!(!app.media_path(&dropped.id).exists());
+}
+
+#[tokio::test]
 async fn oauth_flow() {
     use base64::Engine;
     use sha2::Digest;
