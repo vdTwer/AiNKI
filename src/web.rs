@@ -129,6 +129,7 @@ pub fn router(app: AppState) -> Router {
         .route("/settings", get(settings_page).post(settings_update))
         .route("/settings/password", post(password_update))
         .route("/settings/optimize", post(optimize))
+        .route("/settings/auto-optimize", post(auto_optimize))
         .route("/settings/reset-params", post(reset_params))
         .route("/access", get(access_page))
         .route("/access/new", get(|| async { Redirect::to("/access") }).post(token_create))
@@ -1337,6 +1338,45 @@ fn preset_select(presets: &[crate::service::Preset], selected: Option<i64>) -> M
     }
 }
 
+/// What a built-in preset is for, as a goal: "Pass an exam on a date".
+fn goal_words(template: Option<&str>) -> Option<&'static str> {
+    Some(match template? {
+        "standard" => "Learn it for the long run",
+        "exam" => "Pass an exam on a date",
+        "language" => "Many small cards, like vocabulary",
+        "relaxed" => "Learn on a small time budget",
+        "maintenance" => "Keep what I already know",
+        _ => return None,
+    })
+}
+
+/// A new deck picks a preset by what it is for. Presets made by hand are
+/// offered by name after the goals.
+fn goal_picker(presets: &[crate::service::Preset], selected: Option<i64>) -> Markup {
+    let order = ["standard", "exam", "language", "relaxed", "maintenance"];
+    let mut sorted: Vec<&crate::service::Preset> = presets.iter().collect();
+    sorted.sort_by_key(|p| p.template.as_deref().and_then(|t| order.iter().position(|o| *o == t)).unwrap_or(order.len()));
+    html! {
+        fieldset.goals {
+            legend { "What is this deck for?" }
+            @for p in sorted {
+                label.goal {
+                    input type="radio" name="preset_id" value=(p.id) checked[Some(p.id) == selected];
+                    span.grow {
+                        span.goal-name { (goal_words(p.template.as_deref()).unwrap_or(&p.name)) }
+                        span.muted.small {
+                            (format!("{:.0}%", p.desired_retention * 100.0)) " remembered · "
+                            @if p.new_per_day == 0 { "no new cards" } @else { (count(p.new_per_day, "new card")) " a day" }
+                            @if goal_words(p.template.as_deref()).is_some() { " · " (p.name) }
+                        }
+                    }
+                }
+            }
+        }
+        p.hint.muted.small { "You can change this later. " a href="/presets" { "About presets" } }
+    }
+}
+
 /// A deck written as a sheet: its name large, a description, then its
 /// preset and exam date as lines. The same sheet creates and edits.
 fn deck_sheet(
@@ -1353,8 +1393,12 @@ fn deck_sheet(
                 textarea name="description" rows="2" placeholder="What it's for" { @if let Some(d) = deck { (d.description) } }
             }
             hr.divider;
-            label.line { "Preset" span.select { (preset_select(presets, selected)) } }
-            p.hint.muted.small { "How much you want to remember and how many cards a day. " a href="/presets" { "About presets" } }
+            @if deck.is_none() {
+                (goal_picker(presets, selected))
+            } @else {
+                label.line { "Preset" span.select { (preset_select(presets, selected)) } }
+                p.hint.muted.small { "How much you want to remember and how many cards a day. " a href="/presets" { "About presets" } }
+            }
             label.line { span { "Exam date " span.muted.optional { "(optional)" } }
                 input type="date" name="exam_date" value=(deck.and_then(|d| d.exam_date.clone()).unwrap_or_default());
             }
@@ -1365,7 +1409,11 @@ fn deck_sheet(
 
 /// The new-deck page; `draft` and `error` when a sent form comes back.
 fn deck_new_view(user: &User, presets: &[crate::service::Preset], draft: Option<&Deck>, error: Option<&str>) -> Markup {
-    let selected = draft.map(|d| d.preset_id).or_else(|| presets.first().map(|p| p.id));
+    let selected = draft
+        .map(|d| d.preset_id)
+        .filter(|id| *id > 0)
+        .or_else(|| presets.iter().find(|p| p.template.as_deref() == Some("standard")).map(|p| p.id))
+        .or_else(|| presets.first().map(|p| p.id));
     layout_in(
         Nav::Add,
         "New deck",
@@ -2591,6 +2639,7 @@ async fn preset_create(State(app): State<AppState>, user: WebUser, Form(f): Form
 }
 
 /// The preset page; `draft` and `error` when a sent form comes back.
+#[allow(clippy::too_many_arguments)]
 async fn preset_view(
     app: &App,
     user: &User,
@@ -2598,9 +2647,11 @@ async fn preset_view(
     msg: &Option<String>,
     draft: Option<&crate::service::Preset>,
     error: Option<&str>,
+    days: usize,
 ) -> Result<Markup, AppError> {
     let access = Access::web(user.clone());
     let p = app.preset(&access, id).await?;
+    let workload = app.workload(&access, id, days).await?;
     let decks: Vec<String> = app
         .decks(&access)
         .await?
@@ -2621,6 +2672,40 @@ async fn preset_view(
                 (preset_sheet(draft.unwrap_or(&p), &decks))
                 div.form-foot.end { button.btn.primary type="submit" { "Save" } }
             }
+            h2 id="cost" { "What it costs" }
+            p.muted.small {
+                "A simulation of the next "
+                @for (n, (d, label)) in [(30, "30 days"), (90, "90 days"), (365, "year")].into_iter().enumerate() {
+                    @if n > 0 { " · " }
+                    @if d == days { (label) } @else { a href=(format!("/presets/{id}?days={d}#cost")) { (label) } }
+                }
+                ", with your memory model and "
+                @if p.new_per_day == 0 { "no new cards" } @else { (count(p.new_per_day, "new card")) " a day" }
+                ". Higher retention means more reviews but more remembered. "
+                a href="/learn/desired-retention" { "How to choose" }
+            }
+            table.workload {
+                thead { tr { th { "Remember" } th.num { "Minutes a day" } th.num { "Reviews a day" } th.num { "Known at the end" } } }
+                tbody {
+                    @for w in &workload {
+                        tr.current[w.current] {
+                            th scope="row" { (format!("{:.0}%", w.retention * 100.0)) @if w.current { span.muted.small { " this preset" } } }
+                            td.num { (format!("{:.0}", w.minutes_per_day.max(0.0))) }
+                            td.num { (format::number(w.reviews_per_day.round() as i64)) }
+                            td.num { (format::number(w.remembered.round() as i64)) }
+                        }
+                    }
+                }
+            }
+            p.muted.small {
+                @if p.has_own_params() {
+                    "This preset has FSRS parameters of its own, fitted to its reviews"
+                    @if let Some(t) = p.fsrs_params_updated_at { " " (format::when(&user.clock(), t)) }
+                    "."
+                } @else {
+                    "This preset uses your FSRS parameters. Once its decks have about 400 reviews, optimizing fits it on its own."
+                }
+            }
             @if decks.is_empty() {
                 details.danger {
                     summary { "Delete this preset…" }
@@ -2634,13 +2719,20 @@ async fn preset_view(
     ))
 }
 
+#[derive(Deserialize, Default)]
+struct PresetQuery {
+    days: Option<usize>,
+}
+
 async fn preset_page(
     State(app): State<AppState>,
     user: WebUser,
     Path(id): Path<i64>,
     Flash(msg): Flash,
+    Query(q): Query<PresetQuery>,
 ) -> WebResult {
-    Ok(preset_view(&app, &user.0, id, &msg, None, None).await?.into_response())
+    let days = q.days.filter(|d| [30, 90, 365].contains(d)).unwrap_or(30);
+    Ok(preset_view(&app, &user.0, id, &msg, None, None, days).await?.into_response())
 }
 
 #[derive(Deserialize)]
@@ -2704,7 +2796,7 @@ async fn preset_update(
         Ok(_) => Ok(redirect_msg(format!("/presets/{id}"), "Preset saved.")),
         Err(e) => {
             let msg = fixable(&e).ok_or(e)?;
-            Ok(form_again(preset_view(&app, &user.0, id, &None, Some(&draft), Some(&msg)).await?))
+            Ok(form_again(preset_view(&app, &user.0, id, &None, Some(&draft), Some(&msg), 30).await?))
         }
     }
 }
@@ -2751,6 +2843,7 @@ async fn settings_page(State(app): State<AppState>, user: WebUser, Flash(msg): F
                     label.line { "New day starts at" span.field { input type="number" name="rollover_hour" min="0" max="23" value=(u.rollover_hour); span.unit { ":00" } } }
                     label.line { "Text size" span.field { input type="number" name="font_scale" min="80" max="200" step="10" value=(u.font_scale); span.unit { "%" } } }
                     label.check { input type="checkbox" name="four_buttons" value="1" checked[u.four_buttons]; " Show Hard and Easy buttons" }
+                    p.hint.muted.small { "Hard means you remembered, with effort. If you forgot, it's Again; FSRS gets that wrong otherwise. " a href="/learn/two-buttons" { "Two buttons or four?" } }
                     label.check { input type="checkbox" name="optimize_include_agent" value="1" checked[u.optimize_include_agent]; " Use reviews done through agents when optimizing" }
                     fieldset.line {
                         legend { "Look on desktop computers" }
@@ -2776,8 +2869,20 @@ async fn settings_page(State(app): State<AppState>, user: WebUser, Flash(msg): F
                     }
                 }
                 div.line { "Reviews so far" span.value { (format::number(reviews)) } }
-                @if reviews < 1000 {
-                    p.hint.muted.small { "Optimizing works best after about 1,000 reviews. Re-run it every month or so." }
+                @if let (Some(note), Some(t)) = (&u.optimize_note, u.optimized_at) {
+                    div.line { "Last optimized" span.value { (capitalize(&format::when(&u.clock(), t))) } }
+                    p.hint.muted.small { (note) }
+                }
+                form method="post" action="/settings/auto-optimize" data-autosubmit {
+                    label.check {
+                        input type="checkbox" name="on" value="1" checked[u.auto_optimize];
+                        " Optimize every month by itself"
+                    }
+                    noscript { button.btn type="submit" { "Save" } }
+                }
+                p.hint.muted.small {
+                    "Optimizing fits FSRS to your own memory. It helps once you have a few hundred reviews. New parameters are only kept when they predict your reviews better. "
+                    a href="/learn/optimizing" { "More" }
                 }
             }
             div.form-foot.end {
@@ -2865,13 +2970,23 @@ async fn password_update(
         .into_response())
 }
 
+#[derive(Deserialize)]
+struct AutoOptimizeForm {
+    on: Option<String>,
+}
+
+async fn auto_optimize(State(app): State<AppState>, user: WebUser, Form(f): Form<AutoOptimizeForm>) -> WebResult {
+    app.set_auto_optimize(user.0.id, f.on.is_some()).await?;
+    Ok(redirect_msg(
+        "/settings#fsrs",
+        if f.on.is_some() { "FSRS will be optimized every month." } else { "Automatic optimization is off." },
+    ))
+}
+
 async fn optimize(State(app): State<AppState>, user: WebUser) -> WebResult {
     let result = app.optimize_parameters(&user.access()).await;
     let msg = match result {
-        Ok(v) => format!(
-            "FSRS parameters fitted to {}.",
-            count(v["reviews_used"].as_i64().unwrap_or(0), "review")
-        ),
+        Ok(v) => v["note"].as_str().unwrap_or("Done.").to_string(),
         Err(AppError::BadRequest(m)) => capitalize(&m),
         Err(e) => return Err(e.into()),
     };
@@ -3164,6 +3279,7 @@ struct StatsQuery {
 async fn stats_page(State(app): State<AppState>, user: WebUser, Query(q): Query<StatsQuery>) -> WebResult {
     let access = user.access();
     let s = app.stats(&access, q.deck).await?;
+    let cal = app.calibration(&access, q.deck).await?;
     let deck = match q.deck {
         Some(id) => Some(app.deck(&access, id).await?),
         None => None,
@@ -3195,6 +3311,31 @@ async fn stats_page(State(app): State<AppState>, user: WebUser, Query(q): Query<
                 dt { "Review" } dd { (format::number(s.review)) }
                 dt { "Suspended" } dd { (format::number(s.suspended)) }
                 dt { "Total" } dd { (format::number(s.total)) }
+            }
+            h2 id="model" { "How well FSRS knows you" }
+            @if cal.reviews < 50 {
+                p.muted { "After a few dozen reviews of learned cards, this shows how well FSRS predicts your memory." }
+            } @else {
+                p {
+                    "Over the last year, FSRS expected you to remember " (format::percent(Some(cal.predicted)))
+                    " of your reviews; you remembered " (format::percent(Some(cal.actual))) "."
+                    @if (cal.predicted - cal.actual).abs() <= 0.03 { " That's a close fit." }
+                    @else if cal.actual < cal.predicted { " You forget a little more than it thinks; optimizing helps." }
+                    @else { " You remember more than it thinks; optimizing helps." }
+                }
+                table.calibration {
+                    thead { tr { th { "Expected" } th.num { "Remembered" } th.num { "Reviews" } } }
+                    tbody {
+                        @for b in &cal.bins {
+                            tr {
+                                th scope="row" { (b.from) "–" (b.to) "%" }
+                                td.num { (format::percent(Some(b.actual))) }
+                                td.num { (format::number(b.reviews)) }
+                            }
+                        }
+                    }
+                }
+                p.muted.small { a href="/learn/optimizing" { "What this means" } }
             }
             h2 { "Due in the next two weeks" }
             table.forecast {

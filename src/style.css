@@ -289,3 +289,14 @@ ol.item-recall .chance { float: right; margin-left: 1rem; color: var(--muted); f
 .coach-hint { font-size: .9rem; margin: .5rem 0; }
 .leech-note { margin: .6rem 0 0; }
 .split-form .sheet { margin-bottom: 1.2rem; }
+
+/* Picking a new deck's preset by its goal. */
+fieldset.goals label.goal { display: flex; gap: .75rem; align-items: flex-start; padding: .55rem 0; }
+fieldset.goals .goal-name { display: block; font-weight: 600; }
+fieldset.goals input { margin-top: .3rem; }
+
+/* What a preset costs, and how well FSRS fits. */
+table.workload, table.calibration { width: 100%; border-collapse: collapse; }
+table.workload :is(th, td), table.calibration :is(th, td) { text-align: left; padding: .45rem .3rem; border-bottom: 1px solid var(--fg); }
+table.workload .num, table.calibration .num { text-align: right; font-variant-numeric: tabular-nums; }
+table.workload tr.current th { font-weight: 700; }

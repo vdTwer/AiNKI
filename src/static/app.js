@@ -210,6 +210,14 @@
     });
   }
 
+  // A form marked data-autosubmit saves as soon as it changes (a switch);
+  // without JavaScript it has its own button.
+  document.addEventListener('change', function (e) {
+    var form = e.target.closest && e.target.closest('form[data-autosubmit]');
+    if (!form) return;
+    if (form.requestSubmit) form.requestSubmit(); else form.submit();
+  });
+
   // Picking a file to import: the field names the file and takes drops.
   Array.prototype.forEach.call(document.querySelectorAll('form:not(.card-form) label.file'), function (label) {
     var input = label.querySelector('input[type=file]');

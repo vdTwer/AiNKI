@@ -1205,3 +1205,17 @@ html.calm .coach-hint { display: flex; gap: .6rem; align-items: baseline; margin
 html.calm .coach-hint::before { content: ''; flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--orchid); transform: translateY(-.1em); }
 html.calm .leech-note { margin: .8rem 0 0; color: var(--muted); }
 html.calm .split-form .sheet { margin-bottom: 1.4rem; }
+
+/* ----- goals, workload and calibration ----------------------------------- */
+html.calm .sheet fieldset.goals { border: 0; margin: 0; padding: .4rem 0 .2rem; }
+html.calm .sheet fieldset.goals legend { padding: .6rem 0 .3rem; color: var(--muted); font-size: .93rem; }
+html.calm .sheet label.goal { display: flex; gap: .8rem; align-items: flex-start; padding: .6rem .2rem; border-radius: 10px; cursor: pointer; transition: background-color 140ms ease; }
+html.calm .sheet label.goal:hover { background: var(--track); }
+html.calm .sheet label.goal input { accent-color: var(--terra-deep); margin-top: .3rem; }
+html.calm .sheet label.goal .goal-name { display: block; font-family: var(--serif); font-size: 1.13rem; }
+html.calm .sheet label.goal:has(input:checked) .goal-name { color: var(--terra-deep); }
+html.calm :is(table.workload, table.calibration) { width: 100%; border-collapse: collapse; font-size: .93rem; }
+html.calm :is(table.workload, table.calibration) :is(th, td) { padding: .55rem .2rem; border-bottom: 1px solid var(--line); text-align: left; font-weight: 400; }
+html.calm :is(table.workload, table.calibration) thead th { font-size: .8rem; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+html.calm :is(table.workload, table.calibration) .num { text-align: right; font-variant-numeric: tabular-nums; }
+html.calm table.workload tr.current th { color: var(--terra-deep); }
