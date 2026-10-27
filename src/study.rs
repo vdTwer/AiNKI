@@ -116,17 +116,6 @@ impl App {
         Ok(())
     }
 
-    /// Agents don't quiz during quiet hours.
-    pub fn check_quiet(&self, access: &Access) -> Result<()> {
-        match quiet_until(&access.user, now()) {
-            Some(t) => Err(AppError::bad(format!(
-                "it's quiet hours until {}; the user asked not to be quizzed now",
-                crate::format::when(&access.user.clock(), t)
-            ))),
-            None => Ok(()),
-        }
-    }
-
     /// When the session going on now began: the first answer on the website
     /// after the last pause of `SESSION_GAP_SECS`, or the last time a break
     /// hint was waved off. `None` when nothing was answered lately.
