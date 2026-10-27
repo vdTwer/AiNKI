@@ -11,7 +11,7 @@ mod auth;
 mod error;
 mod format;
 mod import;
-mod lists;
+mod multi;
 mod markdown;
 mod mcp;
 mod oauth;
@@ -192,6 +192,7 @@ async fn main() -> anyhow::Result<()> {
     }
     let db = open_db(&config).await?;
     let app = Arc::new(App::new(db, config));
+    app.resplit_multicards().await?;
 
     match args.iter().map(String::as_str).collect::<Vec<_>>().as_slice() {
         [] | ["serve"] => {

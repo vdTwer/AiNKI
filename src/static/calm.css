@@ -1118,9 +1118,13 @@ html.calm .list-known ul { display: flex; flex-wrap: wrap; justify-content: cent
 html.calm .list-known .more { margin: .5rem 0 0; font-size: 1.13rem; font-style: italic; color: var(--ink); }
 html.calm section.face.back.list { width: 100%; max-width: 34rem; text-align: left; }
 html.calm section.face.back.list > .md { margin-bottom: 1rem; }
+html.calm section.face.back.list ol.list-items + .md { margin-top: 1.1rem; }
+html.calm ol.list-items .text :is(h1, h2, h3, h4, h5, h6) { margin: 0 0 .15rem; padding: 0; border: 0; font-family: inherit; font-size: inherit; font-weight: 600; line-height: inherit; letter-spacing: normal; text-transform: none; color: inherit; }
+html.calm ol.list-items .text :is(p, ul, ol) { margin: 0; }
+html.calm ol.list-items .text :is(ul, ol) { padding-left: 1.1rem; }
 html.calm .list-how { margin: 0 0 .5rem; font-family: var(--sans); font-size: .87rem; color: var(--faint); }
 html.calm ol.list-items { font-size: 1.2rem; line-height: 1.35; }
-html.calm ol.list-items label.item, html.calm ol.list-items li.known { display: flex; align-items: center; gap: .9rem; min-height: 52px; padding: .55rem .9rem; margin: 2px -.9rem; font-size: 1.2rem; font-weight: 400; color: var(--ink); }
+html.calm ol.list-items label.item, html.calm ol.list-items li.known, html.calm ol.list-items li.shown { display: flex; align-items: center; gap: .9rem; min-height: 52px; padding: .55rem .9rem; margin: 2px -.9rem; font-size: 1.2rem; font-weight: 400; color: var(--ink); }
 html.calm ol.list-items label.item {
   --rx: 0deg; --ry: 0deg; --sx: 0px; --sy: 2px; --gx: 50%; --gy: 50%;
   --dur: 460ms; --spring: cubic-bezier(.34, 1.56, .64, 1);
@@ -1161,7 +1165,15 @@ html.calm ol.list-items label.item:has(input:checked) .num { color: var(--terra-
 html.calm ol.list-items li.known { color: var(--faint); }
 html.calm ol.list-items li.known .text { font-family: var(--serif); }
 html.calm .study .answers.cols-1 { grid-template-columns: minmax(0, 22rem); justify-content: center; margin-top: 2rem; }
-html.calm .sheet label.list-toggle { margin-top: 1.4rem; border-top: 1px solid var(--line); text-align: left; }
+/* "Learn": as one card, or item by item split one of the offered ways. */
+html.calm .sheet fieldset.multi-pick { display: flow-root; margin: 1.4rem 0 0; padding: .9rem 0 0; border-top: 1px solid var(--line); border-bottom: 0; text-align: left; }
+html.calm .sheet fieldset.multi-pick legend { line-height: 2.1rem; }
+html.calm .sheet fieldset.multi-pick .choice { float: right; flex-wrap: wrap; }
+html.calm .sheet fieldset.multi-pick .hint-inline { clear: both; margin: 0; padding: .5rem 0 0; }
+/* The card as it will be studied, in place of the sheet you write on. */
+html.calm .sheet.card-preview { display: flex; flex-direction: column; align-items: center; text-align: center; animation: calm-appear 220ms var(--ease) both; }
+html.calm .sheet.card-preview[hidden] { display: none; }
+html.calm .sheet.card-preview hr.divider { margin: 1.6rem auto 1.5rem; }
 html.calm .hint-inline { margin-top: .15rem; font-size: .87rem; color: var(--muted); }
 html.calm ol.item-recall { margin: 0; padding: 0; list-style: none; counter-reset: item; }
 html.calm ol.item-recall li { display: flex; gap: 1rem; padding: .55rem 0; border-bottom: 1px solid var(--line); counter-increment: item; }

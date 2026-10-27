@@ -53,7 +53,7 @@ async fn study_flow_and_undo() {
     assert_eq!(app.list_presets(&a).await.unwrap().len(), 5);
     let deck = app.create_deck(&a, "German", "", None).await.unwrap();
     for (f, b) in [("Hund", "dog"), ("Katze", "cat"), ("Maus", "mouse")] {
-        app.create_card(&a, deck.id, f, b, None, None, false).await.unwrap();
+        app.create_card(&a, deck.id, f, b, None, None, None).await.unwrap();
     }
 
     let first = app.next_card(&a, None).await.unwrap().unwrap();
@@ -93,14 +93,14 @@ async fn list_cards_remember_each_item() {
     let a = user(&app, "kolja").await;
     let deck = app.create_deck(&a, "Literary Studies", "", None).await.unwrap();
     // Item by item needs a numbered list.
-    assert!(app.create_card(&a, deck.id, "q", "just text", None, None, true).await.is_err());
+    assert!(app.create_card(&a, deck.id, "q", "just text", None, None, Some(crate::multi::Split::List)).await.is_err());
     let back = "Cohen:\n1. Cultural body\n2. Always escapes\n3. Category crisis";
-    let card = app.create_card(&a, deck.id, "Theses on monsters?", back, None, None, true).await.unwrap();
-    assert!(card.is_list);
+    let card = app.create_card(&a, deck.id, "Theses on monsters?", back, None, None, Some(crate::multi::Split::List)).await.unwrap();
+    assert_eq!(card.multi, Some(crate::multi::Split::List));
     assert_eq!(card.card_state(), CardState::New);
     let items = app.card_items(&card).await.unwrap();
     assert_eq!(items.iter().map(|i| i.text.as_str()).collect::<Vec<_>>(), ["Cultural body", "Always escapes", "Category crisis"]);
-    assert_eq!(crate::lists::asked(&card, &items, now()), [true, true, true]);
+    assert_eq!(crate::multi::asked(&card, &items, now()), [true, true, true]);
 
     // 1 of 3: the second and third were missed.
     let r = app.answer_list(&a, card.id, vec![1, 2], None, Some(0)).await.unwrap();
@@ -110,7 +110,7 @@ async fn list_cards_remember_each_item() {
     assert!(items.iter().all(|i| i.reps == 1));
     assert!(items[1].due < items[0].due);
     // Next time only the missed ones are asked; the other shows as known.
-    let asked = crate::lists::asked(&card, &items, now());
+    let asked = crate::multi::asked(&card, &items, now());
     assert_eq!(asked, [false, true, true]);
     assert!(app.answer_list(&a, card.id, vec![0], None, Some(card.reps)).await.is_err());
     let r = app.answer_list(&a, card.id, vec![], None, Some(card.reps)).await.unwrap();
@@ -143,10 +143,10 @@ async fn list_cards_remember_each_item() {
 
     // Switching it off makes a plain card that keeps its schedule.
     let card = app
-        .update_card(&a, card.id, CardInput { is_list: Some(false), ..Default::default() })
+        .update_card(&a, card.id, CardInput { multi: Some(None), ..Default::default() })
         .await
         .unwrap();
-    assert!(!card.is_list);
+    assert!(card.multi.is_none());
     assert!(app.card_items(&card).await.unwrap().is_empty());
     assert_ne!(card.card_state(), CardState::New);
 }
@@ -156,10 +156,10 @@ async fn a_studied_card_turned_into_a_list_keeps_its_memory() {
     let app = app().await;
     let a = user(&app, "kolja").await;
     let deck = app.create_deck(&a, "Math", "", None).await.unwrap();
-    let card = app.create_card(&a, deck.id, "Operations on F^n?", "1. Scalar multiplication\n2. Addition", None, None, false).await.unwrap();
+    let card = app.create_card(&a, deck.id, "Operations on F^n?", "1. Scalar multiplication\n2. Addition", None, None, None).await.unwrap();
     let card = app.answer_card(&a, card.id, Rating::Good, None, None).await.unwrap().card;
     let list = app
-        .update_card(&a, card.id, CardInput { is_list: Some(true), ..Default::default() })
+        .update_card(&a, card.id, CardInput { multi: Some(Some(crate::multi::Split::List)), ..Default::default() })
         .await
         .unwrap();
     assert_eq!(list.due, card.due);
@@ -167,7 +167,27 @@ async fn a_studied_card_turned_into_a_list_keeps_its_memory() {
     let items = app.card_items(&list).await.unwrap();
     assert!(items.iter().all(|i| i.stability == card.stability && i.due == card.due));
     // A list in review asks for every item.
-    assert_eq!(crate::lists::asked(&list, &items, now()), [true, true]);
+    assert_eq!(crate::multi::asked(&list, &items, now()), [true, true]);
+}
+
+#[tokio::test]
+async fn old_list_cards_are_split_again_and_keep_their_memory() {
+    let app = app().await;
+    let a = user(&app, "kolja").await;
+    let deck = app.create_deck(&a, "Lit", "", None).await.unwrap();
+    let back = "1. Cultural body\n2. Always escapes\n\nRemark: Cohen, 1996";
+    let card = app.create_card(&a, deck.id, "Theses?", back, None, None, Some(crate::multi::Split::List)).await.unwrap();
+    let card = app.answer_list(&a, card.id, vec![], None, Some(0)).await.unwrap().card;
+    // Before multicards the remark was part of the last item.
+    sqlx::query("UPDATE card_items SET text = 'Always escapes\nRemark: Cohen, 1996' WHERE position = 1")
+        .execute(&app.db)
+        .await
+        .unwrap();
+    sqlx::query("PRAGMA user_version = 0").execute(&app.db).await.unwrap();
+    app.resplit_multicards().await.unwrap();
+    let items = app.card_items(&card).await.unwrap();
+    assert_eq!(items.iter().map(|i| i.text.as_str()).collect::<Vec<_>>(), ["Cultural body", "Always escapes"]);
+    assert!(items.iter().all(|i| i.reps == 1));
 }
 
 #[tokio::test]
@@ -180,7 +200,7 @@ async fn daily_new_limit_is_respected() {
         .unwrap();
     let deck = app.create_deck(&a, "Small", "", Some(preset.id)).await.unwrap();
     for f in ["a", "b", "c"] {
-        app.create_card(&a, deck.id, f, "x", None, None, false).await.unwrap();
+        app.create_card(&a, deck.id, f, "x", None, None, None).await.unwrap();
     }
     let sc = app.next_card(&a, Some(deck.id)).await.unwrap().unwrap();
     app.answer_card(&a, sc.card.id, Rating::Good, None, None).await.unwrap();
@@ -197,7 +217,7 @@ async fn token_permissions() {
     let other = user(&app, "eve").await;
     let d1 = app.create_deck(&a, "One", "", None).await.unwrap();
     let d2 = app.create_deck(&a, "Two", "", None).await.unwrap();
-    let c2 = app.create_card(&a, d2.id, "secret", "x", None, None, false).await.unwrap();
+    let c2 = app.create_card(&a, d2.id, "secret", "x", None, None, None).await.unwrap();
 
     let (_, raw) = app
         .create_token(a.user_id(), "reader", false, false, Some(vec![d1.id]))
@@ -208,7 +228,7 @@ async fn token_permissions() {
     assert_eq!(app.decks(&t).await.unwrap().len(), 1);
     assert!(matches!(app.card(&t, c2.id).await, Err(AppError::NotFound)));
     assert!(matches!(
-        app.create_card(&t, d1.id, "q", "a", None, None, false).await,
+        app.create_card(&t, d1.id, "q", "a", None, None, None).await,
         Err(AppError::Forbidden(_))
     ));
     assert!(matches!(app.create_deck(&t, "New", "", None).await, Err(AppError::Forbidden(_))));
@@ -222,7 +242,7 @@ async fn token_permissions() {
     // A writer agent's cards are labelled.
     let (tok, raw) = app.create_token(a.user_id(), "writer", true, true, None).await.unwrap();
     let w = app.token_access(&raw).await.unwrap();
-    let c = app.create_card(&w, d1.id, "from agent", "", None, None, false).await.unwrap();
+    let c = app.create_card(&w, d1.id, "from agent", "", None, None, None).await.unwrap();
     assert_eq!(c.created_by, "agent");
 
     app.revoke_token(a.user_id(), tok.id).await.unwrap();
@@ -251,7 +271,7 @@ async fn optimizer_fits_parameters() {
     // Synthetic history: 300 cards, reviews at growing intervals with some lapses.
     for i in 0..300i64 {
         let card = app
-            .create_card(&a, deck.id, &format!("q{i}"), "a", None, None, false)
+            .create_card(&a, deck.id, &format!("q{i}"), "a", None, None, None)
             .await
             .unwrap();
         let mut t = start + i * 600;
@@ -314,7 +334,7 @@ async fn sharing_gives_an_independent_copy() {
     let deck = app.create_deck(&kolja, "Spanish", "verbs", None).await.unwrap();
     let img = app.store_image(&kolja, tiny_png()).await.unwrap();
     let c = app
-        .create_card(&kolja, deck.id, "hablar", "to speak", Some(img.id.clone()), None, false)
+        .create_card(&kolja, deck.id, "hablar", "to speak", Some(img.id.clone()), None, None)
         .await
         .unwrap();
     app.answer_card(&kolja, c.id, Rating::Good, None, None).await.unwrap();
@@ -377,7 +397,7 @@ async fn oauth_flow() {
     let app = app().await;
     let a = user(&app, "kolja").await;
     let deck = app.create_deck(&a, "D", "", None).await.unwrap();
-    app.create_card(&a, deck.id, "q", "a", None, None, false).await.unwrap();
+    app.create_card(&a, deck.id, "q", "a", None, None, None).await.unwrap();
 
     let reg = app
         .register_client(crate::oauth::RegistrationRequest {
@@ -521,6 +541,15 @@ mod http {
             .body(Body::from(body.to_string()))
             .unwrap();
         send(app, req).await
+    }
+
+    fn urlencode(v: &str) -> String {
+        v.bytes()
+            .map(|b| match b {
+                b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'.' | b'_' => (b as char).to_string(),
+                _ => format!("%{b:02X}"),
+            })
+            .collect()
     }
 
     /// The same for a multipart form (the card form), text fields only.
@@ -834,7 +863,7 @@ mod http {
         let app = app().await;
         let a = user(&app, "kolja").await;
         let deck = app.create_deck(&a, "Languages::Spanish", "", None).await.unwrap();
-        app.create_card(&a, deck.id, "el perro", "the dog", None, None, false).await.unwrap();
+        app.create_card(&a, deck.id, "el perro", "the dog", None, None, None).await.unwrap();
         let cookie = login_cookie(&app, "kolja").await;
         let res = send(&app, Request::get("/study").header(header::COOKIE, cookie).body(Body::empty()).unwrap()).await;
         let html = String::from_utf8_lossy(&axum::body::to_bytes(res.into_body(), usize::MAX).await.unwrap()).into_owned();
@@ -857,17 +886,17 @@ mod http {
         let d = deck.id.to_string();
         let back = "1. Cultural body\n2. Always escapes\n3. Category crisis";
 
-        // The switch is only on the page once the back has a list.
+        // The choice is only on the page once the back can be split.
         let res = send(&app, Request::get("/cards/new").header(header::COOKIE, &cookie).body(Body::empty()).unwrap()).await;
-        assert!(text(res).await.contains(r#"<label class="check list-toggle" hidden>"#));
-        let res = submit_multipart(&app, &cookie, "/cards/new", &[("deck", &d), ("front", "Theses?"), ("back", back), ("list", "1")]).await;
+        assert!(text(res).await.contains(r#"<fieldset class="line multi-pick" hidden>"#));
+        let res = submit_multipart(&app, &cookie, "/cards/new", &[("deck", &d), ("front", "Theses?"), ("back", back), ("multi", "list")]).await;
         assert_eq!(res.status(), StatusCode::SEE_OTHER);
         let (cards, _) = app.list_cards(&a, &CardFilter { deck_id: Some(deck.id), ..Default::default() }).await.unwrap();
         let card = &cards[0];
-        assert!(card.is_list);
+        assert_eq!(card.multi, Some(crate::multi::Split::List));
         let res = send(&app, Request::get(format!("/cards/{}", card.id)).header(header::COOKIE, &cookie).body(Body::empty()).unwrap()).await;
         let html = text(res).await;
-        assert!(html.contains(r#"<label class="check list-toggle"><input type="checkbox" name="list" value="1" checked>"#));
+        assert!(html.contains(r#"<input type="radio" name="multi" value="list" checked>"#));
         assert!(html.contains("Always escapes"));
 
         // Studying: one row per item, one Done.
@@ -882,6 +911,42 @@ mod http {
         assert_eq!(history[0]["items_recalled"], 1);
         let res = send(&app, Request::get(format!("/cards/{}", card.id)).header(header::COOKIE, &cookie).body(Body::empty()).unwrap()).await;
         assert!(text(res).await.contains("1 of 3 remembered"));
+    }
+
+    #[tokio::test]
+    async fn a_multicard_keeps_what_is_not_an_item() {
+        let app = app().await;
+        let a = user(&app, "kolja").await;
+        let deck = app.create_deck(&a, "English", "", None).await.unwrap();
+        let cookie = login_cookie(&app, "kolja").await;
+        let back = "will\n    - decisions made at the moment of speaking: That looks heavy. I'll give you a hand.\n    \
+            - guesses and opinions about the future: I think I'll make it on time.\n\nbe going to\n    \
+            - intentions planned beforehand: We're going to have a barbecue.\n\n\
+            ⚠️ Remark: will is for spontaneous decisions.";
+
+        // The preview offers the list and shows the card as it is studied.
+        let body = format!("front=Future+simple&multi=list&back={}", urlencode(back));
+        let res = submit(&app, &cookie, "/cards/preview", &body).await;
+        let v: serde_json::Value = serde_json::from_str(&text(res).await).unwrap();
+        assert_eq!(v["splits"], serde_json::json!(["list"]));
+        let html = v["html"].as_str().unwrap();
+        assert!(html.contains("<p>be going to</p>"));
+        assert!(!html.contains("name=\"recalled\""));
+
+        let d = deck.id.to_string();
+        submit_multipart(&app, &cookie, "/cards/new", &[("deck", &d), ("front", "Future simple?"), ("back", back), ("multi", "list")]).await;
+        let (cards, _) = app.list_cards(&a, &CardFilter { deck_id: Some(deck.id), ..Default::default() }).await.unwrap();
+        let card = &cards[0];
+        // The pasted indent became a real list.
+        assert!(card.back.contains("\n- guesses"));
+        assert_eq!(app.card_items(card).await.unwrap().len(), 3);
+        let res = send(&app, Request::get(format!("/study?card={}&show=1", card.id)).header(header::COOKIE, &cookie).body(Body::empty()).unwrap()).await;
+        let html = text(res).await;
+        for kept in ["<p>will</p>", "<p>be going to</p>", "Remark: will is for spontaneous decisions."] {
+            assert!(html.contains(kept), "{kept}");
+        }
+        assert!(html.contains(r#"<input type="checkbox" name="recalled" value="2">"#));
+        assert_eq!(html.matches(r#"<ol class="list-items">"#).count(), 2);
     }
 
     #[tokio::test]

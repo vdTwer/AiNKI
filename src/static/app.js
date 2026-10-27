@@ -51,24 +51,66 @@
   // Files: every file field takes a dropped (or pasted) file the same
   // way. The first file that fits goes into the input as if it had been
   // picked, so the field's own change handler shows it.
-  // Card form: offer "Learn item by item" once the back has a numbered
-  // list with two or more items (the same rule as the server's).
-  var listToggle = document.querySelector('.card-form .list-toggle');
+  // Card form: while you write, the server says which ways the back can be
+  // learned item by item (only those are offered), and Preview shows the
+  // card as it will be studied. Both use the server's Markdown, so what you
+  // see is what you get.
+  var multiPick = document.querySelector('.card-form .multi-pick');
+  var previewBox = document.querySelector('.card-form .card-preview');
+  var previewToggle = document.querySelector('.card-form .preview-toggle');
+  var frontText = document.getElementById('front');
   var backText = document.getElementById('back');
-  if (listToggle && backText) {
-    var listBox = listToggle.querySelector('input');
-    var hasList = function () {
-      var n = 0;
-      backText.value.split(/\r?\n/).forEach(function (line) { if (/^ {0,3}\d{1,3}[.)][ \t]+\S/.test(line)) n++; });
-      return n >= 2;
+  if (multiPick && previewBox && previewToggle && frontText && backText) {
+    var sheet = previewBox.previousElementSibling;
+    var previewing = false;
+    var asked = 0;
+    var chosen = function () {
+      var r = multiPick.querySelector('input[name=multi]:checked');
+      return r ? r.value : '';
     };
-    var offer = function () {
-      var show = hasList();
-      listToggle.hidden = !show;
-      listBox.disabled = !show;
+    var refresh = function () {
+      var n = ++asked;
+      var body = new URLSearchParams({ front: frontText.value, back: backText.value, multi: chosen() });
+      fetch('/cards/preview', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: body
+      }).then(function (r) {
+        if (!r.ok) throw new Error('preview');
+        return r.json();
+      }).then(function (v) {
+        if (n !== asked) return;
+        var any = false;
+        Array.prototype.forEach.call(multiPick.querySelectorAll('[data-split]'), function (label) {
+          var input = label.querySelector('input');
+          var ok = v.splits.indexOf(label.getAttribute('data-split')) >= 0;
+          // A choice already made stays visible; saving says what's wrong.
+          label.hidden = !ok && !input.checked;
+          any = any || !label.hidden;
+        });
+        multiPick.hidden = !any;
+        previewBox.innerHTML = v.html;
+        setup(previewBox);
+      }).catch(function () {});
     };
-    backText.addEventListener('input', offer);
-    offer();
+    var timer = null;
+    var later = function () {
+      clearTimeout(timer);
+      timer = setTimeout(refresh, 250);
+    };
+    frontText.addEventListener('input', later);
+    backText.addEventListener('input', later);
+    multiPick.addEventListener('change', refresh);
+    previewToggle.hidden = false;
+    previewToggle.addEventListener('click', function () {
+      previewing = !previewing;
+      if (previewing) refresh();
+      sheet.hidden = previewing;
+      previewBox.hidden = !previewing;
+      previewToggle.textContent = previewing ? 'Write' : 'Preview';
+      if (!previewing) backText.focus();
+    });
   }
 
   function putFile(input, files, fits) {

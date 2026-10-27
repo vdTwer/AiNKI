@@ -30,6 +30,7 @@ use crate::{
     error::AppError,
     import, presets,
     scheduler::Rating,
+    multi::Split,
     service::{CardFilter, CardInput, PresetInput},
 };
 
@@ -43,16 +44,18 @@ no templates, no note types, no cloze. Make one card per fact; keep fronts short
 - Cards live in decks. Each deck uses a preset that sets desired retention (target recall probability), \
 daily new/review limits and short learning steps. Scheduling is FSRS-6.
 - Images: upload with upload_image (base64), then pass the returned image_id when creating or updating a card.
-- List cards: for an enumeration (\"the seven theses on monsters\"), make one card whose back is a numbered list \
-and set list: true. Each item then has its own memory, and partial recall (4 of 7) is tracked item by item. \
-Such cards have is_list: true and an items array.
+- Multicards: when the back holds several things to recall (\"the seven theses on monsters\"), make one card \
+and set multi to how its back splits into items: 'list' (the items of its lists, numbered or not), 'sections' \
+(one item per heading) or 'parts' (split at --- lines). Each item then has its own memory, and partial recall \
+(4 of 7) is tracked item by item. Text on the back that is no item (a line above a group, a closing remark) \
+stays and is shown with the answer. Such cards have a multi field and an items array.
 
 Quizzing the user (needs a token that can review):
 1. get_next_card returns the next due card, front and back.
 2. Show the user ONLY the front. Wait for their answer.
 3. Compare with the back, tell them the answer, then call answer_card with rating 'good' if they \
 recalled it, 'again' if they did not. ('hard' and 'easy' exist but two buttons is the default.)
-   For a list card, get_next_card marks each item asked or not. Show the front, and if some items are not \
+   For a multicard, get_next_card marks each item asked or not. Show the front, and if some items are not \
 asked, name those as already known and ask only for the rest. Compare the answer item by item (order does \
 not matter, meaning counts more than wording), tell the user which ones they missed, and call answer_card \
 with missed set to the numbers of the asked items they missed (an empty list if they got them all).
@@ -121,16 +124,16 @@ impl AinkiMcp {
         }
     }
 
-    /// A card as JSON; list cards carry their items, and on a study turn
+    /// A card as JSON; multicards carry their items, and on a study turn
     /// (`studying`) which of them are asked.
     async fn card_json(&self, a: &Access, card: &crate::service::Card, studying: bool) -> Result<Value, String> {
         let clock = a.user.clock();
         let params = a.user.params();
         let mut v = card.to_json(&clock, &params);
-        if card.is_list {
+        if card.multi.is_some() {
             let items = self.app.card_items(card).await.map_err(err)?;
-            let asked = studying.then(|| crate::lists::asked(card, &items, clock.now));
-            v["items"] = json!(crate::lists::items_json(&items, asked.as_deref(), &clock, &params));
+            let asked = studying.then(|| crate::multi::asked(card, &items, clock.now));
+            v["items"] = json!(crate::multi::items_json(&items, asked.as_deref(), &clock, &params));
         }
         Ok(v)
     }
@@ -243,9 +246,17 @@ pub struct NewCard {
     pub front_image_id: Option<String>,
     /// Image id from upload_image to show on the back.
     pub back_image_id: Option<String>,
-    /// Learn the back's numbered list item by item (needs at least two items).
+    /// Learn the back item by item, split this way (needs at least two items).
+    pub multi: Option<Split>,
+    /// Same as multi: 'list' (older name).
     #[serde(default)]
     pub list: bool,
+}
+
+impl NewCard {
+    fn split(&self) -> Option<Split> {
+        self.multi.or(self.list.then_some(Split::List))
+    }
 }
 
 #[derive(Deserialize, JsonSchema)]
@@ -269,7 +280,9 @@ pub struct UpdateCardParams {
     pub back_image_id: Option<String>,
     /// Move the card to this deck.
     pub deck_id: Option<i64>,
-    /// true: learn the back's numbered list item by item; false: a plain card again.
+    /// Learn the back item by item: 'list', 'sections' or 'parts'; 'none' makes it a plain card again.
+    pub multi: Option<String>,
+    /// true is multi 'list', false is 'none' (older name).
     pub list: Option<bool>,
 }
 
@@ -309,7 +322,7 @@ pub enum RatingParam {
 #[derive(Deserialize, JsonSchema)]
 pub struct AnswerParams {
     pub card_id: i64,
-    /// 'good' if the user recalled the answer, 'again' if not. Leave out for list cards when giving missed.
+    /// 'good' if the user recalled the answer, 'again' if not. Leave out for multicards when giving missed.
     pub rating: Option<RatingParam>,
     /// List cards only: numbers of the asked items the user missed (as in card.items). [] means all recalled.
     pub missed: Option<Vec<i64>>,
@@ -512,7 +525,7 @@ impl AinkiMcp {
         for (i, c) in p.cards.into_iter().enumerate() {
             match self
                 .app
-                .create_card(&a, deck_id, &c.front, &c.back, c.front_image_id, c.back_image_id, c.list)
+                .create_card(&a, deck_id, &c.front, &c.back, c.front_image_id.clone(), c.back_image_id.clone(), c.split())
                 .await
             {
                 Ok(card) => ids.push(card.id),
@@ -530,7 +543,11 @@ impl AinkiMcp {
             back: p.back,
             front_image: empty_to_none(p.front_image_id),
             back_image: empty_to_none(p.back_image_id),
-            is_list: p.list,
+            multi: match (p.multi.as_deref(), p.list) {
+                (Some("none"), _) => Some(None),
+                (Some(m), _) => Some(Some(Split::parse(m).ok_or("multi is 'list', 'sections', 'parts' or 'none'")?)),
+                (None, l) => l.map(|l| l.then_some(Split::List)),
+            },
         };
         let mut card = self.app.update_card(&a, p.card_id, input).await.map_err(err)?;
         if let Some(deck) = p.deck_id {
@@ -608,7 +625,7 @@ impl AinkiMcp {
         }
     }
 
-    #[tool(description = "Record the user's answer for a card: 'good' (remembered) or 'again' (forgot). Hard/easy are optional. For a list card, give missed: the numbers of the asked items the user did not recall.")]
+    #[tool(description = "Record the user's answer for a card: 'good' (remembered) or 'again' (forgot). Hard/easy are optional. For a multicard, give missed: the numbers of the asked items the user did not recall.")]
     async fn answer_card(&self, Parameters(p): Parameters<AnswerParams>, Extension(parts): Extension<Parts>) -> ToolResult {
         let a = access(&parts)?;
         let r = match (p.missed, p.rating) {
@@ -631,7 +648,7 @@ impl AinkiMcp {
                 };
                 self.app.answer_card(&a, p.card_id, rating, None, None).await.map_err(err)?
             }
-            (None, None) => return Err("give a rating, or for a list card the missed items".into()),
+            (None, None) => return Err("give a rating, or for a multicard the missed items".into()),
         };
         out(json!({
             "card_id": r.card.id,
