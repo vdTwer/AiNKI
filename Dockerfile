@@ -9,7 +9,11 @@ RUN mkdir src && echo 'fn main() {}' > src/main.rs \
     && rm -rf src
 
 COPY migrations migrations
+COPY build.rs build.rs
 COPY src src
+# Shown on the settings page; the deploy passes the commit it builds.
+ARG AINKI_BUILD=
+ENV AINKI_BUILD=$AINKI_BUILD
 RUN touch src/main.rs && cargo build --release --locked
 
 FROM debian:trixie-slim

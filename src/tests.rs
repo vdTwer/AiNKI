@@ -759,6 +759,21 @@ mod http {
     }
 
     #[tokio::test]
+    async fn favicons_and_the_build_on_settings() {
+        let app = app().await;
+        for path in ["/favicon.ico", "/favicon.svg", "/apple-touch-icon.png"] {
+            let res = send(&app, Request::get(path).body(Body::empty()).unwrap()).await;
+            assert_eq!(res.status(), StatusCode::OK, "{path}");
+        }
+        user(&app, "kolja").await;
+        let cookie = login_cookie(&app, "kolja").await;
+        let res = send(&app, Request::get("/settings").header(header::COOKIE, cookie).body(Body::empty()).unwrap()).await;
+        let page = text(res).await;
+        assert!(page.contains(&format!("Build {}", env!("AINKI_BUILD"))));
+        assert!(page.contains(r#"rel="icon""#));
+    }
+
+    #[tokio::test]
     async fn logged_out_links_come_back_after_login() {
         let app = app().await;
         let res = send(&app, Request::get("/decks/7?q=perro").body(Body::empty()).unwrap()).await;

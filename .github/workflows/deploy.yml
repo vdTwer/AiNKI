@@ -60,7 +60,7 @@ jobs:
           git merge --ff-only "origin/$2"
           echo "Deploying $(git log -1 --format='%h %s')"
           # Build first: if it fails, the running container stays up.
-          docker compose build
+          AINKI_BUILD="$(git log -1 --format='%h, %cd' --date=format:'%Y-%m-%d %H:%M')" docker compose build
           docker compose up -d --remove-orphans
           docker image prune -f
           docker compose ps

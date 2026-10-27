@@ -2483,6 +2483,7 @@ async fn settings_page(State(app): State<AppState>, user: WebUser, Flash(msg): F
                 div.form-foot.end { button.btn type="submit" { "Change password" } }
             }
             form.logout method="post" action="/logout" { button.btn type="submit" { "Log out" } }
+            p.muted.small.build { "Build " (env!("AINKI_BUILD")) }
         },
     )
     .into_response())
