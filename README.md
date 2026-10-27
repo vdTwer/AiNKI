@@ -6,6 +6,7 @@ An AI-native flashcard service. Like Anki, but:
 - **FSRS by default.** Scheduling uses FSRS-6 with researched defaults and presets for common situations. One button fits the parameters to your own memory.
 - **Simple cards.** A front and a back. Each is Markdown text plus an optional image. No note types, no templates.
 - **Multicards, item by item.** A card whose back holds several things to recall can be learned item by item: the items of its lists (numbered or not), its sections under headings, or its parts between `---` lines. After the reveal you tap what you remembered, every item gets its own schedule, and the next round asks only for the ones you missed. Everything else on the back, like a line above a group or a closing remark, stays and is shown with the answer. Agents grade these per item too.
+- **Learning to learn.** A rule-based coach flags cards that keep slipping, ask too much at once, or look like another card, and offers to split them. You decide; AiNKI calls no AI model itself. Short lessons explain FSRS, what memory research says (with how strong the evidence is) and how to write good cards, and each can be added as a deck. Stats show your week, retention per deck against its aim, and how well FSRS predicts your memory.
 - **Web first, mobile first.** One website that works well on a phone and on e-ink readers: grayscale, high contrast, no animations, large tap targets, no JavaScript required. Images are dithered to 16 gray levels on upload. With JavaScript, studying never reloads the page.
 - **A warmer look on desktop.** On computers, AiNKI switches to a calm look: a quiet warm page, a serif for your cards, a side rail of dots that grow into small icons as the cursor comes near, instead of a header, Terra Cotta and Wild Orchid accents, and buttons that tilt a little toward the cursor. Phones, e-readers and browsers without JavaScript always get the simple look, and anyone can choose it in settings.
 
@@ -92,7 +93,9 @@ For agents without OAuth support, create a token by hand under **Settings → Ag
 
 Agents can never change your password or settings, or create tokens. Reviews done through an agent are labelled, and you can leave them out of FSRS optimization.
 
-Tools: `get_overview`, `list_decks`, `create_deck`, `update_deck`, `delete_deck`, `list_cards`, `get_card`, `create_cards`, `update_card`, `delete_cards`, `set_cards_suspended`, `reset_cards`, `upload_image`, `get_image`, `get_next_card`, `answer_card`, `undo_last_answer`, `get_stats`, `list_presets`, `create_preset`, `update_preset`, `delete_preset`, `optimize_fsrs`, `import_csv`, `import_apkg`, `export_deck_csv`, `share_deck`, `list_shares`, `accept_share`, `decline_share`, `cancel_share`.
+Tools: `get_overview`, `list_decks`, `create_deck`, `update_deck`, `delete_deck`, `list_cards`, `get_card`, `create_cards`, `update_card`, `delete_cards`, `set_cards_suspended`, `reset_cards`, `upload_image`, `get_image`, `get_next_card`, `answer_card`, `undo_last_answer`, `get_stats`, `list_presets`, `create_preset`, `update_preset`, `delete_preset`, `optimize_fsrs`, `import_csv`, `import_apkg`, `export_deck_csv`, `share_deck`, `list_shares`, `accept_share`, `decline_share`, `cancel_share`, `list_cards_needing_attention`, `dismiss_card_flag`, `split_card`, `get_insights`, `get_workload`, `list_lessons`, `get_lesson`.
+
+During quiet hours `get_next_card` returns no card, so agents don't quiz you then.
 
 ## Sharing decks
 
@@ -118,11 +121,21 @@ New accounts get these presets:
 
 How these were chosen, following the FSRS project's guidance:
 
-- **Default parameters.** The FSRS-6 defaults are fitted on about 10,000 Anki collections. After about 1,000 reviews, use **Settings → Optimize** to fit FSRS to your own history. Re-run it every month or so.
-- **Desired retention.** 0.80 to 0.95 is the useful range. Below about 0.80 you relearn so much that total work goes up. Above 0.95, work climbs steeply: 0.95 costs about twice the reviews of 0.90. Around 0.85 is close to the least work per card remembered.
+- **Default parameters.** The FSRS-6 defaults are fitted on about 10,000 Anki collections. Once you have a few hundred reviews, AiNKI fits FSRS to your own history about once a month by itself (or press **Optimize now** in settings). New parameters are kept only when they predict your past reviews better than the old ones. A preset with about 400 reviews of its own gets its own parameters.
+- **Desired retention.** 0.80 to 0.95 is the useful range. Below about 0.80 you relearn so much that total work goes up. Above 0.95, work climbs steeply: 0.95 costs about twice the reviews of 0.90. Where the least work lies differs from person to person, so each preset's page simulates the next 30, 90 or 365 days at several retentions with your own memory and speed.
 - **Learning steps.** Keep them short (minutes, under a day). Spacing across days is FSRS's job; long learning steps work against the model.
 - **Daily limits.** Each new card leads to about 10 reviews in its first month, so the review limit should be at least 10 times the new card limit.
 - **Fuzz.** Intervals get a small random spread so cards added together don't stay due together.
+
+### Studying
+
+- **Timed cards.** A preset can set a time limit for cards you have seen before. When time runs out the card counts as forgotten; **+10 s** adds time once. Answer times are never used to grade otherwise.
+- **Typed answers.** A preset can ask you to type the answer first. What you wrote is shown above the answer; you still decide whether you remembered.
+- **Sure check.** Optionally say whether you are sure before the answer is shown. It doesn't change the schedule; stats show how often you were right when you felt sure.
+- **Quiet hours.** No cards during the hours you choose, on the website (a rest screen, with "Study anyway") or through agents.
+- **Breaks.** Optionally suggest a break after a set number of minutes.
+- **Catch-up mode.** After time away: no new cards, a daily cap on reviews, and the cards you most likely still remember first. AiNKI offers it when many cards are overdue.
+- **Mixed study.** Study all decks at once, or one at a time. Mixing is offered for convenience; there is no good evidence it helps with unrelated material.
 
 ### Import from Anki
 
@@ -149,7 +162,11 @@ AINKI_DATA_DIR=./data cargo run
 
 The code:
 
-- `src/service.rs`: everything a user can do (decks, cards, studying, stats, optimizer). The website and MCP server are thin layers over it.
+- `src/service.rs`: everything a user can do (decks, cards, studying, stats). The website and MCP server are thin layers over it.
+- `src/coach.rs`: the card coach (leeches, split hints, near duplicates, splitting).
+- `src/tuning.rs`: the optimizer, per-preset parameters, the monthly run, workload simulation and calibration.
+- `src/study.rs`: quiet hours, breaks, catch-up mode and the sure check. `src/insight.rs`: the week and retention per deck.
+- `src/lessons.rs` and `src/lessons/*.md`: the built-in lessons, one Markdown file each.
 - `src/scheduler.rs`: card lifecycle around FSRS (learning steps, day boundaries, fuzz, exam caps).
 - `src/web.rs`: the website (server-rendered with maud).
 - `src/mcp.rs`: the MCP server (rmcp, Streamable HTTP, stateless).
@@ -163,8 +180,6 @@ The code:
 
 ## Roadmap
 
-- "Compute optimal retention" (CMRR) suggestions per preset.
-- Optional automatic monthly optimization.
 - Export to `.apkg`.
 
 ## License

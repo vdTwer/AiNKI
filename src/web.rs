@@ -21,10 +21,12 @@ use serde::Deserialize;
 use crate::{
     App, AppState,
     auth::{Access, User},
+    coach,
     error::AppError,
-    import, markdown, mcp, media, multi::{self, Piece, Split}, now, oauth, presets,
+    import, insight, lessons, markdown, mcp, media, multi::{self, Piece, Split}, now, oauth, presets,
     security::{self, ClientIp, Flash},
     scheduler::{self, CardState, Rating},
+    study,
     service::{Card, CardFilter, CardInput, Deck, PresetInput},
     format::{self, count},
 };
@@ -111,6 +113,8 @@ pub fn router(app: AppState) -> Router {
         .route("/study", get(study))
         .route("/study/answer", post(study_answer))
         .route("/study/undo", post(study_undo))
+        .route("/study/anyway", post(study_anyway))
+        .route("/study/keep-going", post(study_keep_going))
         .route("/decks/new", get(deck_new_page).post(deck_create))
         .route("/decks/{id}", get(deck_page))
         .route("/decks/{id}/edit", get(deck_edit_page).post(deck_update))
@@ -118,7 +122,12 @@ pub fn router(app: AppState) -> Router {
         .route("/decks/{id}/export.csv", get(deck_export))
         .route("/decks/{id}/share", post(deck_share))
         .route("/shares/{id}/{action}", post(share_action))
+        .route("/cards/{id}/split", get(split_page).post(split_submit))
         .route("/cards/{id}/{action}", post(card_action))
+        .route("/attention", get(attention_page))
+        .route("/learn", get(learn_page))
+        .route("/learn/{slug}", get(lesson_page))
+        .route("/learn/{slug}/deck", post(lesson_deck))
         .route("/presets", get(presets_page))
         .route("/presets/new", get(preset_new_page).post(preset_create))
         .route("/presets/{id}", get(preset_page).post(preset_update))
@@ -126,6 +135,9 @@ pub fn router(app: AppState) -> Router {
         .route("/settings", get(settings_page).post(settings_update))
         .route("/settings/password", post(password_update))
         .route("/settings/optimize", post(optimize))
+        .route("/settings/auto-optimize", post(auto_optimize))
+        .route("/settings/study", post(study_settings_update))
+        .route("/settings/catch-up", post(catch_up_update))
         .route("/settings/reset-params", post(reset_params))
         .route("/access", get(access_page))
         .route("/access/new", get(|| async { Redirect::to("/access") }).post(token_create))
@@ -393,6 +405,7 @@ pub enum Nav {
     Study,
     Add,
     Stats,
+    Learn,
     Settings,
 }
 
@@ -440,6 +453,8 @@ fn page(nav: Option<Nav>, title: &str, user: Option<&User>, page_kind: Option<&s
                         a href="/study" data-label="Study" aria-current=[current(Nav::Study)] { (nav_icon(ICON_STUDY)) "Study" }
                         a href="/cards/new" data-label="Add" aria-current=[current(Nav::Add)] { (nav_icon(ICON_ADD)) "Add" }
                         a href="/stats" data-label="Stats" aria-current=[current(Nav::Stats)] { (nav_icon(ICON_STATS)) "Stats" }
+                        // Phones reach the lessons through settings; the bar stays as it was.
+                        a.rail-only href="/learn" data-label="Learn" aria-current=[current(Nav::Learn)] { (nav_icon(ICON_LEARN)) "Learn" }
                         a href="/settings" data-label="Settings" aria-current=[current(Nav::Settings)] { (nav_icon(ICON_SETTINGS)) "Settings" }
                     }
                 }
@@ -456,6 +471,7 @@ const ICON_DECKS: &str = r#"<rect x="4" y="9.5" width="16" height="10.5" rx="2"/
 const ICON_STUDY: &str = r#"<rect x="5" y="3.5" width="14" height="17" rx="2.5"/><path d="M9 10.5l2 2 4-4"/><path d="M9 16.5h6"/>"#;
 const ICON_ADD: &str = r#"<path d="M12 5v14M5 12h14"/>"#;
 const ICON_STATS: &str = r#"<path d="M5 20V13M12 20V5M19 20v-9"/>"#;
+const ICON_LEARN: &str = r#"<path d="M12 6.5C10 5 7.5 4.5 4.5 4.5v13.5c3 0 5.5.5 7.5 2 2-1.5 4.5-2 7.5-2V4.5c-3 0-5.5.5-7.5 2z"/><path d="M12 6.5v13.5"/>"#;
 const ICON_SETTINGS: &str = r#"<path d="M5 7h8M17 7h2M5 17h2M11 17h8"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/>"#;
 const ICON_EDIT: &str = r#"<path d="M14.5 5.5l4 4L9 19H5v-4z"/><path d="M12.5 7.5l4 4"/>"#;
 // A paper plane, so Share doesn't look like Export's tray.
@@ -772,6 +788,9 @@ async fn home(State(app): State<AppState>, user: WebUser, Flash(msg): Flash) -> 
     let shares = app.incoming_shares(&access).await?;
     let stats = app.stats(&access, None).await?;
     let total_due: i64 = decks.iter().map(|d| d.due_total()).sum();
+    let attention = app.attention(&access, None).await?.len() as i64;
+    let overdue = app.overdue(&access).await?;
+    let quiet = study::quiet_until(&user.0, now());
     // A rough guide; real thinking time once there's enough history.
     let minutes = ((total_due as f64 * stats.seconds_per_review.unwrap_or(12.0)) / 60.0).ceil().max(1.0) as i64;
     let mut facts = Vec::new();
@@ -801,9 +820,12 @@ async fn home(State(app): State<AppState>, user: WebUser, Flash(msg): Flash) -> 
                     h1 { "Welcome to AiNKI" }
                 }
                 @if !facts.is_empty() { p.facts { (facts.join(" · ")) } }
-                @if total_due > 0 {
+                @if let Some(t) = quiet {
+                    p.facts { "Quiet hours until " (format::when(&user.0.clock(), t)) "." }
+                } @else if total_due > 0 {
                     p { a.btn.primary.start href="/study" { "Start studying " span.arrow aria-hidden="true" { "→" } } }
                 }
+                (catch_up_note(&user.0, overdue))
             }
             @if !shares.is_empty() {
                 h2 { "Shared with you" }
@@ -844,17 +866,20 @@ async fn home(State(app): State<AppState>, user: WebUser, Flash(msg): Flash) -> 
                                         span.sub { "Exam " (exam_words(&user.0, exam)) }
                                     }
                                 }
-                                @if d.due_total() == 0 && d.total > 0 {
+                                @if d.due_total() == 0 && d.total > d.suspended {
                                     span.num.due.done title="Done for today" { (done_check(13, "done-check")) span.unit { "done for today" } }
                                 } @else {
-                                    span.num.due title="Due" { @if due > 0 { (due) span.unit { " due" } } @else { (format::NONE) } }
+                                    span.num.due title="Due" { @if due > 0 { (format::number(due)) span.unit { " due" } } @else { (format::NONE) } }
                                 }
-                                span.num.new title="New" { @if d.new_today > 0 { span.dot aria-hidden="true" {} (d.new_today) span.unit { " new" } } @else { (format::NONE) } }
+                                span.num.new title="New" { @if d.new_today > 0 { span.dot aria-hidden="true" {} (format::number(d.new_today)) span.unit { " new" } } @else { (format::NONE) } }
                                 span.chev aria-hidden="true" { "›" }
                             }
                         }
                     }
                 }
+            }
+            @if attention > 0 {
+                p.small { a href="/attention" { (count(attention, "card")) " " (if attention == 1 { "needs" } else { "need" }) " a look" } }
             }
             p.actions.icon-links {
                 (icon_btn("/cards/new", ICON_ADD, "Add card"))
@@ -874,6 +899,34 @@ struct StudyQuery {
     card: Option<i64>,
     show: Option<u8>,
     t: Option<i64>,
+    /// From the reveal form: felt sure (1) or not (0), and what was typed.
+    sure: Option<u8>,
+    typed: Option<String>,
+}
+
+/// How a card is on the page: since when, whether turned over, and what
+/// came with turning it (the sure check, a typed answer).
+struct Shown {
+    at: i64,
+    revealed: bool,
+    sure: Option<bool>,
+    typed: Option<String>,
+}
+
+impl Shown {
+    fn front(at: i64) -> Self {
+        Shown { at, revealed: false, sure: None, typed: None }
+    }
+}
+
+/// What a card's study page adds around the card itself.
+struct StudyExtras {
+    /// The plain "Show answer" link, inside a multicard's form; empty when
+    /// the reveal is a form of its own (typed answers, the sure check).
+    reveal_inside: Markup,
+    sure_field: Markup,
+    echo: Markup,
+    timed_out: bool,
 }
 
 fn study_url(deck: Option<i64>) -> String {
@@ -885,7 +938,7 @@ fn study_url(deck: Option<i64>) -> String {
 
 /// The thin line and "14 of 32" under the card. `done` is in half cards
 /// (see `App::session_progress`).
-fn study_foot(deck_name: &str, deck_id: i64, done: i64, total: i64, q_deck: Option<i64>, card_id: Option<i64>) -> Markup {
+fn study_foot(deck_name: &str, deck_id: i64, done: i64, total: i64, q_deck: Option<i64>, card_id: Option<i64>, leech: bool) -> Markup {
     let pct = if total > 0 { (done * 50 / total).clamp(0, 100) } else { 0 };
     let total = total.max(1);
     let position = (done / 2 + 1).min(total);
@@ -904,6 +957,9 @@ fn study_foot(deck_name: &str, deck_id: i64, done: i64, total: i64, q_deck: Opti
                     button.link.icon-link type="submit" { (icon(ICON_UNDO, PAGE_ICON)) span { "Undo last answer" } }
                 }
                 @if let Some(id) = card_id { (icon_link(&format!("/cards/{id}{}", CardFrom::study(q_deck).query()), ICON_EDIT, "Edit card")) }
+            }
+            @if let (true, Some(id)) = (leech, card_id) {
+                p.leech-note.small { "This card keeps slipping. " a href=(format!("/cards/{id}{}", CardFrom::study(q_deck).query())) { "Have a look after this answer" } }
             }
         }
     }
@@ -969,11 +1025,21 @@ async fn study_card(
     card: &Card,
     deck: &Deck,
     q_deck: Option<i64>,
-    shown: i64,
-    revealed: bool,
+    shown: &Shown,
 ) -> Result<Markup, AppError> {
+    let revealed = shown.revealed;
     let previews = app.previews(access, card, deck).await?;
+    let preset = app.preset(access, deck.preset_id).await?;
+    // Time limits, typing and the sure check are for cards seen before;
+    // a new card can't be known yet.
+    let seen = card.card_state() != CardState::New;
+    let limit = if seen { preset.time_limit } else { 0 };
+    let typed = seen && preset.typed_answers;
+    let ask_sure = seen && user.confidence_check;
+    // Without JavaScript the time counts until the answer is shown.
+    let timed_out = revealed && limit > 0 && now() - shown.at > limit + 1;
     let (done, total) = app.session_progress(access, q_deck).await?;
+    let leech = app.leech_note(card).await?.is_some();
     let four = user.four_buttons;
     let buttons: Vec<(Rating, &str, &str)> = if four {
         vec![
@@ -986,10 +1052,44 @@ async fn study_card(
         vec![(Rating::Again, "Again", "1"), (Rating::Good, "Good", "3")]
     };
     let deck_param = q_deck.map(|d| format!("&deck={d}")).unwrap_or_default();
-    let show_href = format!("/study?card={}&show=1&t={}{}#answer", card.id, shown, deck_param);
+    let show_href = format!("/study?card={}&show=1&t={}{}#answer", card.id, shown.at, deck_param);
+    let reveal_form = typed || ask_sure;
+    let reveal = if reveal_form {
+        reveal_controls(card.id, shown.at, q_deck, revealed, typed, ask_sure)
+    } else {
+        reveal_button(&show_href, revealed)
+    };
+    let sure_value = match shown.sure {
+        Some(true) => "1",
+        Some(false) => "0",
+        None => "",
+    };
+    let sure_field = html! { input.sure-field type="hidden" name="sure" value=(sure_value); };
+    let echo = typed_echo(typed, shown.typed.as_deref());
+    let timer = timer_box(limit, revealed);
+    let timeout = html! {
+        form.timeout-form method="post" action="/study/answer" hidden[!timed_out] data-stay {
+            input type="hidden" name="card" value=(card.id);
+            input type="hidden" name="reps" value=(card.reps);
+            input type="hidden" name="t" value=(shown.at);
+            input type="hidden" name="timeout" value="1";
+            @if let Some(d) = q_deck { input type="hidden" name="deck" value=(d); }
+            (sure_field)
+            p.timeout-note { "Time's up. This one counts as forgotten." }
+            div.answers.cols-1 {
+                button.btn.again type="submit" data-key=" " { span.label { "Continue" " " span.key { "space" } } }
+            }
+        }
+    };
     if let Some(how) = card.multi {
         let items = app.card_items(card).await?;
-        let body = multi_study(card, how, &items, q_deck, shown, revealed, &show_href);
+        let extras = StudyExtras {
+            reveal_inside: if reveal_form { html! {} } else { reveal.clone() },
+            sure_field: sure_field.clone(),
+            echo: echo.clone(),
+            timed_out,
+        };
+        let body = multi_study(card, how, &items, q_deck, shown, &extras);
         return Ok(page(
             Some(Nav::Study),
             "Study",
@@ -997,9 +1097,12 @@ async fn study_card(
             Some("study"),
             html! {
                 (flash(msg))
-                section.study.revealed[revealed] {
+                section.study.revealed[revealed].timed-out[timed_out] {
                     (body)
-                    (study_foot(&deck.name, deck.id, done, total, q_deck, Some(card.id)))
+                    (timer)
+                    @if reveal_form { (reveal) }
+                    (timeout)
+                    (study_foot(&deck.name, deck.id, done, total, q_deck, Some(card.id), leech))
                 }
             },
         ));
@@ -1011,19 +1114,25 @@ async fn study_card(
         Some("study"),
         html! {
             (flash(msg))
-            section.study.revealed[revealed] {
+            section.study.revealed[revealed].timed-out[timed_out] {
                 div.card-area {
                     (state_tag(card.card_state()))
                     section.face.front { (face(&card.front, &card.front_image)) }
                     hr.divider hidden[!revealed];
-                    section.face.back id="answer" hidden[!revealed] { (face(&card.back, &card.back_image)) }
+                    section.face.back id="answer" hidden[!revealed] {
+                        (echo)
+                        (face(&card.back, &card.back_image))
+                    }
                 }
-                (reveal_button(&show_href, revealed))
-                form.answers.cols-2[!four].cols-4[four] method="post" action="/study/answer" hidden[!revealed] {
+                (timer)
+                (reveal)
+                (timeout)
+                form.answers.cols-2[!four].cols-4[four] method="post" action="/study/answer" hidden[!revealed || timed_out] {
                     input type="hidden" name="card" value=(card.id);
                     input type="hidden" name="reps" value=(card.reps);
-                    input type="hidden" name="t" value=(shown);
+                    input type="hidden" name="t" value=(shown.at);
                     @if let Some(d) = q_deck { input type="hidden" name="deck" value=(d); }
+                    (sure_field)
                     @for (rating, label, key) in &buttons {
                         @let preview = previews.iter().find(|(r, _)| r == rating).map(|(_, p)| p.as_str()).unwrap_or("");
                         button.btn.primary[*rating == Rating::Good].again[*rating == Rating::Again] type="submit" name="rating" value=(*rating as i64) data-key=(key) {
@@ -1032,10 +1141,70 @@ async fn study_card(
                         }
                     }
                 }
-                (study_foot(&deck.name, deck.id, done, total, q_deck, Some(card.id)))
+                (study_foot(&deck.name, deck.id, done, total, q_deck, Some(card.id), leech))
             }
         },
     ))
+}
+
+/// The countdown for a timed card. Without JavaScript it only names the
+/// limit, and the time counts until the answer is shown.
+fn timer_box(limit: i64, revealed: bool) -> Markup {
+    if limit <= 0 {
+        return html! {};
+    }
+    html! {
+        div.timer data-limit=(limit) hidden[revealed] data-stay {
+            div.timer-line aria-hidden="true" { div.timer-fill {} }
+            div.timer-meta {
+                span.timer-secs role="timer" { (limit) " s" }
+                button.link.extend type="button" data-key="+" hidden { "+10 s" }
+            }
+        }
+    }
+}
+
+/// "Show answer" as a form: with a box for the typed answer, or as the
+/// sure check's two buttons. Without JavaScript it loads the answer side.
+fn reveal_controls(card_id: i64, at: i64, q_deck: Option<i64>, revealed: bool, typed: bool, ask_sure: bool) -> Markup {
+    html! {
+        form.reveal.reveal-form method="get" action="/study#answer" hidden[revealed] {
+            input type="hidden" name="card" value=(card_id);
+            input type="hidden" name="show" value="1";
+            input type="hidden" name="t" value=(at);
+            @if let Some(d) = q_deck { input type="hidden" name="deck" value=(d); }
+            @if typed {
+                label.typed-answer {
+                    span.face-label { "Your answer" }
+                    input type="text" name="typed" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="500" placeholder="Type it, then Enter";
+                }
+            }
+            @if ask_sure {
+                p.sure-ask { "Do you know it?" }
+                div.sure-buttons {
+                    button.btn.primary type="submit" name="sure" value="1" data-key="s" { span.label { "Sure" " " span.key { "S" } } }
+                    button.btn type="submit" name="sure" value="0" data-key="u" { span.label { "Not sure" " " span.key { "U" } } }
+                }
+            } @else {
+                button.btn.primary.show type="submit" data-key=" " { "Show answer" span.key { "space" } }
+            }
+        }
+    }
+}
+
+/// What was typed, shown above the answer to compare. Filled in by app.js
+/// when it reveals the card.
+fn typed_echo(typed: bool, text: Option<&str>) -> Markup {
+    if !typed {
+        return html! {};
+    }
+    let text = text.map(str::trim).filter(|t| !t.is_empty());
+    html! {
+        div.typed-echo hidden[text.is_none()] data-stay {
+            span.face-label { "You wrote" }
+            p.typed-text { (text.unwrap_or("")) }
+        }
+    }
 }
 
 fn reveal_button(href: &str, revealed: bool) -> Markup {
@@ -1123,7 +1292,8 @@ fn pieces_for(card: &Card, how: Split, items: &[multi::CardItem]) -> Vec<Piece> 
 /// relearning), then the whole back with every item as a row to tap when
 /// you remembered it, and one Done. It is all one form, so it also works
 /// without JavaScript.
-fn multi_study(card: &Card, how: Split, items: &[multi::CardItem], q_deck: Option<i64>, shown: i64, revealed: bool, show_href: &str) -> Markup {
+fn multi_study(card: &Card, how: Split, items: &[multi::CardItem], q_deck: Option<i64>, shown: &Shown, extras: &StudyExtras) -> Markup {
+    let revealed = shown.revealed;
     let asked = multi::asked(card, items, now());
     let n_asked = asked.iter().filter(|a| **a).count();
     let known: Vec<&multi::CardItem> = items.iter().zip(&asked).filter(|(_, a)| !**a).map(|(i, _)| i).collect();
@@ -1132,8 +1302,9 @@ fn multi_study(card: &Card, how: Split, items: &[multi::CardItem], q_deck: Optio
         form.list-answer method="post" action="/study/answer" {
             input type="hidden" name="card" value=(card.id);
             input type="hidden" name="reps" value=(card.reps);
-            input type="hidden" name="t" value=(shown);
+            input type="hidden" name="t" value=(shown.at);
             @if let Some(d) = q_deck { input type="hidden" name="deck" value=(d); }
+            (extras.sure_field)
             div.card-area {
                 (state_tag(card.card_state()))
                 section.face.front { (face(&card.front, &card.front_image)) }
@@ -1146,13 +1317,14 @@ fn multi_study(card: &Card, how: Split, items: &[multi::CardItem], q_deck: Optio
                 }
                 hr.divider hidden[!revealed];
                 section.face.back.list id="answer" hidden[!revealed] {
+                    (extras.echo)
                     @if let Some(img) = &card.back_image { img src=(format!("/media/{img}")) alt=""; }
                     p.list-how { "Tap the ones you remembered." }
                     (multi_back(&pieces, &asked, true))
                 }
             }
-            (reveal_button(show_href, revealed))
-            div.answers.cols-1 hidden[!revealed] {
+            (extras.reveal_inside)
+            div.answers.cols-1 hidden[!revealed || extras.timed_out] {
                 button.btn.primary type="submit" data-key=" " {
                     span.label { "Done" " " span.key { "space" } }
                     span.ivl data-remembered=(n_asked) { "0 of " (n_asked) " remembered" }
@@ -1177,6 +1349,8 @@ fn card_preview(front: &str, back: &str, how: Option<Split>) -> Markup {
 
 #[derive(Deserialize)]
 struct PreviewForm {
+    /// The card being edited, so it doesn't count as like itself.
+    card: Option<i64>,
     #[serde(default)]
     front: String,
     #[serde(default)]
@@ -1187,14 +1361,16 @@ struct PreviewForm {
 
 /// For the card form while you write: how the card will look, and which
 /// ways the back can be learned item by item.
-async fn card_preview_json(_user: WebUser, Form(f): Form<PreviewForm>) -> Response {
+async fn card_preview_json(State(app): State<AppState>, user: WebUser, Form(f): Form<PreviewForm>) -> WebResult {
     let splits: Vec<&str> = multi::splits(&f.back).into_iter().map(Split::as_str).collect();
-    let html = card_preview(&f.front, &f.back, Split::parse(&f.multi)).into_string();
-    (
+    let how = Split::parse(&f.multi);
+    let html = card_preview(&f.front, &f.back, how).into_string();
+    let hints = write_hints(&app, &user.access(), &f.front, &f.back, how, f.card).await?;
+    Ok((
         [(header::CONTENT_TYPE, "application/json")],
-        serde_json::json!({ "splits": splits, "html": html }).to_string(),
+        serde_json::json!({ "splits": splits, "html": html, "hints": hint_lines(&hints).into_string() }).to_string(),
     )
-        .into_response()
+        .into_response())
 }
 
 async fn study(State(app): State<AppState>, user: WebUser, Flash(msg): Flash, Query(q): Query<StudyQuery>) -> WebResult {
@@ -1204,8 +1380,20 @@ async fn study(State(app): State<AppState>, user: WebUser, Flash(msg): Flash, Qu
     if let (Some(card_id), Some(1)) = (q.card, q.show) {
         let card = app.card(&access, card_id).await?;
         let deck = app.deck(&access, card.deck_id).await?;
-        let shown = q.t.unwrap_or_else(now);
-        return Ok(study_card(&app, &access, &user.0, &msg, &card, &deck, q.deck, shown, true).await?.into_response());
+        let shown = Shown {
+            at: q.t.unwrap_or_else(now),
+            revealed: true,
+            sure: q.sure.map(|s| s == 1),
+            typed: q.typed.clone(),
+        };
+        return Ok(study_card(&app, &access, &user.0, &msg, &card, &deck, q.deck, &shown).await?.into_response());
+    }
+
+    if let Some(until) = study::quiet_until(&user.0, now()) {
+        return Ok(rest_page(&user.0, &msg, q.deck, until).into_response());
+    }
+    if let Some(minutes) = app.break_due(&access).await? {
+        return Ok(break_page(&user.0, &msg, q.deck, minutes).into_response());
     }
 
     let Some(sc) = app.next_card(&access, q.deck).await? else {
@@ -1255,7 +1443,65 @@ async fn study(State(app): State<AppState>, user: WebUser, Flash(msg): Flash, Qu
         )
         .into_response());
     };
-    Ok(study_card(&app, &access, &user.0, &msg, &sc.card, &sc.deck, q.deck, now(), false).await?.into_response())
+    Ok(study_card(&app, &access, &user.0, &msg, &sc.card, &sc.deck, q.deck, &Shown::front(now())).await?.into_response())
+}
+
+/// Quiet hours: a rest screen instead of cards.
+fn rest_page(user: &User, msg: &Option<String>, deck: Option<i64>, until: i64) -> Markup {
+    page(
+        Some(Nav::Study),
+        "Quiet hours",
+        Some(user),
+        Some("study-done"),
+        html! {
+            (flash(msg))
+            section.session-end.rest {
+                h1 { "Quiet hours" }
+                p.summary { "You asked for rest until " (format::when(&user.clock(), until)) ". Sleep helps the day's learning settle." }
+                div.end-links {
+                    a href="/" { "Back to decks" }
+                    form method="post" action="/study/anyway" {
+                        @if let Some(d) = deck { input type="hidden" name="deck" value=(d); }
+                        button.link type="submit" { "Study anyway" }
+                    }
+                }
+            }
+        },
+    )
+}
+
+/// The session has reached the length set in settings.
+fn break_page(user: &User, msg: &Option<String>, deck: Option<i64>, minutes: i64) -> Markup {
+    page(
+        Some(Nav::Study),
+        "Time for a break",
+        Some(user),
+        Some("study-done"),
+        html! {
+            (flash(msg))
+            section.session-end.rest {
+                h1 { "Time for a break" }
+                p.summary { "You have studied for " (study::minutes_words(minutes)) ". Stand up, look out of the window, then carry on if you like." }
+                div.end-links {
+                    a href="/" { "Stop here" }
+                    form method="post" action="/study/keep-going" {
+                        @if let Some(d) = deck { input type="hidden" name="deck" value=(d); }
+                        button.link type="submit" { "Keep going" }
+                    }
+                }
+            }
+        },
+    )
+}
+
+async fn study_anyway(State(app): State<AppState>, user: WebUser, Form(f): Form<DeckForm>) -> WebResult {
+    app.lift_quiet(&user.0).await?;
+    Ok(redirect(study_url(f.deck)))
+}
+
+async fn study_keep_going(State(app): State<AppState>, user: WebUser, Form(f): Form<DeckForm>) -> WebResult {
+    app.skip_break(user.0.id).await?;
+    Ok(redirect(study_url(f.deck)))
 }
 
 #[derive(Deserialize)]
@@ -1272,12 +1518,25 @@ struct AnswerForm {
     reps: i64,
     t: Option<i64>,
     deck: Option<i64>,
+    /// The sure check: "1" sure, "0" not, empty when not asked.
+    sure: Option<String>,
+    /// Time ran out on a timed card: it counts as Again.
+    timeout: Option<u8>,
 }
 
 async fn study_answer(State(app): State<AppState>, user: WebUser, Form(f): Form<AnswerForm>) -> WebResult {
     // Like Anki, cap the counted thinking time at 60 seconds.
     let duration = f.t.map(|t| ((now() - t).clamp(0, 60)) * 1000);
+    let access = user.access();
+    let timed_out = f.timeout == Some(1);
+    let sure = match f.sure.as_deref() {
+        Some("1") => Some(true),
+        Some("0") => Some(false),
+        _ => None,
+    };
     let answered = match f.rating {
+        // A timeout misses a multicard's asked items all at once too.
+        _ if timed_out => app.answer_card(&access, f.card, Rating::Again, duration, Some(f.reps)).await,
         Some(r) => {
             let rating = Rating::from_i64(r).ok_or_else(|| AppError::bad("invalid rating"))?;
             app.answer_card(&user.access(), f.card, rating, duration, Some(f.reps)).await
@@ -1287,6 +1546,9 @@ async fn study_answer(State(app): State<AppState>, user: WebUser, Form(f): Form<
             app.answer_list(&user.access(), f.card, missed, duration, Some(f.reps)).await
         }
     };
+    if answered.is_ok() {
+        app.note_answer(&access, f.card, sure, timed_out).await?;
+    }
     match answered {
         Ok(_) | Err(AppError::Conflict(_)) => Ok(redirect(study_url(f.deck))),
         Err(e) => Err(e.into()),
@@ -1308,6 +1570,125 @@ async fn study_undo(State(app): State<AppState>, user: WebUser, Form(f): Form<De
     })
 }
 
+/// After time away: offer catch-up mode, or say what it does while on.
+fn catch_up_note(user: &User, overdue: i64) -> Markup {
+    html! {
+        @if user.catch_up {
+            form.catch-up method="post" action="/settings/catch-up" {
+                p.small.muted {
+                    @if overdue < 20 {
+                        "You have caught up. "
+                        button.link type="submit" { "Turn catch-up mode off" }
+                    } @else {
+                        "Catch-up mode: no new cards, at most " (user.catch_up_reviews) " reviews a day, the ones you most likely still know first. "
+                        a href="/learn/backlog" { "Why" }
+                    }
+                }
+            }
+        } @else if overdue >= study::BACKLOG_HINT {
+            form.catch-up method="post" action="/settings/catch-up" {
+                input type="hidden" name="on" value="1";
+                p.small.muted {
+                    (format::number(overdue)) " cards piled up while you were away. "
+                    button.link type="submit" { "Catch up over a few days" }
+                }
+            }
+        }
+    }
+}
+
+// ----- lessons ------------------------------------------------------------
+
+fn evidence_tag(e: lessons::Evidence) -> Markup {
+    html! { span.evidence.(e.class()) { (e.label()) } }
+}
+
+async fn learn_page(user: WebUser) -> WebResult {
+    let all = lessons::all();
+    Ok(layout_in(
+        Nav::Learn,
+        "Learn",
+        Some(&user.0),
+        html! {
+            h1 { "Learn" }
+            p.lead { "Short lessons on how AiNKI schedules your cards, what research says about memory, and how to write cards that stick. Each says how strong the evidence is, and each can be added as a deck." }
+            @for (key, name, sub) in lessons::GROUPS {
+                h2 { (name) }
+                p.muted.small { (sub) }
+                ul.list.links.lessons {
+                    @for l in all.iter().filter(|l| l.group == *key) {
+                        li {
+                            a.row href=(format!("/learn/{}", l.slug)) {
+                                span.grow {
+                                    span { (l.title) }
+                                    span.sub.muted.small { (l.summary) }
+                                }
+                                (evidence_tag(l.evidence))
+                                span.chev aria-hidden="true" { "›" }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+    )
+    .into_response())
+}
+
+async fn lesson_page(State(app): State<AppState>, user: WebUser, Flash(msg): Flash, Path(slug): Path<String>) -> WebResult {
+    let lesson = lessons::find(&slug).ok_or(AppError::NotFound)?;
+    let access = user.access();
+    let deck = app.deck_by_name(&access, &lessons::deck_name(lesson)).await?;
+    let all = lessons::all();
+    let i = all.iter().position(|l| l.slug == lesson.slug).unwrap_or(0);
+    let next = all.get(i + 1);
+    Ok(layout_in(
+        Nav::Learn,
+        &lesson.title,
+        Some(&user.0),
+        html! {
+            (flash(&msg))
+            (parent("/learn", "Learn"))
+            article.lesson {
+                h1 { (lesson.title) }
+                p.lesson-meta { (evidence_tag(lesson.evidence)) }
+                div.md.prose { (PreEscaped(markdown::render(&lesson.body))) }
+            }
+            div.lesson-deck {
+                @if let Some(d) = deck {
+                    p.muted.small { "This lesson is in your decks. " a href=(format!("/decks/{}", d.id)) { "Open it" } }
+                } @else {
+                    form method="post" action=(format!("/learn/{}/deck", lesson.slug)) {
+                        p.muted.small { "Learn this lesson with " (count(lesson.cards.len() as i64, "card")) "." }
+                        button.btn type="submit" { "Add as a deck" }
+                    }
+                }
+            }
+            @if let Some(n) = next {
+                p.next-lesson { "Next: " a href=(format!("/learn/{}", n.slug)) { (n.title) } }
+            }
+        },
+    )
+    .into_response())
+}
+
+async fn lesson_deck(State(app): State<AppState>, user: WebUser, Path(slug): Path<String>) -> WebResult {
+    let lesson = lessons::find(&slug).ok_or(AppError::NotFound)?;
+    let access = user.access();
+    let name = lessons::deck_name(lesson);
+    if let Some(d) = app.deck_by_name(&access, &name).await? {
+        return Ok(redirect_msg(format!("/decks/{}", d.id), "You already have this deck."));
+    }
+    or_back(format!("/learn/{slug}"), async {
+        let deck = app.create_deck(&access, &name, &lesson.summary, None).await?;
+        for (front, back) in &lesson.cards {
+            app.create_card(&access, deck.id, front, back, None, None, None).await?;
+        }
+        Ok(redirect_msg(format!("/decks/{}", deck.id), "Lesson added as a deck."))
+    }
+    .await)
+}
+
 // ----- decks --------------------------------------------------------------
 
 fn preset_select(presets: &[crate::service::Preset], selected: Option<i64>) -> Markup {
@@ -1319,6 +1700,45 @@ fn preset_select(presets: &[crate::service::Preset], selected: Option<i64>) -> M
                 }
             }
         }
+    }
+}
+
+/// What a built-in preset is for, as a goal: "Pass an exam on a date".
+fn goal_words(template: Option<&str>) -> Option<&'static str> {
+    Some(match template? {
+        "standard" => "Learn it for the long run",
+        "exam" => "Pass an exam on a date",
+        "language" => "Many small cards, like vocabulary",
+        "relaxed" => "Learn on a small time budget",
+        "maintenance" => "Keep what I already know",
+        _ => return None,
+    })
+}
+
+/// A new deck picks a preset by what it is for. Presets made by hand are
+/// offered by name after the goals.
+fn goal_picker(presets: &[crate::service::Preset], selected: Option<i64>) -> Markup {
+    let order = ["standard", "exam", "language", "relaxed", "maintenance"];
+    let mut sorted: Vec<&crate::service::Preset> = presets.iter().collect();
+    sorted.sort_by_key(|p| p.template.as_deref().and_then(|t| order.iter().position(|o| *o == t)).unwrap_or(order.len()));
+    html! {
+        fieldset.goals {
+            legend { "What is this deck for?" }
+            @for p in sorted {
+                label.goal {
+                    input type="radio" name="preset_id" value=(p.id) checked[Some(p.id) == selected];
+                    span.grow {
+                        span.goal-name { (goal_words(p.template.as_deref()).unwrap_or(&p.name)) }
+                        span.muted.small {
+                            (format!("{:.0}%", p.desired_retention * 100.0)) " remembered · "
+                            @if p.new_per_day == 0 { "no new cards" } @else { (count(p.new_per_day, "new card")) " a day" }
+                            @if goal_words(p.template.as_deref()).is_some() { " · " (p.name) }
+                        }
+                    }
+                }
+            }
+        }
+        p.hint.muted.small { "You can change this later. " a href="/presets" { "About presets" } }
     }
 }
 
@@ -1338,8 +1758,12 @@ fn deck_sheet(
                 textarea name="description" rows="2" placeholder="What it's for" { @if let Some(d) = deck { (d.description) } }
             }
             hr.divider;
-            label.line { "Preset" span.select { (preset_select(presets, selected)) } }
-            p.hint.muted.small { "How much you want to remember and how many cards a day. " a href="/presets" { "About presets" } }
+            @if deck.is_none() {
+                (goal_picker(presets, selected))
+            } @else {
+                label.line { "Preset" span.select { (preset_select(presets, selected)) } }
+                p.hint.muted.small { "How much you want to remember and how many cards a day. " a href="/presets" { "About presets" } }
+            }
             label.line { span { "Exam date " span.muted.optional { "(optional)" } }
                 input type="date" name="exam_date" value=(deck.and_then(|d| d.exam_date.clone()).unwrap_or_default());
             }
@@ -1350,7 +1774,11 @@ fn deck_sheet(
 
 /// The new-deck page; `draft` and `error` when a sent form comes back.
 fn deck_new_view(user: &User, presets: &[crate::service::Preset], draft: Option<&Deck>, error: Option<&str>) -> Markup {
-    let selected = draft.map(|d| d.preset_id).or_else(|| presets.first().map(|p| p.id));
+    let selected = draft
+        .map(|d| d.preset_id)
+        .filter(|id| *id > 0)
+        .or_else(|| presets.iter().find(|p| p.template.as_deref() == Some("standard")).map(|p| p.id))
+        .or_else(|| presets.first().map(|p| p.id));
     layout_in(
         Nav::Add,
         "New deck",
@@ -1453,6 +1881,7 @@ async fn deck_page(
         )
         .await?;
     let d = &summary.deck;
+    let attention = app.attention(&access, Some(id)).await?.len() as i64;
     let base = format!(
         "/decks/{id}?q={}&state={}",
         urlenc(q.q.as_deref().unwrap_or("")),
@@ -1467,9 +1896,9 @@ async fn deck_page(
             h1 { (deck_title(&d.name)) }
             @if !d.description.is_empty() { p { (d.description) } }
             dl.stats-inline {
-                div { dt { "New today" } dd { (summary.new_today) } }
-                div { dt { "Due" } dd { (summary.learning_due + summary.review_due) } }
-                div { dt { "Cards" } dd { (summary.total) } }
+                div { dt { "New today" } dd { (format::number(summary.new_today)) } }
+                div { dt { "Due" } dd { (format::number(summary.learning_due + summary.review_due)) } }
+                div { dt { "Cards" } dd { (format::number(summary.total)) } }
             }
             @if let Some(exam) = &d.exam_date { p.muted { "Exam " (exam_words(&user.0, exam)) } }
             @if summary.due_total() > 0 {
@@ -1482,6 +1911,9 @@ async fn deck_page(
                 (icon_btn(&format!("/stats?deck={id}"), ICON_STATS, "Stats"))
             }
             p.muted.small { "Preset: " a href=(format!("/presets/{}", d.preset_id)) { (summary.preset_name) } }
+            @if attention > 0 {
+                p.small { a href=(format!("/attention?deck={id}")) { (count(attention, "card")) " " (if attention == 1 { "needs" } else { "need" }) " a look" } }
+            }
 
             h2 { "Cards" }
             form.search method="get" action=(format!("/decks/{id}")) {
@@ -1776,6 +2208,8 @@ fn face_field(side: &str, title: &str, placeholder: &str, text: &str, image: &Op
 /// What the card form shows: a new card's empty sides, a card being
 /// edited, or what was sent when it comes back with a problem.
 struct CardDraft<'a> {
+    /// The card being edited; none for a new one.
+    id: Option<i64>,
     deck: Option<i64>,
     new_deck: &'a str,
     front: &'a str,
@@ -1785,10 +2219,42 @@ struct CardDraft<'a> {
     multi: Option<Split>,
 }
 
-fn card_form(action: &str, decks: &[crate::service::Deck], c: &CardDraft, submit: &str, allow_new_deck: bool) -> Markup {
+/// A hint from the coach while writing, with a link when it points at
+/// another card.
+#[derive(serde::Serialize)]
+struct WriteHint {
+    text: String,
+    href: Option<String>,
+}
+
+/// What the coach says about a card being written: a long list, or a front
+/// like one you already have.
+async fn write_hints(app: &App, access: &Access, front: &str, back: &str, how: Option<Split>, except: Option<i64>) -> Result<Vec<WriteHint>, AppError> {
+    let mut out: Vec<WriteHint> = coach::write_hints(back, how).into_iter().map(|text| WriteHint { text, href: None }).collect();
+    if let Some(s) = app.similar_cards(access, front, except).await?.into_iter().next() {
+        out.push(WriteHint {
+            text: format!("You have a card like this: “{}”. Cards this alike get mixed up.", truncate(&s.front, 60)),
+            href: Some(format!("/cards/{}", s.card_id)),
+        });
+    }
+    Ok(out)
+}
+
+fn hint_lines(hints: &[WriteHint]) -> Markup {
+    html! {
+        @for h in hints {
+            p.coach-hint {
+                (h.text)
+                @if let Some(href) = &h.href { " " a href=(href) { "Open it" } }
+            }
+        }
+    }
+}
+
+fn card_form(action: &str, decks: &[crate::service::Deck], c: &CardDraft, submit: &str, allow_new_deck: bool, hints: &[WriteHint]) -> Markup {
     let new_selected = allow_new_deck && (decks.is_empty() || c.deck.is_none());
     html! {
-        form.card-form method="post" action=(action) enctype="multipart/form-data" {
+        form.card-form method="post" action=(action) enctype="multipart/form-data" data-card=[c.id] {
             div.deck-line {
                 label.deck-pick { span.deck-label { "Deck" }
                     span.select {
@@ -1829,6 +2295,7 @@ fn card_form(action: &str, decks: &[crate::service::Deck], c: &CardDraft, submit
                 }
             }
             div.sheet.card-preview hidden {}
+            div.write-hints aria-live="polite" { (hint_lines(hints)) }
             div.form-foot {
                 p.muted.small {
                     "Text supports Markdown: **bold**, *italic*, lists, # headings, `code`."
@@ -1855,7 +2322,7 @@ fn card_new_view(user: &User, decks: &[Deck], c: &CardDraft, msg: &Option<String
             (flash(msg))
             h1 { "Add card" }
             (form_error(error))
-            (card_form("/cards/new", decks, c, "Add card", true))
+            (card_form("/cards/new", decks, c, "Add card", true, &[]))
         },
     )
 }
@@ -1868,7 +2335,7 @@ async fn card_new_page(State(app): State<AppState>, user: WebUser, Flash(msg): F
         Some(id) => Some(id),
         None => app.last_used_deck(&access).await?.or_else(|| decks.first().map(|d| d.id)),
     };
-    let draft = CardDraft { deck, new_deck: "", front: "", back: "", front_image: &None, back_image: &None, multi: None };
+    let draft = CardDraft { id: None, deck, new_deck: "", front: "", back: "", front_image: &None, back_image: &None, multi: None };
     Ok(card_new_view(&user.0, &decks, &draft, &msg, None).into_response())
 }
 
@@ -1920,6 +2387,7 @@ async fn card_create(State(app): State<AppState>, user: WebUser, mp: Multipart) 
             let msg = with_image_hint(fixable(&e).ok_or(e)?, &f);
             let decks = app.decks(&access).await?;
             let draft = CardDraft {
+                id: None,
                 deck: if f.new_deck.is_some() { None } else { f.deck },
                 new_deck: f.new_deck.as_deref().unwrap_or(""),
                 front: &f.front,
@@ -1974,11 +2442,20 @@ async fn card_view(
     let decks = app.decks(&access).await?;
     let history = app.card_history(&access, id).await?;
     let items = app.card_items(&card).await?;
+    let flags = app.card_flags(&access, &card).await?;
+    // The coach box already names a duplicate; the form only adds the list
+    // hint, unless the box says the same.
+    let hints: Vec<WriteHint> = coach::write_hints(&card.back, card.multi)
+        .into_iter()
+        .filter(|_| !flags.iter().any(|f| f.kind == coach::Kind::Split))
+        .map(|text| WriteHint { text, href: None })
+        .collect();
     let clock = user.clock();
-    let params = user.params();
+    let params = app.deck_params(&access, card.deck_id).await?;
     let r = scheduler::retrievability(&card.sched(), &params, &clock);
     let draft = match sent {
         Some(f) => CardDraft {
+            id: Some(card.id),
             deck: f.deck.or(Some(card.deck_id)),
             new_deck: "",
             front: &f.front,
@@ -1988,6 +2465,7 @@ async fn card_view(
             multi: f.multi,
         },
         None => CardDraft {
+            id: Some(card.id),
             deck: Some(card.deck_id),
             new_deck: "",
             front: &card.front,
@@ -2010,7 +2488,8 @@ async fn card_view(
             }
             h1 { "Edit card" }
             (form_error(error))
-            (card_form(&format!("/cards/{id}{}", from.query()), &decks, &draft, "Save", false))
+            (coach_box(&card, &flags))
+            (card_form(&format!("/cards/{id}{}", from.query()), &decks, &draft, "Save", false, &hints))
             h2 { "Scheduling" }
             dl.kv {
                 dt { "State" } dd { (state_label(card.card_state())) @if card.suspended { " (suspended)" } }
@@ -2167,11 +2646,214 @@ async fn card_action(
                 app.delete_card(&access, id).await?;
                 return Ok(redirect_msg(format!("/decks/{}", card.deck_id), "Card deleted."));
             }
+            "learn-items" => {
+                app.update_card(&access, id, CardInput { multi: Some(Some(Split::List)), ..Default::default() }).await?;
+                "Now learned item by item: you mark what you remembered, and each item keeps its own schedule."
+            }
+            keep if keep.starts_with("keep-") => {
+                let kind = coach::Kind::parse(&keep["keep-".len()..]).ok_or_else(|| AppError::bad("unknown action"))?;
+                app.dismiss_flag(&access, id, kind).await?;
+                "Kept as is."
+            }
             _ => return Err(AppError::bad("unknown action")),
         };
         Ok(redirect_msg(format!("/cards/{id}"), msg))
     }
     .await)
+}
+
+// ----- the card coach -----------------------------------------------------
+
+/// Where to read why a flag matters.
+fn coach_lesson(kind: coach::Kind) -> &'static str {
+    match kind {
+        coach::Kind::Leech => "/learn/leeches",
+        coach::Kind::Split => "/learn/good-cards",
+        coach::Kind::Duplicate => "/learn/interference",
+    }
+}
+
+/// Whether the back offers a split into cards.
+fn splittable(card: &Card) -> bool {
+    card.multi.is_some() || !multi::splits(&card.back).is_empty()
+}
+
+/// What the coach noticed about a card, each with what can be done. The
+/// card is never changed until the user picks something.
+fn coach_box(card: &Card, flags: &[coach::Flag]) -> Markup {
+    let id = card.id;
+    html! {
+        @if !flags.is_empty() {
+            section.coach aria-label="The coach noticed" {
+                @for f in flags {
+                    div.coach-flag {
+                        p.coach-label { (f.kind.label()) }
+                        p { (f.reason) " " a href=(coach_lesson(f.kind)) { "Why this matters" } }
+                        @if f.kind == coach::Kind::Leech {
+                            p.muted.small { "Rewrite it so it asks one clear thing, add an image or a memory hook, or split it. Suspending takes it out of your reviews." }
+                        }
+                        form.actions method="post" action=(format!("/cards/{id}/keep-{}", f.kind.as_str())) {
+                            @if f.kind != coach::Kind::Duplicate && card.multi.is_none() && coach::list_items(&card.back) >= 2 {
+                                button.btn type="submit" formaction=(format!("/cards/{id}/learn-items")) { "Learn item by item" }
+                            }
+                            @if f.kind != coach::Kind::Duplicate && splittable(card) {
+                                a.btn href=(format!("/cards/{id}/split")) { "Split into cards…" }
+                            }
+                            @if let Some(other) = f.other_card {
+                                a.btn href=(format!("/cards/{other}")) { "Open the other card" }
+                            }
+                            @if f.kind == coach::Kind::Leech && !card.suspended {
+                                button.btn type="submit" formaction=(format!("/cards/{id}/suspend")) { "Suspend" }
+                            }
+                            button.btn type="submit" { "Keep as is" }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[derive(Deserialize, Default)]
+struct AttentionQuery {
+    deck: Option<i64>,
+}
+
+/// Every card the coach flagged, in one deck or all of them.
+async fn attention_page(State(app): State<AppState>, user: WebUser, Flash(msg): Flash, Query(q): Query<AttentionQuery>) -> WebResult {
+    let access = user.access();
+    let found = app.attention(&access, q.deck).await?;
+    let deck = match q.deck {
+        Some(id) => Some(app.deck(&access, id).await?),
+        None => None,
+    };
+    Ok(layout_in(
+        Nav::Decks,
+        "Needs a look",
+        Some(&user.0),
+        html! {
+            (flash(&msg))
+            @if let Some(d) = &deck { (parent(&format!("/decks/{}", d.id), &deck_plain(&d.name))) }
+            h1 { "Needs a look" }
+            @if found.is_empty() {
+                p { "Nothing right now. The coach looks for cards you keep forgetting, cards that ask for several things at once, and cards that look alike." }
+            } @else {
+                p.muted {
+                    "The coach noticed " (count(found.len() as i64, "card")) ". Open one to see why and what you can do. Nothing changes unless you pick something. "
+                    a href="/learn/good-cards" { "What makes a good card" }
+                }
+                ul.list.cards {
+                    @for a in &found {
+                        li {
+                            a.row href=(format!("/cards/{}", a.card.id)) {
+                                span.grow {
+                                    @if a.card.front.is_empty() { "[image]" } @else { (truncate(&a.card.front, 80)) }
+                                    br;
+                                    span.muted.small { (a.flags.iter().map(|f| f.kind.label()).collect::<Vec<_>>().join(" · ")) }
+                                }
+                                span.chev aria-hidden="true" { "›" }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+    )
+    .into_response())
+}
+
+/// The cards a split starts from: one per item of the back, each with the
+/// original front. Without items, the card itself and an empty one.
+fn split_drafts(card: &Card, items: &[multi::CardItem]) -> Vec<(String, String)> {
+    let texts: Vec<String> = if !items.is_empty() {
+        items.iter().map(|i| i.text.clone()).collect()
+    } else {
+        multi::splits(&card.back)
+            .first()
+            .and_then(|&how| multi::items(&card.back, how))
+            .unwrap_or_default()
+    };
+    if texts.len() >= 2 {
+        texts.into_iter().map(|t| (card.front.clone(), t)).collect()
+    } else {
+        vec![(card.front.clone(), card.back.clone()), (String::new(), String::new())]
+    }
+}
+
+#[derive(Deserialize, Default)]
+struct SplitQuery {
+    /// How many cards to show, when more than the back gives.
+    n: Option<usize>,
+}
+
+fn split_view(user: &User, card: &Card, drafts: &[(String, String)], keep: bool, error: Option<&str>) -> Markup {
+    let id = card.id;
+    layout_in(
+        Nav::Decks,
+        "Split card",
+        Some(user),
+        html! {
+            (parent(&format!("/cards/{id}"), "Back to the card"))
+            h1 { "Split into cards" }
+            p.muted { "One thing per card is easier to remember. Each new card starts fresh. Change the fronts so each asks for exactly its answer." }
+            (form_error(error))
+            form.split-form method="post" action=(format!("/cards/{id}/split")) {
+                @for (n, (front, back)) in drafts.iter().enumerate() {
+                    div.sheet {
+                        div.face-edit data-face="front" {
+                            label.face-label for=(format!("front_{n}")) { "Card " (n + 1) ": front" }
+                            textarea id=(format!("front_{n}")) name=(format!("front_{n}")) rows="2" { (front) }
+                        }
+                        hr.divider;
+                        div.face-edit data-face="back" {
+                            label.face-label for=(format!("back_{n}")) { "Back" }
+                            textarea id=(format!("back_{n}")) name=(format!("back_{n}")) rows="2" { (back) }
+                        }
+                    }
+                }
+                p.small { a href=(format!("/cards/{id}/split?n={}", drafts.len() + 1)) { "One more card" } " · Leave a card empty to skip it." }
+                label.check { input type="checkbox" name="keep" value="1" checked[keep]; " Keep the original card, suspended" }
+                div.form-foot { button.btn.primary.wide type="submit" { "Make " (drafts.len()) " cards" } }
+            }
+        },
+    )
+}
+
+async fn split_page(State(app): State<AppState>, user: WebUser, Path(id): Path<i64>, Query(q): Query<SplitQuery>) -> WebResult {
+    let access = user.access();
+    let card = app.card(&access, id).await?;
+    let items = app.card_items(&card).await?;
+    let mut drafts = split_drafts(&card, &items);
+    if let Some(n) = q.n.filter(|n| *n > drafts.len()) {
+        drafts.resize(n.min(50), (String::new(), String::new()));
+    }
+    Ok(split_view(&user.0, &card, &drafts, false, None).into_response())
+}
+
+async fn split_submit(State(app): State<AppState>, user: WebUser, Path(id): Path<i64>, Form(f): Form<HashMap<String, String>>) -> WebResult {
+    let access = user.access();
+    let card = app.card(&access, id).await?;
+    let mut drafts = Vec::new();
+    for n in 0..50 {
+        match (f.get(&format!("front_{n}")), f.get(&format!("back_{n}"))) {
+            (None, None) => break,
+            (front, back) => drafts.push((
+                front.cloned().unwrap_or_default(),
+                back.cloned().unwrap_or_default(),
+            )),
+        }
+    }
+    let keep = f.contains_key("keep");
+    match app.split_card(&access, id, drafts.clone(), keep).await {
+        Ok(cards) => Ok(redirect_msg(
+            format!("/decks/{}", card.deck_id),
+            &format!("Split into {}.", count(cards.len() as i64, "card")),
+        )),
+        Err(e) => {
+            let msg = fixable(&e).ok_or(e)?;
+            Ok(form_again(split_view(&user.0, &card, &drafts, keep, Some(&msg))))
+        }
+    }
 }
 
 // ----- presets ------------------------------------------------------------
@@ -2244,6 +2926,21 @@ fn preset_sheet(p: &crate::service::Preset, used_by: &[String]) -> Markup {
             }
             label.line { "New cards per day" input type="number" name="new_per_day" min="0" required value=(p.new_per_day); }
             label.line { "Reviews per day, at most" input type="number" name="reviews_per_day" min="0" required value=(p.reviews_per_day); }
+            hr.divider;
+            label.line { "Time to answer"
+                span.select {
+                    select name="time_limit" {
+                        @for secs in TIME_LIMITS {
+                            option value=(secs) selected[*secs == p.time_limit] { (time_limit_words(*secs)) }
+                        }
+                        @if !TIME_LIMITS.contains(&p.time_limit) {
+                            option value=(p.time_limit) selected { (time_limit_words(p.time_limit)) }
+                        }
+                    }
+                }
+            }
+            p.hint.muted.small { "Only for cards you have seen before. When time runs out the card counts as forgotten. You can add 10 seconds once per card." }
+            label.check { input type="checkbox" name="typed_answers" value="1" checked[p.typed_answers]; " Type the answer before it's shown" }
             // The hard values sit under a fold; most people never need them.
             details.more {
                 summary { "Learning steps and longest gap" }
@@ -2257,6 +2954,13 @@ fn preset_sheet(p: &crate::service::Preset, used_by: &[String]) -> Markup {
             }
         }
     }
+}
+
+/// The time limits offered for a preset, in seconds; 0 is none.
+const TIME_LIMITS: &[i64] = &[0, 5, 8, 10, 15, 20, 30, 45, 60];
+
+fn time_limit_words(secs: i64) -> String {
+    if secs == 0 { "No limit".into() } else { format!("{secs} seconds") }
 }
 
 #[derive(Deserialize)]
@@ -2278,6 +2982,11 @@ fn preset_draft(t: &presets::PresetTemplate, user_id: i64) -> crate::service::Pr
         relearning_steps: t.relearning_steps.to_string(),
         max_interval: t.max_interval,
         created_at: 0,
+        template: None,
+        fsrs_params: "[]".into(),
+        fsrs_params_updated_at: None,
+        time_limit: 0,
+        typed_answers: false,
     }
 }
 
@@ -2319,6 +3028,7 @@ async fn preset_create(State(app): State<AppState>, user: WebUser, Form(f): Form
 }
 
 /// The preset page; `draft` and `error` when a sent form comes back.
+#[allow(clippy::too_many_arguments)]
 async fn preset_view(
     app: &App,
     user: &User,
@@ -2326,9 +3036,11 @@ async fn preset_view(
     msg: &Option<String>,
     draft: Option<&crate::service::Preset>,
     error: Option<&str>,
+    days: usize,
 ) -> Result<Markup, AppError> {
     let access = Access::web(user.clone());
     let p = app.preset(&access, id).await?;
+    let workload = app.workload(&access, id, days).await?;
     let decks: Vec<String> = app
         .decks(&access)
         .await?
@@ -2349,6 +3061,40 @@ async fn preset_view(
                 (preset_sheet(draft.unwrap_or(&p), &decks))
                 div.form-foot.end { button.btn.primary type="submit" { "Save" } }
             }
+            h2 id="cost" { "What it costs" }
+            p.muted.small {
+                "A simulation of the next "
+                @for (n, (d, label)) in [(30, "30 days"), (90, "90 days"), (365, "year")].into_iter().enumerate() {
+                    @if n > 0 { " · " }
+                    @if d == days { (label) } @else { a href=(format!("/presets/{id}?days={d}#cost")) { (label) } }
+                }
+                ", with your memory model and "
+                @if p.new_per_day == 0 { "no new cards" } @else { (count(p.new_per_day, "new card")) " a day" }
+                ". Higher retention means more reviews but more remembered. "
+                a href="/learn/desired-retention" { "How to choose" }
+            }
+            table.workload {
+                thead { tr { th { "Remember" } th.num { "Minutes a day" } th.num { "Reviews a day" } th.num { "Known at the end" } } }
+                tbody {
+                    @for w in &workload {
+                        tr.current[w.current] {
+                            th scope="row" { (format!("{:.0}%", w.retention * 100.0)) @if w.current { span.muted.small { " this preset" } } }
+                            td.num { (format!("{:.0}", w.minutes_per_day.max(0.0))) }
+                            td.num { (format::number(w.reviews_per_day.round() as i64)) }
+                            td.num { (format::number(w.remembered.round() as i64)) }
+                        }
+                    }
+                }
+            }
+            p.muted.small {
+                @if p.has_own_params() {
+                    "This preset has FSRS parameters of its own, fitted to its reviews"
+                    @if let Some(t) = p.fsrs_params_updated_at { " " (format::when(&user.clock(), t)) }
+                    "."
+                } @else {
+                    "This preset uses your FSRS parameters. Once its decks have about 400 reviews, optimizing fits it on its own."
+                }
+            }
             @if decks.is_empty() {
                 details.danger {
                     summary { "Delete this preset…" }
@@ -2362,13 +3108,20 @@ async fn preset_view(
     ))
 }
 
+#[derive(Deserialize, Default)]
+struct PresetQuery {
+    days: Option<usize>,
+}
+
 async fn preset_page(
     State(app): State<AppState>,
     user: WebUser,
     Path(id): Path<i64>,
     Flash(msg): Flash,
+    Query(q): Query<PresetQuery>,
 ) -> WebResult {
-    Ok(preset_view(&app, &user.0, id, &msg, None, None).await?.into_response())
+    let days = q.days.filter(|d| [30, 90, 365].contains(d)).unwrap_or(30);
+    Ok(preset_view(&app, &user.0, id, &msg, None, None, days).await?.into_response())
 }
 
 #[derive(Deserialize)]
@@ -2383,6 +3136,9 @@ struct PresetForm {
     learning_steps: String,
     relearning_steps: String,
     max_interval: i64,
+    #[serde(default)]
+    time_limit: i64,
+    typed_answers: Option<String>,
 }
 
 impl PresetForm {
@@ -2397,6 +3153,8 @@ impl PresetForm {
             learning_steps: Some(self.learning_steps),
             relearning_steps: Some(self.relearning_steps),
             max_interval: Some(self.max_interval),
+            time_limit: Some(self.time_limit),
+            typed_answers: Some(self.typed_answers.is_some()),
         }
     }
 
@@ -2414,6 +3172,11 @@ impl PresetForm {
             relearning_steps: self.relearning_steps.clone(),
             max_interval: self.max_interval,
             created_at: 0,
+            template: None,
+            fsrs_params: "[]".into(),
+            fsrs_params_updated_at: None,
+            time_limit: self.time_limit,
+            typed_answers: self.typed_answers.is_some(),
         }
     }
 }
@@ -2429,7 +3192,7 @@ async fn preset_update(
         Ok(_) => Ok(redirect_msg(format!("/presets/{id}"), "Preset saved.")),
         Err(e) => {
             let msg = fixable(&e).ok_or(e)?;
-            Ok(form_again(preset_view(&app, &user.0, id, &None, Some(&draft), Some(&msg)).await?))
+            Ok(form_again(preset_view(&app, &user.0, id, &None, Some(&draft), Some(&msg), 30).await?))
         }
     }
 }
@@ -2462,6 +3225,7 @@ async fn settings_page(State(app): State<AppState>, user: WebUser, Flash(msg): F
                     ("/presets", "Presets", "How much to remember, daily limits"),
                     ("/access", "Agent access", "Connect Claude and other agents"),
                     ("/import", "Import", "From Anki or a CSV file"),
+                    ("/learn", "Learn", "How memory and scheduling work, and how to write good cards"),
                 ] {
                     li { a.row href=(href) { span.grow { span { (name) } span.sub.muted.small { (sub) } } span.chev aria-hidden="true" { "›" } } }
                 }
@@ -2476,6 +3240,7 @@ async fn settings_page(State(app): State<AppState>, user: WebUser, Flash(msg): F
                     label.line { "New day starts at" span.field { input type="number" name="rollover_hour" min="0" max="23" value=(u.rollover_hour); span.unit { ":00" } } }
                     label.line { "Text size" span.field { input type="number" name="font_scale" min="80" max="200" step="10" value=(u.font_scale); span.unit { "%" } } }
                     label.check { input type="checkbox" name="four_buttons" value="1" checked[u.four_buttons]; " Show Hard and Easy buttons" }
+                    p.hint.muted.small { "Hard means you remembered, with effort. If you forgot, it's Again; FSRS gets that wrong otherwise. " a href="/learn/two-buttons" { "Two buttons or four?" } }
                     label.check { input type="checkbox" name="optimize_include_agent" value="1" checked[u.optimize_include_agent]; " Use reviews done through agents when optimizing" }
                     fieldset.line {
                         legend { "Look on desktop computers" }
@@ -2485,6 +3250,41 @@ async fn settings_page(State(app): State<AppState>, user: WebUser, Flash(msg): F
                         }
                     }
                     p.hint.muted.small { "Phones, e-readers and browsers without JavaScript always use the simple, high-contrast look." }
+                }
+                div.form-foot.end { button.btn.primary type="submit" { "Save" } }
+            }
+            h2 id="studying" { "Studying" }
+            form method="post" action="/settings/study" {
+                div.sheet.form {
+                    div.line { "Quiet hours"
+                        span.field.quiet {
+                            span.select { select name="quiet_from" aria-label="Quiet from" {
+                                option value="" selected[u.quiet_from.is_none()] { "Off" }
+                                @for h in 0..24 { option value=(h) selected[u.quiet_from == Some(h)] { (h) ":00" } }
+                            } }
+                            span.unit { "to" }
+                            span.select { select name="quiet_to" aria-label="Quiet until" {
+                                option value="" selected[u.quiet_to.is_none()] { "Off" }
+                                @for h in 0..24 { option value=(h) selected[u.quiet_to == Some(h)] { (h) ":00" } }
+                            } }
+                        }
+                    }
+                    p.hint.muted.small { "No cards then, on the website or through agents. You can still study anyway." }
+                    label.line { "Suggest a break after"
+                        span.select { select name="session_minutes" {
+                            @for m in study::SESSION_LENGTHS {
+                                option value=(m) selected[*m == u.session_minutes] { (if *m == 0 { "Never".to_string() } else { study::minutes_words(*m) }) }
+                            }
+                            @if !study::SESSION_LENGTHS.contains(&u.session_minutes) {
+                                option value=(u.session_minutes) selected { (study::minutes_words(u.session_minutes)) }
+                            }
+                        } }
+                    }
+                    label.check { input type="checkbox" name="confidence_check" value="1" checked[u.confidence_check]; " Ask whether I'm sure before the answer" }
+                    p.hint.muted.small { "It doesn't change the schedule. Stats show how often you were right when you felt sure." }
+                    label.check { input type="checkbox" name="catch_up" value="1" checked[u.catch_up]; " Catch-up mode" }
+                    label.line { "Reviews a day while catching up" input type="number" name="catch_up_reviews" min="1" max="9999" value=(u.catch_up_reviews); }
+                    p.hint.muted.small { "For after time away: no new cards, and the cards you most likely still know come first, so less is lost. " a href="/learn/backlog" { "More" } }
                 }
                 div.form-foot.end { button.btn.primary type="submit" { "Save" } }
             }
@@ -2500,9 +3300,21 @@ async fn settings_page(State(app): State<AppState>, user: WebUser, Flash(msg): F
                         }
                     }
                 }
-                div.line { "Reviews so far" span.value { (reviews) } }
-                @if reviews < 1000 {
-                    p.hint.muted.small { "Optimizing works best after about 1,000 reviews. Re-run it every month or so." }
+                div.line { "Reviews so far" span.value { (format::number(reviews)) } }
+                @if let (Some(note), Some(t)) = (&u.optimize_note, u.optimized_at) {
+                    div.line { "Last optimized" span.value { (capitalize(&format::when(&u.clock(), t))) } }
+                    p.hint.muted.small { (note) }
+                }
+                form method="post" action="/settings/auto-optimize" data-autosubmit {
+                    label.check {
+                        input type="checkbox" name="on" value="1" checked[u.auto_optimize];
+                        " Optimize every month by itself"
+                    }
+                    noscript { button.btn type="submit" { "Save" } }
+                }
+                p.hint.muted.small {
+                    "Optimizing fits FSRS to your own memory. It helps once you have a few hundred reviews. New parameters are only kept when they predict your reviews better. "
+                    a href="/learn/optimizing" { "More" }
                 }
             }
             div.form-foot.end {
@@ -2590,13 +3402,103 @@ async fn password_update(
         .into_response())
 }
 
+/// The last seven days in a sentence or two, and one thing worth doing.
+fn week_note(w: &insight::Week) -> Markup {
+    let pct = |v: f64| format!("{:.0}%", v * 100.0);
+    html! {
+        section.week aria-label="This week" {
+            h2 { "This week" }
+            @if w.reviews == 0 {
+                p { "No reviews in the last seven days." }
+            } @else {
+                p {
+                    (count(w.reviews, "review")) " on " (count(w.days_studied, "day")) ", "
+                    (format::minutes(w.minutes))
+                    @if w.new_cards > 0 { ", " (count(w.new_cards, "new card")) }
+                    "."
+                    @if let (Some(r), Some(t)) = (w.retention, w.target) {
+                        @if w.retention_sample >= insight::MIN_SAMPLE {
+                            " You remembered " (pct(r)) " of the cards due; you aim for " (pct(t)) "."
+                        }
+                    }
+                }
+            }
+            @match w.tip {
+                insight::Tip::Attention => p.tip { span { (count(w.attention, "card")) " keep slipping or ask too much at once. Fixing them saves more time than reviewing them. " a href="/attention" { "Have a look" } } },
+                insight::Tip::BelowTarget => p.tip { span { "You forgot more than you aim for. Fewer new cards for a while, or optimizing FSRS, usually brings it back. " a href="/learn/desired-retention" { "Why" } } },
+                insight::Tip::AboveTarget => p.tip { span { "You remember more than you aim for. Optimizing lets FSRS space your cards further apart. " a href="/settings#fsrs" { "Optimize" } } },
+                insight::Tip::Spread => p.tip { span { "A little every day works better than a lot on a few days. " a href="/learn/spacing" { "Why" } } },
+                insight::Tip::Nothing => {},
+            }
+        }
+    }
+}
+
+#[derive(Deserialize)]
+struct StudySettingsForm {
+    #[serde(default)]
+    quiet_from: String,
+    #[serde(default)]
+    quiet_to: String,
+    #[serde(default)]
+    session_minutes: String,
+    confidence_check: Option<String>,
+    catch_up: Option<String>,
+    #[serde(default)]
+    catch_up_reviews: String,
+}
+
+async fn study_settings_update(State(app): State<AppState>, user: WebUser, Form(f): Form<StudySettingsForm>) -> WebResult {
+    let u = &user.0;
+    let quiet = match (f.quiet_from.trim().parse::<i64>(), f.quiet_to.trim().parse::<i64>()) {
+        (Ok(a), Ok(b)) => Some((a, b)),
+        _ => None,
+    };
+    or_back("/settings#studying", async {
+        app.update_study_settings(
+            u.id,
+            quiet,
+            f.session_minutes.trim().parse().unwrap_or(u.session_minutes),
+            f.catch_up.is_some(),
+            f.catch_up_reviews.trim().parse().unwrap_or(u.catch_up_reviews),
+            f.confidence_check.is_some(),
+        )
+        .await?;
+        Ok(redirect_msg("/settings#studying", "Settings saved."))
+    }
+    .await)
+}
+
+#[derive(Deserialize)]
+struct CatchUpForm {
+    on: Option<String>,
+}
+
+async fn catch_up_update(State(app): State<AppState>, user: WebUser, Form(f): Form<CatchUpForm>) -> WebResult {
+    app.set_catch_up(user.0.id, f.on.is_some()).await?;
+    Ok(redirect_msg(
+        "/",
+        if f.on.is_some() { "Catch-up mode is on. No new cards until you have caught up." } else { "Catch-up mode is off." },
+    ))
+}
+
+#[derive(Deserialize)]
+struct AutoOptimizeForm {
+    on: Option<String>,
+}
+
+async fn auto_optimize(State(app): State<AppState>, user: WebUser, Form(f): Form<AutoOptimizeForm>) -> WebResult {
+    app.set_auto_optimize(user.0.id, f.on.is_some()).await?;
+    Ok(redirect_msg(
+        "/settings#fsrs",
+        if f.on.is_some() { "FSRS will be optimized every month." } else { "Automatic optimization is off." },
+    ))
+}
+
 async fn optimize(State(app): State<AppState>, user: WebUser) -> WebResult {
     let result = app.optimize_parameters(&user.access()).await;
     let msg = match result {
-        Ok(v) => format!(
-            "FSRS parameters fitted to {}.",
-            count(v["reviews_used"].as_i64().unwrap_or(0), "review")
-        ),
+        Ok(v) => v["note"].as_str().unwrap_or("Done.").to_string(),
         Err(AppError::BadRequest(m)) => capitalize(&m),
         Err(e) => return Err(e.into()),
     };
@@ -2889,6 +3791,15 @@ struct StatsQuery {
 async fn stats_page(State(app): State<AppState>, user: WebUser, Query(q): Query<StatsQuery>) -> WebResult {
     let access = user.access();
     let s = app.stats(&access, q.deck).await?;
+    let cal = app.calibration(&access, q.deck).await?;
+    let sure = app.confidence(&access, q.deck).await?;
+    let week = if q.deck.is_none() { Some(app.week(&access).await?) } else { None };
+    let retention: Vec<_> = app
+        .deck_retention(&access)
+        .await?
+        .into_iter()
+        .filter(|d| d.reviews > 0 && q.deck.is_none_or(|id| id == d.deck_id))
+        .collect();
     let deck = match q.deck {
         Some(id) => Some(app.deck(&access, id).await?),
         None => None,
@@ -2901,25 +3812,84 @@ async fn stats_page(State(app): State<AppState>, user: WebUser, Query(q): Query<
         html! {
             @if let Some(d) = &deck { (parent(&format!("/decks/{}", d.id), &deck_plain(&d.name))) }
             h1 { "Stats" }
+            @if let Some(w) = &week { (week_note(w)) }
             h2 { "Today" }
             dl.stats-inline {
-                div { dt { (format::plural(s.cards_today, "Card")) " studied" } dd { (s.cards_today) } }
+                div { dt { (format::plural(s.cards_today, "Card")) " studied" } dd { (format::number(s.cards_today)) } }
                 div { dt { (format::plural(s.minutes_today.round() as i64, "Minute")) } dd { (s.minutes_today.round() as i64) } }
                 div { dt { (format::plural(s.streak_days, "Day")) " in a row" } dd { (s.streak_days) } }
             }
             h2 { "Memory" }
             dl.kv {
-                dt { "Reviews, last 30 days" } dd { (s.reviews_30d) }
+                dt { "Reviews, last 30 days" } dd { (format::number(s.reviews_30d)) }
                 dt { "Recalled when due, last 30 days" } dd { (format::percent(s.true_retention_30d)) " (" (count(s.retention_sample_30d, "review")) ")" }
                 dt { "Average recall chance now" } dd { (format::percent(s.average_retrievability)) }
             }
+            @if !retention.is_empty() {
+                table.retention {
+                    thead { tr { th { "Deck" } th.num { "Aim" } th.num { "Remembered" } th.num { "Reviews" } } }
+                    tbody {
+                        @for d in &retention {
+                            tr.short[d.short()] {
+                                th scope="row" { a href=(format!("/decks/{}", d.deck_id)) { (deck_plain(&d.deck_name)) } }
+                                td.num { (format::percent(Some(d.target))) }
+                                td.num { (format::percent(d.actual)) }
+                                td.num { (format::number(d.reviews)) }
+                            }
+                        }
+                    }
+                }
+                p.muted.small { "Reviews of learned cards in the last 30 days. Fewer than " (insight::MIN_SAMPLE) " say little." }
+            }
             h2 { "Cards" }
             dl.kv {
-                dt { "New" } dd { (s.new) }
-                dt { "Learning" } dd { (s.learning) }
-                dt { "Review" } dd { (s.review) }
-                dt { "Suspended" } dd { (s.suspended) }
-                dt { "Total" } dd { (s.total) }
+                dt { "New" } dd { (format::number(s.new)) }
+                dt { "Learning" } dd { (format::number(s.learning)) }
+                dt { "Review" } dd { (format::number(s.review)) }
+                dt { "Suspended" } dd { (format::number(s.suspended)) }
+                dt { "Total" } dd { (format::number(s.total)) }
+            }
+            h2 id="model" { "How well FSRS knows you" }
+            @if cal.reviews < 50 {
+                p.muted { "After a few dozen reviews of learned cards, this shows how well FSRS predicts your memory." }
+            } @else {
+                p {
+                    "Over the last year, FSRS expected you to remember " (format::percent(Some(cal.predicted)))
+                    " of your reviews; you remembered " (format::percent(Some(cal.actual))) "."
+                    @if (cal.predicted - cal.actual).abs() <= 0.03 { " That's a close fit." }
+                    @else if cal.actual < cal.predicted { " You forget a little more than it thinks; optimizing helps." }
+                    @else { " You remember more than it thinks; optimizing helps." }
+                }
+                table.calibration {
+                    thead { tr { th { "Expected" } th.num { "Remembered" } th.num { "Reviews" } } }
+                    tbody {
+                        @for b in &cal.bins {
+                            tr {
+                                th scope="row" { (b.from) "–" (b.to) "%" }
+                                td.num { (format::percent(Some(b.actual))) }
+                                td.num { (format::number(b.reviews)) }
+                            }
+                        }
+                    }
+                }
+                p.muted.small { a href="/learn/optimizing" { "What this means" } }
+            }
+            @if sure.sure + sure.unsure > 0 {
+                h2 id="sure" { "When you felt sure" }
+                p {
+                    @if let Some(p) = sure.sure_pct() {
+                        "When you felt sure, you remembered " (format!("{p:.0}%")) " (" (count(sure.sure, "answer")) "). "
+                    }
+                    @if let Some(p) = sure.unsure_pct() {
+                        "When you weren't, " (format!("{p:.0}%")) " (" (count(sure.unsure, "answer")) ")."
+                    }
+                }
+                @if let (Some(a), Some(b)) = (sure.sure_pct(), sure.unsure_pct()) {
+                    p.muted.small {
+                        @if a - b >= 15.0 { "Your sense of what you know is a good guide." }
+                        @else { "Feeling sure says little about whether you remember. Testing yourself is the better guide." }
+                    }
+                }
             }
             h2 { "Due in the next two weeks" }
             table.forecast {
@@ -2930,7 +3900,7 @@ async fn stats_page(State(app): State<AppState>, user: WebUser, Query(q): Query<
                             td.bar-cell {
                                 @if *n > 0 { span.bar style=(format!("width:{}%", n * 100 / max)) {} }
                             }
-                            td.num { (n) }
+                            td.num { (format::number(*n)) }
                         }
                     }
                 }

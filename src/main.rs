@@ -8,9 +8,12 @@ use sqlx::{
 use tracing_subscriber::EnvFilter;
 
 mod auth;
+mod coach;
 mod error;
 mod format;
 mod import;
+mod insight;
+mod lessons;
 mod multi;
 mod markdown;
 mod mcp;
@@ -21,8 +24,10 @@ mod scheduler;
 mod security;
 mod service;
 mod share;
+mod study;
 #[cfg(test)]
 mod tests;
+mod tuning;
 mod web;
 
 #[derive(Debug, Clone)]
@@ -121,6 +126,7 @@ impl App {
         sqlx::query("DELETE FROM oauth_codes WHERE expires_at < ?").bind(t).execute(&self.db).await?;
         sqlx::query("DELETE FROM oauth_tokens WHERE expires_at < ?").bind(t).execute(&self.db).await?;
         self.delete_unused_images(t - 86_400).await?;
+        self.auto_optimize().await?;
         if let Ok(mut dir) = tokio::fs::read_dir(self.config.data_dir.join("tmp")).await {
             while let Ok(Some(entry)) = dir.next_entry().await {
                 let old = entry

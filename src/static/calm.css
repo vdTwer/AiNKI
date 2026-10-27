@@ -1185,3 +1185,100 @@ html.calm ol.item-recall .chance { float: none; margin: 0; }
 @media (prefers-reduced-motion: reduce) {
   html.calm ol.list-items label.item { transform: none !important; }
 }
+
+/* ----- the card coach ----------------------------------------------------- */
+/* What the coach noticed sits above the card as a quiet Orchid note; hints
+   while writing are single lines under the sheet. */
+html.calm .coach {
+  margin: 0 0 2rem;
+  padding: 1rem 1.25rem;
+  border-radius: 14px;
+  border: 1px solid var(--orchid-edge);
+  background: color-mix(in srgb, var(--orchid) 5%, var(--surface));
+}
+html.calm .coach-flag + .coach-flag { margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--line); }
+html.calm .coach-flag p { margin: .25rem 0; }
+html.calm .coach-label { font-size: .8rem; letter-spacing: .06em; text-transform: uppercase; color: var(--orchid-deep); }
+html.calm .coach .actions { margin: .8rem 0 0; }
+html.calm .write-hints:empty { display: none; }
+html.calm .coach-hint { display: flex; gap: .6rem; align-items: baseline; margin: .9rem 0 0; font-size: .93rem; color: var(--muted); }
+html.calm .coach-hint::before { content: ''; flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--orchid); transform: translateY(-.1em); }
+html.calm .leech-note { margin: .8rem 0 0; color: var(--muted); }
+html.calm .split-form .sheet { margin-bottom: 1.4rem; }
+
+/* ----- goals, workload and calibration ----------------------------------- */
+html.calm .sheet fieldset.goals { border: 0; margin: 0; padding: .4rem 0 .2rem; }
+html.calm .sheet fieldset.goals legend { padding: .6rem 0 .3rem; color: var(--muted); font-size: .93rem; }
+html.calm .sheet label.goal { display: flex; gap: .8rem; align-items: flex-start; padding: .6rem .2rem; border-radius: 10px; cursor: pointer; transition: background-color 140ms ease; }
+html.calm .sheet label.goal:hover { background: var(--track); }
+html.calm .sheet label.goal input { accent-color: var(--terra-deep); margin-top: .3rem; }
+html.calm .sheet label.goal .goal-name { display: block; font-family: var(--serif); font-size: 1.13rem; }
+html.calm .sheet label.goal:has(input:checked) .goal-name { color: var(--terra-deep); }
+html.calm :is(table.workload, table.calibration, table.retention) { width: 100%; border-collapse: collapse; font-size: .93rem; }
+html.calm :is(table.workload, table.calibration, table.retention) :is(th, td) { padding: .55rem .2rem; border-bottom: 1px solid var(--line); text-align: left; font-weight: 400; }
+html.calm :is(table.workload, table.calibration, table.retention) thead th { font-size: .8rem; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+html.calm :is(table.workload, table.calibration, table.retention) .num { text-align: right; font-variant-numeric: tabular-nums; }
+html.calm table.workload tr.current th { color: var(--terra-deep); }
+
+/* ----- timed cards, typed answers, the sure check ------------------------ */
+/* The countdown is a thin Terra line that drains, and turns Orchid in its
+   last seconds. */
+html.calm .timer { width: min(22rem, 100%); margin: 1.4rem auto 0; }
+html.calm .timer-line { height: 2px; border-radius: 2px; background: var(--track); overflow: hidden; }
+html.calm .timer-fill { height: 2px; width: 100%; border-radius: 2px; background: var(--terra); transition: background-color 400ms var(--ease); }
+html.calm .timer.low .timer-fill { background: var(--orchid); }
+html.calm .timer-meta { display: flex; justify-content: space-between; align-items: baseline; margin: .45rem 0 0; font-size: .87rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+html.calm .timer.low .timer-secs { color: var(--orchid-deep); }
+html.calm .timer .extend { color: var(--muted); font-size: .87rem; }
+html.calm .timer .extend:hover { color: var(--terra-hover); }
+html.calm .study .reveal-form { flex-direction: column; align-items: center; gap: 1rem; width: min(26rem, 100%); margin: 1.6rem auto 0; }
+html.calm .reveal-form .typed-answer { display: flex; flex-direction: column; width: 100%; text-align: left; }
+html.calm .reveal-form .typed-answer .face-label { margin-bottom: .3rem; }
+html.calm .reveal-form .typed-answer input { width: 100%; font-family: var(--serif); font-size: 1.15rem; }
+html.calm .reveal-form .sure-ask { margin: 0; color: var(--muted); font-size: .93rem; }
+html.calm .reveal-form .sure-buttons { display: grid; grid-template-columns: 1fr 1fr; gap: .8rem; width: 100%; }
+html.calm .reveal-form .sure-buttons .btn { min-height: 56px; }
+html.calm .reveal-form .sure-buttons .label { display: inline-flex; align-items: center; gap: 8px; }
+html.calm .typed-echo { margin: 0 auto 1.4rem; padding: .8rem 1rem; max-width: 30rem; border: 0; border-radius: 10px; background: color-mix(in srgb, var(--orchid) 7%, transparent); text-align: left; }
+html.calm .typed-echo .face-label { color: var(--orchid-deep); }
+html.calm .typed-echo .typed-text { margin: .25rem 0 0; font-family: var(--serif); white-space: pre-wrap; }
+html.calm .timeout-form { text-align: center; animation: calm-appear 220ms var(--ease) both; }
+html.calm .timeout-note { margin: 1.6rem 0 0; color: var(--orchid-deep); font-size: .93rem; }
+html.calm .timed-out ol.list-items label.row { pointer-events: none; }
+/* Quiet hours: two hour pickers side by side, "22:00 to 7:00". */
+html.calm .sheet .line .field.quiet select { width: auto; }
+html.calm .sheet .line .field.quiet { flex: none; }
+/* Rest and break screens, and the catch-up offer on the home page. */
+html.calm .catch-up { margin: 0; }
+html.calm .catch-up button.link { color: var(--terra-deep); font-size: inherit; }
+html.calm .catch-up button.link:hover { color: var(--terra-hover); }
+/* ----- the week, and retention by deck ----------------------------------- */
+html.calm .week p { margin: .4rem 0; }
+html.calm .week .tip { border: 0; padding: 0; display: flex; gap: .6rem; align-items: baseline; color: var(--muted); font-size: .93rem; }
+html.calm .week .tip::before { content: ''; flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--orchid); transform: translateY(-.1em); }
+html.calm table.retention th a { color: var(--ink); }
+html.calm table.retention th a:hover { color: var(--terra-hover); }
+html.calm table.retention tr.short td:nth-child(3) { color: var(--orchid-deep); }
+
+/* ----- lessons ------------------------------------------------------------ */
+/* Reading width, serif text, and a small tag for how strong the evidence is:
+   Terra where it is solid, muted where it is a rule of thumb or mixed,
+   Orchid where it is not supported. */
+html.calm .lead { color: var(--muted); max-width: 36rem; }
+html.calm .evidence { flex: none; border: 0; padding: .1rem .55rem; border-radius: 999px; font-size: .75rem; font-weight: 500; letter-spacing: .02em; white-space: nowrap; color: var(--terra-deep); background: color-mix(in srgb, var(--terra) 12%, transparent); }
+html.calm .evidence:is(.mixed, .practice) { color: var(--muted); background: var(--track); }
+html.calm .evidence.against { color: var(--orchid-deep); background: color-mix(in srgb, var(--orchid) 12%, transparent); }
+html.calm ul.lessons .evidence { margin-left: 1rem; }
+html.calm .lesson h1 { margin-bottom: .5rem; }
+html.calm .lesson-meta { margin: 0 0 1.6rem; }
+html.calm .lesson .md { max-width: 36rem; font-family: var(--serif); font-optical-sizing: auto; font-size: 1.1rem; line-height: 1.65; }
+html.calm .lesson .md h2 { margin: 2.2rem 0 .6rem; font-family: var(--sans); }
+html.calm .lesson .md ul { padding-left: 1.2rem; }
+html.calm .lesson .md li { margin: 0 0 .5rem; }
+html.calm .lesson .md li::marker { color: var(--terra); }
+html.calm .lesson .md a { color: var(--terra-deep); }
+html.calm .lesson-deck { max-width: 36rem; margin: 2.6rem 0 1rem; padding-top: 1.4rem; border-top: 1px solid var(--line); }
+html.calm .lesson-deck form { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin: 0; }
+html.calm .lesson-deck p { margin: 0; }
+html.calm .next-lesson { margin: 1.4rem 0 3rem; color: var(--muted); font-size: .93rem; }
+html.calm .next-lesson a { color: var(--terra-deep); }
