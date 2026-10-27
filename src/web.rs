@@ -23,7 +23,7 @@ use crate::{
     auth::{Access, User},
     coach,
     error::AppError,
-    import, markdown, mcp, media, multi::{self, Piece, Split}, now, oauth, presets,
+    import, insight, markdown, mcp, media, multi::{self, Piece, Split}, now, oauth, presets,
     security::{self, ClientIp, Flash},
     scheduler::{self, CardState, Rating},
     study,
@@ -3302,6 +3302,38 @@ async fn password_update(
         .into_response())
 }
 
+/// The last seven days in a sentence or two, and one thing worth doing.
+fn week_note(w: &insight::Week) -> Markup {
+    let pct = |v: f64| format!("{:.0}%", v * 100.0);
+    html! {
+        section.week aria-label="This week" {
+            h2 { "This week" }
+            @if w.reviews == 0 {
+                p { "No reviews in the last seven days." }
+            } @else {
+                p {
+                    (count(w.reviews, "review")) " on " (count(w.days_studied, "day")) ", "
+                    (format::minutes(w.minutes))
+                    @if w.new_cards > 0 { ", " (count(w.new_cards, "new card")) }
+                    "."
+                    @if let (Some(r), Some(t)) = (w.retention, w.target) {
+                        @if w.retention_sample >= insight::MIN_SAMPLE {
+                            " You remembered " (pct(r)) " of the cards due; you aim for " (pct(t)) "."
+                        }
+                    }
+                }
+            }
+            @match w.tip {
+                insight::Tip::Attention => p.tip { span { (count(w.attention, "card")) " keep slipping or ask too much at once. Fixing them saves more time than reviewing them. " a href="/attention" { "Have a look" } } },
+                insight::Tip::BelowTarget => p.tip { span { "You forgot more than you aim for. Fewer new cards for a while, or optimizing FSRS, usually brings it back. " a href="/learn/desired-retention" { "Why" } } },
+                insight::Tip::AboveTarget => p.tip { span { "You remember more than you aim for. Optimizing lets FSRS space your cards further apart. " a href="/settings#fsrs" { "Optimize" } } },
+                insight::Tip::Spread => p.tip { span { "A little every day works better than a lot on a few days. " a href="/learn/spacing" { "Why" } } },
+                insight::Tip::Nothing => {},
+            }
+        }
+    }
+}
+
 #[derive(Deserialize)]
 struct StudySettingsForm {
     #[serde(default)]
@@ -3661,6 +3693,13 @@ async fn stats_page(State(app): State<AppState>, user: WebUser, Query(q): Query<
     let s = app.stats(&access, q.deck).await?;
     let cal = app.calibration(&access, q.deck).await?;
     let sure = app.confidence(&access, q.deck).await?;
+    let week = if q.deck.is_none() { Some(app.week(&access).await?) } else { None };
+    let retention: Vec<_> = app
+        .deck_retention(&access)
+        .await?
+        .into_iter()
+        .filter(|d| d.reviews > 0 && q.deck.is_none_or(|id| id == d.deck_id))
+        .collect();
     let deck = match q.deck {
         Some(id) => Some(app.deck(&access, id).await?),
         None => None,
@@ -3673,6 +3712,7 @@ async fn stats_page(State(app): State<AppState>, user: WebUser, Query(q): Query<
         html! {
             @if let Some(d) = &deck { (parent(&format!("/decks/{}", d.id), &deck_plain(&d.name))) }
             h1 { "Stats" }
+            @if let Some(w) = &week { (week_note(w)) }
             h2 { "Today" }
             dl.stats-inline {
                 div { dt { (format::plural(s.cards_today, "Card")) " studied" } dd { (format::number(s.cards_today)) } }
@@ -3684,6 +3724,22 @@ async fn stats_page(State(app): State<AppState>, user: WebUser, Query(q): Query<
                 dt { "Reviews, last 30 days" } dd { (format::number(s.reviews_30d)) }
                 dt { "Recalled when due, last 30 days" } dd { (format::percent(s.true_retention_30d)) " (" (count(s.retention_sample_30d, "review")) ")" }
                 dt { "Average recall chance now" } dd { (format::percent(s.average_retrievability)) }
+            }
+            @if !retention.is_empty() {
+                table.retention {
+                    thead { tr { th { "Deck" } th.num { "Aim" } th.num { "Remembered" } th.num { "Reviews" } } }
+                    tbody {
+                        @for d in &retention {
+                            tr.short[d.short()] {
+                                th scope="row" { a href=(format!("/decks/{}", d.deck_id)) { (deck_plain(&d.deck_name)) } }
+                                td.num { (format::percent(Some(d.target))) }
+                                td.num { (format::percent(d.actual)) }
+                                td.num { (format::number(d.reviews)) }
+                            }
+                        }
+                    }
+                }
+                p.muted.small { "Reviews of learned cards in the last 30 days. Fewer than " (insight::MIN_SAMPLE) " say little." }
             }
             h2 { "Cards" }
             dl.kv {

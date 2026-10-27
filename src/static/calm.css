@@ -1214,10 +1214,10 @@ html.calm .sheet label.goal:hover { background: var(--track); }
 html.calm .sheet label.goal input { accent-color: var(--terra-deep); margin-top: .3rem; }
 html.calm .sheet label.goal .goal-name { display: block; font-family: var(--serif); font-size: 1.13rem; }
 html.calm .sheet label.goal:has(input:checked) .goal-name { color: var(--terra-deep); }
-html.calm :is(table.workload, table.calibration) { width: 100%; border-collapse: collapse; font-size: .93rem; }
-html.calm :is(table.workload, table.calibration) :is(th, td) { padding: .55rem .2rem; border-bottom: 1px solid var(--line); text-align: left; font-weight: 400; }
-html.calm :is(table.workload, table.calibration) thead th { font-size: .8rem; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
-html.calm :is(table.workload, table.calibration) .num { text-align: right; font-variant-numeric: tabular-nums; }
+html.calm :is(table.workload, table.calibration, table.retention) { width: 100%; border-collapse: collapse; font-size: .93rem; }
+html.calm :is(table.workload, table.calibration, table.retention) :is(th, td) { padding: .55rem .2rem; border-bottom: 1px solid var(--line); text-align: left; font-weight: 400; }
+html.calm :is(table.workload, table.calibration, table.retention) thead th { font-size: .8rem; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+html.calm :is(table.workload, table.calibration, table.retention) .num { text-align: right; font-variant-numeric: tabular-nums; }
 html.calm table.workload tr.current th { color: var(--terra-deep); }
 
 /* ----- timed cards, typed answers, the sure check ------------------------ */
@@ -1252,3 +1252,10 @@ html.calm .sheet .line .field.quiet { flex: none; }
 html.calm .catch-up { margin: 0; }
 html.calm .catch-up button.link { color: var(--terra-deep); font-size: inherit; }
 html.calm .catch-up button.link:hover { color: var(--terra-hover); }
+/* ----- the week, and retention by deck ----------------------------------- */
+html.calm .week p { margin: .4rem 0; }
+html.calm .week .tip { border: 0; padding: 0; display: flex; gap: .6rem; align-items: baseline; color: var(--muted); font-size: .93rem; }
+html.calm .week .tip::before { content: ''; flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--orchid); transform: translateY(-.1em); }
+html.calm table.retention th a { color: var(--ink); }
+html.calm table.retention th a:hover { color: var(--terra-hover); }
+html.calm table.retention tr.short td:nth-child(3) { color: var(--orchid-deep); }
