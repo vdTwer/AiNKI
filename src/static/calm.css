@@ -1185,3 +1185,23 @@ html.calm ol.item-recall .chance { float: none; margin: 0; }
 @media (prefers-reduced-motion: reduce) {
   html.calm ol.list-items label.item { transform: none !important; }
 }
+
+/* ----- the card coach ----------------------------------------------------- */
+/* What the coach noticed sits above the card as a quiet Orchid note; hints
+   while writing are single lines under the sheet. */
+html.calm .coach {
+  margin: 0 0 2rem;
+  padding: 1rem 1.25rem;
+  border-radius: 14px;
+  border: 1px solid var(--orchid-edge);
+  background: color-mix(in srgb, var(--orchid) 5%, var(--surface));
+}
+html.calm .coach-flag + .coach-flag { margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--line); }
+html.calm .coach-flag p { margin: .25rem 0; }
+html.calm .coach-label { font-size: .8rem; letter-spacing: .06em; text-transform: uppercase; color: var(--orchid-deep); }
+html.calm .coach .actions { margin: .8rem 0 0; }
+html.calm .write-hints:empty { display: none; }
+html.calm .coach-hint { display: flex; gap: .6rem; align-items: baseline; margin: .9rem 0 0; font-size: .93rem; color: var(--muted); }
+html.calm .coach-hint::before { content: ''; flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--orchid); transform: translateY(-.1em); }
+html.calm .leech-note { margin: .8rem 0 0; color: var(--muted); }
+html.calm .split-form .sheet { margin-bottom: 1.4rem; }

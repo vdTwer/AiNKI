@@ -62,6 +62,8 @@
   var backText = document.getElementById('back');
   if (multiPick && previewBox && previewToggle && frontText && backText) {
     var sheet = previewBox.previousElementSibling;
+    // The coach's hints while writing: a long list, or a card like this one.
+    var hintBox = document.querySelector('.card-form .write-hints');
     var previewing = false;
     var asked = 0;
     var chosen = function () {
@@ -71,6 +73,8 @@
     var refresh = function () {
       var n = ++asked;
       var body = new URLSearchParams({ front: frontText.value, back: backText.value, multi: chosen() });
+      var editing = multiPick.closest('form').getAttribute('data-card');
+      if (editing) body.append('card', editing);
       fetch('/cards/preview', {
         method: 'POST',
         credentials: 'same-origin',
@@ -92,6 +96,7 @@
         multiPick.hidden = !any;
         previewBox.innerHTML = v.html;
         setup(previewBox);
+        if (hintBox && typeof v.hints === 'string') hintBox.innerHTML = v.hints;
       }).catch(function () {});
     };
     var timer = null;

@@ -21,6 +21,7 @@ use serde::Deserialize;
 use crate::{
     App, AppState,
     auth::{Access, User},
+    coach,
     error::AppError,
     import, markdown, mcp, media, multi::{self, Piece, Split}, now, oauth, presets,
     security::{self, ClientIp, Flash},
@@ -118,7 +119,9 @@ pub fn router(app: AppState) -> Router {
         .route("/decks/{id}/export.csv", get(deck_export))
         .route("/decks/{id}/share", post(deck_share))
         .route("/shares/{id}/{action}", post(share_action))
+        .route("/cards/{id}/split", get(split_page).post(split_submit))
         .route("/cards/{id}/{action}", post(card_action))
+        .route("/attention", get(attention_page))
         .route("/presets", get(presets_page))
         .route("/presets/new", get(preset_new_page).post(preset_create))
         .route("/presets/{id}", get(preset_page).post(preset_update))
@@ -772,6 +775,7 @@ async fn home(State(app): State<AppState>, user: WebUser, Flash(msg): Flash) -> 
     let shares = app.incoming_shares(&access).await?;
     let stats = app.stats(&access, None).await?;
     let total_due: i64 = decks.iter().map(|d| d.due_total()).sum();
+    let attention = app.attention(&access, None).await?.len() as i64;
     // A rough guide; real thinking time once there's enough history.
     let minutes = ((total_due as f64 * stats.seconds_per_review.unwrap_or(12.0)) / 60.0).ceil().max(1.0) as i64;
     let mut facts = Vec::new();
@@ -856,6 +860,9 @@ async fn home(State(app): State<AppState>, user: WebUser, Flash(msg): Flash) -> 
                     }
                 }
             }
+            @if attention > 0 {
+                p.small { a href="/attention" { (count(attention, "card")) " " (if attention == 1 { "needs" } else { "need" }) " a look" } }
+            }
             p.actions.icon-links {
                 (icon_btn("/cards/new", ICON_ADD, "Add card"))
                 (icon_btn("/decks/new", ICON_DECKS, "New deck"))
@@ -885,7 +892,7 @@ fn study_url(deck: Option<i64>) -> String {
 
 /// The thin line and "14 of 32" under the card. `done` is in half cards
 /// (see `App::session_progress`).
-fn study_foot(deck_name: &str, deck_id: i64, done: i64, total: i64, q_deck: Option<i64>, card_id: Option<i64>) -> Markup {
+fn study_foot(deck_name: &str, deck_id: i64, done: i64, total: i64, q_deck: Option<i64>, card_id: Option<i64>, leech: bool) -> Markup {
     let pct = if total > 0 { (done * 50 / total).clamp(0, 100) } else { 0 };
     let total = total.max(1);
     let position = (done / 2 + 1).min(total);
@@ -904,6 +911,9 @@ fn study_foot(deck_name: &str, deck_id: i64, done: i64, total: i64, q_deck: Opti
                     button.link.icon-link type="submit" { (icon(ICON_UNDO, PAGE_ICON)) span { "Undo last answer" } }
                 }
                 @if let Some(id) = card_id { (icon_link(&format!("/cards/{id}{}", CardFrom::study(q_deck).query()), ICON_EDIT, "Edit card")) }
+            }
+            @if let (true, Some(id)) = (leech, card_id) {
+                p.leech-note.small { "This card keeps slipping. " a href=(format!("/cards/{id}{}", CardFrom::study(q_deck).query())) { "Have a look after this answer" } }
             }
         }
     }
@@ -974,6 +984,7 @@ async fn study_card(
 ) -> Result<Markup, AppError> {
     let previews = app.previews(access, card, deck).await?;
     let (done, total) = app.session_progress(access, q_deck).await?;
+    let leech = app.leech_note(card).await?.is_some();
     let four = user.four_buttons;
     let buttons: Vec<(Rating, &str, &str)> = if four {
         vec![
@@ -999,7 +1010,7 @@ async fn study_card(
                 (flash(msg))
                 section.study.revealed[revealed] {
                     (body)
-                    (study_foot(&deck.name, deck.id, done, total, q_deck, Some(card.id)))
+                    (study_foot(&deck.name, deck.id, done, total, q_deck, Some(card.id), leech))
                 }
             },
         ));
@@ -1032,7 +1043,7 @@ async fn study_card(
                         }
                     }
                 }
-                (study_foot(&deck.name, deck.id, done, total, q_deck, Some(card.id)))
+                (study_foot(&deck.name, deck.id, done, total, q_deck, Some(card.id), leech))
             }
         },
     ))
@@ -1177,6 +1188,8 @@ fn card_preview(front: &str, back: &str, how: Option<Split>) -> Markup {
 
 #[derive(Deserialize)]
 struct PreviewForm {
+    /// The card being edited, so it doesn't count as like itself.
+    card: Option<i64>,
     #[serde(default)]
     front: String,
     #[serde(default)]
@@ -1187,14 +1200,16 @@ struct PreviewForm {
 
 /// For the card form while you write: how the card will look, and which
 /// ways the back can be learned item by item.
-async fn card_preview_json(_user: WebUser, Form(f): Form<PreviewForm>) -> Response {
+async fn card_preview_json(State(app): State<AppState>, user: WebUser, Form(f): Form<PreviewForm>) -> WebResult {
     let splits: Vec<&str> = multi::splits(&f.back).into_iter().map(Split::as_str).collect();
-    let html = card_preview(&f.front, &f.back, Split::parse(&f.multi)).into_string();
-    (
+    let how = Split::parse(&f.multi);
+    let html = card_preview(&f.front, &f.back, how).into_string();
+    let hints = write_hints(&app, &user.access(), &f.front, &f.back, how, f.card).await?;
+    Ok((
         [(header::CONTENT_TYPE, "application/json")],
-        serde_json::json!({ "splits": splits, "html": html }).to_string(),
+        serde_json::json!({ "splits": splits, "html": html, "hints": hint_lines(&hints).into_string() }).to_string(),
     )
-        .into_response()
+        .into_response())
 }
 
 async fn study(State(app): State<AppState>, user: WebUser, Flash(msg): Flash, Query(q): Query<StudyQuery>) -> WebResult {
@@ -1453,6 +1468,7 @@ async fn deck_page(
         )
         .await?;
     let d = &summary.deck;
+    let attention = app.attention(&access, Some(id)).await?.len() as i64;
     let base = format!(
         "/decks/{id}?q={}&state={}",
         urlenc(q.q.as_deref().unwrap_or("")),
@@ -1482,6 +1498,9 @@ async fn deck_page(
                 (icon_btn(&format!("/stats?deck={id}"), ICON_STATS, "Stats"))
             }
             p.muted.small { "Preset: " a href=(format!("/presets/{}", d.preset_id)) { (summary.preset_name) } }
+            @if attention > 0 {
+                p.small { a href=(format!("/attention?deck={id}")) { (count(attention, "card")) " " (if attention == 1 { "needs" } else { "need" }) " a look" } }
+            }
 
             h2 { "Cards" }
             form.search method="get" action=(format!("/decks/{id}")) {
@@ -1776,6 +1795,8 @@ fn face_field(side: &str, title: &str, placeholder: &str, text: &str, image: &Op
 /// What the card form shows: a new card's empty sides, a card being
 /// edited, or what was sent when it comes back with a problem.
 struct CardDraft<'a> {
+    /// The card being edited; none for a new one.
+    id: Option<i64>,
     deck: Option<i64>,
     new_deck: &'a str,
     front: &'a str,
@@ -1785,10 +1806,42 @@ struct CardDraft<'a> {
     multi: Option<Split>,
 }
 
-fn card_form(action: &str, decks: &[crate::service::Deck], c: &CardDraft, submit: &str, allow_new_deck: bool) -> Markup {
+/// A hint from the coach while writing, with a link when it points at
+/// another card.
+#[derive(serde::Serialize)]
+struct WriteHint {
+    text: String,
+    href: Option<String>,
+}
+
+/// What the coach says about a card being written: a long list, or a front
+/// like one you already have.
+async fn write_hints(app: &App, access: &Access, front: &str, back: &str, how: Option<Split>, except: Option<i64>) -> Result<Vec<WriteHint>, AppError> {
+    let mut out: Vec<WriteHint> = coach::write_hints(back, how).into_iter().map(|text| WriteHint { text, href: None }).collect();
+    if let Some(s) = app.similar_cards(access, front, except).await?.into_iter().next() {
+        out.push(WriteHint {
+            text: format!("You have a card like this: “{}”. Cards this alike get mixed up.", truncate(&s.front, 60)),
+            href: Some(format!("/cards/{}", s.card_id)),
+        });
+    }
+    Ok(out)
+}
+
+fn hint_lines(hints: &[WriteHint]) -> Markup {
+    html! {
+        @for h in hints {
+            p.coach-hint {
+                (h.text)
+                @if let Some(href) = &h.href { " " a href=(href) { "Open it" } }
+            }
+        }
+    }
+}
+
+fn card_form(action: &str, decks: &[crate::service::Deck], c: &CardDraft, submit: &str, allow_new_deck: bool, hints: &[WriteHint]) -> Markup {
     let new_selected = allow_new_deck && (decks.is_empty() || c.deck.is_none());
     html! {
-        form.card-form method="post" action=(action) enctype="multipart/form-data" {
+        form.card-form method="post" action=(action) enctype="multipart/form-data" data-card=[c.id] {
             div.deck-line {
                 label.deck-pick { span.deck-label { "Deck" }
                     span.select {
@@ -1829,6 +1882,7 @@ fn card_form(action: &str, decks: &[crate::service::Deck], c: &CardDraft, submit
                 }
             }
             div.sheet.card-preview hidden {}
+            div.write-hints aria-live="polite" { (hint_lines(hints)) }
             div.form-foot {
                 p.muted.small {
                     "Text supports Markdown: **bold**, *italic*, lists, # headings, `code`."
@@ -1855,7 +1909,7 @@ fn card_new_view(user: &User, decks: &[Deck], c: &CardDraft, msg: &Option<String
             (flash(msg))
             h1 { "Add card" }
             (form_error(error))
-            (card_form("/cards/new", decks, c, "Add card", true))
+            (card_form("/cards/new", decks, c, "Add card", true, &[]))
         },
     )
 }
@@ -1868,7 +1922,7 @@ async fn card_new_page(State(app): State<AppState>, user: WebUser, Flash(msg): F
         Some(id) => Some(id),
         None => app.last_used_deck(&access).await?.or_else(|| decks.first().map(|d| d.id)),
     };
-    let draft = CardDraft { deck, new_deck: "", front: "", back: "", front_image: &None, back_image: &None, multi: None };
+    let draft = CardDraft { id: None, deck, new_deck: "", front: "", back: "", front_image: &None, back_image: &None, multi: None };
     Ok(card_new_view(&user.0, &decks, &draft, &msg, None).into_response())
 }
 
@@ -1920,6 +1974,7 @@ async fn card_create(State(app): State<AppState>, user: WebUser, mp: Multipart) 
             let msg = with_image_hint(fixable(&e).ok_or(e)?, &f);
             let decks = app.decks(&access).await?;
             let draft = CardDraft {
+                id: None,
                 deck: if f.new_deck.is_some() { None } else { f.deck },
                 new_deck: f.new_deck.as_deref().unwrap_or(""),
                 front: &f.front,
@@ -1974,11 +2029,20 @@ async fn card_view(
     let decks = app.decks(&access).await?;
     let history = app.card_history(&access, id).await?;
     let items = app.card_items(&card).await?;
+    let flags = app.card_flags(&access, &card).await?;
+    // The coach box already names a duplicate; the form only adds the list
+    // hint, unless the box says the same.
+    let hints: Vec<WriteHint> = coach::write_hints(&card.back, card.multi)
+        .into_iter()
+        .filter(|_| !flags.iter().any(|f| f.kind == coach::Kind::Split))
+        .map(|text| WriteHint { text, href: None })
+        .collect();
     let clock = user.clock();
     let params = user.params();
     let r = scheduler::retrievability(&card.sched(), &params, &clock);
     let draft = match sent {
         Some(f) => CardDraft {
+            id: Some(card.id),
             deck: f.deck.or(Some(card.deck_id)),
             new_deck: "",
             front: &f.front,
@@ -1988,6 +2052,7 @@ async fn card_view(
             multi: f.multi,
         },
         None => CardDraft {
+            id: Some(card.id),
             deck: Some(card.deck_id),
             new_deck: "",
             front: &card.front,
@@ -2010,7 +2075,8 @@ async fn card_view(
             }
             h1 { "Edit card" }
             (form_error(error))
-            (card_form(&format!("/cards/{id}{}", from.query()), &decks, &draft, "Save", false))
+            (coach_box(&card, &flags))
+            (card_form(&format!("/cards/{id}{}", from.query()), &decks, &draft, "Save", false, &hints))
             h2 { "Scheduling" }
             dl.kv {
                 dt { "State" } dd { (state_label(card.card_state())) @if card.suspended { " (suspended)" } }
@@ -2167,11 +2233,214 @@ async fn card_action(
                 app.delete_card(&access, id).await?;
                 return Ok(redirect_msg(format!("/decks/{}", card.deck_id), "Card deleted."));
             }
+            "learn-items" => {
+                app.update_card(&access, id, CardInput { multi: Some(Some(Split::List)), ..Default::default() }).await?;
+                "Now learned item by item: you mark what you remembered, and each item keeps its own schedule."
+            }
+            keep if keep.starts_with("keep-") => {
+                let kind = coach::Kind::parse(&keep["keep-".len()..]).ok_or_else(|| AppError::bad("unknown action"))?;
+                app.dismiss_flag(&access, id, kind).await?;
+                "Kept as is."
+            }
             _ => return Err(AppError::bad("unknown action")),
         };
         Ok(redirect_msg(format!("/cards/{id}"), msg))
     }
     .await)
+}
+
+// ----- the card coach -----------------------------------------------------
+
+/// Where to read why a flag matters.
+fn coach_lesson(kind: coach::Kind) -> &'static str {
+    match kind {
+        coach::Kind::Leech => "/learn/leeches",
+        coach::Kind::Split => "/learn/good-cards",
+        coach::Kind::Duplicate => "/learn/interference",
+    }
+}
+
+/// Whether the back offers a split into cards.
+fn splittable(card: &Card) -> bool {
+    card.multi.is_some() || !multi::splits(&card.back).is_empty()
+}
+
+/// What the coach noticed about a card, each with what can be done. The
+/// card is never changed until the user picks something.
+fn coach_box(card: &Card, flags: &[coach::Flag]) -> Markup {
+    let id = card.id;
+    html! {
+        @if !flags.is_empty() {
+            section.coach aria-label="The coach noticed" {
+                @for f in flags {
+                    div.coach-flag {
+                        p.coach-label { (f.kind.label()) }
+                        p { (f.reason) " " a href=(coach_lesson(f.kind)) { "Why this matters" } }
+                        @if f.kind == coach::Kind::Leech {
+                            p.muted.small { "Rewrite it so it asks one clear thing, add an image or a memory hook, or split it. Suspending takes it out of your reviews." }
+                        }
+                        form.actions method="post" action=(format!("/cards/{id}/keep-{}", f.kind.as_str())) {
+                            @if f.kind != coach::Kind::Duplicate && card.multi.is_none() && coach::list_items(&card.back) >= 2 {
+                                button.btn type="submit" formaction=(format!("/cards/{id}/learn-items")) { "Learn item by item" }
+                            }
+                            @if f.kind != coach::Kind::Duplicate && splittable(card) {
+                                a.btn href=(format!("/cards/{id}/split")) { "Split into cards…" }
+                            }
+                            @if let Some(other) = f.other_card {
+                                a.btn href=(format!("/cards/{other}")) { "Open the other card" }
+                            }
+                            @if f.kind == coach::Kind::Leech && !card.suspended {
+                                button.btn type="submit" formaction=(format!("/cards/{id}/suspend")) { "Suspend" }
+                            }
+                            button.btn type="submit" { "Keep as is" }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[derive(Deserialize, Default)]
+struct AttentionQuery {
+    deck: Option<i64>,
+}
+
+/// Every card the coach flagged, in one deck or all of them.
+async fn attention_page(State(app): State<AppState>, user: WebUser, Flash(msg): Flash, Query(q): Query<AttentionQuery>) -> WebResult {
+    let access = user.access();
+    let found = app.attention(&access, q.deck).await?;
+    let deck = match q.deck {
+        Some(id) => Some(app.deck(&access, id).await?),
+        None => None,
+    };
+    Ok(layout_in(
+        Nav::Decks,
+        "Needs a look",
+        Some(&user.0),
+        html! {
+            (flash(&msg))
+            @if let Some(d) = &deck { (parent(&format!("/decks/{}", d.id), &deck_plain(&d.name))) }
+            h1 { "Needs a look" }
+            @if found.is_empty() {
+                p { "Nothing right now. The coach looks for cards you keep forgetting, cards that ask for several things at once, and cards that look alike." }
+            } @else {
+                p.muted {
+                    "The coach noticed " (count(found.len() as i64, "card")) ". Open one to see why and what you can do. Nothing changes unless you pick something. "
+                    a href="/learn/good-cards" { "What makes a good card" }
+                }
+                ul.list.cards {
+                    @for a in &found {
+                        li {
+                            a.row href=(format!("/cards/{}", a.card.id)) {
+                                span.grow {
+                                    @if a.card.front.is_empty() { "[image]" } @else { (truncate(&a.card.front, 80)) }
+                                    br;
+                                    span.muted.small { (a.flags.iter().map(|f| f.kind.label()).collect::<Vec<_>>().join(" · ")) }
+                                }
+                                span.chev aria-hidden="true" { "›" }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+    )
+    .into_response())
+}
+
+/// The cards a split starts from: one per item of the back, each with the
+/// original front. Without items, the card itself and an empty one.
+fn split_drafts(card: &Card, items: &[multi::CardItem]) -> Vec<(String, String)> {
+    let texts: Vec<String> = if !items.is_empty() {
+        items.iter().map(|i| i.text.clone()).collect()
+    } else {
+        multi::splits(&card.back)
+            .first()
+            .and_then(|&how| multi::items(&card.back, how))
+            .unwrap_or_default()
+    };
+    if texts.len() >= 2 {
+        texts.into_iter().map(|t| (card.front.clone(), t)).collect()
+    } else {
+        vec![(card.front.clone(), card.back.clone()), (String::new(), String::new())]
+    }
+}
+
+#[derive(Deserialize, Default)]
+struct SplitQuery {
+    /// How many cards to show, when more than the back gives.
+    n: Option<usize>,
+}
+
+fn split_view(user: &User, card: &Card, drafts: &[(String, String)], keep: bool, error: Option<&str>) -> Markup {
+    let id = card.id;
+    layout_in(
+        Nav::Decks,
+        "Split card",
+        Some(user),
+        html! {
+            (parent(&format!("/cards/{id}"), "Back to the card"))
+            h1 { "Split into cards" }
+            p.muted { "One thing per card is easier to remember. Each new card starts fresh. Change the fronts so each asks for exactly its answer." }
+            (form_error(error))
+            form.split-form method="post" action=(format!("/cards/{id}/split")) {
+                @for (n, (front, back)) in drafts.iter().enumerate() {
+                    div.sheet {
+                        div.face-edit data-face="front" {
+                            label.face-label for=(format!("front_{n}")) { "Card " (n + 1) ": front" }
+                            textarea id=(format!("front_{n}")) name=(format!("front_{n}")) rows="2" { (front) }
+                        }
+                        hr.divider;
+                        div.face-edit data-face="back" {
+                            label.face-label for=(format!("back_{n}")) { "Back" }
+                            textarea id=(format!("back_{n}")) name=(format!("back_{n}")) rows="2" { (back) }
+                        }
+                    }
+                }
+                p.small { a href=(format!("/cards/{id}/split?n={}", drafts.len() + 1)) { "One more card" } " · Leave a card empty to skip it." }
+                label.check { input type="checkbox" name="keep" value="1" checked[keep]; " Keep the original card, suspended" }
+                div.form-foot { button.btn.primary.wide type="submit" { "Make " (drafts.len()) " cards" } }
+            }
+        },
+    )
+}
+
+async fn split_page(State(app): State<AppState>, user: WebUser, Path(id): Path<i64>, Query(q): Query<SplitQuery>) -> WebResult {
+    let access = user.access();
+    let card = app.card(&access, id).await?;
+    let items = app.card_items(&card).await?;
+    let mut drafts = split_drafts(&card, &items);
+    if let Some(n) = q.n.filter(|n| *n > drafts.len()) {
+        drafts.resize(n.min(50), (String::new(), String::new()));
+    }
+    Ok(split_view(&user.0, &card, &drafts, false, None).into_response())
+}
+
+async fn split_submit(State(app): State<AppState>, user: WebUser, Path(id): Path<i64>, Form(f): Form<HashMap<String, String>>) -> WebResult {
+    let access = user.access();
+    let card = app.card(&access, id).await?;
+    let mut drafts = Vec::new();
+    for n in 0..50 {
+        match (f.get(&format!("front_{n}")), f.get(&format!("back_{n}"))) {
+            (None, None) => break,
+            (front, back) => drafts.push((
+                front.cloned().unwrap_or_default(),
+                back.cloned().unwrap_or_default(),
+            )),
+        }
+    }
+    let keep = f.contains_key("keep");
+    match app.split_card(&access, id, drafts.clone(), keep).await {
+        Ok(cards) => Ok(redirect_msg(
+            format!("/decks/{}", card.deck_id),
+            &format!("Split into {}.", count(cards.len() as i64, "card")),
+        )),
+        Err(e) => {
+            let msg = fixable(&e).ok_or(e)?;
+            Ok(form_again(split_view(&user.0, &card, &drafts, keep, Some(&msg))))
+        }
+    }
 }
 
 // ----- presets ------------------------------------------------------------

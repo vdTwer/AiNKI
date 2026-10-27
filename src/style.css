@@ -280,3 +280,12 @@ fieldset.multi-pick .choice { display: flex; flex-wrap: wrap; gap: .3rem 1rem; }
 ol.item-recall { padding-left: 1.6rem; }
 ol.item-recall li { padding: .25rem 0; }
 ol.item-recall .chance { float: right; margin-left: 1rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+
+/* The card coach: what it noticed about a card, and hints while writing. */
+.coach { border: 2px solid var(--fg); padding: .7rem .9rem; margin: 1rem 0; }
+.coach-flag + .coach-flag { border-top: 1px solid var(--fg); margin-top: .8rem; padding-top: .8rem; }
+.coach-flag p { margin: .3rem 0; }
+.coach-label { font-weight: 600; }
+.coach-hint { font-size: .9rem; margin: .5rem 0; }
+.leech-note { margin: .6rem 0 0; }
+.split-form .sheet { margin-bottom: 1.2rem; }
