@@ -26,6 +26,7 @@ use crate::{
     import, markdown, mcp, media, multi::{self, Piece, Split}, now, oauth, presets,
     security::{self, ClientIp, Flash},
     scheduler::{self, CardState, Rating},
+    study,
     service::{Card, CardFilter, CardInput, Deck, PresetInput},
     format::{self, count},
 };
@@ -112,6 +113,8 @@ pub fn router(app: AppState) -> Router {
         .route("/study", get(study))
         .route("/study/answer", post(study_answer))
         .route("/study/undo", post(study_undo))
+        .route("/study/anyway", post(study_anyway))
+        .route("/study/keep-going", post(study_keep_going))
         .route("/decks/new", get(deck_new_page).post(deck_create))
         .route("/decks/{id}", get(deck_page))
         .route("/decks/{id}/edit", get(deck_edit_page).post(deck_update))
@@ -130,6 +133,8 @@ pub fn router(app: AppState) -> Router {
         .route("/settings/password", post(password_update))
         .route("/settings/optimize", post(optimize))
         .route("/settings/auto-optimize", post(auto_optimize))
+        .route("/settings/study", post(study_settings_update))
+        .route("/settings/catch-up", post(catch_up_update))
         .route("/settings/reset-params", post(reset_params))
         .route("/access", get(access_page))
         .route("/access/new", get(|| async { Redirect::to("/access") }).post(token_create))
@@ -777,6 +782,8 @@ async fn home(State(app): State<AppState>, user: WebUser, Flash(msg): Flash) -> 
     let stats = app.stats(&access, None).await?;
     let total_due: i64 = decks.iter().map(|d| d.due_total()).sum();
     let attention = app.attention(&access, None).await?.len() as i64;
+    let overdue = app.overdue(&access).await?;
+    let quiet = study::quiet_until(&user.0, now());
     // A rough guide; real thinking time once there's enough history.
     let minutes = ((total_due as f64 * stats.seconds_per_review.unwrap_or(12.0)) / 60.0).ceil().max(1.0) as i64;
     let mut facts = Vec::new();
@@ -806,9 +813,12 @@ async fn home(State(app): State<AppState>, user: WebUser, Flash(msg): Flash) -> 
                     h1 { "Welcome to AiNKI" }
                 }
                 @if !facts.is_empty() { p.facts { (facts.join(" · ")) } }
-                @if total_due > 0 {
+                @if let Some(t) = quiet {
+                    p.facts { "Quiet hours until " (format::when(&user.0.clock(), t)) "." }
+                } @else if total_due > 0 {
                     p { a.btn.primary.start href="/study" { "Start studying " span.arrow aria-hidden="true" { "→" } } }
                 }
+                (catch_up_note(&user.0, overdue))
             }
             @if !shares.is_empty() {
                 h2 { "Shared with you" }
@@ -1372,6 +1382,13 @@ async fn study(State(app): State<AppState>, user: WebUser, Flash(msg): Flash, Qu
         return Ok(study_card(&app, &access, &user.0, &msg, &card, &deck, q.deck, &shown).await?.into_response());
     }
 
+    if let Some(until) = study::quiet_until(&user.0, now()) {
+        return Ok(rest_page(&user.0, &msg, q.deck, until).into_response());
+    }
+    if let Some(minutes) = app.break_due(&access).await? {
+        return Ok(break_page(&user.0, &msg, q.deck, minutes).into_response());
+    }
+
     let Some(sc) = app.next_card(&access, q.deck).await? else {
         let decks = app.deck_summaries(&access).await?;
         let any_cards = decks.iter().any(|d| d.total > 0);
@@ -1420,6 +1437,64 @@ async fn study(State(app): State<AppState>, user: WebUser, Flash(msg): Flash, Qu
         .into_response());
     };
     Ok(study_card(&app, &access, &user.0, &msg, &sc.card, &sc.deck, q.deck, &Shown::front(now())).await?.into_response())
+}
+
+/// Quiet hours: a rest screen instead of cards.
+fn rest_page(user: &User, msg: &Option<String>, deck: Option<i64>, until: i64) -> Markup {
+    page(
+        Some(Nav::Study),
+        "Quiet hours",
+        Some(user),
+        Some("study-done"),
+        html! {
+            (flash(msg))
+            section.session-end.rest {
+                h1 { "Quiet hours" }
+                p.summary { "You asked for rest until " (format::when(&user.clock(), until)) ". Sleep helps the day's learning settle." }
+                div.end-links {
+                    a href="/" { "Back to decks" }
+                    form method="post" action="/study/anyway" {
+                        @if let Some(d) = deck { input type="hidden" name="deck" value=(d); }
+                        button.link type="submit" { "Study anyway" }
+                    }
+                }
+            }
+        },
+    )
+}
+
+/// The session has reached the length set in settings.
+fn break_page(user: &User, msg: &Option<String>, deck: Option<i64>, minutes: i64) -> Markup {
+    page(
+        Some(Nav::Study),
+        "Time for a break",
+        Some(user),
+        Some("study-done"),
+        html! {
+            (flash(msg))
+            section.session-end.rest {
+                h1 { "Time for a break" }
+                p.summary { "You have studied for " (study::minutes_words(minutes)) ". Stand up, look out of the window, then carry on if you like." }
+                div.end-links {
+                    a href="/" { "Stop here" }
+                    form method="post" action="/study/keep-going" {
+                        @if let Some(d) = deck { input type="hidden" name="deck" value=(d); }
+                        button.link type="submit" { "Keep going" }
+                    }
+                }
+            }
+        },
+    )
+}
+
+async fn study_anyway(State(app): State<AppState>, user: WebUser, Form(f): Form<DeckForm>) -> WebResult {
+    app.lift_quiet(&user.0).await?;
+    Ok(redirect(study_url(f.deck)))
+}
+
+async fn study_keep_going(State(app): State<AppState>, user: WebUser, Form(f): Form<DeckForm>) -> WebResult {
+    app.skip_break(user.0.id).await?;
+    Ok(redirect(study_url(f.deck)))
 }
 
 #[derive(Deserialize)]
@@ -1486,6 +1561,33 @@ async fn study_undo(State(app): State<AppState>, user: WebUser, Form(f): Form<De
         Some(card) => redirect(format!("{base}{sep}card={}&show=1&t={}", card.id, now())),
         None => redirect_msg(base, "Nothing to undo."),
     })
+}
+
+/// After time away: offer catch-up mode, or say what it does while on.
+fn catch_up_note(user: &User, overdue: i64) -> Markup {
+    html! {
+        @if user.catch_up {
+            form.catch-up method="post" action="/settings/catch-up" {
+                p.small.muted {
+                    @if overdue < 20 {
+                        "You have caught up. "
+                        button.link type="submit" { "Turn catch-up mode off" }
+                    } @else {
+                        "Catch-up mode: no new cards, at most " (user.catch_up_reviews) " reviews a day, the ones you most likely still know first. "
+                        a href="/learn/backlog" { "Why" }
+                    }
+                }
+            }
+        } @else if overdue >= study::BACKLOG_HINT {
+            form.catch-up method="post" action="/settings/catch-up" {
+                input type="hidden" name="on" value="1";
+                p.small.muted {
+                    (format::number(overdue)) " cards piled up while you were away. "
+                    button.link type="submit" { "Catch up over a few days" }
+                }
+            }
+        }
+    }
 }
 
 // ----- decks --------------------------------------------------------------
@@ -3051,6 +3153,41 @@ async fn settings_page(State(app): State<AppState>, user: WebUser, Flash(msg): F
                 }
                 div.form-foot.end { button.btn.primary type="submit" { "Save" } }
             }
+            h2 id="studying" { "Studying" }
+            form method="post" action="/settings/study" {
+                div.sheet.form {
+                    div.line { "Quiet hours"
+                        span.field.quiet {
+                            span.select { select name="quiet_from" aria-label="Quiet from" {
+                                option value="" selected[u.quiet_from.is_none()] { "Off" }
+                                @for h in 0..24 { option value=(h) selected[u.quiet_from == Some(h)] { (h) ":00" } }
+                            } }
+                            span.unit { "to" }
+                            span.select { select name="quiet_to" aria-label="Quiet until" {
+                                option value="" selected[u.quiet_to.is_none()] { "Off" }
+                                @for h in 0..24 { option value=(h) selected[u.quiet_to == Some(h)] { (h) ":00" } }
+                            } }
+                        }
+                    }
+                    p.hint.muted.small { "No cards then, on the website or through agents. You can still study anyway." }
+                    label.line { "Suggest a break after"
+                        span.select { select name="session_minutes" {
+                            @for m in study::SESSION_LENGTHS {
+                                option value=(m) selected[*m == u.session_minutes] { (if *m == 0 { "Never".to_string() } else { study::minutes_words(*m) }) }
+                            }
+                            @if !study::SESSION_LENGTHS.contains(&u.session_minutes) {
+                                option value=(u.session_minutes) selected { (study::minutes_words(u.session_minutes)) }
+                            }
+                        } }
+                    }
+                    label.check { input type="checkbox" name="confidence_check" value="1" checked[u.confidence_check]; " Ask whether I'm sure before the answer" }
+                    p.hint.muted.small { "It doesn't change the schedule. Stats show how often you were right when you felt sure." }
+                    label.check { input type="checkbox" name="catch_up" value="1" checked[u.catch_up]; " Catch-up mode" }
+                    label.line { "Reviews a day while catching up" input type="number" name="catch_up_reviews" min="1" max="9999" value=(u.catch_up_reviews); }
+                    p.hint.muted.small { "For after time away: no new cards, and the cards you most likely still know come first, so less is lost. " a href="/learn/backlog" { "More" } }
+                }
+                div.form-foot.end { button.btn.primary type="submit" { "Save" } }
+            }
             h2 id="fsrs" { "FSRS" }
             div.sheet.form {
                 div.line { "Parameters"
@@ -3163,6 +3300,54 @@ async fn password_update(
         Redirect::to("/settings"),
     )
         .into_response())
+}
+
+#[derive(Deserialize)]
+struct StudySettingsForm {
+    #[serde(default)]
+    quiet_from: String,
+    #[serde(default)]
+    quiet_to: String,
+    #[serde(default)]
+    session_minutes: String,
+    confidence_check: Option<String>,
+    catch_up: Option<String>,
+    #[serde(default)]
+    catch_up_reviews: String,
+}
+
+async fn study_settings_update(State(app): State<AppState>, user: WebUser, Form(f): Form<StudySettingsForm>) -> WebResult {
+    let u = &user.0;
+    let quiet = match (f.quiet_from.trim().parse::<i64>(), f.quiet_to.trim().parse::<i64>()) {
+        (Ok(a), Ok(b)) => Some((a, b)),
+        _ => None,
+    };
+    or_back("/settings#studying", async {
+        app.update_study_settings(
+            u.id,
+            quiet,
+            f.session_minutes.trim().parse().unwrap_or(u.session_minutes),
+            f.catch_up.is_some(),
+            f.catch_up_reviews.trim().parse().unwrap_or(u.catch_up_reviews),
+            f.confidence_check.is_some(),
+        )
+        .await?;
+        Ok(redirect_msg("/settings#studying", "Settings saved."))
+    }
+    .await)
+}
+
+#[derive(Deserialize)]
+struct CatchUpForm {
+    on: Option<String>,
+}
+
+async fn catch_up_update(State(app): State<AppState>, user: WebUser, Form(f): Form<CatchUpForm>) -> WebResult {
+    app.set_catch_up(user.0.id, f.on.is_some()).await?;
+    Ok(redirect_msg(
+        "/",
+        if f.on.is_some() { "Catch-up mode is on. No new cards until you have caught up." } else { "Catch-up mode is off." },
+    ))
 }
 
 #[derive(Deserialize)]

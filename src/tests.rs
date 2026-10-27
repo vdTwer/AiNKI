@@ -700,6 +700,62 @@ mod http {
     }
 
     #[tokio::test]
+    async fn a_timed_card_that_runs_out_counts_as_forgotten() {
+        let app = app().await;
+        let a = user(&app, "kolja").await;
+        let deck = app.create_deck(&a, "Spanish", "", None).await.unwrap();
+        app.update_preset(&a, deck.preset_id, PresetInput { time_limit: Some(10), ..Default::default() }).await.unwrap();
+        let card = app.create_card(&a, deck.id, "el perro", "the dog", None, None, None).await.unwrap();
+        let cookie = login_cookie(&app, "kolja").await;
+        let get = |path: &str| send(&app, Request::get(path).header(header::COOKIE, cookie.clone()).body(Body::empty()).unwrap());
+
+        // A new card is never timed.
+        assert!(!text(get("/study").await).await.contains("data-limit"));
+        make_review(&app, card.id, 5.0, 6, 1).await;
+        assert!(text(get("/study").await).await.contains(r#"data-limit="10""#));
+
+        let body = format!("card={}&reps=3&t={}&rating=3&timeout=1&sure=1", card.id, now() - 12);
+        let res = submit(&app, &cookie, "/study/answer", &body).await;
+        assert_eq!(res.status(), StatusCode::SEE_OTHER);
+        let (rating, timed_out, confidence): (i64, bool, Option<i64>) =
+            sqlx::query_as("SELECT rating, timed_out, confidence FROM review_log WHERE card_id = ?")
+                .bind(card.id)
+                .fetch_one(&app.db)
+                .await
+                .unwrap();
+        assert_eq!((rating, timed_out, confidence), (Rating::Again as i64, true, Some(1)));
+
+        // Without JavaScript, showing the answer too late is a timeout too.
+        make_review(&app, card.id, 5.0, 6, 1).await;
+        sqlx::query("UPDATE cards SET reps = 3 WHERE id = ?").bind(card.id).execute(&app.db).await.unwrap();
+        let late = text(get(&format!("/study?card={}&show=1&t={}", card.id, now() - 30)).await).await;
+        assert!(late.contains(r#"class="study revealed timed-out""#), "{late}");
+    }
+
+    #[tokio::test]
+    async fn quiet_hours_show_a_rest_screen() {
+        let app = app().await;
+        let a = user(&app, "kolja").await;
+        let deck = app.create_deck(&a, "Spanish", "", None).await.unwrap();
+        app.create_card(&a, deck.id, "el perro", "the dog", None, None, None).await.unwrap();
+        let cookie = login_cookie(&app, "kolja").await;
+        // Quiet all day but this hour's end: from the next hour round to this one.
+        let res = submit(&app, &cookie, "/settings/study", "quiet_from=0&quiet_to=0&session_minutes=0&catch_up_reviews=100").await;
+        assert_eq!(location(&res), "/settings#studying");
+        use chrono::{TimeZone, Timelike};
+        let hour = a.user.tz().timestamp_opt(now(), 0).unwrap().hour();
+        let body = format!("quiet_from={hour}&quiet_to={}&session_minutes=0&catch_up_reviews=100", (hour + 1) % 24);
+        submit(&app, &cookie, "/settings/study", &body).await;
+        let page = |c: String| send(&app, Request::get("/study").header(header::COOKIE, c).body(Body::empty()).unwrap());
+        let rest = text(page(cookie.clone()).await).await;
+        assert!(rest.contains("Quiet hours") && !rest.contains("el perro"));
+
+        let res = submit(&app, &cookie, "/study/anyway", "").await;
+        assert_eq!(location(&res), "/study");
+        assert!(text(page(cookie.clone()).await).await.contains("el perro"));
+    }
+
+    #[tokio::test]
     async fn deck_edit_stays_on_the_deck_settings() {
         let app = app().await;
         let a = user(&app, "kolja").await;
@@ -1197,4 +1253,132 @@ async fn calibration_compares_predicted_and_actual_recall() {
     assert!(c.predicted > 0.9 && c.predicted < 0.93, "{c:?}");
     assert_eq!(c.bins.len(), 1);
     assert_eq!((c.bins[0].from, c.bins[0].to), (90, 95));
+}
+
+/// A fresh view of the user after their settings changed.
+async fn reload(app: &App, name: &str) -> Access {
+    Access::web(app.find_user(name).await.unwrap())
+}
+
+/// Make a card a review card due since `days_overdue` days, with the given
+/// stability, last reviewed `elapsed_days` ago.
+async fn make_review(app: &App, card_id: i64, stability: f64, elapsed_days: i64, days_overdue: i64) {
+    sqlx::query(
+        "UPDATE cards SET state = 2, stability = ?, difficulty = 5.0, reps = 3, last_review = ?, due = ? WHERE id = ?",
+    )
+    .bind(stability)
+    .bind(now() - elapsed_days * 86_400)
+    .bind(now() - days_overdue * 86_400)
+    .bind(card_id)
+    .execute(&app.db)
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
+async fn catch_up_mode_caps_reviews_and_starts_with_the_best_remembered() {
+    let app = app().await;
+    let a = user(&app, "kolja").await;
+    let deck = app.create_deck(&a, "Facts", "", None).await.unwrap();
+    let mut ids = vec![];
+    for n in 0..5 {
+        ids.push(app.create_card(&a, deck.id, &format!("q{n}"), "a", None, None, None).await.unwrap().id);
+    }
+    // Three overdue reviews: 30 days gone on a 10-day memory, 30 on a
+    // 100-day memory, 12 on a 10-day one. Two cards stay new.
+    make_review(&app, ids[0], 10.0, 30, 20).await;
+    make_review(&app, ids[1], 100.0, 30, 3).await;
+    make_review(&app, ids[2], 10.0, 12, 2).await;
+    assert_eq!(app.overdue(&a).await.unwrap(), 3);
+
+    sqlx::query("UPDATE users SET catch_up = 1, catch_up_reviews = 2 WHERE id = ?")
+        .bind(a.user_id())
+        .execute(&app.db)
+        .await
+        .unwrap();
+    let a = reload(&app, "kolja").await;
+    let s = &app.deck_summaries(&a).await.unwrap()[0];
+    assert_eq!((s.new_today, s.review_due), (0, 2));
+
+    // Highest chance of recall first: 30/100, then 12/10; never 30/10.
+    let first = app.next_card(&a, None).await.unwrap().unwrap().card;
+    assert_eq!(first.id, ids[1]);
+    app.answer_card(&a, first.id, Rating::Good, None, None).await.unwrap();
+    let second = app.next_card(&a, None).await.unwrap().unwrap().card;
+    assert_eq!(second.id, ids[2]);
+    app.answer_card(&a, second.id, Rating::Good, None, None).await.unwrap();
+    assert!(app.next_card(&a, None).await.unwrap().is_none());
+}
+
+#[tokio::test]
+async fn quiet_hours_rest_until_they_end_or_are_lifted() {
+    use chrono::{TimeZone, Timelike};
+    let app = app().await;
+    let a = user(&app, "kolja").await;
+    let hour = a.user.tz().timestamp_opt(now(), 0).unwrap().hour() as i64;
+    sqlx::query("UPDATE users SET quiet_from = ?, quiet_to = ? WHERE id = ?")
+        .bind(hour)
+        .bind((hour + 2) % 24)
+        .bind(a.user_id())
+        .execute(&app.db)
+        .await
+        .unwrap();
+    let a = reload(&app, "kolja").await;
+    let until = crate::study::quiet_until(&a.user, now()).expect("quiet now");
+    assert!(until > now() + 3600 && until <= now() + 2 * 3600, "{until}");
+    // Outside the window it isn't quiet.
+    assert!(crate::study::quiet_until(&a.user, until + 60).is_none());
+
+    app.lift_quiet(&a.user).await.unwrap();
+    let a = reload(&app, "kolja").await;
+    assert!(crate::study::quiet_until(&a.user, now()).is_none());
+    // Lifting lasts until those quiet hours are over, not for the next ones.
+    assert!(crate::study::quiet_until(&a.user, until + 22 * 3600 + 60).is_some());
+}
+
+#[tokio::test]
+async fn a_break_is_suggested_after_the_session_length() {
+    let app = app().await;
+    let a = user(&app, "kolja").await;
+    let deck = app.create_deck(&a, "Facts", "", None).await.unwrap();
+    let card = app.create_card(&a, deck.id, "q", "a", None, None, None).await.unwrap();
+    let log = |mins_ago: i64| {
+        sqlx::query(
+            "INSERT INTO review_log (user_id, card_id, deck_id, rating, reviewed_at, state_before,
+                elapsed_days, scheduled_secs, source)
+             VALUES (?, ?, ?, 3, ?, 2, 1, 0, 'web')",
+        )
+        .bind(a.user_id())
+        .bind(card.id)
+        .bind(deck.id)
+        .bind(now() - mins_ago * 60)
+        .execute(&app.db)
+    };
+    // An old session, a long pause, then 25 minutes with short gaps.
+    for m in [90, 85, 25, 18, 11, 5, 1] {
+        log(m).await.unwrap();
+    }
+    assert!(app.break_due(&a).await.unwrap().is_none(), "off by default");
+    sqlx::query("UPDATE users SET session_minutes = 20 WHERE id = ?").bind(a.user_id()).execute(&app.db).await.unwrap();
+    let a = reload(&app, "kolja").await;
+    assert_eq!(app.break_due(&a).await.unwrap(), Some(25));
+
+    app.skip_break(a.user_id()).await.unwrap();
+    let a = reload(&app, "kolja").await;
+    assert_eq!(app.break_due(&a).await.unwrap(), None);
+}
+
+#[tokio::test]
+async fn sure_or_not_is_kept_with_the_answer() {
+    let app = app().await;
+    let a = user(&app, "kolja").await;
+    let deck = app.create_deck(&a, "Facts", "", None).await.unwrap();
+    for (n, sure, rating) in [(0, true, Rating::Good), (1, true, Rating::Again), (2, false, Rating::Good)] {
+        let c = app.create_card(&a, deck.id, &format!("q{n}"), "a", None, None, None).await.unwrap();
+        app.answer_card(&a, c.id, rating, None, None).await.unwrap();
+        app.note_answer(&a, c.id, Some(sure), false).await.unwrap();
+    }
+    let c = app.confidence(&a, None).await.unwrap();
+    assert_eq!((c.sure, c.sure_recalled, c.unsure, c.unsure_recalled), (2, 1, 1, 1));
+    assert_eq!(c.sure_pct(), Some(50.0));
 }
