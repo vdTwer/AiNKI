@@ -2,11 +2,7 @@
 
 use std::collections::HashSet;
 
-use argon2::{
-    Argon2, PasswordHash, PasswordHasher, PasswordVerifier,
-    password_hash::{SaltString, rand_core::OsRng},
-};
-use rand::{Rng, RngCore};
+use argon2::{Argon2, PasswordHash, PasswordHasher, PasswordVerifier};
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 
@@ -155,9 +151,9 @@ impl Access {
 }
 
 pub fn hash_password(password: &str) -> Result<String> {
-    let salt = SaltString::generate(&mut OsRng);
+    // argon2 draws a random 16-byte salt from the OS itself.
     Argon2::default()
-        .hash_password(password.as_bytes(), &salt)
+        .hash_password(password.as_bytes())
         .map(|h| h.to_string())
         .map_err(|e| AppError::Internal(anyhow::anyhow!("hashing failed: {e}")))
 }
@@ -174,7 +170,7 @@ pub(crate) fn sha256_hex(s: &str) -> String {
 
 pub(crate) fn random_hex(bytes: usize) -> String {
     let mut buf = vec![0u8; bytes];
-    rand::thread_rng().fill_bytes(&mut buf);
+    rand::fill(&mut buf[..]);
     hex::encode(buf)
 }
 
@@ -250,7 +246,7 @@ impl App {
         }
         let taken: HashSet<i64> = taken.into_iter().collect();
         let discriminator = loop {
-            let d = rand::thread_rng().gen_range(1..=9999);
+            let d = rand::random_range(1..=9999);
             if !taken.contains(&d) {
                 break d;
             }
