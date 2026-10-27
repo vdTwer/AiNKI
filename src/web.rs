@@ -844,7 +844,7 @@ async fn home(State(app): State<AppState>, user: WebUser, Flash(msg): Flash) -> 
                                         span.sub { "Exam " (exam_words(&user.0, exam)) }
                                     }
                                 }
-                                @if d.due_total() == 0 && d.total > 0 {
+                                @if d.due_total() == 0 && d.total > d.suspended {
                                     span.num.due.done title="Done for today" { (done_check(13, "done-check")) span.unit { "done for today" } }
                                 } @else {
                                     span.num.due title="Due" { @if due > 0 { (due) span.unit { " due" } } @else { (format::NONE) } }
