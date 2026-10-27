@@ -434,6 +434,7 @@ html.calm .key {
   font-size: .8rem;
   font-weight: 400;
   color: var(--muted);
+  white-space: nowrap;
 }
 html.calm .actions { gap: .75rem; }
 
@@ -605,7 +606,7 @@ html.calm .face-edit.has-image label.attach { display: none; }
 
 html.calm .form-foot { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-top: 1.2rem; }
 html.calm .form-foot p { margin: 0; color: var(--muted); }
-html.calm .form-foot .btn.wide { display: inline-flex; width: auto; margin: 0; padding: .55rem 1.1rem .55rem 1.4rem; gap: .8rem; }
+html.calm .form-foot .btn.wide { display: inline-flex; flex-shrink: 0; width: auto; margin: 0; padding: .55rem 1.1rem .55rem 1.4rem; gap: .8rem; white-space: nowrap; }
 html.calm .form-foot .key { color: var(--faint); border-color: var(--line); }
 
 /* Every other form is written the same way: one sheet, no boxes. A name
