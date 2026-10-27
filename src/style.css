@@ -315,3 +315,4 @@ table.workload tr.current th { font-weight: 700; }
 .typed-echo .typed-text { margin: .2rem 0 0; white-space: pre-wrap; }
 .timeout-note { margin: 1rem 0 .5rem; font-weight: 700; }
 .timed-out .list-items label.row { pointer-events: none; }
+.catch-up { margin: 0; }

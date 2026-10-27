@@ -1245,3 +1245,10 @@ html.calm .typed-echo .typed-text { margin: .25rem 0 0; font-family: var(--serif
 html.calm .timeout-form { text-align: center; animation: calm-appear 220ms var(--ease) both; }
 html.calm .timeout-note { margin: 1.6rem 0 0; color: var(--orchid-deep); font-size: .93rem; }
 html.calm .timed-out ol.list-items label.row { pointer-events: none; }
+/* Quiet hours: two hour pickers side by side, "22:00 to 7:00". */
+html.calm .sheet .line .field.quiet select { width: auto; }
+html.calm .sheet .line .field.quiet { flex: none; }
+/* Rest and break screens, and the catch-up offer on the home page. */
+html.calm .catch-up { margin: 0; }
+html.calm .catch-up button.link { color: var(--terra-deep); font-size: inherit; }
+html.calm .catch-up button.link:hover { color: var(--terra-hover); }
