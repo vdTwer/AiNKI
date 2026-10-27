@@ -23,7 +23,7 @@ use crate::{
     auth::{Access, User},
     coach,
     error::AppError,
-    import, insight, markdown, mcp, media, multi::{self, Piece, Split}, now, oauth, presets,
+    import, insight, lessons, markdown, mcp, media, multi::{self, Piece, Split}, now, oauth, presets,
     security::{self, ClientIp, Flash},
     scheduler::{self, CardState, Rating},
     study,
@@ -125,6 +125,9 @@ pub fn router(app: AppState) -> Router {
         .route("/cards/{id}/split", get(split_page).post(split_submit))
         .route("/cards/{id}/{action}", post(card_action))
         .route("/attention", get(attention_page))
+        .route("/learn", get(learn_page))
+        .route("/learn/{slug}", get(lesson_page))
+        .route("/learn/{slug}/deck", post(lesson_deck))
         .route("/presets", get(presets_page))
         .route("/presets/new", get(preset_new_page).post(preset_create))
         .route("/presets/{id}", get(preset_page).post(preset_update))
@@ -402,6 +405,7 @@ pub enum Nav {
     Study,
     Add,
     Stats,
+    Learn,
     Settings,
 }
 
@@ -449,6 +453,8 @@ fn page(nav: Option<Nav>, title: &str, user: Option<&User>, page_kind: Option<&s
                         a href="/study" data-label="Study" aria-current=[current(Nav::Study)] { (nav_icon(ICON_STUDY)) "Study" }
                         a href="/cards/new" data-label="Add" aria-current=[current(Nav::Add)] { (nav_icon(ICON_ADD)) "Add" }
                         a href="/stats" data-label="Stats" aria-current=[current(Nav::Stats)] { (nav_icon(ICON_STATS)) "Stats" }
+                        // Phones reach the lessons through settings; the bar stays as it was.
+                        a.rail-only href="/learn" data-label="Learn" aria-current=[current(Nav::Learn)] { (nav_icon(ICON_LEARN)) "Learn" }
                         a href="/settings" data-label="Settings" aria-current=[current(Nav::Settings)] { (nav_icon(ICON_SETTINGS)) "Settings" }
                     }
                 }
@@ -465,6 +471,7 @@ const ICON_DECKS: &str = r#"<rect x="4" y="9.5" width="16" height="10.5" rx="2"/
 const ICON_STUDY: &str = r#"<rect x="5" y="3.5" width="14" height="17" rx="2.5"/><path d="M9 10.5l2 2 4-4"/><path d="M9 16.5h6"/>"#;
 const ICON_ADD: &str = r#"<path d="M12 5v14M5 12h14"/>"#;
 const ICON_STATS: &str = r#"<path d="M5 20V13M12 20V5M19 20v-9"/>"#;
+const ICON_LEARN: &str = r#"<path d="M12 6.5C10 5 7.5 4.5 4.5 4.5v13.5c3 0 5.5.5 7.5 2 2-1.5 4.5-2 7.5-2V4.5c-3 0-5.5.5-7.5 2z"/><path d="M12 6.5v13.5"/>"#;
 const ICON_SETTINGS: &str = r#"<path d="M5 7h8M17 7h2M5 17h2M11 17h8"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/>"#;
 const ICON_EDIT: &str = r#"<path d="M14.5 5.5l4 4L9 19H5v-4z"/><path d="M12.5 7.5l4 4"/>"#;
 // A paper plane, so Share doesn't look like Export's tray.
@@ -1588,6 +1595,98 @@ fn catch_up_note(user: &User, overdue: i64) -> Markup {
             }
         }
     }
+}
+
+// ----- lessons ------------------------------------------------------------
+
+fn evidence_tag(e: lessons::Evidence) -> Markup {
+    html! { span.evidence.(e.class()) { (e.label()) } }
+}
+
+async fn learn_page(user: WebUser) -> WebResult {
+    let all = lessons::all();
+    Ok(layout_in(
+        Nav::Learn,
+        "Learn",
+        Some(&user.0),
+        html! {
+            h1 { "Learn" }
+            p.lead { "Short lessons on how AiNKI schedules your cards, what research says about memory, and how to write cards that stick. Each says how strong the evidence is, and each can be added as a deck." }
+            @for (key, name, sub) in lessons::GROUPS {
+                h2 { (name) }
+                p.muted.small { (sub) }
+                ul.list.links.lessons {
+                    @for l in all.iter().filter(|l| l.group == *key) {
+                        li {
+                            a.row href=(format!("/learn/{}", l.slug)) {
+                                span.grow {
+                                    span { (l.title) }
+                                    span.sub.muted.small { (l.summary) }
+                                }
+                                (evidence_tag(l.evidence))
+                                span.chev aria-hidden="true" { "›" }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+    )
+    .into_response())
+}
+
+async fn lesson_page(State(app): State<AppState>, user: WebUser, Flash(msg): Flash, Path(slug): Path<String>) -> WebResult {
+    let lesson = lessons::find(&slug).ok_or(AppError::NotFound)?;
+    let access = user.access();
+    let deck = app.deck_by_name(&access, &lessons::deck_name(lesson)).await?;
+    let all = lessons::all();
+    let i = all.iter().position(|l| l.slug == lesson.slug).unwrap_or(0);
+    let next = all.get(i + 1);
+    Ok(layout_in(
+        Nav::Learn,
+        &lesson.title,
+        Some(&user.0),
+        html! {
+            (flash(&msg))
+            (parent("/learn", "Learn"))
+            article.lesson {
+                h1 { (lesson.title) }
+                p.lesson-meta { (evidence_tag(lesson.evidence)) }
+                div.md.prose { (PreEscaped(markdown::render(&lesson.body))) }
+            }
+            div.lesson-deck {
+                @if let Some(d) = deck {
+                    p.muted.small { "This lesson is in your decks. " a href=(format!("/decks/{}", d.id)) { "Open it" } }
+                } @else {
+                    form method="post" action=(format!("/learn/{}/deck", lesson.slug)) {
+                        p.muted.small { "Learn this lesson with " (count(lesson.cards.len() as i64, "card")) "." }
+                        button.btn type="submit" { "Add as a deck" }
+                    }
+                }
+            }
+            @if let Some(n) = next {
+                p.next-lesson { "Next: " a href=(format!("/learn/{}", n.slug)) { (n.title) } }
+            }
+        },
+    )
+    .into_response())
+}
+
+async fn lesson_deck(State(app): State<AppState>, user: WebUser, Path(slug): Path<String>) -> WebResult {
+    let lesson = lessons::find(&slug).ok_or(AppError::NotFound)?;
+    let access = user.access();
+    let name = lessons::deck_name(lesson);
+    if let Some(d) = app.deck_by_name(&access, &name).await? {
+        return Ok(redirect_msg(format!("/decks/{}", d.id), "You already have this deck."));
+    }
+    or_back(format!("/learn/{slug}"), async {
+        let deck = app.create_deck(&access, &name, &lesson.summary, None).await?;
+        for (front, back) in &lesson.cards {
+            app.create_card(&access, deck.id, front, back, None, None, None).await?;
+        }
+        Ok(redirect_msg(format!("/decks/{}", deck.id), "Lesson added as a deck."))
+    }
+    .await)
 }
 
 // ----- decks --------------------------------------------------------------
@@ -3126,6 +3225,7 @@ async fn settings_page(State(app): State<AppState>, user: WebUser, Flash(msg): F
                     ("/presets", "Presets", "How much to remember, daily limits"),
                     ("/access", "Agent access", "Connect Claude and other agents"),
                     ("/import", "Import", "From Anki or a CSV file"),
+                    ("/learn", "Learn", "How memory and scheduling work, and how to write good cards"),
                 ] {
                     li { a.row href=(href) { span.grow { span { (name) } span.sub.muted.small { (sub) } } span.chev aria-hidden="true" { "›" } } }
                 }

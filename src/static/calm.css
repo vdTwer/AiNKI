@@ -1259,3 +1259,26 @@ html.calm .week .tip::before { content: ''; flex: none; width: 6px; height: 6px;
 html.calm table.retention th a { color: var(--ink); }
 html.calm table.retention th a:hover { color: var(--terra-hover); }
 html.calm table.retention tr.short td:nth-child(3) { color: var(--orchid-deep); }
+
+/* ----- lessons ------------------------------------------------------------ */
+/* Reading width, serif text, and a small tag for how strong the evidence is:
+   Terra where it is solid, muted where it is a rule of thumb or mixed,
+   Orchid where it is not supported. */
+html.calm .lead { color: var(--muted); max-width: 36rem; }
+html.calm .evidence { flex: none; border: 0; padding: .1rem .55rem; border-radius: 999px; font-size: .75rem; font-weight: 500; letter-spacing: .02em; white-space: nowrap; color: var(--terra-deep); background: color-mix(in srgb, var(--terra) 12%, transparent); }
+html.calm .evidence:is(.mixed, .practice) { color: var(--muted); background: var(--track); }
+html.calm .evidence.against { color: var(--orchid-deep); background: color-mix(in srgb, var(--orchid) 12%, transparent); }
+html.calm ul.lessons .evidence { margin-left: 1rem; }
+html.calm .lesson h1 { margin-bottom: .5rem; }
+html.calm .lesson-meta { margin: 0 0 1.6rem; }
+html.calm .lesson .md { max-width: 36rem; font-family: var(--serif); font-optical-sizing: auto; font-size: 1.1rem; line-height: 1.65; }
+html.calm .lesson .md h2 { margin: 2.2rem 0 .6rem; font-family: var(--sans); }
+html.calm .lesson .md ul { padding-left: 1.2rem; }
+html.calm .lesson .md li { margin: 0 0 .5rem; }
+html.calm .lesson .md li::marker { color: var(--terra); }
+html.calm .lesson .md a { color: var(--terra-deep); }
+html.calm .lesson-deck { max-width: 36rem; margin: 2.6rem 0 1rem; padding-top: 1.4rem; border-top: 1px solid var(--line); }
+html.calm .lesson-deck form { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin: 0; }
+html.calm .lesson-deck p { margin: 0; }
+html.calm .next-lesson { margin: 1.4rem 0 3rem; color: var(--muted); font-size: .93rem; }
+html.calm .next-lesson a { color: var(--terra-deep); }
