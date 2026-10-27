@@ -370,6 +370,9 @@ pub fn answer(
     })
 }
 
+/// The longest learning step; anything longer is FSRS's job anyway.
+const MAX_STEP_SECS: i64 = 365 * 86_400;
+
 /// Parse steps like "1m 10m 1h" into seconds.
 pub fn parse_steps(s: &str) -> Result<Vec<i64>, String> {
     s.split(|c: char| c.is_whitespace() || c == ',')
@@ -384,10 +387,14 @@ pub fn parse_steps(s: &str) -> Result<Vec<i64>, String> {
                 "d" => 86_400.0,
                 _ => return Err(format!("invalid unit in step '{t}' (use s, m, h or d)")),
             };
-            let secs = (n * mult).round() as i64;
-            if secs <= 0 {
+            let secs = (n * mult).round();
+            if secs <= 0.0 {
                 return Err(format!("step '{t}' must be positive"));
             }
+            if secs > MAX_STEP_SECS as f64 {
+                return Err(format!("step '{t}' is too long (at most 365d)"));
+            }
+            let secs = secs as i64;
             Ok(secs)
         })
         .collect()
@@ -492,6 +499,8 @@ mod tests {
         assert_eq!(steps, vec![60, 600, 3600, 172_800]);
         assert_eq!(format_steps(&steps), "1m 10m 1h 2d");
         assert!(parse_steps("5x").is_err());
+        assert!(parse_steps("99999999999d").is_err());
+        assert_eq!(parse_steps("365d").unwrap(), vec![365 * 86_400]);
         assert_eq!(parse_steps("").unwrap(), Vec::<i64>::new());
     }
 
