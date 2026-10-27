@@ -13,6 +13,7 @@ mod error;
 mod format;
 mod import;
 mod insight;
+mod lessons;
 mod multi;
 mod markdown;
 mod mcp;
