@@ -1643,17 +1643,15 @@ async fn deck_export(State(app): State<AppState>, user: WebUser, Path(id): Path<
     let access = user.access();
     let deck = app.deck(&access, id).await?;
     let csv = app.export_csv(&access, id).await?;
-    let filename: String = deck
-        .name
-        .chars()
-        .map(|c| if c.is_alphanumeric() { c } else { '_' })
-        .collect();
+    let name = deck_plain(&deck.name);
+    // Plain ASCII for old browsers, the real name (UTF-8) for the rest.
+    let ascii: String = name.chars().map(|c| if c.is_ascii_alphanumeric() { c } else { '_' }).collect();
     Ok((
         [
             (header::CONTENT_TYPE, "text/csv; charset=utf-8".to_string()),
             (
                 header::CONTENT_DISPOSITION,
-                format!("attachment; filename=\"{filename}.csv\""),
+                format!("attachment; filename=\"{ascii}.csv\"; filename*=UTF-8''{}.csv", urlenc(&name)),
             ),
         ],
         csv,

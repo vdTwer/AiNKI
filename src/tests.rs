@@ -713,6 +713,18 @@ mod http {
     }
 
     #[tokio::test]
+    async fn exported_file_keeps_the_deck_name() {
+        let app = app().await;
+        let a = user(&app, "kolja").await;
+        let deck = app.create_deck(&a, "Español", "", None).await.unwrap();
+        let cookie = login_cookie(&app, "kolja").await;
+        let req = Request::get(format!("/decks/{}/export.csv", deck.id)).header(header::COOKIE, cookie).body(Body::empty()).unwrap();
+        let res = send(&app, req).await;
+        let d = res.headers()[header::CONTENT_DISPOSITION].to_str().unwrap();
+        assert_eq!(d, "attachment; filename=\"Espa_ol.csv\"; filename*=UTF-8''Espa%C3%B1ol.csv");
+    }
+
+    #[tokio::test]
     async fn logged_out_links_come_back_after_login() {
         let app = app().await;
         let res = send(&app, Request::get("/decks/7?q=perro").body(Body::empty()).unwrap()).await;
