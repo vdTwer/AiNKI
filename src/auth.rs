@@ -557,11 +557,15 @@ impl App {
         .fetch_optional(&self.db)
         .await?
         .ok_or(AppError::Unauthorized)?;
-        sqlx::query("UPDATE api_tokens SET last_used_at = ? WHERE id = ?")
-            .bind(now())
-            .bind(token.id)
-            .execute(&self.db)
-            .await?;
+        // At most once a minute: a quiz through an agent calls on every
+        // question, and each write would take the database's write lock.
+        if token.last_used_at.is_none_or(|t| now() - t >= 60) {
+            sqlx::query("UPDATE api_tokens SET last_used_at = ? WHERE id = ?")
+                .bind(now())
+                .bind(token.id)
+                .execute(&self.db)
+                .await?;
+        }
         let decks = if token.all_decks {
             None
         } else {
