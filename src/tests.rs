@@ -1077,3 +1077,70 @@ mod http {
         assert!(res.headers()[header::WWW_AUTHENTICATE].to_str().unwrap().contains("resource_metadata="));
     }
 }
+
+#[tokio::test]
+async fn the_coach_flags_leeches_lists_and_duplicates() {
+    use crate::coach::Kind;
+    let app = app().await;
+    let a = user(&app, "kolja").await;
+    let deck = app.create_deck(&a, "Facts", "", None).await.unwrap();
+    let leech = app.create_card(&a, deck.id, "Capital of Burkina Faso", "Ouagadougou", None, None, None).await.unwrap();
+    let list = app
+        .create_card(&a, deck.id, "Three primary colours", "- red\n- yellow\n- blue", None, None, None)
+        .await
+        .unwrap();
+    let twin = app.create_card(&a, deck.id, "capital of burkina faso?", "Ouagadougou", None, None, None).await.unwrap();
+    let fine = app.create_card(&a, deck.id, "Hund", "dog", None, None, None).await.unwrap();
+
+    // Forget the first card five times and the list card three times.
+    for (id, lapses) in [(leech.id, 5), (list.id, 3)] {
+        sqlx::query("UPDATE cards SET state = 2, stability = 3.0, difficulty = 7.0, lapses = ?, last_review = ?, due = ? WHERE id = ?")
+            .bind(lapses)
+            .bind(now() - 86_400)
+            .bind(now() + 86_400)
+            .bind(id)
+            .execute(&app.db)
+            .await
+            .unwrap();
+    }
+
+    let list_of = |v: &[crate::coach::Attention], id: i64| -> Vec<Kind> {
+        v.iter().find(|x| x.card.id == id).map(|x| x.flags.iter().map(|f| f.kind).collect()).unwrap_or_default()
+    };
+    let found = app.attention(&a, Some(deck.id)).await.unwrap();
+    assert_eq!(found[0].card.id, leech.id, "leeches come first");
+    assert_eq!(list_of(&found, leech.id), vec![Kind::Leech, Kind::Duplicate]);
+    assert_eq!(list_of(&found, list.id), vec![Kind::Split]);
+    assert_eq!(list_of(&found, twin.id), vec![Kind::Duplicate]);
+    assert!(list_of(&found, fine.id).is_empty());
+
+    // Keep as is: gone until the card slips three more times.
+    app.dismiss_flag(&a, leech.id, Kind::Leech).await.unwrap();
+    let found = app.attention(&a, None).await.unwrap();
+    assert_eq!(list_of(&found, leech.id), vec![Kind::Duplicate]);
+    sqlx::query("UPDATE cards SET lapses = 8 WHERE id = ?").bind(leech.id).execute(&app.db).await.unwrap();
+    let card = app.card(&a, leech.id).await.unwrap();
+    assert!(app.card_flags(&a, &card).await.unwrap().iter().any(|f| f.kind == Kind::Leech));
+    assert!(app.leech_note(&card).await.unwrap().is_some());
+
+    // Writing a card like an existing one finds it.
+    let similar = app.similar_cards(&a, "Capital of Burkina Faso", None).await.unwrap();
+    assert_eq!(similar.len(), 2);
+
+    // Split the list card into three; the original goes.
+    let new = app
+        .split_card(
+            &a,
+            list.id,
+            vec![
+                ("Primary colour 1".into(), "red".into()),
+                ("Primary colour 2".into(), "yellow".into()),
+                ("Primary colour 3".into(), "blue".into()),
+            ],
+            false,
+        )
+        .await
+        .unwrap();
+    assert_eq!(new.len(), 3);
+    assert!(app.card(&a, list.id).await.is_err());
+}
