@@ -1666,3 +1666,49 @@ html.calm .list-known ul { display: block; font-size: 1.125rem; line-height: 1.6
 html.calm .list-known li { display: inline; }
 html.calm .list-known li + li::before { content: ' · '; color: var(--faint); }
 html.calm .list-known .more { margin-top: .4rem; font-family: var(--sans); font-size: .9375rem; font-style: normal; font-weight: 600; }
+
+/* ----- labels in the margin ------------------------------------------------ */
+/* On wide screens a page gets a narrow label column on the left. Section
+   names hang there, each on a hairline that runs across both columns; the
+   content keeps one left edge beside them. Narrower screens stack them. */
+@media (min-width: 75em) {
+  html.calm { --margin: 224px; --label: 176px; }
+  html.calm main { max-width: calc(var(--wrap) + var(--margin) + 64px); padding-left: calc(32px + var(--margin)); }
+
+  /* A section name: no height of its own, so what follows starts level with it. */
+  html.calm main h2:not(.chart-main h2, .set-head h2, .key-top h2, .md h2),
+  html.calm .today .date {
+    position: relative;
+    width: var(--label);
+    height: 0;
+    margin: 3rem 0 0 calc(-1 * var(--margin));
+    padding: 0;
+    border: 0;
+    overflow: visible;
+  }
+  html.calm main h2:not(.chart-main h2, .set-head h2, .key-top h2, .md h2)::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: -1.25rem;
+    width: calc(var(--margin) + var(--wrap));
+    border-top: 1px solid var(--line);
+  }
+  html.calm main h2:not(.chart-main h2, .set-head h2, .key-top h2, .md h2) + * { margin-top: 0; }
+  html.calm .today .date { margin-top: 1.5rem; }
+  html.calm .today .date + h1 { margin-top: 0; }
+  html.calm .today-side .week h2 { width: var(--label); height: 0; margin: 2.5rem 0 0 calc(-1 * var(--margin)); }
+
+  /* Rows that already span the page: their name moves into the margin. */
+  html.calm body[data-page=home] .table-head { position: relative; margin-top: 3rem; }
+  html.calm body[data-page=home] .table-head .grow { text-indent: calc(-1 * var(--margin)); }
+  html.calm body[data-page=home] .table-head::before { content: ''; position: absolute; left: calc(-1 * var(--margin)); top: -1.25rem; width: calc(var(--margin) + var(--wrap)); border-top: 1px solid var(--line); }
+  html.calm .hero { border-bottom: 0; }
+  html.calm .deck-hero { border-bottom: 0; }
+  html.calm .deck-side { position: relative; margin: .5rem 0 0 calc(-1 * var(--margin)); padding: 1.25rem 0 0 var(--margin); border-top: 1px solid var(--line); }
+  html.calm .cards-head { margin-top: 2rem; }
+  html.calm .deck-side::before { position: absolute; left: 0; top: 1.25rem; width: var(--label); }
+
+  /* Settings: the section name and what it is for, beside its fields. */
+  html.calm .set { grid-template-columns: var(--label) minmax(0, 1fr); column-gap: calc(var(--margin) - var(--label)); margin-left: calc(-1 * var(--margin)); border-top-color: var(--line); }
+}
