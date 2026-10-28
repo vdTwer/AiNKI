@@ -258,6 +258,18 @@ pub struct Stats {
     pub seconds_per_review: Option<f64>,
 }
 
+/// Days of history the desktop stats charts show: twelve whole weeks.
+pub const HISTORY_DAYS: i64 = 84;
+
+#[derive(Debug, Serialize)]
+pub struct History {
+    /// Reviews on each day, oldest first, by date ("2026-10-21").
+    pub days: Vec<(String, i64)>,
+    /// Per week, oldest first: review-state answers, and how many were
+    /// recalled.
+    pub weeks: Vec<(i64, i64)>,
+}
+
 pub const MAX_CARD_TEXT: usize = 20_000;
 pub const MAX_NAME: usize = 200;
 pub const MAX_DESCRIPTION: usize = 2_000;
@@ -1581,6 +1593,55 @@ impl App {
             day -= Duration::days(1);
         }
         Ok(stats)
+    }
+
+    /// The last twelve weeks, for the charts on the desktop stats page:
+    /// reviews on each day, and per week how many review-state answers
+    /// there were and how many were recalled. Oldest first.
+    pub async fn history(&self, access: &Access, deck_id: Option<i64>) -> Result<History> {
+        let deck_ids: Vec<i64> = match deck_id {
+            Some(id) => {
+                self.deck(access, id).await?;
+                vec![id]
+            }
+            None => self.decks(access).await?.into_iter().map(|d| d.id).collect(),
+        };
+        let clock = access.user.clock();
+        let today = clock.today();
+        let first = today - Duration::days(HISTORY_DAYS - 1);
+        let mut days = vec![0i64; HISTORY_DAYS as usize];
+        let mut weeks = vec![(0i64, 0i64); (HISTORY_DAYS / 7) as usize];
+        if !deck_ids.is_empty() {
+            let ph = placeholders(deck_ids.len());
+            let sql = format!(
+                "SELECT reviewed_at, state_before = 2, rating > 1 FROM review_log
+                 WHERE user_id = ? AND rating > 0 AND reviewed_at >= ? AND deck_id IN ({ph})"
+            );
+            let mut q = sqlx::query_as::<_, (i64, bool, bool)>(&sql).bind(access.user_id()).bind(clock.day_start(first));
+            for id in &deck_ids {
+                q = q.bind(id);
+            }
+            for (at, was_review, passed) in q.fetch_all(&self.db).await? {
+                let i = (clock.date_of(at) - first).num_days();
+                if !(0..HISTORY_DAYS).contains(&i) {
+                    continue;
+                }
+                days[i as usize] += 1;
+                if was_review {
+                    let w = &mut weeks[(i / 7) as usize];
+                    w.0 += 1;
+                    w.1 += passed as i64;
+                }
+            }
+        }
+        Ok(History {
+            days: days
+                .into_iter()
+                .enumerate()
+                .map(|(i, n)| ((first + Duration::days(i as i64)).format("%Y-%m-%d").to_string(), n))
+                .collect(),
+            weeks,
+        })
     }
 
     // ----- settings & FSRS ----------------------------------------------
