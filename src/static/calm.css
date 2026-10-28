@@ -1716,7 +1716,7 @@ html.calm .list-known .more { margin-top: .4rem; font-family: var(--sans); font-
    content keeps one left edge beside them. Narrower screens stack them. */
 @media (min-width: 75em) {
   html.calm { --margin: 168px; --label: 128px; }
-  html.calm main { max-width: calc(var(--wrap) + var(--margin) + 64px); padding-left: calc(32px + var(--margin)); }
+  /* The content column stays centred on the page; the labels hang to its left. */
 
   /* A section name: no height of its own, so what follows starts level with it. */
   html.calm main h2:not(.chart-main h2, .set-head h2, .key-top h2, .md h2),
