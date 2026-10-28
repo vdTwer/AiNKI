@@ -164,8 +164,8 @@ html.calm main > button.keys-button {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 44px;
-  height: 44px;
+  width: 38px;
+  height: 38px;
   min-height: 0;
   padding: 0;
   border: 1.5px solid var(--line);
@@ -226,7 +226,7 @@ html.calm h1 {
   font-size: 2.25rem;
   line-height: 1.04;
   letter-spacing: -.03em;
-  margin: 2.5rem 0 .75rem;
+  margin: 1.75rem 0 .6rem;
 }
 html.calm h2 {
   font-family: var(--sans);
@@ -236,7 +236,7 @@ html.calm h2 {
   letter-spacing: -.02em;
   text-transform: none;
   color: var(--ink);
-  margin: 3rem 0 1rem;
+  margin: 2.25rem 0 .75rem;
   padding: 2rem 0 0;
   border: 0;
   border-top: 2px solid var(--ink);
@@ -408,12 +408,12 @@ html.calm .icon-link:hover, html.calm .icon-link.held { color: var(--accent); }
 /* A button dressed as a quiet link: icon links, links under a list, Log out. */
 html.calm .btn.icon-link, html.calm button.link.icon-link,
 html.calm .actions.quiet-links .btn, html.calm form.logout .btn {
-  min-height: 40px;
+  min-height: 32px;
   padding: 0;
   border: 0;
   background: none;
   font-weight: 500;
-  font-size: .9375rem;
+  font-size: .875rem;
   color: var(--muted);
   transition: color 140ms ease;
 }
@@ -429,15 +429,15 @@ html.calm button:not(.link) {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: .5rem;
-  min-height: 48px;
-  padding: 0 1.5rem;
+  gap: .45rem;
+  min-height: 38px;
+  padding: 0 1.125rem;
   background: var(--surface);
   color: var(--ink);
-  border: 1.5px solid var(--line-strong);
-  border-radius: 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: 9px;
   font: inherit;
-  font-size: .9375rem;
+  font-size: .875rem;
   font-weight: 700;
   cursor: pointer;
   transition: border-color 140ms ease, background-color 140ms ease, color 140ms ease, transform 140ms var(--ease);
@@ -469,11 +469,11 @@ html.calm label.check { font-size: 1rem; font-weight: 400; min-height: 2.4rem; }
 html.calm label.check input { accent-color: var(--accent); width: 1.05rem; height: 1.05rem; }
 html.calm input[type=text], html.calm input[type=password], html.calm input[type=number],
 html.calm input[type=search], html.calm input[type=date], html.calm select, html.calm textarea {
-  margin-top: .35rem;
-  min-height: 44px;
-  padding: .55rem .85rem;
-  border: 1.5px solid var(--line);
-  border-radius: 10px;
+  margin-top: .3rem;
+  min-height: 36px;
+  padding: .4rem .7rem;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
   background: var(--surface);
   color: var(--ink);
   font: inherit;
@@ -669,11 +669,11 @@ html.calm .sheet .title:focus-within .face-label { color: var(--ink); }
 html.calm .sheet .title :is(input[type=text], textarea) {
   display: block;
   width: 100%;
-  min-height: 44px;
+  min-height: 36px;
   margin: 0;
-  padding: 10px 14px;
-  border: 1.5px solid var(--line);
-  border-radius: 10px;
+  padding: 7px 11px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
   background: var(--paper);
   font-family: var(--sans);
   font-size: 1rem;
@@ -688,10 +688,10 @@ html.calm .sheet .line, html.calm .sheet label.check {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 1.2rem;
-  min-height: 56px;
+  gap: 1rem;
+  min-height: 44px;
   margin: 0;
-  padding: .45rem 0;
+  padding: .3rem 0;
   border-bottom: 1px solid var(--line);
   font-size: 1rem;
   font-weight: 400;
@@ -836,7 +836,7 @@ html.calm .form-foot .btn:not(.wide) { margin: 0; }
 
 /* Things that cannot be undone sit last, as one quiet line that opens
    into the real button. */
-html.calm details.danger { margin: 3.2rem 0 0; }
+html.calm details.danger { margin: 2.4rem 0 0; }
 html.calm details.danger summary {
   display: inline-flex;
   list-style: none;
@@ -939,11 +939,11 @@ html.calm ul.list li:has(> a.row:hover), html.calm ul.list li:has(+ li > a.row:h
 html.calm ul.list li:has(> a.row.held), html.calm ul.list li:has(+ li > a.row.held) { border-color: transparent; }
 html.calm a.row {
   position: relative;
-  min-height: 56px;
-  padding: .7rem 1rem;
-  margin: 2px -1rem;
+  min-height: 44px;
+  padding: .45rem .75rem;
+  margin: 1px -.75rem;
   border: 0;
-  border-radius: 12px;
+  border-radius: 9px;
   transition: background-color 140ms ease;
 }
 /* On hover a row lights up softly, like a pressed key. */
@@ -974,17 +974,17 @@ html.calm img.thumb { border-radius: 8px; }
 html.calm .hero {
   display: grid;
   grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
-  gap: 40px;
-  padding: 3rem 0;
+  gap: 32px;
+  padding: 2rem 0 2.25rem;
   border-bottom: 1px solid var(--line);
 }
 html.calm .hero:not(:has(.today-side)) { grid-template-columns: minmax(0, 1fr); }
 html.calm .today { padding: 0; }
 html.calm .today .date { margin: 0; font-size: .75rem; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; color: var(--accent); }
-html.calm .today h1 { margin: 1rem 0 0; font-size: 2.75rem; line-height: 1.02; }
+html.calm .today h1 { margin: .75rem 0 0; font-size: 2.5rem; line-height: 1.02; }
 html.calm .today h1 .count .n { font-family: var(--italic); font-style: italic; font-weight: 300; letter-spacing: -.02em; color: var(--accent); }
-html.calm .today .facts { margin: 1rem 0 0; font-size: 1.125rem; color: var(--ink-2); }
-html.calm .start { display: inline-flex; width: auto; margin: 1.5rem 0 0; font-size: .9375rem; }
+html.calm .today .facts { margin: .75rem 0 0; font-size: 1rem; color: var(--ink-2); }
+html.calm .start { display: inline-flex; width: auto; margin: 1.25rem 0 0; font-size: .875rem; }
 html.calm .start .arrow { display: none; }
 html.calm .today .catch-up { margin-top: 1.25rem; }
 html.calm .today-side { display: flex; flex-direction: column; gap: .75rem; padding-left: 28px; border-left: 1px solid var(--line); }
@@ -993,8 +993,8 @@ html.calm .today-side .week { display: flex; flex-direction: column; gap: .75rem
 html.calm .today-side .week h2 { margin: 0; padding: 0; border: 0; font-size: .75rem; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
 html.calm .attention-link { display: none; }
 html.calm .home-actions .tile { display: none; }
-html.calm .home-actions .btn.icon-link { min-height: 40px; padding: 0 1rem; border: 1.5px solid var(--line); border-radius: 12px; font-size: .875rem; font-weight: 700; color: var(--ink); }
-html.calm .home-actions .btn.icon-link:is(:hover, .held) { border: 1.5px solid var(--ink); color: var(--ink); }
+html.calm .home-actions .btn.icon-link { min-height: 34px; padding: 0 .9rem; border: 1px solid var(--line-strong); border-radius: 9px; font-size: .875rem; font-weight: 700; color: var(--ink); }
+html.calm .home-actions .btn.icon-link:is(:hover, .held) { border: 1px solid var(--ink); color: var(--ink); }
 html.calm .home-actions { gap: .75rem; margin: 1.5rem 0 0; }
 
 html.calm .table-head {
@@ -1050,14 +1050,14 @@ html.calm .catch-up p a { color: var(--accent); }
 html.calm .deck-hero {
   display: grid;
   grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
-  gap: 40px;
-  padding: 2.5rem 0 2.5rem;
+  gap: 32px;
+  padding: 1.75rem 0 2rem;
   border-bottom: 1px solid var(--line);
 }
-html.calm .deck-main > p { margin: .5rem 0 0; font-size: 1.125rem; color: var(--ink-2); }
+html.calm .deck-main > p { margin: .5rem 0 0; font-size: 1rem; color: var(--ink-2); }
 html.calm .deck-title { position: relative; display: flex; justify-content: space-between; align-items: flex-end; gap: 1rem; }
 html.calm .deck-title h1 { margin: 0; }
-html.calm .deck-main dl.stats-inline { margin: 1.75rem 0 0; }
+html.calm .deck-main dl.stats-inline { margin: 1.25rem 0 0; }
 html.calm .deck-main .start { margin-top: 1.75rem; }
 /* The numbers in the italic, the cards due in the accent. */
 html.calm .deck-main dl.stats-inline dd { font-family: var(--italic); font-style: italic; font-weight: 400; font-size: 2.5rem; line-height: 1.1; font-variant-numeric: lining-nums tabular-nums; }
@@ -1070,8 +1070,8 @@ html.calm .deck-export { display: none; }
 html.calm button.more-toggle {
   flex: none;
   gap: 3px;
-  width: 48px;
-  min-height: 48px;
+  width: 38px;
+  min-height: 38px;
   padding: 0;
   border-color: var(--line);
 }
@@ -1101,7 +1101,7 @@ html.calm .deck-menu .btn.icon-link:is(:hover, :focus-visible) { background: var
 html.calm .deck-main { position: relative; }
 
 /* Its cards: a column head, the front in the serif, the back under it. */
-html.calm .cards-head { display: flex; justify-content: space-between; align-items: baseline; margin: 2.5rem 0 1rem; }
+html.calm .cards-head { display: flex; justify-content: space-between; align-items: baseline; margin: 1.75rem 0 .75rem; }
 html.calm .cards-head h2 { margin: 0; padding: 0; border: 0; }
 html.calm .cards-head a { color: var(--accent); font-weight: 600; }
 html.calm ul.list.cards { margin: 4px 0 0; }
@@ -1175,7 +1175,7 @@ html.calm .study hr.divider {
 html.calm .study.revealed .reveal { display: none; }
 html.calm .study .reveal { display: flex; justify-content: center; margin: 0; }
 html.calm .study .reveal { margin-top: 2.5rem; }
-html.calm .study .reveal .show { display: inline-flex; width: auto; min-width: 240px; min-height: 56px; margin: 0; font-size: 1.0625rem; }
+html.calm .study .reveal .show { display: inline-flex; width: auto; min-width: 200px; min-height: 44px; margin: 0; font-size: 1.0625rem; }
 html.calm .study .answers {
   position: static;
   display: grid;
@@ -1189,12 +1189,12 @@ html.calm .study .answers {
 }
 html.calm .study .answers.cols-4 { width: min(840px, 100%); }
 /* Big, quiet buttons: the word, and when the card comes back in the italic. */
-html.calm .study .answers .btn { flex-direction: column; gap: 4px; min-height: 88px; padding: 1rem 1.5rem; border-radius: 14px; border-color: var(--ink); }
+html.calm .study .answers .btn { flex-direction: column; gap: 4px; min-height: 64px; padding: .7rem 1.25rem; border-radius: 11px; border-color: var(--ink); }
 html.calm .study .answers .btn.primary { border-color: var(--accent); }
 html.calm .study .answers .label { display: inline-flex; align-items: center; gap: 8px; font-size: 1.125rem; font-weight: 700; }
 html.calm .study .answers .ivl { font-family: var(--italic); font-style: italic; font-size: 1rem; font-weight: 400; color: var(--muted); }
 html.calm .study .answers .btn.primary .ivl { color: var(--on-accent-soft); }
-html.calm .study-foot { margin: auto 0 0; padding: 40px 0 36px; }
+html.calm .study-foot { margin: auto 0 0; padding: 28px 0 28px; }
 html.calm .study-foot .progress { height: 2px; border-radius: 2px; background: var(--track); }
 html.calm .study-foot .bar { height: 2px; border-radius: 2px; background: var(--accent); transition: width 320ms var(--ease), background-color 900ms var(--ease); }
 /* A miss takes its share back: the line slips back, briefly orchid. */
@@ -1459,10 +1459,10 @@ html.calm .timer .extend:hover { color: var(--accent-hover); }
 html.calm .study .reveal-form { flex-direction: column; align-items: center; gap: 1.25rem; width: min(600px, 100%); margin: 1.75rem auto 0; }
 html.calm .reveal-form .typed-answer { display: flex; flex-direction: column; width: 100%; text-align: left; }
 html.calm .reveal-form .typed-answer .face-label { margin-bottom: .3rem; }
-html.calm .reveal-form .typed-answer input { width: 100%; min-height: 56px; font-family: var(--serif); font-size: 1.375rem; }
+html.calm .reveal-form .typed-answer input { width: 100%; min-height: 44px; font-family: var(--serif); font-size: 1.375rem; }
 html.calm .reveal-form .sure-ask { margin: .25rem 0 0; color: var(--muted); font-size: .875rem; }
 html.calm .reveal-form .sure-buttons { display: grid; grid-template-columns: 1fr 1fr; gap: .8rem; width: 100%; }
-html.calm .reveal-form .sure-buttons .btn { min-height: 56px; }
+html.calm .reveal-form .sure-buttons .btn { min-height: 44px; }
 html.calm .reveal-form .sure-buttons .label { display: inline-flex; align-items: center; gap: 8px; }
 /* What you typed, set off by an Orchid rule, above the right answer. */
 html.calm .typed-echo { margin: 0 auto 1.75rem; padding: 2px 0 2px 18px; max-width: 600px; border: 0; border-left: 2px solid var(--accent); border-radius: 0; background: none; text-align: left; }
@@ -1526,7 +1526,7 @@ html.calm .big3 .n { font-size: 3.25rem; font-weight: 800; letter-spacing: -.04e
 html.calm .big3 .n.due { color: var(--accent); }
 html.calm .big3 .n.it { font-family: var(--italic); font-style: italic; font-weight: 300; letter-spacing: -.02em; }
 html.calm .big3 a { color: var(--accent); font-weight: 600; }
-html.calm .chart-sec { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: 40px; padding: 2.5rem 0; border-top: 1px solid var(--line); }
+html.calm .chart-sec { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: 32px; padding: 1.75rem 0; border-top: 1px solid var(--line); }
 html.calm .chart-main h2 { margin: 0 0 .4rem; padding: 0; border: 0; font-size: 1.375rem; }
 html.calm .chart-main > p { margin: 0 0 1.25rem; }
 html.calm .chart-side { display: flex; flex-direction: column; gap: 12px; padding-left: 28px; border-left: 1px solid var(--line); }
@@ -1621,9 +1621,9 @@ html.calm button.fold {
   gap: 16px;
   align-items: center;
   width: 100%;
-  min-height: 56px;
+  min-height: 44px;
   margin: 0;
-  padding: 8px 0;
+  padding: 6px 0;
   border: 0;
   border-bottom: 1px solid var(--line);
   border-radius: 0;
