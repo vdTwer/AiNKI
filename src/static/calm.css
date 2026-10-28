@@ -979,8 +979,9 @@ html.calm .hero {
 }
 html.calm .today { padding: 0; }
 html.calm .today .date { margin: 0; font-size: .75rem; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
-html.calm .today h1 { margin: .75rem 0 0; font-size: 2.5rem; line-height: 1.02; }
-html.calm .today h1 .count .n { font-family: var(--italic); font-style: italic; font-weight: 300; letter-spacing: -.02em; color: var(--ink); }
+html.calm .today h1 { margin: .75rem 0 0; font-size: 2rem; line-height: 1.15; }
+/* The whoah: today's count, huge and on its own line. */
+html.calm .today h1 .count .n { display: block; margin: 0 0 .25rem -.04em; font-family: var(--italic); font-style: italic; font-weight: 300; font-size: 8rem; line-height: .95; letter-spacing: -.04em; font-variant-numeric: lining-nums; color: var(--ink); }
 html.calm .today .facts { margin: .75rem 0 0; font-size: 1rem; color: var(--ink-2); }
 html.calm .start { display: inline-flex; width: auto; margin: 1.25rem 0 0; font-size: .875rem; }
 html.calm .start .arrow { display: none; }
