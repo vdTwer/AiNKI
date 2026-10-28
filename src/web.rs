@@ -463,12 +463,9 @@ fn page(nav: Option<Nav>, title: &str, user: Option<&User>, page_kind: Option<&s
                     }
                 }
                 main {
-                    // The desktop look's top line: the name, and where the keys are.
+                    // The desktop look: a ? under the rail that opens the key sheet.
                     @if user.is_some() {
-                        header.masthead.calm-only {
-                            a.brand href="/" { "AiNKI" }
-                            p.keys-hint { "Press " kbd { "?" } " for keys" }
-                        }
+                        button.keys-button.calm-only type="button" aria-label="Keys" data-label="Keys" { "?" }
                     }
                     (body)
                 }

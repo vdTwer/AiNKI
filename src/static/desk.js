@@ -31,6 +31,15 @@
       }
     }
 
+    // Home: the weekday on its own line above the date, in the label column.
+    var date = scope.querySelector('.today .date');
+    if (date && date.lastChild && date.lastChild.nodeType === 3 && date.lastChild.nodeValue.indexOf(', ') > 0) {
+      var parts = date.lastChild.nodeValue.split(', ');
+      date.lastChild.nodeValue = parts[0];
+      date.appendChild(document.createElement('br'));
+      date.appendChild(document.createTextNode(parts.slice(1).join(', ')));
+    }
+
     // Studying: when a card comes back, in words.
     Array.prototype.forEach.call(scope.querySelectorAll('.study .answers .ivl:not([data-remembered])'), function (e) {
       e.textContent = words(e.textContent.trim());
@@ -632,13 +641,10 @@
     toggleKeys();
   });
   function keysHint(scope) {
-    var hint = scope.querySelector('.masthead .keys-hint');
-    if (!hint || hint.hasAttribute('data-ready')) return;
-    hint.setAttribute('data-ready', '');
-    hint.setAttribute('role', 'button');
-    hint.setAttribute('tabindex', '0');
-    hint.addEventListener('click', toggleKeys);
-    hint.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleKeys(); } });
+    var b = scope.querySelector('.keys-button');
+    if (!b || b.hasAttribute('data-ready')) return;
+    b.setAttribute('data-ready', '');
+    b.addEventListener('click', toggleKeys);
   }
 
   dress(document);
