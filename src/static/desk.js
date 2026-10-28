@@ -632,13 +632,10 @@
     toggleKeys();
   });
   function keysHint(scope) {
-    var hint = scope.querySelector('.masthead .keys-hint');
-    if (!hint || hint.hasAttribute('data-ready')) return;
-    hint.setAttribute('data-ready', '');
-    hint.setAttribute('role', 'button');
-    hint.setAttribute('tabindex', '0');
-    hint.addEventListener('click', toggleKeys);
-    hint.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleKeys(); } });
+    var b = scope.querySelector('.keys-button');
+    if (!b || b.hasAttribute('data-ready')) return;
+    b.setAttribute('data-ready', '');
+    b.addEventListener('click', toggleKeys);
   }
 
   dress(document);

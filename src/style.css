@@ -208,7 +208,7 @@ table.forecast .bar { display: block; height: 1.1rem; background: var(--fg); min
 table.forecast .num { text-align: right; padding-left: .5rem; font-variant-numeric: tabular-nums; }
 
 /* Calm-only pieces (side rail extras, key hints, the closing dot, the
-   desktop masthead and anything else marked calm-only). */
+   desktop ? button and anything else marked calm-only). */
 .rail-only, .key, .end-mark, .done-check { display: none; }
 html:not(.calm) .calm-only { display: none !important; }
 
