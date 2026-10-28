@@ -35,17 +35,20 @@ const CSS: &str = include_str!("style.css");
 const CALM_CSS: &str = include_str!("static/calm.css");
 const THEME_JS: &str = include_str!("static/theme.js");
 const APP_JS: &str = include_str!("static/app.js");
+const DESK_JS: &str = include_str!("static/desk.js");
 // Two cards, Wild Orchid behind Terra Cotta, with the "done" tick.
 const FAVICON_SVG: &str = include_str!("static/favicon.svg");
 const FAVICON_PNG: &[u8] = include_bytes!("static/favicon-32.png");
 const TOUCH_ICON_PNG: &[u8] = include_bytes!("static/apple-touch-icon.png");
 const FONTS: &[(&str, &[u8])] = &[
-    ("newsreader-italic-latin-ext.woff2", include_bytes!("static/fonts/newsreader-italic-latin-ext.woff2")),
-    ("newsreader-italic-latin.woff2", include_bytes!("static/fonts/newsreader-italic-latin.woff2")),
-    ("newsreader-latin-ext.woff2", include_bytes!("static/fonts/newsreader-latin-ext.woff2")),
-    ("newsreader-latin.woff2", include_bytes!("static/fonts/newsreader-latin.woff2")),
-    ("source-sans-3-latin-ext.woff2", include_bytes!("static/fonts/source-sans-3-latin-ext.woff2")),
-    ("source-sans-3-latin.woff2", include_bytes!("static/fonts/source-sans-3-latin.woff2")),
+    ("fraunces-italic-latin-ext.woff2", include_bytes!("static/fonts/fraunces-italic-latin-ext.woff2")),
+    ("fraunces-italic-latin.woff2", include_bytes!("static/fonts/fraunces-italic-latin.woff2")),
+    ("schibsted-grotesk-normal-latin-ext.woff2", include_bytes!("static/fonts/schibsted-grotesk-normal-latin-ext.woff2")),
+    ("schibsted-grotesk-normal-latin.woff2", include_bytes!("static/fonts/schibsted-grotesk-normal-latin.woff2")),
+    ("source-serif-4-italic-latin-ext.woff2", include_bytes!("static/fonts/source-serif-4-italic-latin-ext.woff2")),
+    ("source-serif-4-italic-latin.woff2", include_bytes!("static/fonts/source-serif-4-italic-latin.woff2")),
+    ("source-serif-4-normal-latin-ext.woff2", include_bytes!("static/fonts/source-serif-4-normal-latin-ext.woff2")),
+    ("source-serif-4-normal-latin.woff2", include_bytes!("static/fonts/source-serif-4-normal-latin.woff2")),
 ];
 
 pub async fn serve(app: AppState) -> anyhow::Result<()> {
@@ -163,6 +166,7 @@ pub fn router(app: AppState) -> Router {
         .route("/calm.css", get(|q: RawQuery| asset(q, "text/css; charset=utf-8", CALM_CSS)))
         .route("/theme.js", get(|q: RawQuery| asset(q, "text/javascript; charset=utf-8", THEME_JS)))
         .route("/app.js", get(|q: RawQuery| asset(q, "text/javascript; charset=utf-8", APP_JS)))
+        .route("/desk.js", get(|q: RawQuery| asset(q, "text/javascript; charset=utf-8", DESK_JS)))
         .route("/fonts/{name}", get(font_file))
         .route("/favicon.svg", get(|| async { static_file("image/svg+xml", FAVICON_SVG.as_bytes(), false) }))
         // Browsers ask for /favicon.ico on their own; a PNG there works everywhere.
@@ -350,7 +354,7 @@ pub fn urlenc(s: &str) -> String {
 fn asset_version() -> &'static str {
     static VERSION: std::sync::OnceLock<String> = std::sync::OnceLock::new();
     VERSION.get_or_init(|| {
-        let all = [CSS, CALM_CSS, THEME_JS, APP_JS].concat();
+        let all = [CSS, CALM_CSS, THEME_JS, APP_JS, DESK_JS].concat();
         crate::auth::sha256_hex(&all)[..10].to_string()
     })
 }
@@ -458,8 +462,18 @@ fn page(nav: Option<Nav>, title: &str, user: Option<&User>, page_kind: Option<&s
                         a href="/settings" data-label="Settings" aria-current=[current(Nav::Settings)] { (nav_icon(ICON_SETTINGS)) "Settings" }
                     }
                 }
-                main { (body) }
+                main {
+                    // The desktop look's top line: the name, and where the keys are.
+                    @if user.is_some() {
+                        header.masthead.calm-only {
+                            a.brand href="/" { "AiNKI" }
+                            p.keys-hint { "Press " kbd { "?" } " for keys" }
+                        }
+                    }
+                    (body)
+                }
                 script src=(format!("/app.js?v={}", asset_version())) defer {}
+                script src=(format!("/desk.js?v={}", asset_version())) defer {}
             }
         }
     }
@@ -519,12 +533,13 @@ fn icon_link(href: &str, paths: &'static str, label: &str) -> Markup {
     html! { a.icon-link href=(href) { (icon(paths, PAGE_ICON)) span { (label) } } }
 }
 
-/// The "done" tick: Terra, drawn by hand rather than set like an icon.
-/// pathLength lets calm.css draw it in from 1 to 0 at any size.
+/// The "done" tick: Terra, drawn with straight strokes and square ends, like
+/// the numbers beside it. pathLength lets calm.css draw it in from 1 to 0
+/// at any size.
 fn done_check(size: u32, class: &'static str) -> Markup {
     html! {
-        svg class=(class) viewBox="0 0 24 24" width=(size) height=(size) fill="none" stroke="currentColor" stroke-width=(format!("{:.2}", 48.0 / size as f64)) stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" {
-            path d="M4.5 12.8 9.6 17.6 19.5 6.8" pathLength="1" {}
+        svg class=(class) viewBox="0 0 24 24" width=(size) height=(size) fill="none" stroke="currentColor" stroke-width=(format!("{:.2}", 52.0 / size as f64)) stroke-linecap="square" stroke-linejoin="miter" aria-hidden="true" {
+            path d="M4.5 12.5 9.5 17.5 19.5 6.5" pathLength="1" {}
         }
     }
 }
@@ -633,6 +648,7 @@ fn auth_form(signup: bool, error: Option<&str>, allow_signup: bool, next: Option
         html! {
             h1.brand-big { "AiNKI" }
             p.muted { "Flashcards with FSRS spaced repetition." }
+            p.tagline.calm-only { "Flashcards that come back " span.it { "just before" } " you forget them." }
             h2 { (title) }
             @if let Some(e) = error { p.notice role="alert" { (e) } }
             @if next.is_some_and(|n| n.starts_with("/oauth/")) {
@@ -791,6 +807,7 @@ async fn home(State(app): State<AppState>, user: WebUser, Flash(msg): Flash) -> 
     let attention = app.attention(&access, None).await?.len() as i64;
     let overdue = app.overdue(&access).await?;
     let quiet = study::quiet_until(&user.0, now());
+    let week = app.week(&access).await?;
     // A rough guide; real thinking time once there's enough history.
     let minutes = ((total_due as f64 * stats.seconds_per_review.unwrap_or(12.0)) / 60.0).ceil().max(1.0) as i64;
     let mut facts = Vec::new();
@@ -810,8 +827,10 @@ async fn home(State(app): State<AppState>, user: WebUser, Flash(msg): Flash) -> 
         Some("home"),
         html! {
             (flash(&msg))
+            // On desktops the week sits beside today, as a sidebar.
+            div.hero {
             section.today aria-label="Today" {
-                p.date { (format::long_date(&user.0.clock())) }
+                p.date { @if user.0.catch_up { span.calm-only { "Catching up · " } } (format::long_date(&user.0.clock())) }
                 @if total_due > 0 {
                     h1 { span.count { (total_due) (if total_due == 1 { " card" } else { " cards" }) } " to study today" }
                 } @else if !decks.is_empty() {
@@ -826,6 +845,23 @@ async fn home(State(app): State<AppState>, user: WebUser, Flash(msg): Flash) -> 
                     p { a.btn.primary.start href="/study" { "Start studying " span.arrow aria-hidden="true" { "→" } } }
                 }
                 (catch_up_note(&user.0, overdue))
+            }
+            @if !decks.is_empty() {
+                aside.today-side.calm-only {
+                    (week_note(&week))
+                    @if user.0.catch_up && overdue >= 20 {
+                        @let days = (overdue + user.0.catch_up_reviews - 1) / user.0.catch_up_reviews.max(1);
+                        div.pace {
+                            p.kicker { "At this pace" }
+                            p.pace-days { span.n { (days) } (if days == 1 { " day" } else { " days" }) " to catch up" }
+                            p.small.muted { (format::number(overdue)) " overdue, " (format::number(user.0.catch_up_reviews)) " a day." }
+                        }
+                    }
+                    @if attention > 0 && !matches!(week.tip, insight::Tip::Attention) {
+                        p.small { a href="/attention" { (count(attention, "card")) " " (if attention == 1 { "needs" } else { "need" }) " a look" } }
+                    }
+                }
+            }
             }
             @if !shares.is_empty() {
                 h2 { "Shared with you" }
@@ -879,9 +915,9 @@ async fn home(State(app): State<AppState>, user: WebUser, Flash(msg): Flash) -> 
                 }
             }
             @if attention > 0 {
-                p.small { a href="/attention" { (count(attention, "card")) " " (if attention == 1 { "needs" } else { "need" }) " a look" } }
+                p.small.attention-link { a href="/attention" { (count(attention, "card")) " " (if attention == 1 { "needs" } else { "need" }) " a look" } }
             }
-            p.actions.icon-links {
+            p.actions.icon-links.home-actions {
                 (icon_btn("/cards/new", ICON_ADD, "Add card"))
                 (icon_btn("/decks/new", ICON_DECKS, "New deck"))
                 (icon_btn("/import", ICON_IMPORT, "Import"))
@@ -1446,6 +1482,11 @@ async fn study(State(app): State<AppState>, user: WebUser, Flash(msg): Flash, Qu
     Ok(study_card(&app, &access, &user.0, &msg, &sc.card, &sc.deck, q.deck, &Shown::front(now())).await?.into_response())
 }
 
+/// "7:00": the time of day of a moment, in the user's zone.
+fn clock_time(clock: &crate::scheduler::Clock, ts: i64) -> String {
+    chrono::DateTime::from_timestamp(ts, 0).map(|t| t.with_timezone(&clock.tz).format("%-H:%M").to_string()).unwrap_or_default()
+}
+
 /// Quiet hours: a rest screen instead of cards.
 fn rest_page(user: &User, msg: &Option<String>, deck: Option<i64>, until: i64) -> Markup {
     page(
@@ -1456,10 +1497,16 @@ fn rest_page(user: &User, msg: &Option<String>, deck: Option<i64>, until: i64) -
         html! {
             (flash(msg))
             section.session-end.rest {
-                h1 { "Quiet hours" }
+                p.kicker.calm-only { "Quiet hours" }
+                h1 {
+                    span.simple-only { "Quiet hours" }
+                    span.calm-only { "Rest until " (clock_time(&user.clock(), until)) }
+                }
                 p.summary { "You asked for rest until " (format::when(&user.clock(), until)) ". Sleep helps the day's learning settle." }
+                p.summary.calm-only { "Agents won't quiz you now either." }
                 div.end-links {
                     a href="/" { "Back to decks" }
+                    a.calm-only href="/learn/sleep" { "Why sleep helps" }
                     form method="post" action="/study/anyway" {
                         @if let Some(d) = deck { input type="hidden" name="deck" value=(d); }
                         button.link type="submit" { "Study anyway" }
@@ -1479,15 +1526,28 @@ fn break_page(user: &User, msg: &Option<String>, deck: Option<i64>, minutes: i64
         Some("study-done"),
         html! {
             (flash(msg))
-            section.session-end.rest {
+            section.session-end.rest.break {
+                p.kicker.calm-only { "Break" }
                 h1 { "Time for a break" }
                 p.summary { "You have studied for " (study::minutes_words(minutes)) ". Stand up, look out of the window, then carry on if you like." }
                 div.end-links {
                     a href="/" { "Stop here" }
-                    form method="post" action="/study/keep-going" {
+                    form id="keep-going" method="post" action="/study/keep-going" {
                         @if let Some(d) = deck { input type="hidden" name="deck" value=(d); }
                         button.link type="submit" { "Keep going" }
                     }
+                }
+                // On desktops a break can run here: desk.js counts it down
+                // and sends the form above when it is over.
+                div.break-start.calm-only {
+                    button.btn.primary type="button" data-break="300" { "Start a 5 minute break" }
+                    button.btn type="submit" form="keep-going" { "Skip break" }
+                }
+                div.break-run.calm-only hidden {
+                    p.break-clock role="timer" aria-live="off" { "5:00" }
+                    div.break-line aria-hidden="true" { div.break-fill {} }
+                    p.summary { "The next card comes back by itself when the time is up." }
+                    p { button.btn type="submit" form="keep-going" { "End break now" } }
                 }
             }
         },
@@ -1582,6 +1642,7 @@ fn catch_up_note(user: &User, overdue: i64) -> Markup {
                     } @else {
                         "Catch-up mode: no new cards, at most " (user.catch_up_reviews) " reviews a day, the ones you most likely still know first. "
                         a href="/learn/backlog" { "Why" }
+                        button.link.calm-only type="submit" { "Turn off catch-up mode" }
                     }
                 }
             }
@@ -1893,7 +1954,14 @@ async fn deck_page(
         Some(&user.0),
         html! {
             (flash(&msg))
-            h1 { (deck_title(&d.name)) }
+            // On desktops: the deck and its one action on the left, its
+            // settings beside it, the rest in a menu.
+            div.deck-hero {
+            div.deck-main {
+            div.deck-title {
+                h1 { (deck_title(&d.name)) }
+                button.more-toggle.calm-only type="button" aria-label="More" aria-expanded="false" aria-controls="deck-menu" { span {} span {} span {} }
+            }
             @if !d.description.is_empty() { p { (d.description) } }
             dl.stats-inline {
                 div { dt { "New today" } dd { (format::number(summary.new_today)) } }
@@ -1904,18 +1972,26 @@ async fn deck_page(
             @if summary.due_total() > 0 {
                 p { a.btn.primary.start href=(format!("/study?deck={id}")) { "Start studying " span.arrow aria-hidden="true" { "→" } } }
             }
-            p.actions.icon-links {
+            p.actions.icon-links.deck-menu id="deck-menu" {
                 (icon_btn(&format!("/cards/new?deck={id}"), ICON_ADD, "Add card"))
                 (icon_btn(&format!("/decks/{id}/edit"), ICON_EDIT, "Edit deck"))
                 (icon_btn(&format!("/decks/{id}/edit#share"), ICON_SHARE, "Share"))
                 (icon_btn(&format!("/stats?deck={id}"), ICON_STATS, "Stats"))
+                a.btn.icon-link.calm-only href=(format!("/decks/{id}/export.csv")) { span { "Export as CSV" } }
             }
+            }
+            div.deck-side {
             p.muted.small { "Preset: " a href=(format!("/presets/{}", d.preset_id)) { (summary.preset_name) } }
             @if attention > 0 {
                 p.small { a href=(format!("/attention?deck={id}")) { (count(attention, "card")) " " (if attention == 1 { "needs" } else { "need" }) " a look" } }
             }
+            }
+            }
 
-            h2 { "Cards" }
+            div.cards-head {
+                h2 { "Cards" }
+                a.calm-only href=(format!("/cards/new?deck={id}")) { "Add card" }
+            }
             form.search method="get" action=(format!("/decks/{id}")) {
                 input type="search" name="q" value=(q.q.clone().unwrap_or_default()) placeholder="Search text" aria-label="Search";
                 select name="state" aria-label="Filter" {
@@ -1936,6 +2012,7 @@ async fn deck_page(
             } @else {
                 p.muted.small { (count(total, "card")) }
             }
+            div.table-head.calm-only aria-hidden="true" hidden[cards.is_empty()] { span.grow { "Card" } span.num { "State" } span.chev {} }
             ul.list.cards hidden[cards.is_empty()] {
                 @for c in &cards {
                     li {
@@ -1948,6 +2025,7 @@ async fn deck_page(
                             span.counts.small {
                                 (card_status(c))
                             }
+                            span.chev.calm-only aria-hidden="true" { "›" }
                         }
                     }
                 }
@@ -1958,7 +2036,7 @@ async fn deck_page(
                     @if (page + 1) * per_page < total { a.btn href=(format!("{base}&page={}", page + 1)) { "Next ›" } }
                 }
             }
-            p.icon-links { (icon_link(&format!("/decks/{id}/export.csv"), ICON_EXPORT, "Export as CSV")) }
+            p.icon-links.deck-export { (icon_link(&format!("/decks/{id}/export.csv"), ICON_EXPORT, "Export as CSV")) }
         },
     )
     .into_response())
@@ -3805,13 +3883,22 @@ async fn stats_page(State(app): State<AppState>, user: WebUser, Query(q): Query<
         None => None,
     };
     let max = s.forecast.iter().map(|(_, n)| *n).max().unwrap_or(0).max(1);
+    let history = app.history(&access, q.deck).await?;
+    let desk = DeskStats { user: &user.0, deck: q.deck, s: &s, cal: &cal, sure: &sure, retention: &retention, history: &history };
     Ok(layout_in(
         Nav::Stats,
         "Stats",
         Some(&user.0),
         html! {
             @if let Some(d) = &deck { (parent(&format!("/decks/{}", d.id), &deck_plain(&d.name))) }
-            h1 { "Stats" }
+            div.stats-title {
+                h1 { "Stats" }
+                label.numbers-toggle.calm-only { "I love numbers" input type="checkbox" role="switch"; }
+            }
+            (desk_stats(&desk))
+            // On desktops these are the exact numbers, under the charts, for
+            // those who switch them on.
+            div.numbers {
             @if let Some(w) = &week { (week_note(w)) }
             h2 { "Today" }
             dl.stats-inline {
@@ -3905,9 +3992,145 @@ async fn stats_page(State(app): State<AppState>, user: WebUser, Query(q): Query<
                     }
                 }
             }
+            }
         },
     )
     .into_response())
+}
+
+struct DeskStats<'a> {
+    user: &'a User,
+    deck: Option<i64>,
+    s: &'a crate::service::Stats,
+    cal: &'a crate::tuning::Calibration,
+    sure: &'a study::Confidence,
+    retention: &'a [insight::DeckRetention],
+    history: &'a crate::service::History,
+}
+
+/// The desktop stats: three numbers to act on, then charts, each with a
+/// note beside it. desk.js draws the charts from the data attributes.
+fn desk_stats(d: &DeskStats) -> Markup {
+    let s = d.s;
+    let study = match d.deck { Some(id) => format!("/study?deck={id}"), None => "/study".into() };
+    let (week_total, week_passed) = d.history.weeks.last().copied().unwrap_or((0, 0));
+    let this_week = (week_total > 0).then(|| week_passed as f64 / week_total as f64);
+    let aims: Vec<f64> = d.retention.iter().map(|r| r.target).collect();
+    let aim = (!aims.is_empty()).then(|| aims.iter().sum::<f64>() / aims.len() as f64);
+    let worst = d.retention.iter().filter(|r| r.short()).min_by(|a, b| {
+        (a.actual.unwrap_or(1.0) - a.target).partial_cmp(&(b.actual.unwrap_or(1.0) - b.target)).unwrap_or(std::cmp::Ordering::Equal)
+    });
+    let last7 = d.history.days.iter().rev().take(7).filter(|(_, n)| *n > 0).count();
+    let minutes = s.seconds_per_review.map(|sec| sec * s.due_now as f64 / 60.0);
+    let weeks: Vec<String> = d.history.weeks.iter().map(|(t, p)| format!("{t},{p}")).collect();
+    let days: Vec<String> = d.history.days.iter().map(|(_, n)| n.to_string()).collect();
+    let fc: Vec<String> = s.forecast.iter().map(|(_, n)| n.to_string()).collect();
+    let fc_labels: Vec<String> = s.forecast.iter().map(|(day, _)| forecast_day(d.user, day)).collect();
+    let decks: Vec<String> = d
+        .retention
+        .iter()
+        .filter_map(|r| r.actual.map(|a| format!("{}|{}|{}|{}", deck_plain(&r.deck_name).replace(['|', ';'], " "), r.target, a, r.deck_id)))
+        .collect();
+    let bins: Vec<String> = d.cal.bins.iter().map(|b| format!("{},{},{}", b.predicted, b.actual, b.reviews)).collect();
+    html! {
+        div.desk-stats.calm-only {
+            section.big3 {
+                div {
+                    p.kicker { "Due today" }
+                    p.n.due { (format::number(s.due_now)) }
+                    p.small.muted {
+                        @if let Some(m) = minutes.filter(|_| s.due_now > 0) { (capitalize(&format::minutes(m))) "." } @else if s.due_now == 0 { "Nothing waiting." }
+                    }
+                    @if s.due_now > 0 { a.small href=(study) { "Start studying" } }
+                }
+                div {
+                    p.kicker { "Remembered this week" }
+                    p.n { (format::percent(this_week)) }
+                    p.small.muted {
+                        @if this_week.is_none() { "No reviews of learned cards this week. " }
+                        @if let Some(a) = aim { "You aim for " (format::percent(Some(a))) "." }
+                        @if let Some(w) = worst { " " (deck_plain(&w.deck_name)) " pulls it down." }
+                    }
+                    @if let Some(w) = worst { a.small href=(format!("/decks/{}", w.deck_id)) { "Look at that deck" } }
+                }
+                div {
+                    p.kicker { "Days in a row" }
+                    p.n.it { (s.streak_days) }
+                    p.small.muted { "You studied on " (last7) " of the last 7 days." }
+                }
+            }
+            section.chart-sec {
+                div.chart-main {
+                    h2 { "Are you remembering what you aim for?" }
+                    p.small.muted { "Share of due cards you remembered, week by week." }
+                    div.chart data-chart="retention" data-weeks=(weeks.join(";")) data-aim=[aim] role="img" aria-label="Recall by week, last twelve weeks" {}
+                }
+                aside.chart-side {
+                    p.kicker { "Study days" }
+                    div.chart data-chart="days" data-days=(days.join(",")) data-first=(d.history.days.first().map(|(day, _)| day.as_str()).unwrap_or("")) role="img" aria-label="Reviews per day, last twelve weeks" {}
+                    p.small.muted { "Darker means more reviews. " (last7) " of the last 7 days." }
+                }
+            }
+            section.chart-sec {
+                div.chart-main {
+                    h2 { "Next two weeks" }
+                    p.small.muted { "Cards due each day." }
+                    div.chart data-chart="forecast" data-values=(fc.join(",")) data-labels=(fc_labels.join(",")) role="img" aria-label="Cards due on each of the next fourteen days" {}
+                }
+                aside.chart-side {
+                    p.kicker { "Cards" }
+                    p.serif-note { (count(s.total, "card")) ". " (format::number(s.review)) " in review, " (format::number(s.new)) " still new." }
+                    p.small.muted { (format::number(s.learning)) " learning, " (format::number(s.suspended)) " suspended." }
+                }
+            }
+            @if !decks.is_empty() {
+                section.chart-sec {
+                    div.chart-main {
+                        h2 { "By deck" }
+                        p.legend.small { span.aim { "aim" } span.ok { "remembered" } span.low { "below aim" } }
+                        div.chart data-chart="decks" data-decks=(decks.join(";")) role="img" aria-label="Recall by deck against its aim, last 30 days" {}
+                    }
+                    aside.chart-side {
+                        p.kicker { "What to do" }
+                        @if let Some(w) = worst {
+                            p.small.warn-note { (deck_plain(&w.deck_name)) " is " (((w.target - w.actual.unwrap_or(w.target)) * 100.0).round() as i64) " points below its aim." }
+                            a.small href="/attention" { "Open Needs a look" }
+                        } @else {
+                            p.small { "Every deck is close to its aim." }
+                        }
+                    }
+                }
+            }
+            @if d.cal.reviews >= 50 {
+                section.chart-sec {
+                    div.chart-main.calib {
+                        div.chart data-chart="calibration" data-bins=(bins.join(";")) role="img" aria-label="Expected against remembered, last year" {}
+                        div {
+                            h2 { "How well FSRS knows you" }
+                            p.serif-note {
+                                "FSRS expected you to remember " (format::percent(Some(d.cal.predicted))) " of your reviews last year. You remembered " (format::percent(Some(d.cal.actual))) "."
+                                @if (d.cal.predicted - d.cal.actual).abs() <= 0.03 { " That's a close fit." }
+                            }
+                            a.small href="/learn/optimizing" { "What this means" }
+                        }
+                    }
+                    @if let (Some(a), Some(b)) = (d.sure.sure_pct(), d.sure.unsure_pct()) {
+                        aside.chart-side {
+                            p.kicker { "When you felt sure" }
+                            div.sure-bars {
+                                span { "Sure" } span.track { span.fill style=(format!("width:{a:.0}%")) {} } span.num { (format!("{a:.0}%")) }
+                                span { "Not sure" } span.track { span.fill.grey style=(format!("width:{b:.0}%")) {} } span.num { (format!("{b:.0}%")) }
+                            }
+                            p.small.muted {
+                                @if a - b >= 15.0 { "Your sense of what you know is a good guide." }
+                                @else { "Feeling sure says little here. Testing yourself is the better guide." }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 // ----- media --------------------------------------------------------------
