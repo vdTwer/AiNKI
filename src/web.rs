@@ -466,7 +466,16 @@ fn page(nav: Option<Nav>, title: &str, user: Option<&User>, page_kind: Option<&s
                         a href="/settings" data-label="Settings" aria-current=[current(Nav::Settings)] { (nav_icon(ICON_SETTINGS)) "Settings" }
                     }
                 }
-                main { (body) }
+                main {
+                    // The desktop look's top line: the name, and where the keys are.
+                    @if user.is_some() {
+                        header.masthead.calm-only {
+                            a.brand href="/" { "AiNKI" }
+                            p.keys-hint { "Press " kbd { "?" } " for keys" }
+                        }
+                    }
+                    (body)
+                }
                 script src=(format!("/app.js?v={}", asset_version())) defer {}
             }
         }

@@ -1,111 +1,139 @@
-/* Self-hosted fonts (SIL Open Font License, see static/fonts/OFL-*.txt). */
+/* Fonts, served from /fonts. Variable, so one file covers every weight. */
 @font-face {
-  font-family: 'Newsreader';
-  font-style: italic;
-  font-weight: 400 600;
+  font-family: 'Schibsted Grotesk';
+  font-style: normal;
+  font-weight: 400 900;
   font-display: swap;
-  src: url(/fonts/newsreader-italic-latin-ext.woff2) format('woff2');
-  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C4, U+2113, U+2C60-2C7F, U+A720-A7FF;
+  src: url(/fonts/schibsted-grotesk-normal-latin-ext.woff2) format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
 }
 @font-face {
-  font-family: 'Newsreader';
-  font-style: italic;
-  font-weight: 400 600;
+  font-family: 'Schibsted Grotesk';
+  font-style: normal;
+  font-weight: 400 900;
   font-display: swap;
-  src: url(/fonts/newsreader-italic-latin.woff2) format('woff2');
+  src: url(/fonts/schibsted-grotesk-normal-latin.woff2) format('woff2');
   unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
 }
 @font-face {
-  font-family: 'Newsreader';
+  font-family: 'Source Serif 4';
   font-style: normal;
   font-weight: 400 600;
   font-display: swap;
-  src: url(/fonts/newsreader-latin-ext.woff2) format('woff2');
-  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C4, U+2113, U+2C60-2C7F, U+A720-A7FF;
+  src: url(/fonts/source-serif-4-normal-latin-ext.woff2) format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
 }
 @font-face {
-  font-family: 'Newsreader';
+  font-family: 'Source Serif 4';
   font-style: normal;
   font-weight: 400 600;
   font-display: swap;
-  src: url(/fonts/newsreader-latin.woff2) format('woff2');
+  src: url(/fonts/source-serif-4-normal-latin.woff2) format('woff2');
   unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
 }
 @font-face {
-  font-family: 'Source Sans 3';
-  font-style: normal;
+  font-family: 'Source Serif 4';
+  font-style: italic;
   font-weight: 400 600;
   font-display: swap;
-  src: url(/fonts/source-sans-3-latin-ext.woff2) format('woff2');
-  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C4, U+2113, U+2C60-2C7F, U+A720-A7FF;
+  src: url(/fonts/source-serif-4-italic-latin-ext.woff2) format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
 }
 @font-face {
-  font-family: 'Source Sans 3';
-  font-style: normal;
+  font-family: 'Source Serif 4';
+  font-style: italic;
   font-weight: 400 600;
   font-display: swap;
-  src: url(/fonts/source-sans-3-latin.woff2) format('woff2');
+  src: url(/fonts/source-serif-4-italic-latin.woff2) format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: 'Fraunces';
+  font-style: italic;
+  font-weight: 300 500;
+  font-display: swap;
+  src: url(/fonts/fraunces-italic-latin-ext.woff2) format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face {
+  font-family: 'Fraunces';
+  font-style: italic;
+  font-weight: 300 500;
+  font-display: swap;
+  src: url(/fonts/fraunces-italic-latin.woff2) format('woff2');
   unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
 }
 
 /* ---------------------------------------------------------------------------
-   Calm: the desktop look. Applies only when theme.js has added html.calm
+   Orchid: the desktop look. Applies only when theme.js has added html.calm
    (JavaScript on, wide screen with a mouse, not e-ink, not turned off in
-   settings) and the <link>'s media query matches. It builds on style.css.
+   settings) and the <link>'s media query matches. It builds on style.css,
+   which stays the simple look for phones and e-ink.
 
-   A quiet tool: one centred column, a clean top, a side rail of dots that
-   turn into small 3D icons as the pointer comes near.
-   Newsreader for what you learn, Source Sans 3 for everything else.
-   Terra Cotta (16-1526 TCX) is the one accent; Wild Orchid (16-2120 TCX)
-   marks new cards and "Again". Buttons are small cards that tilt toward
-   the pointer (app.js sets --rx/--ry/--sx/--sy/--gx/--gy, and a closer
-   --persp for small ones so their tilt reads clearly).
+   A Swiss newspaper base with a few humanist accents. Schibsted Grotesk for
+   the interface, Source Serif 4 for what you learn, a light Fraunces italic
+   for the one number or quote that matters. White paper, ink, hairlines.
+   Wild Orchid leads; Terra Cotta only marks what slipped or can't be undone.
    ------------------------------------------------------------------------ */
 
 html.calm {
-  --paper: #faf9f6;
-  --surface: #fffefb;
-  --ink: #191817;
-  --muted: #6b6862;
-  --faint: #a5a098;
-  --line: #e2ded6;
-  --line-strong: #d6d1c7;
-  --track: #ece9e3;
-  --terra: #d38377;
-  --terra-deep: #9c4e40;
-  --terra-hover: #b9654f;
-  --terra-edge: #e8bdb3;
-  --terra-glow: rgba(211, 131, 119, .18);
-  --knob: #fffefb;
-  --orchid: #d979a2;
-  --orchid-deep: #8a3460;
-  --orchid-edge: #e9c3d4;
-  --shadow: 25, 24, 23;
-  --serif: 'Newsreader', Georgia, serif;
-  --sans: 'Source Sans 3', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --paper: #ffffff;
+  --surface: #ffffff;
+  --tint: #f6f5f3;
+  --ink: #111111;
+  --ink-2: #3a3835;
+  --muted: #5e5b57;
+  --faint: #9a968f;
+  --line: #e4e2de;
+  --line-strong: #c9c6c0;
+  --track: #ecebe8;
+  --accent: #a8336d;
+  --accent-hover: #8c2a5b;
+  --accent-tint: #f6e6ee;
+  --accent-edge: #e3b8cd;
+  --accent-glow: rgba(168, 51, 109, .16);
+  --on-accent: #ffffff;
+  --on-accent-soft: #f6dce8;
+  --warn: #b4462b;
+  --warn-tint: #f8e8e3;
+  --warn-edge: #ecc3b7;
+  --knob: #ffffff;
+  --shadow: 17, 17, 17;
+  --serif: 'Source Serif 4', Georgia, serif;
+  --sans: 'Schibsted Grotesk', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --italic: 'Fraunces', Georgia, serif;
+  --mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
   --ease: cubic-bezier(.25, .8, .25, 1);
+  --wrap: 1056px;
   --fg: var(--ink);
   --bg: var(--paper);
   --soft: var(--track);
-  font-size: calc(15px * var(--scale));
+  font-size: calc(16px * var(--scale));
 }
 
 @media (prefers-color-scheme: dark) {
   html.calm {
-    --paper: #1b1a18;
-    --surface: #22201e;
-    --ink: #edeae4;
-    --muted: #a39e95;
+    --paper: #141312;
+    --surface: #1b1a18;
+    --tint: #211f1d;
+    --ink: #f1eee9;
+    --ink-2: #d8d4cd;
+    --muted: #a7a29a;
     --faint: #75706a;
-    --line: #34312d;
-    --line-strong: #403c37;
-    --track: #2c2a27;
-    --terra-deep: #e8a597;
-    --terra-hover: #e29a8c;
-    --terra-edge: #6b4239;
-    --knob: #edeae4;
-    --orchid-deep: #e9a6c4;
-    --orchid-edge: #6a3f52;
+    --line: #2f2c29;
+    --line-strong: #47433e;
+    --track: #2a2825;
+    --accent: #e183b3;
+    --accent-hover: #eda3c8;
+    --accent-tint: #3a2130;
+    --accent-edge: #6b3a54;
+    --accent-glow: rgba(225, 131, 179, .22);
+    --on-accent: #1e0f17;
+    --on-accent-soft: #4e2238;
+    --warn: #e8906f;
+    --warn-tint: #3a2620;
+    --warn-edge: #6e4232;
+    --knob: #f1eee9;
     --shadow: 0, 0, 0;
   }
 }
@@ -117,57 +145,89 @@ html.calm body {
   background: var(--paper);
   color: var(--ink);
   -webkit-font-smoothing: antialiased;
+  font-kerning: normal;
 }
 
 html.calm main {
-  max-width: 560px;
-  padding: 88px 0 72px;
+  max-width: calc(var(--wrap) + 64px);
+  padding: 0 32px 96px;
+}
+
+/* The top of every page: the name, and where the keys are. */
+html.calm .masthead {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 1rem;
+  max-width: var(--wrap);
+  margin: 0 auto;
+  padding: 28px 0 16px;
+  border-bottom: 2px solid var(--ink);
+}
+html.calm .masthead .brand { font-size: 1.75rem; font-weight: 800; letter-spacing: -.03em; line-height: 1; color: var(--ink); }
+html.calm .masthead .brand:hover { color: var(--accent); }
+html.calm .masthead .keys-hint { margin: 0; font-size: .875rem; color: var(--faint); }
+html.calm .masthead .keys-hint kbd { margin: 0 .25em; }
+html.calm kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.4rem;
+  height: 1.4rem;
+  padding: 0 .35rem;
+  border: 1px solid var(--line-strong);
+  border-bottom-width: 2px;
+  border-radius: 5px;
+  font: 500 .75rem/1 var(--mono);
+  color: var(--muted);
+  vertical-align: .05em;
 }
 
 html.calm h1 {
-  font-family: var(--serif);
-  font-optical-sizing: auto;
-  font-weight: 400;
-  font-size: 2.07rem;
-  line-height: 1.25;
-  letter-spacing: -0.005em;
-  margin: 0 0 .6rem;
+  font-family: var(--sans);
+  font-weight: 800;
+  font-size: 2.75rem;
+  line-height: 1.04;
+  letter-spacing: -.03em;
+  margin: 2.5rem 0 .75rem;
 }
 html.calm h2 {
-  font-size: .8rem;
-  font-weight: 600;
-  letter-spacing: .06em;
-  text-transform: uppercase;
-  color: var(--muted);
-  margin: 3.2rem 0 .4rem;
-  padding-bottom: .5rem;
-  border-bottom: 1px solid var(--line);
-}
-/* A card block right under a heading has its own edge; a hairline above it
-   would be one line too many. */
-html.calm h2:has(+ :is(.sheet, form.search, label.drop), + form > :is(.sheet, label.drop):first-child) {
-  padding-bottom: .15rem;
-  border-bottom: 0;
+  font-family: var(--sans);
+  font-size: 1.625rem;
+  font-weight: 700;
+  line-height: 1.15;
+  letter-spacing: -.02em;
+  text-transform: none;
+  color: var(--ink);
+  margin: 3rem 0 1rem;
+  padding: 2rem 0 0;
+  border: 0;
+  border-top: 2px solid var(--ink);
 }
 html.calm a { text-decoration: none; color: inherit; }
-html.calm p a, html.calm .small a, html.calm label a { color: var(--terra-deep); }
-html.calm a:hover { color: var(--terra-hover); }
+html.calm p a, html.calm .small a, html.calm label a, html.calm .hint a { color: var(--accent); font-weight: 600; }
+html.calm a:hover { color: var(--accent-hover); }
 html.calm .muted { color: var(--muted); }
-html.calm .small { font-size: .87rem; }
+html.calm .small { font-size: .875rem; }
 html.calm hr { border: 0; border-top: 1px solid var(--line); }
-html.calm code { background: color-mix(in srgb, var(--terra) 12%, transparent); padding: 0 .3em; border-radius: 4px; font-size: .9em; }
-html.calm pre { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: .8rem 1rem; }
+html.calm code { background: var(--tint); padding: 0 .3em; border-radius: 4px; font-family: var(--mono); font-size: .85em; }
+html.calm pre { background: var(--tint); border: 0; border-radius: 10px; padding: .8rem 1rem; }
 html.calm pre code { background: none; padding: 0; }
-html.calm :focus-visible { outline: 2px solid var(--terra); outline-offset: 3px; }
+html.calm :focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+html.calm ::selection { background: var(--accent-tint); }
 
 @keyframes calm-appear { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
 @keyframes calm-grow { from { transform: scaleX(0); } to { transform: scaleX(1); } }
 
-/* The page this one belongs to: a quiet line above the heading, like the
-   path of a nested deck. */
-html.calm .parent { margin: 0 0 .3rem; font-size: .87rem; }
+/* A small uppercase line above a heading or a block: "Today", "This week". */
+html.calm .kicker { margin: 0; font-size: .75rem; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
+/* The one number or phrase that matters, in a light italic. */
+html.calm .it { font-family: var(--italic); font-style: italic; font-weight: 300; letter-spacing: -.02em; color: var(--accent); }
+
+/* The page this one belongs to: a quiet path above the heading. */
+html.calm .parent { margin: 2rem 0 -1.75rem; font-size: .875rem; font-weight: 500; }
 html.calm .parent a { min-height: 0; color: var(--muted); transition: color 140ms ease; }
-html.calm .parent a:hover { color: var(--terra-hover); }
+html.calm .parent a:hover { color: var(--accent); }
 
 /* Flash messages: one quiet line with a dot. */
 html.calm .notice {
@@ -176,19 +236,20 @@ html.calm .notice {
   gap: .6rem;
   border: 0;
   padding: 0;
-  margin: 0 0 1.4rem;
-  font-weight: 400;
-  font-size: .93rem;
+  margin: 1.5rem 0 -1rem;
+  font-weight: 500;
+  font-size: .9375rem;
   color: var(--ink);
   animation: calm-appear 220ms var(--ease) both;
 }
-html.calm .notice::before { content: ''; flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--terra); }
+html.calm .notice::before { content: ''; flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
 
 /* ----- side rail ---------------------------------------------------------- */
 /* Three steps. Far away it is a column of dots. As the pointer comes near
-   (app.js sets --near from 0 to 1 by distance) each dot grows into a small
-   3D icon. Over an icon, it tilts toward the pointer like a button, lights
-   up, and its name appears beside it. Keyboard focus shows the icons. */
+   (app.js sets --near from 0 to 1 by distance) each dot grows into an icon
+   on a small tile. Over a tile, the tile gets an ink edge and its name
+   appears beside it. The page you are on is Orchid. Keyboard focus shows
+   the tiles. */
 html.calm nav.top {
   --near: 0;
   position: fixed;
@@ -200,83 +261,79 @@ html.calm nav.top {
   flex-direction: column;
   align-items: flex-start;
   flex-wrap: nowrap;
-  gap: 6px;
+  gap: 8px;
   max-width: none;
   margin: 0;
-  padding: 20px 24px;
+  padding: 20px 18px;
   border: 0;
-  font-size: .93rem;
+  font-size: .9375rem;
 }
 html.calm nav.top:focus-within { --near: 1; }
 html.calm nav.top a.brand { display: none; }
-/* Everything that tilts toward the pointer starts flat; app.js moves it. */
-html.calm :is(nav.top a, .icon-link, .btn, button:not(.link), a.row) {
-  --rx: 0deg; --ry: 0deg; --sx: 0px; --sy: 2px; --gx: 50%; --gy: 50%;
-  --dur: 460ms; --spring: cubic-bezier(.34, 1.56, .64, 1);
-}
 html.calm nav.top a {
   position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
   flex: none;
-  width: 40px;
-  height: 40px;
+  width: 44px;
+  height: 44px;
   min-height: 0;
   padding: 0;
   font-size: 0;
   font-weight: 400;
-  color: var(--muted);
+  color: var(--ink);
 }
 html.calm nav.top a.rail-only { display: flex; }
 html.calm nav.top a:hover, html.calm nav.top a:focus-visible { background: none; }
 html.calm nav.top a:focus-visible { outline: none; }
-html.calm nav.top a:focus-visible .tile { outline: 2px solid var(--terra); outline-offset: 3px; }
 
-/* Step one: the dot. It shrinks away as the tile grows out of it. */
+/* Step one: the dot. It fades as the tile grows out of it. */
 html.calm nav.top a::before {
   content: '';
   position: absolute;
-  width: 5px;
-  height: 5px;
+  width: 6px;
+  height: 6px;
   border-radius: 50%;
   background: var(--line-strong);
   opacity: clamp(0, calc(1 - var(--near) * 1.6), 1);
-  transform: scale(calc(1 + var(--near) * 1.4));
-  transition: opacity 120ms ease, transform 160ms var(--ease), background-color 140ms ease;
+  transition: opacity 120ms ease, background-color 140ms ease;
 }
-html.calm nav.top a[aria-current="page"]::before { background: var(--terra); }
+html.calm nav.top a[aria-current="page"]::before { width: 8px; height: 8px; background: var(--accent); }
 
-/* Step two: the icon (see "Icons as objects" below). Here it grows out
-   of the dot as the pointer comes near. */
+/* Step two: the tile. */
 html.calm nav.top .tile {
   position: absolute;
-  left: calc((40px - var(--size)) / 2);
-  top: calc((40px - var(--size)) / 2);
-  color: var(--muted);
+  inset: 0;
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  border: 1.5px solid var(--line);
+  background: var(--surface);
+  color: var(--ink);
   opacity: clamp(0, calc(var(--near) * 1.6 - .4), 1);
-  transform: perspective(var(--persp, 240px)) rotateX(calc(var(--rx) * 1.6)) rotateY(calc(var(--ry) * 1.6)) scale(calc(.4 + var(--near) * .6));
-  transition: opacity 120ms ease, transform var(--dur) var(--spring), color 140ms ease;
+  transform: scale(calc(.4 + var(--near) * .6));
+  transition: opacity 120ms ease, transform 200ms var(--ease), border-color 140ms ease, background-color 140ms ease, color 140ms ease;
 }
-html.calm nav.top a[aria-current="page"] .tile { color: var(--terra-deep); }
+html.calm nav.top .tile svg { left: 50%; top: 50%; width: 24px; height: 24px; margin: -12px 0 0 -12px; }
+html.calm nav.top a[aria-current="page"] .tile { background: var(--accent-tint); border-color: var(--accent-tint); color: var(--accent); }
+html.calm nav.top a:is(:hover, .held, :focus-visible) .tile { border-color: var(--ink); }
 
-/* Step three: over an icon it tilts toward the pointer, lights up and
-   its name appears. */
+/* Step three: its name. */
 html.calm nav.top a::after {
   content: attr(data-label);
   content: attr(data-label) / '';
   position: absolute;
   left: calc(100% + 12px);
   top: 50%;
-  padding: .25rem .6rem;
+  padding: .3rem .65rem;
   white-space: nowrap;
-  font-size: .87rem;
+  font-size: .8125rem;
+  font-weight: 600;
   line-height: 1.4;
-  color: var(--ink);
-  background: var(--surface);
-  border: 1px solid var(--line);
+  color: var(--paper);
+  background: var(--ink);
   border-radius: 8px;
-  box-shadow: 0 4px 14px rgba(var(--shadow), .08);
   opacity: 0;
   transform: translate(-4px, -50%);
   transition: opacity 100ms ease, transform 160ms var(--ease);
@@ -288,12 +345,8 @@ html.calm nav.top a:hover::after, html.calm nav.top a.held::after, html.calm nav
   transition: opacity 140ms ease 60ms, transform 200ms var(--ease) 60ms;
 }
 
-/* ----- icons as objects ------------------------------------------------- */
-/* An icon is a small solid thing with no box around it: its layers sit one
-   behind the other in 3D, so when it tilts you see its sides, and the
-   shadow lies further back, so it slides the other way. It tilts with the
-   link it is in (app.js sets --rx/--ry there), lights up and warms to
-   Terra Cotta while the pointer is over it. */
+/* ----- icons --------------------------------------------------------------- */
+/* Flat line drawings. The extra layers web.rs adds for depth stay hidden. */
 html.calm .tile {
   position: relative;
   display: inline-block;
@@ -301,43 +354,20 @@ html.calm .tile {
   width: var(--size);
   height: var(--size);
   color: inherit;
-  transform-style: preserve-3d;
-  transform: perspective(var(--persp, 240px)) rotateX(calc(var(--rx, 0deg) * 1.6)) rotateY(calc(var(--ry, 0deg) * 1.6));
-  transition: transform var(--dur, 460ms) var(--spring, ease), color 140ms ease;
 }
-html.calm .tile svg {
-  position: absolute;
-  left: 0;
-  top: 0;
-  display: block;
-  overflow: visible;
-  transition: filter 200ms ease, opacity 200ms ease;
-}
-html.calm .tile .face { transform: translateZ(1.5px); }
-html.calm .tile .side {
-  color: color-mix(in srgb, currentColor 62%, var(--ink));
-  transform: translateZ(calc(var(--z) * -.7px));
-}
-html.calm .tile .shadow {
-  color: rgb(var(--shadow));
-  opacity: .12;
-  filter: blur(1.5px);
-  transform: translateZ(-9px) translateY(2px);
-}
-html.calm :is(nav.top a, .icon-link):is(:hover, .held, :focus-visible) .tile { color: var(--terra-hover); }
-html.calm :is(nav.top a, .icon-link):is(:hover, .held) .tile .face { filter: drop-shadow(0 0 5px color-mix(in srgb, var(--terra) 55%, transparent)); }
-html.calm :is(nav.top a, .icon-link):is(:hover, .held) .tile .shadow { opacity: .2; }
+html.calm .tile svg { position: absolute; left: 0; top: 0; display: block; overflow: visible; }
+html.calm .tile :is(.side, .shadow) { display: none; }
 
 /* A quiet link led by an icon: words in the muted colour, no box. */
 html.calm .icon-link {
   display: inline-flex;
   align-items: center;
-  gap: .55rem;
+  gap: .5rem;
   color: var(--muted);
-  font-weight: 400;
+  font-weight: 500;
   transition: color 140ms ease;
 }
-html.calm .icon-link:hover, html.calm .icon-link.held { color: var(--terra-hover); }
+html.calm .icon-link:hover, html.calm .icon-link.held { color: var(--accent); }
 /* A button dressed as a quiet link: icon links, links under a list, Log out. */
 html.calm .btn.icon-link, html.calm button.link.icon-link,
 html.calm .actions.quiet-links .btn, html.calm form.logout .btn {
@@ -345,113 +375,67 @@ html.calm .actions.quiet-links .btn, html.calm form.logout .btn {
   padding: 0;
   border: 0;
   background: none;
-  box-shadow: none;
-  transform: none;
-  font-weight: 400;
-  font-size: .93rem;
+  font-weight: 500;
+  font-size: .9375rem;
   color: var(--muted);
   transition: color 140ms ease;
 }
-html.calm .btn.icon-link::after, html.calm .actions.quiet-links .btn::after, html.calm form.logout .btn::after { display: none; }
-html.calm .btn.icon-link:is(:hover, .held, :active) { background: none; border: 0; box-shadow: none; transform: none; color: var(--terra-hover); }
-html.calm .icon-links { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem 1.8rem; margin: 1.2rem 0; }
+html.calm .btn.icon-link:is(:hover, .held, :active) { background: none; border: 0; color: var(--accent); }
+html.calm .icon-links { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem 1.8rem; margin: 1.5rem 0; }
 
-/* ----- cards you can almost pick up -------------------------------------- */
+/* ----- buttons ----------------------------------------------------------- */
+/* Flat, with a clear edge and soft corners. The one thing to press on a
+   page is Orchid. */
 html.calm .btn,
 html.calm button:not(.link) {
-  --edge: var(--line);
   position: relative;
-  isolation: isolate;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: .5rem;
-  min-height: 46px;
-  padding: .55rem 1.3rem;
+  min-height: 48px;
+  padding: 0 1.5rem;
   background: var(--surface);
   color: var(--ink);
-  border: 1px solid var(--edge);
+  border: 1.5px solid var(--line-strong);
   border-radius: 12px;
   font: inherit;
-  font-weight: 500;
+  font-size: .9375rem;
+  font-weight: 700;
   cursor: pointer;
-  transform: perspective(var(--persp, 700px)) rotateX(var(--rx)) rotateY(var(--ry));
-  box-shadow: 0 1px 0 var(--edge), var(--sx) var(--sy) 10px rgba(var(--shadow), .05);
-  transition: transform var(--dur) var(--spring), box-shadow var(--dur) var(--spring), border-color 160ms ease;
+  transition: border-color 140ms ease, background-color 140ms ease, color 140ms ease, transform 140ms var(--ease);
 }
-/* The light that follows the pointer, on buttons and lifted rows. */
-html.calm :is(.btn, button:not(.link), a.row)::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  background: radial-gradient(180px circle at var(--gx) var(--gy), rgba(255, 255, 255, .75), rgba(255, 255, 255, 0) 65%);
-  mix-blend-mode: soft-light;
-  opacity: 0;
-  transition: opacity 200ms ease;
-  pointer-events: none;
-}
-html.calm .btn:hover,
-html.calm button:not(.link):hover,
-html.calm .btn.held,
-html.calm button:not(.link).held {
+html.calm .btn:hover, html.calm button:not(.link):hover, html.calm .btn.held, html.calm button:not(.link).held {
   color: var(--ink);
   background: var(--surface);
-  border-color: var(--line-strong);
-  box-shadow: 0 1px 0 var(--edge), var(--sx) var(--sy) 18px rgba(var(--shadow), .10);
+  border-color: var(--ink);
 }
-html.calm .btn:hover::after,
-html.calm button:not(.link):hover::after,
-html.calm .btn.held::after,
-html.calm button:not(.link).held::after { opacity: 1; }
-html.calm .btn:active,
-html.calm button:not(.link):active {
-  background: var(--surface);
-  color: var(--ink);
-  transform: perspective(var(--persp, 700px)) rotateX(var(--rx)) rotateY(var(--ry)) translateZ(-8px);
-}
-html.calm .btn.primary { --edge: var(--terra-edge); background: var(--surface); color: var(--ink); }
-html.calm .btn.primary:hover, html.calm .btn.primary.held { border-color: var(--terra); }
-html.calm .btn.again { --edge: var(--orchid-edge); }
-html.calm .btn.again:hover, html.calm .btn.again.held { border-color: var(--orchid); }
-/* Danger is quiet: a neutral edge and Terra words, so the accent rim
-   stays with the button you are meant to press. */
-html.calm .btn.danger { --edge: var(--line); color: var(--terra-deep); background: transparent; box-shadow: none; }
-html.calm .btn.danger:is(:hover, .held) { color: var(--terra-deep); background: transparent; box-shadow: 0 1px 0 var(--edge); }
+html.calm .btn:active, html.calm button:not(.link):active { transform: translateY(1px); }
+html.calm .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+html.calm .btn.primary:is(:hover, .held) { background: var(--accent-hover); border-color: var(--accent-hover); color: var(--on-accent); }
+html.calm .btn.again { border-color: var(--ink); }
+/* Danger is quiet: Terra words on a Terra edge, never filled. */
+html.calm .btn.danger { border-color: var(--warn-edge); color: var(--warn); background: transparent; }
+html.calm .btn.danger:is(:hover, .held) { border-color: var(--warn); color: var(--warn); background: transparent; }
 html.calm .btn.wide { display: flex; width: 100%; margin: 1.2rem 0; font-size: 1rem; }
-html.calm button.link { min-height: 0; padding: 0; color: var(--muted); font-weight: 400; text-decoration: none; transition: color 140ms ease; }
-html.calm button.link:hover { color: var(--terra-hover); }
-html.calm .key {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 20px;
-  height: 20px;
-  padding: 0 5px;
-  box-sizing: border-box;
-  border: 1px solid var(--line-strong);
-  border-radius: 5px;
-  font-size: .8rem;
-  font-weight: 400;
-  color: var(--muted);
-  white-space: nowrap;
-}
+html.calm button.link { min-height: 0; padding: 0; color: var(--muted); font-weight: 500; text-decoration: none; transition: color 140ms ease; }
+html.calm button.link:hover { color: var(--accent); }
+/* Key hints live on the ? sheet now, not on every button. */
+html.calm .key { display: none; }
 html.calm .actions { gap: .75rem; }
-
-/* Links that sit quietly under a list. */
 html.calm .actions.quiet-links { gap: 1.4rem; margin-top: 1rem; }
-html.calm .actions.quiet-links .btn:hover { color: var(--terra-hover); }
+html.calm .actions.quiet-links .btn:hover { color: var(--accent); }
 
 /* ----- forms --------------------------------------------------------------- */
-html.calm label { font-size: .87rem; font-weight: 600; margin-bottom: 1.1rem; }
+html.calm label { font-size: .875rem; font-weight: 600; margin-bottom: 1.1rem; }
 html.calm label.check { font-size: 1rem; font-weight: 400; min-height: 2.4rem; }
-html.calm label.check input { accent-color: var(--terra-deep); width: 1.05rem; height: 1.05rem; }
+html.calm label.check input { accent-color: var(--accent); width: 1.05rem; height: 1.05rem; }
 html.calm input[type=text], html.calm input[type=password], html.calm input[type=number],
 html.calm input[type=search], html.calm input[type=date], html.calm select, html.calm textarea {
   margin-top: .35rem;
   min-height: 44px;
-  padding: .55rem .8rem;
-  border: 1px solid var(--line-strong);
+  padding: .55rem .85rem;
+  border: 1.5px solid var(--line);
   border-radius: 10px;
   background: var(--surface);
   color: var(--ink);
@@ -459,27 +443,27 @@ html.calm input[type=search], html.calm input[type=date], html.calm select, html
   font-weight: 400;
   transition: border-color 140ms ease, box-shadow 140ms ease;
 }
-html.calm textarea { font-family: var(--serif); font-size: 1.07rem; line-height: 1.5; }
-html.calm input:hover, html.calm select:hover, html.calm textarea:hover { border-color: var(--faint); }
+html.calm textarea { font-family: var(--serif); font-size: 1.0625rem; line-height: 1.5; }
+html.calm input:hover, html.calm select:hover, html.calm textarea:hover { border-color: var(--line-strong); }
 html.calm input:focus, html.calm select:focus, html.calm textarea:focus {
   outline: none;
-  border-color: var(--terra);
-  box-shadow: 0 0 0 3px var(--terra-glow);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-glow);
 }
-html.calm input[type=file] { font-size: .93rem; }
+html.calm input[type=file] { font-size: .9375rem; }
 html.calm input[type=file]::file-selector-button {
   font: inherit;
+  font-weight: 600;
   margin-right: .8rem;
   padding: .4rem .9rem;
   color: var(--ink);
   background: var(--surface);
-  border: 1px solid var(--line-strong);
+  border: 1.5px solid var(--line-strong);
   border-radius: 8px;
   cursor: pointer;
 }
-html.calm fieldset { border: 1px solid var(--line); border-radius: 12px; padding: .6rem 1rem; }
-html.calm legend { font-size: .87rem; font-weight: 600; }
-
+html.calm fieldset { border: 0; border-radius: 0; padding: 0; }
+html.calm legend { font-size: .875rem; font-weight: 600; }
 /* Writing a card: the card itself, as it will look when you study it.
    The front large, a short line, the back below; the deck as one quiet
    line above. Images are picked, dropped or pasted onto a side. */
@@ -504,7 +488,7 @@ html.calm :is(.deck-line, .sheet .line) .select::after {
   pointer-events: none;
   transition: border-color 140ms ease;
 }
-html.calm .deck-line .select:hover::after { border-color: var(--terra-hover); }
+html.calm .deck-line .select:hover::after { border-color: var(--accent-hover); }
 html.calm .deck-line select, html.calm .deck-line input[type=text] {
   appearance: none;
   -webkit-appearance: none;
@@ -527,8 +511,8 @@ html.calm .deck-line select { padding-right: 1.2rem; max-width: 22rem; text-over
 html.calm .deck-line select option { font-family: var(--sans); font-size: 1rem; }
 html.calm .deck-line input[type=text] { width: 13rem; border-bottom-color: var(--line-strong); cursor: text; }
 html.calm .deck-line input[type=text]::placeholder { color: var(--faint); }
-html.calm .deck-line select:hover { color: var(--terra-hover); }
-html.calm .deck-line select:focus, html.calm .deck-line input[type=text]:focus { box-shadow: none; border-bottom-color: var(--terra); }
+html.calm .deck-line select:hover { color: var(--accent-hover); }
+html.calm .deck-line select:focus, html.calm .deck-line input[type=text]:focus { box-shadow: none; border-bottom-color: var(--accent); }
 
 html.calm .sheet {
   padding: 2rem 2.4rem 1.4rem;
@@ -541,7 +525,7 @@ html.calm .sheet {
 }
 html.calm .sheet:focus-within { border-color: var(--line-strong); box-shadow: 0 1px 0 var(--line), 0 14px 36px rgba(var(--shadow), .08); }
 html.calm .face-edit { position: relative; border-radius: 12px; transition: background-color 140ms ease; }
-html.calm .face-edit.dropping { background: color-mix(in srgb, var(--terra) 8%, transparent); }
+html.calm .face-edit.dropping { background: color-mix(in srgb, var(--accent) 8%, transparent); }
 html.calm .face-label {
   display: block;
   margin: 0 0 .5rem;
@@ -552,7 +536,7 @@ html.calm .face-label {
   color: var(--faint);
   transition: color 140ms ease;
 }
-html.calm .face-edit:focus-within .face-label { color: var(--terra-deep); }
+html.calm .face-edit:focus-within .face-label { color: var(--accent); }
 html.calm .sheet textarea {
   display: block;
   width: 100%;
@@ -599,8 +583,8 @@ html.calm label.attach {
   transition: color 140ms ease;
 }
 html.calm label.attach .optional { display: none; }
-html.calm label.attach:hover, html.calm label.attach:focus-within { color: var(--terra-hover); }
-html.calm label.attach:focus-within { outline: 2px solid var(--terra); outline-offset: 3px; border-radius: 4px; }
+html.calm label.attach:hover, html.calm label.attach:focus-within { color: var(--accent-hover); }
+html.calm label.attach:focus-within { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 4px; }
 html.calm label.attach input { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
 html.calm .face-edit.has-image label.attach { display: none; }
 
@@ -617,7 +601,7 @@ html.calm .sheet.form { padding: .5rem 1.8rem; text-align: left; }
 html.calm .sheet.form + .sheet.form { margin-top: 1rem; }
 html.calm .sheet .title { display: block; margin: 0; padding: 1.4rem 0 .4rem; font-weight: 400; }
 html.calm .sheet .title .face-label { margin-bottom: .3rem; }
-html.calm .sheet .title:focus-within .face-label { color: var(--terra-deep); }
+html.calm .sheet .title:focus-within .face-label { color: var(--accent); }
 html.calm .sheet .title input[type=text] {
   display: block;
   width: 100%;
@@ -691,14 +675,14 @@ html.calm .sheet .line .select { position: relative; display: inline-flex; }
 /* Empty fields keep a faint line to write on; filled ones show it on hover. */
 html.calm .sheet .line :is(input:placeholder-shown, input[type=password]) { border-bottom-color: var(--line); }
 html.calm .sheet .line:hover :is(input, select) { border-bottom-color: var(--line-strong); }
-html.calm .sheet .line:hover .select::after { border-color: var(--terra-hover); }
-html.calm .sheet .line :is(input, select):focus { border-bottom-color: var(--terra); box-shadow: none; }
+html.calm .sheet .line:hover .select::after { border-color: var(--accent-hover); }
+html.calm .sheet .line :is(input, select):focus { border-bottom-color: var(--accent); box-shadow: none; }
 html.calm .sheet .line input::placeholder { color: var(--faint); font-style: italic; }
 html.calm .sheet :is(.line, label.check):has(+ .hint) { border-bottom: 0; padding-bottom: .1rem; }
 html.calm .sheet .hint { margin: 0; padding: 0 0 .9rem; border-bottom: 1px solid var(--line); font-size: .87rem; color: var(--muted); }
 html.calm .sheet .hint:last-child { border-bottom: 0; }
 html.calm .sheet .title + .hint { padding-top: .3rem; border-bottom: 0; }
-html.calm .sheet .hint a { color: var(--terra-deep); }
+html.calm .sheet .hint a { color: var(--accent); }
 
 html.calm .sheet .line .field { display: inline-flex; align-items: baseline; gap: .35rem; }
 html.calm .sheet .line .field input { flex: none; }
@@ -710,7 +694,7 @@ html.calm details.more summary { display: inline-flex; min-height: 0; padding: .
 html.calm details.more summary::-webkit-details-marker { display: none; }
 html.calm details.more summary::after { content: '›'; margin-left: .4rem; color: var(--faint); transition: transform 180ms var(--ease); }
 html.calm details.more[open] summary::after { transform: rotate(90deg); }
-html.calm details.more summary:hover { color: var(--terra-hover); }
+html.calm details.more summary:hover { color: var(--accent-hover); }
 html.calm .sheet details.more { border-top: 1px solid var(--line); }
 html.calm .sheet details.more > .line:last-child { border-bottom: 0; }
 
@@ -743,7 +727,7 @@ html.calm .sheet label.check input[type=checkbox]::before {
   box-shadow: 0 1px 2px rgba(var(--shadow), .2);
   transition: transform 220ms var(--ease);
 }
-html.calm .sheet label.check input[type=checkbox]:checked { background: var(--terra); }
+html.calm .sheet label.check input[type=checkbox]:checked { background: var(--accent); }
 html.calm .sheet label.check input[type=checkbox]:checked::before { transform: translateX(14px); }
 html.calm .sheet label.check:hover input[type=checkbox]:not(:checked) { background: var(--faint); }
 
@@ -762,7 +746,7 @@ html.calm .sheet .choice label.check {
 html.calm .sheet .choice label.check input { position: absolute; width: 1px; height: 1px; opacity: 0; }
 html.calm .sheet .choice label.check:hover { color: var(--ink); }
 html.calm .sheet .choice label.check:has(input:checked) { background: var(--surface); color: var(--ink); box-shadow: 0 1px 3px rgba(var(--shadow), .12); }
-html.calm .sheet .choice label.check:has(input:focus-visible) { outline: 2px solid var(--terra); outline-offset: 2px; }
+html.calm .sheet .choice label.check:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 html.calm .form-foot.end { justify-content: flex-end; }
 html.calm .form-foot .btn:not(.wide) { margin: 0; }
@@ -779,7 +763,7 @@ html.calm details.danger summary {
   transition: color 140ms ease;
 }
 html.calm details.danger summary::-webkit-details-marker { display: none; }
-html.calm details.danger summary:hover, html.calm details.danger[open] summary { color: var(--terra-deep); }
+html.calm details.danger summary:hover, html.calm details.danger[open] summary { color: var(--accent); }
 html.calm details.danger form { margin: .8rem 0 0; animation: calm-appear 220ms var(--ease) both; }
 html.calm details.danger p { margin: 0 0 .6rem; color: var(--muted); font-size: .93rem; }
 html.calm details.danger label.check { min-height: 2rem; font-size: .93rem; margin: 0 0 .6rem; }
@@ -789,9 +773,9 @@ html.calm ul.links a.row { display: flex; align-items: center; gap: 12px; }
 html.calm ul.links .grow { display: flex; flex-direction: column; }
 html.calm ul.links .sub { font-size: .87rem; color: var(--muted); }
 html.calm ul.links .chev { color: var(--faint); transition: transform 180ms var(--ease), color 140ms ease; }
-html.calm ul.links a.row:hover .chev { transform: translateX(2px); color: var(--terra-hover); }
+html.calm ul.links a.row:hover .chev { transform: translateX(2px); color: var(--accent-hover); }
 html.calm form.logout { margin: 2.4rem 0 0; }
-html.calm form.logout .btn:hover { background: none; border: 0; box-shadow: none; color: var(--terra-hover); }
+html.calm form.logout .btn:hover { background: none; border: 0; box-shadow: none; color: var(--accent-hover); }
 
 /* Importing: the file is dropped onto (or picked from) a sheet. */
 html.calm label.drop {
@@ -813,16 +797,16 @@ html.calm label.drop {
   transition: border-color 160ms ease, box-shadow 220ms var(--ease), background-color 140ms ease;
 }
 html.calm label.drop:hover, html.calm label.drop.dropping { border-color: var(--line-strong); box-shadow: 0 1px 0 var(--line), 0 14px 36px rgba(var(--shadow), .08); }
-html.calm label.drop.dropping { background: color-mix(in srgb, var(--surface) 92%, var(--terra)); }
-html.calm label.drop:focus-within { outline: 2px solid var(--terra); outline-offset: 3px; }
+html.calm label.drop.dropping { background: color-mix(in srgb, var(--surface) 92%, var(--accent)); }
+html.calm label.drop:focus-within { outline: 2px solid var(--accent); outline-offset: 3px; }
 html.calm label.drop .drop-text { font-family: var(--serif); font-optical-sizing: auto; font-size: 1.33rem; color: var(--ink); }
-html.calm label.drop.chosen .drop-text { color: var(--terra-deep); }
+html.calm label.drop.chosen .drop-text { color: var(--accent); }
 html.calm label.drop .muted { font-size: .87rem; }
 html.calm label.drop input[type=file] { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; }
 html.calm .sheet textarea.csv { min-height: 7rem; font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace; font-size: .93rem; line-height: 1.6; text-align: left; }
 html.calm .sheet.paste { padding: 1.4rem 1.8rem 1rem; text-align: left; }
 html.calm .sheet.paste label.attach { margin-top: .6rem; }
-html.calm .sheet.paste label.attach.chosen { color: var(--terra-deep); }
+html.calm .sheet.paste label.attach.chosen { color: var(--accent); }
 
 /* Searching a deck: one quiet bar, the field and filter inside it. */
 html.calm form.search {
@@ -837,7 +821,7 @@ html.calm form.search {
   transition: border-color 140ms ease, box-shadow 140ms ease;
 }
 html.calm form.search:hover { border-color: var(--line-strong); }
-html.calm form.search:focus-within { border-color: var(--terra); box-shadow: 0 0 0 3px var(--terra-glow); }
+html.calm form.search:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-glow); }
 html.calm form.search :is(input, select) { min-height: 38px; margin: 0; padding: 0 .6rem 0 0; border: 0; border-radius: 0; background: none; box-shadow: none; }
 html.calm form.search :is(input, select):focus { box-shadow: none; }
 html.calm form.search select { flex: none; width: auto; padding: 0 .4rem 0 .9rem; border-left: 1px solid var(--line); color: var(--muted); cursor: pointer; }
@@ -853,12 +837,12 @@ html.calm nav.tabs a::after {
   left: 0; right: 0; bottom: -2px;
   height: 2px;
   border-radius: 2px;
-  background: var(--terra);
+  background: var(--accent);
   transform: scaleX(0);
   transform-origin: left;
   transition: transform 220ms var(--ease);
 }
-html.calm nav.tabs a:hover { color: var(--terra-hover); }
+html.calm nav.tabs a:hover { color: var(--accent-hover); }
 html.calm nav.tabs a[aria-current="page"] { background: none; color: var(--ink); }
 html.calm nav.tabs a[aria-current="page"]::after { transform: scaleX(1); }
 
@@ -871,23 +855,15 @@ html.calm ul.list li:has(> a.row:hover), html.calm ul.list li:has(+ li > a.row:h
 html.calm ul.list li:has(> a.row.held), html.calm ul.list li:has(+ li > a.row.held) { border-color: transparent; }
 html.calm a.row {
   position: relative;
-  isolation: isolate;
   min-height: 56px;
-  padding: .6rem .9rem;
-  margin: 2px -.9rem;
-  border: 1px solid transparent;
+  padding: .7rem 1rem;
+  margin: 2px -1rem;
+  border: 0;
   border-radius: 12px;
-  transform: perspective(var(--persp, 700px)) rotateX(var(--rx)) rotateY(var(--ry));
-  transition: transform var(--dur) var(--spring), box-shadow var(--dur) var(--spring), background-color 160ms ease, border-color 160ms ease;
+  transition: background-color 140ms ease;
 }
-/* On hover a row becomes a button: same edge, shadow and light. */
-html.calm a.row:hover, html.calm a.row.held {
-  color: var(--ink);
-  background: var(--surface);
-  border-color: var(--line-strong);
-  box-shadow: 0 1px 0 var(--line), var(--sx) var(--sy) 18px rgba(var(--shadow), .10);
-}
-html.calm a.row:hover::after, html.calm a.row.held::after { opacity: 1; }
+/* On hover a row lights up softly, like a pressed key. */
+html.calm a.row:hover, html.calm a.row.held { color: var(--ink); background: var(--tint); }
 html.calm a.row:hover .grow { text-decoration: none; }
 html.calm .counts { font-weight: 400; font-size: .93rem; color: var(--muted); }
 html.calm li.item { padding: .8rem 0; }
@@ -905,7 +881,7 @@ html.calm dl.kv dt { font-weight: 400; color: var(--muted); }
 html.calm dl.kv dd { text-align: right; color: var(--ink); }
 html.calm table.history th, html.calm table.history td { border-bottom: 1px solid var(--line); font-size: .93rem; }
 html.calm table.forecast th { color: var(--muted); font-size: .93rem; font-weight: 400; padding: .3rem .8rem .3rem 0; }
-html.calm table.forecast .bar { height: 6px; border-radius: 3px; background: var(--terra); }
+html.calm table.forecast .bar { height: 6px; border-radius: 3px; background: var(--accent); }
 html.calm table.forecast .num { color: var(--muted); font-size: .93rem; }
 html.calm img.thumb { border-radius: 8px; }
 
@@ -913,7 +889,7 @@ html.calm img.thumb { border-radius: 8px; }
 html.calm .today { padding-top: 40px; }
 html.calm .today .date { margin: 0; font-size: .87rem; color: var(--muted); }
 html.calm .today h1 { margin: .35rem 0 0; }
-html.calm .today h1 .count { color: var(--terra-deep); }
+html.calm .today h1 .count { color: var(--accent); }
 html.calm .today .facts { margin: .2rem 0 0; color: var(--muted); }
 html.calm .start { display: inline-flex; width: auto; margin: 1.4rem 0 0; font-size: 1rem; }
 html.calm .start .arrow { display: inline-block; transition: transform 180ms var(--ease); }
@@ -935,13 +911,13 @@ html.calm ul.decks li { border-bottom: 0; }
 html.calm ul.decks a.row { display: grid; grid-template-columns: minmax(0, 1fr) 64px 64px 16px; gap: 12px; min-height: 60px; }
 html.calm ul.decks a.row .grow { display: flex; flex-direction: column; justify-content: center; }
 html.calm ul.decks .deck-name { font-family: var(--serif); font-optical-sizing: auto; font-size: 1.13rem; line-height: 1.3; }
-html.calm ul.decks .num.done { color: var(--terra); font-weight: 400; }
+html.calm ul.decks .num.done { color: var(--accent); font-weight: 400; }
 /* Done for today: the Terra tick, a little off-straight, wiggling just
    barely, like it was set by hand. */
 html.calm ul.decks .num.done { display: flex; align-items: center; justify-content: flex-end; }
 html.calm ul.decks .done-check {
   display: block;
-  color: var(--terra);
+  color: var(--accent);
   transform: translate(.5px, -.5px) rotate(-6deg);
   animation: calm-wiggle 5.2s ease-in-out infinite;
 }
@@ -960,12 +936,12 @@ html.calm .deck-path .sep { margin: 0 .4em; color: var(--faint); }
 html.calm ul.decks .deck-path { margin-bottom: .1rem; font-size: .8rem; letter-spacing: .01em; }
 html.calm h1 .deck-path { margin-bottom: .2rem; font-size: .87rem; letter-spacing: .01em; }
 html.calm ul.decks .num { text-align: right; font-weight: 400; font-size: 1rem; color: var(--muted); }
-html.calm ul.decks .num.due { color: var(--terra-deep); font-weight: 600; }
-html.calm ul.decks .num.new { display: inline-flex; align-items: center; justify-content: flex-end; gap: 6px; color: var(--orchid-deep); }
+html.calm ul.decks .num.due { color: var(--accent); font-weight: 600; }
+html.calm ul.decks .num.new { display: inline-flex; align-items: center; justify-content: flex-end; gap: 6px; color: var(--warn); }
 html.calm ul.decks .num .unit { display: none; }
-html.calm ul.decks .num .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--orchid); }
+html.calm ul.decks .num .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--warn); }
 html.calm ul.decks .chev { display: block; color: var(--faint); transition: transform 180ms var(--ease), color 140ms ease; }
-html.calm ul.decks a.row:hover .chev { transform: translateX(2px); color: var(--terra-hover); }
+html.calm ul.decks a.row:hover .chev { transform: translateX(2px); color: var(--accent-hover); }
 
 /* ----- studying ------------------------------------------------------------ */
 html.calm main:has(> .study), html.calm main:has(> .session-end) { padding-top: 0; padding-bottom: 0; }
@@ -987,8 +963,8 @@ html.calm .card-state {
   color: var(--muted);
 }
 html.calm .card-state .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--faint); }
-html.calm .card-state .dot.new { background: var(--orchid); }
-html.calm .card-state .dot.review { background: var(--terra); }
+html.calm .card-state .dot.new { background: var(--warn); }
+html.calm .card-state .dot.review { background: var(--accent); }
 html.calm section.face { padding: 0; overflow-wrap: anywhere; }
 html.calm section.face.front {
   margin-top: .9rem;
@@ -1036,19 +1012,19 @@ html.calm .study .answers {
 html.calm .study .answers .btn { flex-direction: column; gap: 2px; min-height: 64px; padding: .6rem 1rem; }
 html.calm .study .answers .label { display: inline-flex; align-items: center; gap: 8px; font-size: 1rem; font-weight: 500; }
 html.calm .study .answers .ivl { font-size: .87rem; font-weight: 400; color: var(--muted); }
-html.calm .study .answers .btn.again .ivl { color: var(--orchid-deep); }
-html.calm .study .answers .btn.primary .ivl { color: var(--terra-deep); }
+html.calm .study .answers .btn.again .ivl { color: var(--warn); }
+html.calm .study .answers .btn.primary .ivl { color: var(--accent); }
 html.calm .study-foot { margin: 0; padding: 40px 0 36px; }
 html.calm .study-foot .progress { height: 2px; border-radius: 2px; background: var(--track); }
-html.calm .study-foot .bar { height: 2px; border-radius: 2px; background: var(--terra); transition: width 320ms var(--ease), background-color 900ms var(--ease); }
+html.calm .study-foot .bar { height: 2px; border-radius: 2px; background: var(--accent); transition: width 320ms var(--ease), background-color 900ms var(--ease); }
 /* A miss takes its share back: the line slips back, briefly orchid. */
-html.calm .study-foot .bar.slip { background: var(--orchid); }
+html.calm .study-foot .bar.slip { background: var(--warn); }
 html.calm .study-meta { margin: .6rem 0 0; font-size: .87rem; color: var(--muted); }
 html.calm .study-meta a { color: var(--muted); }
-html.calm .study-meta a:hover { color: var(--terra-hover); }
+html.calm .study-meta a:hover { color: var(--accent-hover); }
 html.calm .study-foot .study-tools { justify-content: flex-start; gap: 1.2rem; margin-top: .2rem; font-size: .87rem; }
 html.calm .study-foot .study-tools a, html.calm .study-foot .study-tools button.link { color: var(--muted); }
-html.calm .study-foot .study-tools a:hover, html.calm .study-foot .study-tools button.link:hover { color: var(--terra-hover); }
+html.calm .study-foot .study-tools a:hover, html.calm .study-foot .study-tools button.link:hover { color: var(--accent-hover); }
 
 /* The end of a session: the progress line closes up and a tick draws out
    of it, then a single calm line. It plays only when a session has just
@@ -1068,7 +1044,7 @@ html.calm .session-end {
   justify-content: center;
   text-align: center;
 }
-html.calm .end-mark { position: relative; display: block; width: 26px; height: 26px; color: var(--terra); }
+html.calm .end-mark { position: relative; display: block; width: 26px; height: 26px; color: var(--accent); }
 html.calm .end-mark .check { display: block; }
 html.calm .end-mark .check path { stroke-dasharray: 1; stroke-dashoffset: 0; }
 html.calm .end-mark .line {
@@ -1079,14 +1055,14 @@ html.calm .end-mark .line {
   height: 2px;
   margin: -1px 0 0 -2px;
   border-radius: 2px;
-  background: var(--terra);
+  background: var(--accent);
   opacity: 0;
 }
 html.calm .session-end h1 { margin: 1.8rem 0 0; font-size: 1.73rem; line-height: 1.3; }
 html.calm .session-end .summary { margin: .4rem 0 0; color: var(--muted); }
 html.calm .session-end .end-links { justify-content: center; gap: 1.4rem; margin-top: 1.4rem; font-size: .93rem; }
 html.calm .session-end .end-links a, html.calm .session-end .end-links button.link { color: var(--muted); }
-html.calm .session-end .end-links a:hover, html.calm .session-end .end-links button.link:hover { color: var(--terra-hover); }
+html.calm .session-end .end-links a:hover, html.calm .session-end .end-links button.link:hover { color: var(--accent-hover); }
 html.calm .session-end .btn { margin-top: 1rem; }
 
 html.calm .finishing .end-mark .line { animation: calm-close-line 560ms cubic-bezier(.6, 0, .2, 1) both; }
@@ -1155,14 +1131,14 @@ html.calm ol.list-items label.item:hover, html.calm ol.list-items label.item.hel
 html.calm ol.list-items label.item:is(:hover, .held)::after { opacity: 1; }
 /* The box itself is only for the form; the row shows the choice. */
 html.calm ol.list-items input { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
-html.calm ol.list-items label.item:has(input:focus-visible) { outline: 2px solid var(--terra); outline-offset: 2px; }
+html.calm ol.list-items label.item:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
 html.calm ol.list-items .num { min-width: 1.1rem; font-family: var(--sans); font-size: .87rem; color: var(--faint); text-align: right; }
 html.calm ol.list-items .text { font-family: var(--serif); font-optical-sizing: auto; }
-html.calm ol.list-items .mark { font-family: var(--sans); font-size: .75rem; font-weight: 600; color: var(--terra-deep); }
-html.calm ol.list-items label.item:has(input:checked) { background: color-mix(in srgb, var(--terra) 9%, transparent); border-color: var(--terra-edge); }
-html.calm ol.list-items label.item:has(input:checked) .text { color: var(--terra-deep); }
+html.calm ol.list-items .mark { font-family: var(--sans); font-size: .75rem; font-weight: 600; color: var(--accent); }
+html.calm ol.list-items label.item:has(input:checked) { background: color-mix(in srgb, var(--accent) 9%, transparent); border-color: var(--accent-edge); }
+html.calm ol.list-items label.item:has(input:checked) .text { color: var(--accent); }
 html.calm ol.list-items label.item:has(input:checked) .mark { display: inline; }
-html.calm ol.list-items label.item:has(input:checked) .num { color: var(--terra-deep); }
+html.calm ol.list-items label.item:has(input:checked) .num { color: var(--accent); }
 html.calm ol.list-items li.known { color: var(--faint); }
 html.calm ol.list-items li.known .text { font-family: var(--serif); }
 html.calm .study .answers.cols-1 { grid-template-columns: minmax(0, 22rem); justify-content: center; margin-top: 2rem; }
@@ -1193,16 +1169,16 @@ html.calm .coach {
   margin: 0 0 2rem;
   padding: 1rem 1.25rem;
   border-radius: 14px;
-  border: 1px solid var(--orchid-edge);
-  background: color-mix(in srgb, var(--orchid) 5%, var(--surface));
+  border: 1px solid var(--warn-edge);
+  background: color-mix(in srgb, var(--warn) 5%, var(--surface));
 }
 html.calm .coach-flag + .coach-flag { margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--line); }
 html.calm .coach-flag p { margin: .25rem 0; }
-html.calm .coach-label { font-size: .8rem; letter-spacing: .06em; text-transform: uppercase; color: var(--orchid-deep); }
+html.calm .coach-label { font-size: .8rem; letter-spacing: .06em; text-transform: uppercase; color: var(--warn); }
 html.calm .coach .actions { margin: .8rem 0 0; }
 html.calm .write-hints:empty { display: none; }
 html.calm .coach-hint { display: flex; gap: .6rem; align-items: baseline; margin: .9rem 0 0; font-size: .93rem; color: var(--muted); }
-html.calm .coach-hint::before { content: ''; flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--orchid); transform: translateY(-.1em); }
+html.calm .coach-hint::before { content: ''; flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--warn); transform: translateY(-.1em); }
 html.calm .leech-note { margin: .8rem 0 0; color: var(--muted); }
 html.calm .split-form .sheet { margin-bottom: 1.4rem; }
 
@@ -1211,26 +1187,26 @@ html.calm .sheet fieldset.goals { border: 0; margin: 0; padding: .4rem 0 .2rem; 
 html.calm .sheet fieldset.goals legend { padding: .6rem 0 .3rem; color: var(--muted); font-size: .93rem; }
 html.calm .sheet label.goal { display: flex; gap: .8rem; align-items: flex-start; padding: .6rem .2rem; border-radius: 10px; cursor: pointer; transition: background-color 140ms ease; }
 html.calm .sheet label.goal:hover { background: var(--track); }
-html.calm .sheet label.goal input { accent-color: var(--terra-deep); margin-top: .3rem; }
+html.calm .sheet label.goal input { accent-color: var(--accent); margin-top: .3rem; }
 html.calm .sheet label.goal .goal-name { display: block; font-family: var(--serif); font-size: 1.13rem; }
-html.calm .sheet label.goal:has(input:checked) .goal-name { color: var(--terra-deep); }
+html.calm .sheet label.goal:has(input:checked) .goal-name { color: var(--accent); }
 html.calm :is(table.workload, table.calibration, table.retention) { width: 100%; border-collapse: collapse; font-size: .93rem; }
 html.calm :is(table.workload, table.calibration, table.retention) :is(th, td) { padding: .55rem .2rem; border-bottom: 1px solid var(--line); text-align: left; font-weight: 400; }
 html.calm :is(table.workload, table.calibration, table.retention) thead th { font-size: .8rem; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
 html.calm :is(table.workload, table.calibration, table.retention) .num { text-align: right; font-variant-numeric: tabular-nums; }
-html.calm table.workload tr.current th { color: var(--terra-deep); }
+html.calm table.workload tr.current th { color: var(--accent); }
 
 /* ----- timed cards, typed answers, the sure check ------------------------ */
 /* The countdown is a thin Terra line that drains, and turns Orchid in its
    last seconds. */
 html.calm .timer { width: min(22rem, 100%); margin: 1.4rem auto 0; }
 html.calm .timer-line { height: 2px; border-radius: 2px; background: var(--track); overflow: hidden; }
-html.calm .timer-fill { height: 2px; width: 100%; border-radius: 2px; background: var(--terra); transition: background-color 400ms var(--ease); }
-html.calm .timer.low .timer-fill { background: var(--orchid); }
+html.calm .timer-fill { height: 2px; width: 100%; border-radius: 2px; background: var(--accent); transition: background-color 400ms var(--ease); }
+html.calm .timer.low .timer-fill { background: var(--warn); }
 html.calm .timer-meta { display: flex; justify-content: space-between; align-items: baseline; margin: .45rem 0 0; font-size: .87rem; color: var(--muted); font-variant-numeric: tabular-nums; }
-html.calm .timer.low .timer-secs { color: var(--orchid-deep); }
+html.calm .timer.low .timer-secs { color: var(--warn); }
 html.calm .timer .extend { color: var(--muted); font-size: .87rem; }
-html.calm .timer .extend:hover { color: var(--terra-hover); }
+html.calm .timer .extend:hover { color: var(--accent-hover); }
 html.calm .study .reveal-form { flex-direction: column; align-items: center; gap: 1rem; width: min(26rem, 100%); margin: 1.6rem auto 0; }
 html.calm .reveal-form .typed-answer { display: flex; flex-direction: column; width: 100%; text-align: left; }
 html.calm .reveal-form .typed-answer .face-label { margin-bottom: .3rem; }
@@ -1239,35 +1215,35 @@ html.calm .reveal-form .sure-ask { margin: 0; color: var(--muted); font-size: .9
 html.calm .reveal-form .sure-buttons { display: grid; grid-template-columns: 1fr 1fr; gap: .8rem; width: 100%; }
 html.calm .reveal-form .sure-buttons .btn { min-height: 56px; }
 html.calm .reveal-form .sure-buttons .label { display: inline-flex; align-items: center; gap: 8px; }
-html.calm .typed-echo { margin: 0 auto 1.4rem; padding: .8rem 1rem; max-width: 30rem; border: 0; border-radius: 10px; background: color-mix(in srgb, var(--orchid) 7%, transparent); text-align: left; }
-html.calm .typed-echo .face-label { color: var(--orchid-deep); }
+html.calm .typed-echo { margin: 0 auto 1.4rem; padding: .8rem 1rem; max-width: 30rem; border: 0; border-radius: 10px; background: color-mix(in srgb, var(--warn) 7%, transparent); text-align: left; }
+html.calm .typed-echo .face-label { color: var(--warn); }
 html.calm .typed-echo .typed-text { margin: .25rem 0 0; font-family: var(--serif); white-space: pre-wrap; }
 html.calm .timeout-form { text-align: center; animation: calm-appear 220ms var(--ease) both; }
-html.calm .timeout-note { margin: 1.6rem 0 0; color: var(--orchid-deep); font-size: .93rem; }
+html.calm .timeout-note { margin: 1.6rem 0 0; color: var(--warn); font-size: .93rem; }
 html.calm .timed-out ol.list-items label.row { pointer-events: none; }
 /* Quiet hours: two hour pickers side by side, "22:00 to 7:00". */
 html.calm .sheet .line .field.quiet select { width: auto; }
 html.calm .sheet .line .field.quiet { flex: none; }
 /* Rest and break screens, and the catch-up offer on the home page. */
 html.calm .catch-up { margin: 0; }
-html.calm .catch-up button.link { color: var(--terra-deep); font-size: inherit; }
-html.calm .catch-up button.link:hover { color: var(--terra-hover); }
+html.calm .catch-up button.link { color: var(--accent); font-size: inherit; }
+html.calm .catch-up button.link:hover { color: var(--accent-hover); }
 /* ----- the week, and retention by deck ----------------------------------- */
 html.calm .week p { margin: .4rem 0; }
 html.calm .week .tip { border: 0; padding: 0; display: flex; gap: .6rem; align-items: baseline; color: var(--muted); font-size: .93rem; }
-html.calm .week .tip::before { content: ''; flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--orchid); transform: translateY(-.1em); }
+html.calm .week .tip::before { content: ''; flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--warn); transform: translateY(-.1em); }
 html.calm table.retention th a { color: var(--ink); }
-html.calm table.retention th a:hover { color: var(--terra-hover); }
-html.calm table.retention tr.short td:nth-child(3) { color: var(--orchid-deep); }
+html.calm table.retention th a:hover { color: var(--accent-hover); }
+html.calm table.retention tr.short td:nth-child(3) { color: var(--warn); }
 
 /* ----- lessons ------------------------------------------------------------ */
 /* Reading width, serif text, and a small tag for how strong the evidence is:
    Terra where it is solid, muted where it is a rule of thumb or mixed,
    Orchid where it is not supported. */
 html.calm .lead { color: var(--muted); max-width: 36rem; }
-html.calm .evidence { flex: none; border: 0; padding: .1rem .55rem; border-radius: 999px; font-size: .75rem; font-weight: 500; letter-spacing: .02em; white-space: nowrap; color: var(--terra-deep); background: color-mix(in srgb, var(--terra) 12%, transparent); }
+html.calm .evidence { flex: none; border: 0; padding: .1rem .55rem; border-radius: 999px; font-size: .75rem; font-weight: 500; letter-spacing: .02em; white-space: nowrap; color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); }
 html.calm .evidence:is(.mixed, .practice) { color: var(--muted); background: var(--track); }
-html.calm .evidence.against { color: var(--orchid-deep); background: color-mix(in srgb, var(--orchid) 12%, transparent); }
+html.calm .evidence.against { color: var(--warn); background: color-mix(in srgb, var(--warn) 12%, transparent); }
 html.calm ul.lessons .evidence { margin-left: 1rem; }
 html.calm .lesson h1 { margin-bottom: .5rem; }
 html.calm .lesson-meta { margin: 0 0 1.6rem; }
@@ -1275,10 +1251,10 @@ html.calm .lesson .md { max-width: 36rem; font-family: var(--serif); font-optica
 html.calm .lesson .md h2 { margin: 2.2rem 0 .6rem; font-family: var(--sans); }
 html.calm .lesson .md ul { padding-left: 1.2rem; }
 html.calm .lesson .md li { margin: 0 0 .5rem; }
-html.calm .lesson .md li::marker { color: var(--terra); }
-html.calm .lesson .md a { color: var(--terra-deep); }
+html.calm .lesson .md li::marker { color: var(--accent); }
+html.calm .lesson .md a { color: var(--accent); }
 html.calm .lesson-deck { max-width: 36rem; margin: 2.6rem 0 1rem; padding-top: 1.4rem; border-top: 1px solid var(--line); }
 html.calm .lesson-deck form { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin: 0; }
 html.calm .lesson-deck p { margin: 0; }
 html.calm .next-lesson { margin: 1.4rem 0 3rem; color: var(--muted); font-size: .93rem; }
-html.calm .next-lesson a { color: var(--terra-deep); }
+html.calm .next-lesson a { color: var(--accent); }
