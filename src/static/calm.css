@@ -459,6 +459,26 @@ html.calm .btn.danger:is(:hover, .held) { border-color: var(--warn); color: var(
 html.calm .btn.wide { display: flex; width: 100%; margin: 1.2rem 0; font-size: 1rem; }
 html.calm button.link { min-height: 0; padding: 0; color: var(--muted); font-weight: 400; text-decoration: none; transition: color 140ms ease; }
 html.calm button.link:hover { color: var(--accent); }
+/* One primary button per page. Every other action is words in Orchid (or
+   Terra when it destroys something). Answer buttons, the ⋯ toggle, folds
+   and other controls keep their own shapes. */
+html.calm main :is(.btn, button):not(.primary, .link, .fold, .more-toggle, .keys-button, .chip, .close, .icon-link, .answers .btn, .sure-buttons .btn, .study .btn.again, form.search button, .path-field button) {
+  min-height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  font-weight: 600;
+  color: var(--accent);
+}
+html.calm main :is(.btn, button):not(.primary, .link, .fold, .more-toggle, .keys-button, .chip, .close, .icon-link, .answers .btn, .sure-buttons .btn, .study .btn.again, form.search button, .path-field button):is(:hover, .held) {
+  border: 0;
+  background: none;
+  color: var(--accent-hover);
+}
+html.calm main :is(.btn, button).danger:not(.primary) { color: var(--warn); }
+html.calm main :is(.btn, button).danger:not(.primary):is(:hover, .held) { color: var(--warn); text-decoration: underline; text-underline-offset: 3px; }
+
 /* Key hints live on the ? sheet now, not on every button. */
 html.calm .key { display: none; }
 html.calm .actions { gap: .75rem; }
