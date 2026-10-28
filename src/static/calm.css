@@ -886,62 +886,71 @@ html.calm table.forecast .num { color: var(--muted); font-size: .93rem; }
 html.calm img.thumb { border-radius: 8px; }
 
 /* ----- decks home --------------------------------------------------------- */
-html.calm .today { padding-top: 40px; }
-html.calm .today .date { margin: 0; font-size: .87rem; color: var(--muted); }
-html.calm .today h1 { margin: .35rem 0 0; }
-html.calm .today h1 .count { color: var(--accent); }
-html.calm .today .facts { margin: .2rem 0 0; color: var(--muted); }
-html.calm .start { display: inline-flex; width: auto; margin: 1.4rem 0 0; font-size: 1rem; }
-html.calm .start .arrow { display: inline-block; transition: transform 180ms var(--ease); }
-html.calm .start:hover .arrow { transform: translateX(3px); }
+/* Today on the left, the week beside it; the decks below as a table. */
+html.calm .hero {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+  gap: 40px;
+  padding: 3rem 0;
+  border-bottom: 1px solid var(--line);
+}
+html.calm .hero:not(:has(.today-side)) { grid-template-columns: minmax(0, 1fr); }
+html.calm .today { padding: 0; }
+html.calm .today .date { margin: 0; font-size: .75rem; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; color: var(--accent); }
+html.calm .today h1 { margin: 1rem 0 0; font-size: 3.5rem; line-height: 1.02; }
+html.calm .today h1 .count .n { font-family: var(--italic); font-style: italic; font-weight: 300; letter-spacing: -.02em; color: var(--accent); }
+html.calm .today .facts { margin: 1rem 0 0; font-size: 1.125rem; color: var(--ink-2); }
+html.calm .start { display: inline-flex; width: auto; margin: 1.5rem 0 0; font-size: .9375rem; }
+html.calm .start .arrow { display: none; }
+html.calm .today .catch-up { margin-top: 1.25rem; }
+html.calm .today-side { display: flex; flex-direction: column; gap: .75rem; padding-left: 28px; border-left: 1px solid var(--line); }
+html.calm .today-side p { margin: 0; }
+html.calm .today-side .week { display: flex; flex-direction: column; gap: .75rem; }
+html.calm .today-side .week h2 { margin: 0; padding: 0; border: 0; font-size: .75rem; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
+html.calm .attention-link { display: none; }
+html.calm .home-actions .tile { display: none; }
+html.calm .home-actions .btn.icon-link { min-height: 40px; padding: 0 1rem; border: 1.5px solid var(--line); border-radius: 12px; font-size: .875rem; font-weight: 700; color: var(--ink); }
+html.calm .home-actions .btn.icon-link:is(:hover, .held) { border: 1.5px solid var(--ink); color: var(--ink); }
+html.calm .home-actions { gap: .75rem; margin: 1.5rem 0 0; }
+
 html.calm .table-head {
   display: flex;
   align-items: baseline;
-  gap: 12px;
-  margin: 4rem 0 .3rem;
-  padding: 0 0 .5rem;
+  gap: 16px;
+  margin: 2rem 0 0;
+  padding: 0 0 .65rem;
   border-bottom: 1px solid var(--line);
-  font-size: .8rem;
-  font-weight: 600;
+  font-size: .75rem;
+  font-weight: 700;
+  letter-spacing: .12em;
+  text-transform: uppercase;
   color: var(--muted);
 }
-html.calm .table-head .num { display: block; width: 64px; text-align: right; }
+html.calm .table-head .num { display: block; width: 96px; text-align: right; }
 html.calm .table-head .chev { display: block; width: 16px; }
+html.calm ul.decks { margin: 4px 0 0; }
 html.calm ul.decks li { border-bottom: 0; }
-html.calm ul.decks a.row { display: grid; grid-template-columns: minmax(0, 1fr) 64px 64px 16px; gap: 12px; min-height: 60px; }
+html.calm ul.decks a.row { display: grid; grid-template-columns: minmax(0, 1fr) 96px 96px 16px; gap: 16px; align-items: center; min-height: 64px; }
 html.calm ul.decks a.row .grow { display: flex; flex-direction: column; justify-content: center; }
-html.calm ul.decks .deck-name { font-family: var(--serif); font-optical-sizing: auto; font-size: 1.13rem; line-height: 1.3; }
-html.calm ul.decks .num.done { color: var(--accent); font-weight: 400; }
-/* Done for today: the Terra tick, a little off-straight, wiggling just
-   barely, like it was set by hand. */
-html.calm ul.decks .num.done { display: flex; align-items: center; justify-content: flex-end; }
-html.calm ul.decks .done-check {
-  display: block;
-  color: var(--accent);
-  transform: translate(.5px, -.5px) rotate(-6deg);
-  animation: calm-wiggle 5.2s ease-in-out infinite;
-}
-@keyframes calm-wiggle {
-  0%, 100% { transform: translate(.5px, -.5px) rotate(-6deg); }
-  25% { transform: translate(-.3px, 0) rotate(5deg) scale(.94); }
-  50% { transform: translate(.9px, -.9px) rotate(-3deg) scale(1.04); }
-  75% { transform: translate(.2px, -.2px) rotate(8deg); }
-}
-
-html.calm ul.decks .sub { margin-top: .3rem; font-size: .87rem; line-height: 1.3; color: var(--muted); }
-
+html.calm ul.decks .deck-name { font-size: 1.25rem; font-weight: 700; letter-spacing: -.015em; line-height: 1.25; }
+html.calm ul.decks .sub { margin-top: .2rem; font-size: .8125rem; line-height: 1.3; color: var(--muted); }
 /* Nested decks: the parents above in small type, the deck's own name below. */
-html.calm .deck-path { font-family: var(--sans); color: var(--muted); }
+html.calm .deck-path { font-family: var(--sans); font-weight: 500; color: var(--muted); }
 html.calm .deck-path .sep { margin: 0 .4em; color: var(--faint); }
-html.calm ul.decks .deck-path { margin-bottom: .1rem; font-size: .8rem; letter-spacing: .01em; }
-html.calm h1 .deck-path { margin-bottom: .2rem; font-size: .87rem; letter-spacing: .01em; }
-html.calm ul.decks .num { text-align: right; font-weight: 400; font-size: 1rem; color: var(--muted); }
-html.calm ul.decks .num.due { color: var(--accent); font-weight: 600; }
-html.calm ul.decks .num.new { display: inline-flex; align-items: center; justify-content: flex-end; gap: 6px; color: var(--warn); }
-html.calm ul.decks .num .unit { display: none; }
-html.calm ul.decks .num .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--warn); }
+html.calm ul.decks .deck-path { margin-bottom: .1rem; font-size: .8125rem; letter-spacing: 0; }
+html.calm h1 .deck-path { display: block; margin-bottom: .4rem; font-size: .875rem; font-weight: 500; letter-spacing: 0; }
+html.calm ul.decks .num { text-align: right; font-weight: 500; font-size: 1.125rem; color: var(--ink-2); }
+html.calm ul.decks .num.due { color: var(--accent); font-weight: 700; }
+html.calm ul.decks .num.new { color: var(--ink-2); }
+html.calm ul.decks .num .unit, html.calm ul.decks .num .dot { display: none; }
+/* Nothing due shows as a faint dash, not in Orchid. */
+html.calm ul.decks .num.due:not(.done):not(:has(.unit)) { color: var(--faint); font-weight: 500; }
+html.calm ul.decks .num.new:not(:has(.unit)) { color: var(--faint); }
+/* Done for today: a Terra tick, straight like the numbers. */
+html.calm ul.decks .num.done { display: flex; align-items: center; justify-content: flex-end; }
+html.calm ul.decks .done-check { display: block; color: var(--warn); }
 html.calm ul.decks .chev { display: block; color: var(--faint); transition: transform 180ms var(--ease), color 140ms ease; }
-html.calm ul.decks a.row:hover .chev { transform: translateX(2px); color: var(--accent-hover); }
+html.calm ul.decks a.row:hover .chev { transform: translateX(2px); color: var(--ink); }
 
 /* ----- studying ------------------------------------------------------------ */
 html.calm main:has(> .study), html.calm main:has(> .session-end) { padding-top: 0; padding-bottom: 0; }

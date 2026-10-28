@@ -35,6 +35,7 @@ const CSS: &str = include_str!("style.css");
 const CALM_CSS: &str = include_str!("static/calm.css");
 const THEME_JS: &str = include_str!("static/theme.js");
 const APP_JS: &str = include_str!("static/app.js");
+const DESK_JS: &str = include_str!("static/desk.js");
 // Two cards, Wild Orchid behind Terra Cotta, with the "done" tick.
 const FAVICON_SVG: &str = include_str!("static/favicon.svg");
 const FAVICON_PNG: &[u8] = include_bytes!("static/favicon-32.png");
@@ -171,6 +172,7 @@ pub fn router(app: AppState) -> Router {
         .route("/calm.css", get(|q: RawQuery| asset(q, "text/css; charset=utf-8", CALM_CSS)))
         .route("/theme.js", get(|q: RawQuery| asset(q, "text/javascript; charset=utf-8", THEME_JS)))
         .route("/app.js", get(|q: RawQuery| asset(q, "text/javascript; charset=utf-8", APP_JS)))
+        .route("/desk.js", get(|q: RawQuery| asset(q, "text/javascript; charset=utf-8", DESK_JS)))
         .route("/fonts/{name}", get(font_file))
         .route("/favicon.svg", get(|| async { static_file("image/svg+xml", FAVICON_SVG.as_bytes(), false) }))
         // Browsers ask for /favicon.ico on their own; a PNG there works everywhere.
@@ -358,7 +360,7 @@ pub fn urlenc(s: &str) -> String {
 fn asset_version() -> &'static str {
     static VERSION: std::sync::OnceLock<String> = std::sync::OnceLock::new();
     VERSION.get_or_init(|| {
-        let all = [CSS, CALM_CSS, THEME_JS, APP_JS].concat();
+        let all = [CSS, CALM_CSS, THEME_JS, APP_JS, DESK_JS].concat();
         crate::auth::sha256_hex(&all)[..10].to_string()
     })
 }
@@ -477,6 +479,7 @@ fn page(nav: Option<Nav>, title: &str, user: Option<&User>, page_kind: Option<&s
                     (body)
                 }
                 script src=(format!("/app.js?v={}", asset_version())) defer {}
+                script src=(format!("/desk.js?v={}", asset_version())) defer {}
             }
         }
     }
@@ -536,12 +539,13 @@ fn icon_link(href: &str, paths: &'static str, label: &str) -> Markup {
     html! { a.icon-link href=(href) { (icon(paths, PAGE_ICON)) span { (label) } } }
 }
 
-/// The "done" tick: Terra, drawn by hand rather than set like an icon.
-/// pathLength lets calm.css draw it in from 1 to 0 at any size.
+/// The "done" tick: Terra, drawn with straight strokes and square ends, like
+/// the numbers beside it. pathLength lets calm.css draw it in from 1 to 0
+/// at any size.
 fn done_check(size: u32, class: &'static str) -> Markup {
     html! {
-        svg class=(class) viewBox="0 0 24 24" width=(size) height=(size) fill="none" stroke="currentColor" stroke-width=(format!("{:.2}", 48.0 / size as f64)) stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" {
-            path d="M4.5 12.8 9.6 17.6 19.5 6.8" pathLength="1" {}
+        svg class=(class) viewBox="0 0 24 24" width=(size) height=(size) fill="none" stroke="currentColor" stroke-width=(format!("{:.2}", 52.0 / size as f64)) stroke-linecap="square" stroke-linejoin="miter" aria-hidden="true" {
+            path d="M4.5 12.5 9.5 17.5 19.5 6.5" pathLength="1" {}
         }
     }
 }
@@ -808,6 +812,7 @@ async fn home(State(app): State<AppState>, user: WebUser, Flash(msg): Flash) -> 
     let attention = app.attention(&access, None).await?.len() as i64;
     let overdue = app.overdue(&access).await?;
     let quiet = study::quiet_until(&user.0, now());
+    let week = app.week(&access).await?;
     // A rough guide; real thinking time once there's enough history.
     let minutes = ((total_due as f64 * stats.seconds_per_review.unwrap_or(12.0)) / 60.0).ceil().max(1.0) as i64;
     let mut facts = Vec::new();
@@ -827,8 +832,10 @@ async fn home(State(app): State<AppState>, user: WebUser, Flash(msg): Flash) -> 
         Some("home"),
         html! {
             (flash(&msg))
+            // On desktops the week sits beside today, as a sidebar.
+            div.hero {
             section.today aria-label="Today" {
-                p.date { (format::long_date(&user.0.clock())) }
+                p.date { @if user.0.catch_up { span.calm-only { "Catching up · " } } (format::long_date(&user.0.clock())) }
                 @if total_due > 0 {
                     h1 { span.count { (total_due) (if total_due == 1 { " card" } else { " cards" }) } " to study today" }
                 } @else if !decks.is_empty() {
@@ -843,6 +850,21 @@ async fn home(State(app): State<AppState>, user: WebUser, Flash(msg): Flash) -> 
                     p { a.btn.primary.start href="/study" { "Start studying " span.arrow aria-hidden="true" { "→" } } }
                 }
                 (catch_up_note(&user.0, overdue))
+            }
+            @if !decks.is_empty() {
+                aside.today-side.calm-only {
+                    (week_note(&week))
+                    @if user.0.catch_up && overdue >= 20 {
+                        p.small.muted {
+                            "At this pace you have caught up in about "
+                            (count((overdue + user.0.catch_up_reviews - 1) / user.0.catch_up_reviews.max(1), "day")) "."
+                        }
+                    }
+                    @if attention > 0 && !matches!(week.tip, insight::Tip::Attention) {
+                        p.small { a href="/attention" { (count(attention, "card")) " " (if attention == 1 { "needs" } else { "need" }) " a look" } }
+                    }
+                }
+            }
             }
             @if !shares.is_empty() {
                 h2 { "Shared with you" }
@@ -896,9 +918,9 @@ async fn home(State(app): State<AppState>, user: WebUser, Flash(msg): Flash) -> 
                 }
             }
             @if attention > 0 {
-                p.small { a href="/attention" { (count(attention, "card")) " " (if attention == 1 { "needs" } else { "need" }) " a look" } }
+                p.small.attention-link { a href="/attention" { (count(attention, "card")) " " (if attention == 1 { "needs" } else { "need" }) " a look" } }
             }
-            p.actions.icon-links {
+            p.actions.icon-links.home-actions {
                 (icon_btn("/cards/new", ICON_ADD, "Add card"))
                 (icon_btn("/decks/new", ICON_DECKS, "New deck"))
                 (icon_btn("/import", ICON_IMPORT, "Import"))
