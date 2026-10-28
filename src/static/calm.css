@@ -1246,7 +1246,18 @@ html.calm .finishing .summary, html.calm .finishing .end-links { animation: calm
 
 /* ----- login --------------------------------------------------------------- */
 html.calm .brand-big { font-family: var(--serif); font-weight: 400; font-size: 2.07rem; letter-spacing: 0; margin: 0; }
-html.calm main:has(.brand-big) { padding-top: 22vh; }
+/* Log in: the name and what it does on the left, the form on the right. */
+html.calm main:has(> .brand-big) { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 420px); column-gap: 80px; align-content: center; justify-content: space-between; min-height: 100vh; padding-top: 0; padding-bottom: 0; }
+html.calm main:has(> .brand-big) > * { grid-column: 2; }
+html.calm main:has(> .brand-big) > .brand-big { grid-column: 1; grid-row: 1 / 4; align-self: center; margin: 0 0 7.5rem; font-family: var(--sans); font-size: 4.5rem; font-weight: 800; letter-spacing: -.02em; }
+html.calm main:has(> .brand-big) > .tagline { grid-column: 1; grid-row: 1 / 4; align-self: center; max-width: 460px; margin: 5rem 0 0; font-family: var(--serif); font-size: 1.625rem; line-height: 1.4; }
+html.calm main:has(> .brand-big) > .tagline .it { font-family: var(--italic); font-style: italic; }
+html.calm main:has(> .brand-big) > p.muted:not(.small) { display: none; }
+html.calm main:has(> .brand-big) > h2 { grid-row: 1; margin: 0 0 1rem; padding: 0; border: 0; font-size: 2.25rem; font-weight: 800; letter-spacing: -.03em; }
+html.calm main:has(> .brand-big) form { display: flex; flex-direction: column; gap: 16px; }
+html.calm main:has(> .brand-big) form label { font-size: .875rem; font-weight: 600; }
+html.calm main:has(> .brand-big) form .btn { align-self: stretch; margin-top: 8px; }
+html.calm main:has(> .brand-big) > p:last-child { font-size: .875rem; color: var(--muted); }
 
 @media (prefers-reduced-motion: reduce) {
   html.calm *, html.calm *::before, html.calm *::after { animation: none !important; transition: none !important; }
@@ -1601,3 +1612,18 @@ html.calm .danger-line:last-child { border-bottom: 0; }
 html.calm .danger-line .lab { display: block; font-weight: 500; }
 html.calm .danger-line .sub { display: block; margin-top: 2px; font-size: .8125rem; color: var(--muted); }
 html.calm .danger-line form { flex: none; margin: 0; }
+
+/* ----- the ? sheet ------------------------------------------------------------ */
+html.calm .masthead .keys-hint[role=button] { cursor: pointer; transition: color 140ms ease; }
+html.calm .masthead .keys-hint[role=button]:hover { color: var(--accent-hover); }
+html.calm dialog.key-sheet { width: min(960px, calc(100vw - 64px)); max-width: none; margin: auto; padding: 32px 40px 40px; border: 1px solid var(--line); border-radius: 16px; background: var(--paper); color: var(--ink); box-shadow: 0 24px 64px rgba(var(--shadow), .18); }
+html.calm dialog.key-sheet[open] { animation: calm-appear 200ms var(--ease) both; }
+html.calm dialog.key-sheet::backdrop { background: rgba(var(--shadow), .28); }
+html.calm .key-top { display: flex; justify-content: space-between; align-items: baseline; padding-bottom: 20px; border-bottom: 2px solid var(--ink); }
+html.calm .key-top h2 { margin: 0; padding: 0; border: 0; }
+html.calm .key-top .close { color: var(--muted); font-weight: 500; }
+html.calm .key-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 40px; padding-top: 28px; }
+html.calm .key-grid dl { display: grid; grid-template-columns: 64px minmax(0, 1fr); gap: 12px; margin: 14px 0 0; font-size: .875rem; }
+html.calm .key-grid dt { margin: 0; font-family: var(--mono); font-size: .8125rem; font-weight: 500; white-space: pre; }
+html.calm .key-grid dd { margin: 0; color: var(--ink-2); }
+html.calm .key-top h2:focus { outline: none; }

@@ -564,7 +564,86 @@
     });
   }
 
+  // ----- the ? sheet -------------------------------------------------------
+  // Every key, in one place, instead of key caps on the controls.
+  var KEYS = [
+    ['Studying', [['Space', 'Show the answer, or Done on a multicard'], ['1', 'Again'], ['3', 'Good'], ['2  4', 'Hard and Easy, when shown'], ['+', 'Ten more seconds on a timed card']]],
+    ['Before the answer', [['S', 'Sure'], ['U', 'Not sure'], ['Enter', 'Check a typed answer']]],
+    ['Multicards', [['1 – 9', 'Mark an item as remembered']]],
+    ['Anywhere', [['?', 'Show or hide this list'], ['Esc', 'Close']]]
+  ];
+  var sheet = null;
+  function keySheet() {
+    if (sheet) return sheet;
+    sheet = document.createElement('dialog');
+    sheet.className = 'key-sheet';
+    sheet.setAttribute('aria-labelledby', 'key-sheet-title');
+    var h = document.createElement('h2');
+    h.id = 'key-sheet-title';
+    h.textContent = 'Keys';
+    // The title takes the focus, so no ring sits on Close at first.
+    h.tabIndex = -1;
+    h.setAttribute('autofocus', '');
+    var close = document.createElement('button');
+    close.type = 'button';
+    close.className = 'link close';
+    close.textContent = 'Close';
+    close.addEventListener('click', function () { sheet.close(); });
+    var top = document.createElement('div');
+    top.className = 'key-top';
+    top.appendChild(h);
+    top.appendChild(close);
+    var grid = document.createElement('div');
+    grid.className = 'key-grid';
+    KEYS.forEach(function (g) {
+      var col = document.createElement('div');
+      var k = document.createElement('p');
+      k.className = 'kicker';
+      k.textContent = g[0];
+      col.appendChild(k);
+      var dl = document.createElement('dl');
+      g[1].forEach(function (pair) {
+        var dt = document.createElement('dt');
+        dt.textContent = pair[0];
+        var dd = document.createElement('dd');
+        dd.textContent = pair[1];
+        dl.appendChild(dt);
+        dl.appendChild(dd);
+      });
+      col.appendChild(dl);
+      grid.appendChild(col);
+    });
+    sheet.appendChild(top);
+    sheet.appendChild(grid);
+    // A click on the backdrop closes it.
+    sheet.addEventListener('click', function (e) { if (e.target === sheet) sheet.close(); });
+    document.body.appendChild(sheet);
+    return sheet;
+  }
+  function toggleKeys() {
+    var s = keySheet();
+    if (s.open) s.close(); else if (s.showModal) s.showModal();
+  }
+  document.addEventListener('keydown', function (e) {
+    if (e.key !== '?' || e.ctrlKey || e.metaKey || e.altKey) return;
+    var t = e.target;
+    if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
+    e.preventDefault();
+    toggleKeys();
+  });
+  function keysHint(scope) {
+    var hint = scope.querySelector('.masthead .keys-hint');
+    if (!hint || hint.hasAttribute('data-ready')) return;
+    hint.setAttribute('data-ready', '');
+    hint.setAttribute('role', 'button');
+    hint.setAttribute('tabindex', '0');
+    hint.addEventListener('click', toggleKeys);
+    hint.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleKeys(); } });
+  }
+
   dress(document);
+  keysHint(document);
+  document.addEventListener('ainki:page', function (e) { keysHint(e.detail || document); });
   breakTimer(document);
   settings(document);
   drawCharts(document);
