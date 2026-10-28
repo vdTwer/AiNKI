@@ -41,12 +41,6 @@ const FAVICON_SVG: &str = include_str!("static/favicon.svg");
 const FAVICON_PNG: &[u8] = include_bytes!("static/favicon-32.png");
 const TOUCH_ICON_PNG: &[u8] = include_bytes!("static/apple-touch-icon.png");
 const FONTS: &[(&str, &[u8])] = &[
-    ("newsreader-italic-latin-ext.woff2", include_bytes!("static/fonts/newsreader-italic-latin-ext.woff2")),
-    ("newsreader-italic-latin.woff2", include_bytes!("static/fonts/newsreader-italic-latin.woff2")),
-    ("newsreader-latin-ext.woff2", include_bytes!("static/fonts/newsreader-latin-ext.woff2")),
-    ("newsreader-latin.woff2", include_bytes!("static/fonts/newsreader-latin.woff2")),
-    ("source-sans-3-latin-ext.woff2", include_bytes!("static/fonts/source-sans-3-latin-ext.woff2")),
-    ("source-sans-3-latin.woff2", include_bytes!("static/fonts/source-sans-3-latin.woff2")),
     ("fraunces-italic-latin-ext.woff2", include_bytes!("static/fonts/fraunces-italic-latin-ext.woff2")),
     ("fraunces-italic-latin.woff2", include_bytes!("static/fonts/fraunces-italic-latin.woff2")),
     ("schibsted-grotesk-normal-latin-ext.woff2", include_bytes!("static/fonts/schibsted-grotesk-normal-latin-ext.woff2")),

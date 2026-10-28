@@ -174,7 +174,7 @@ The code:
 - `src/share.rs`: deck sharing.
 - `src/static/app.js`: the browser script: studying without page reloads, small touches. Everything works without it.
 - `src/security.rs`: rate limiting, security headers, Origin checks, flash messages.
-- `src/style.css`: the simple look (the base everywhere). `src/static/calm.css` and `theme.js`: the calm desktop look, switched on only by script on wide screens with a mouse that aren't e-ink. Fonts (Newsreader, Source Sans 3; SIL Open Font License) are served by AiNKI itself.
+- `src/style.css`: the simple look (the base everywhere). `src/static/calm.css` and `theme.js`: the calm desktop look, switched on only by script on wide screens with a mouse that aren't e-ink. Fonts (Schibsted Grotesk, Source Serif 4, Fraunces; SIL Open Font License) are served by AiNKI itself.
 - `src/import.rs`: Anki and CSV import, CSV export.
 - `src/media.rs`: image processing (resize, grayscale, Floyd–Steinberg dithering).
 

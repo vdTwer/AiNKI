@@ -1061,7 +1061,7 @@ mod http {
         assert!(String::from_utf8_lossy(&body).contains(r#"data-look="simple""#));
         assert!(app.update_settings(a.user_id(), "UTC", 4, false, 100, true, "neon").await.is_err());
 
-        for (path, kind) in [("/calm.css", "text/css"), ("/theme.js", "text/javascript"), ("/fonts/newsreader-latin.woff2", "font/woff2")] {
+        for (path, kind) in [("/calm.css", "text/css"), ("/theme.js", "text/javascript"), ("/fonts/source-serif-4-normal-latin.woff2", "font/woff2")] {
             let res = send(&app, Request::get(path).body(Body::empty()).unwrap()).await;
             assert_eq!(res.status(), StatusCode::OK, "{path}");
             assert!(res.headers()[header::CONTENT_TYPE].to_str().unwrap().starts_with(kind));
