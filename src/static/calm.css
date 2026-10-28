@@ -1148,7 +1148,7 @@ html.calm ul.list.cards .grow .muted { font-size: .9375rem; }
 html.calm ul.list.cards .counts { text-align: right; font-size: .875rem; color: var(--muted); }
 html.calm ul.list.cards .chev { color: var(--faint); }
 html.calm main > .table-head.calm-only { margin-top: 1rem; }
-html.calm main > .table-head .num { width: 140px; }
+html.calm main > .table-head.calm-only .num { width: 140px; }
 
 /* ----- studying ------------------------------------------------------------ */
 html.calm main:has(> .study), html.calm main:has(> .session-end) { display: flex; flex-direction: column; min-height: 100vh; padding-top: 0; padding-bottom: 0; }
@@ -1555,7 +1555,12 @@ html.calm.show-numbers .numbers::before { content: 'The numbers'; display: block
 html.calm.show-numbers .numbers > h2:first-child, html.calm.show-numbers .numbers > .week + h2 { margin-top: .75rem; }
 html.calm .numbers .week { display: none; }
 html.calm .big3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 32px; margin: 1.5rem 0 0; padding: 1.5rem 0 1.75rem; border-top: 1px solid var(--ink); }
-html.calm .big3 > div { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
+/* The three share rows, so labels, numbers and notes line up across them
+   even when a label wraps. */
+html.calm .big3 { grid-template-rows: repeat(4, auto); row-gap: 8px; }
+html.calm .big3 > div { display: grid; grid-row: span 4; grid-template-rows: subgrid; justify-items: start; align-content: start; }
+html.calm .big3 > div > .kicker { align-self: end; }
+html.calm .big3 > div > .n { align-self: end; }
 html.calm .big3 p { margin: 0; }
 html.calm .big3 .n { font-size: 3.25rem; font-weight: 400; letter-spacing: -.03em; line-height: 1; font-variant-numeric: lining-nums; }
 html.calm .big3 .n.it { font-family: var(--italic); font-style: italic; font-weight: 300; letter-spacing: -.02em; }
@@ -1735,7 +1740,10 @@ html.calm .list-known .more { margin-top: .4rem; font-family: var(--sans); font-
   html.calm main h2:not(.chart-main h2, .set-head h2, .key-top h2, .md h2) + * { margin-top: 0; }
   html.calm .today .date { margin-top: 1.5rem; }
   html.calm .today .date + h1 { margin-top: 0; }
-  html.calm .today-side .week h2 { width: var(--label); height: 0; margin: 2.5rem 0 0 calc(-1 * var(--margin)); }
+  html.calm .today-side .week h2 { width: var(--label); height: 0; margin: 2.5rem 0 -.75rem calc(-1 * var(--margin)); }
+  /* Labels sit on the baseline of the first line beside them. */
+  html.calm main h2:not(.chart-main h2, .set-head h2, .key-top h2, .md h2), html.calm .today .date { top: .25rem; }
+  html.calm .set-head { padding-top: 22px; }
 
   /* Rows that already span the page: their name moves into the margin. */
   html.calm body[data-page=home] .table-head { position: relative; margin-top: 3rem; }
