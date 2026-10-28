@@ -749,10 +749,10 @@ html.calm .sheet .hint a { color: var(--accent); }
 /* Fields on a line are boxes to type in, like every other field. */
 html.calm .sheet .line :is(input[type=text], input[type=number], input[type=password], input[type=date], input[type=email], input[type=time], select) {
   width: min(26rem, 100%);
-  min-height: 44px;
-  padding: 0 14px;
-  border: 1px solid var(--line);
-  border-radius: 10px;
+  min-height: 36px;
+  padding: 0 11px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
   background: var(--paper);
   text-align: left;
   font-family: var(--sans);
@@ -1597,11 +1597,11 @@ html.calm main:has(form[action="/settings"]) ul.list.links li { border: 0; }
 html.calm main:has(form[action="/settings"]) ul.list.links a.row { display: inline; min-height: 0; padding: 0; background: none; color: var(--accent); font-weight: 600; }
 html.calm main:has(form[action="/settings"]) ul.list.links a.row:hover { color: var(--accent-hover); }
 html.calm main:has(form[action="/settings"]) ul.list.links :is(.sub, .chev) { display: none; }
-html.calm .set { display: grid; grid-template-columns: 280px minmax(0, 1fr); gap: 40px; padding: 22px 0 28px; border-top: 1px solid var(--ink); }
+html.calm .set { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; padding: 22px 0 28px; border-top: 1px solid var(--ink); }
 html.calm .set-head { display: flex; flex-direction: column; gap: 8px; }
 html.calm .set-head h2 { margin: 0; padding: 0; border: 0; }
 html.calm .set-head p { margin: 0; }
-html.calm .set-body { min-width: 0; max-width: 640px; }
+html.calm .set-body { min-width: 0; max-width: none; }
 html.calm .set-body .sheet.form { max-width: none; }
 html.calm .set-body .form-foot { max-width: none; }
 html.calm .set-body form.logout { margin: 1.5rem 0 0; }
