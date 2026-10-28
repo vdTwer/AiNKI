@@ -104,11 +104,11 @@ html.calm {
   --italic: 'Fraunces', Georgia, serif;
   --mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
   --ease: cubic-bezier(.25, .8, .25, 1);
-  --wrap: 1056px;
+  --wrap: 880px;
   --fg: var(--ink);
   --bg: var(--paper);
   --soft: var(--track);
-  font-size: calc(16px * var(--scale));
+  font-size: calc(15px * var(--scale));
 }
 
 @media (prefers-color-scheme: dark) {
@@ -155,7 +155,7 @@ html.calm main {
 
 /* No masthead: a page starts with its own content. The only fixed thing
    besides the rail is a quiet ? under it, which opens the key sheet. */
-html.calm main { padding-top: 56px; }
+html.calm main { padding-top: 72px; }
 html.calm main > button.keys-button {
   position: fixed;
   left: 18px;
