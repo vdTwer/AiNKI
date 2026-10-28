@@ -855,9 +855,11 @@ async fn home(State(app): State<AppState>, user: WebUser, Flash(msg): Flash) -> 
                 aside.today-side.calm-only {
                     (week_note(&week))
                     @if user.0.catch_up && overdue >= 20 {
-                        p.small.muted {
-                            "At this pace you have caught up in about "
-                            (count((overdue + user.0.catch_up_reviews - 1) / user.0.catch_up_reviews.max(1), "day")) "."
+                        @let days = (overdue + user.0.catch_up_reviews - 1) / user.0.catch_up_reviews.max(1);
+                        div.pace {
+                            p.kicker { "At this pace" }
+                            p.pace-days { span.n { (days) } (if days == 1 { " day" } else { " days" }) " to catch up" }
+                            p.small.muted { (format::number(overdue)) " overdue, " (format::number(user.0.catch_up_reviews)) " a day." }
                         }
                     }
                     @if attention > 0 && !matches!(week.tip, insight::Tip::Attention) {
@@ -1645,6 +1647,7 @@ fn catch_up_note(user: &User, overdue: i64) -> Markup {
                     } @else {
                         "Catch-up mode: no new cards, at most " (user.catch_up_reviews) " reviews a day, the ones you most likely still know first. "
                         a href="/learn/backlog" { "Why" }
+                        button.link.calm-only type="submit" { "Turn off catch-up mode" }
                     }
                 }
             }

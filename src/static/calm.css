@@ -953,6 +953,14 @@ html.calm ul.decks .done-check { display: block; color: var(--warn); }
 html.calm ul.decks .chev { display: block; color: var(--faint); transition: transform 180ms var(--ease), color 140ms ease; }
 html.calm ul.decks a.row:hover .chev { transform: translateX(2px); color: var(--ink); }
 
+/* Catching up: how long it takes, in big numbers beside today. */
+html.calm .pace { display: flex; flex-direction: column; gap: .5rem; padding-top: 1.25rem; border-top: 1px solid var(--line); }
+html.calm .pace p { margin: 0; }
+html.calm .pace-days { font-size: 1.125rem; font-weight: 600; }
+html.calm .pace-days .n { margin-right: .1em; font-family: var(--italic); font-style: italic; font-weight: 400; font-size: 3rem; line-height: 1; color: var(--accent); }
+html.calm .catch-up p button.link.calm-only { margin-left: .75rem; color: var(--muted); text-decoration: underline; text-underline-offset: 3px; text-decoration-thickness: 1px; }
+html.calm .catch-up p a { color: var(--accent); }
+
 /* ----- a deck ------------------------------------------------------------ */
 /* The deck and its one action on the left, its settings beside it. Add,
    edit, share, stats and export wait in the ⋯ menu. */
@@ -1164,12 +1172,15 @@ html.calm .session-end .btn { margin-top: 1rem; }
 
 /* A break: start it, or skip it. A running one is a big clock and a line
    that fills, and the next card comes back by itself. */
+/* Quiet hours: why sleep helps is the way on; studying anyway is quieter. */
+html.calm .rest .end-links a[href="/learn/sleep"] { color: var(--accent); }
+html.calm .rest .end-links button.link { font-weight: 500; text-decoration: underline; text-underline-offset: 3px; text-decoration-thickness: 1px; }
 html.calm .break .end-links { display: none; }
 html.calm .break-start { display: flex; gap: 12px; margin-top: 2rem; }
 html.calm .break-start .btn { margin: 0; }
 html.calm .break.running > :not(.break-run):not(.kicker) { display: none; }
 html.calm .break-run:not([hidden]) { display: flex; flex-direction: column; align-items: flex-start; width: 100%; }
-html.calm .break-clock { margin: 1rem 0 0; font-size: 7.5rem; font-weight: 800; letter-spacing: -.05em; line-height: .9; font-variant-numeric: tabular-nums; }
+html.calm .break-clock { margin: 1rem 0 0; font-size: 7.5rem; font-weight: 800; letter-spacing: -.05em; line-height: .9; }
 html.calm .break-line { width: 100%; max-width: 600px; height: 3px; margin-top: 2rem; border-radius: 2px; background: var(--track); overflow: hidden; }
 html.calm .break-fill { width: 0; height: 3px; background: var(--accent); }
 html.calm .break-run .summary { margin-top: 1.5rem; }
