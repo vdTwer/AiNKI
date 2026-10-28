@@ -417,6 +417,8 @@
     window.scrollTo(0, 0);
     setup(next);
     begin(next);
+    // The desktop extras (desk.js) dress the new page too.
+    document.dispatchEvent(new CustomEvent('ainki:page', { detail: next }));
   }
 
   // A card's front has just come up: the clock starts, the answer box

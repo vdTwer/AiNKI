@@ -1485,6 +1485,11 @@ async fn study(State(app): State<AppState>, user: WebUser, Flash(msg): Flash, Qu
     Ok(study_card(&app, &access, &user.0, &msg, &sc.card, &sc.deck, q.deck, &Shown::front(now())).await?.into_response())
 }
 
+/// "7:00": the time of day of a moment, in the user's zone.
+fn clock_time(clock: &crate::scheduler::Clock, ts: i64) -> String {
+    chrono::DateTime::from_timestamp(ts, 0).map(|t| t.with_timezone(&clock.tz).format("%-H:%M").to_string()).unwrap_or_default()
+}
+
 /// Quiet hours: a rest screen instead of cards.
 fn rest_page(user: &User, msg: &Option<String>, deck: Option<i64>, until: i64) -> Markup {
     page(
@@ -1495,10 +1500,16 @@ fn rest_page(user: &User, msg: &Option<String>, deck: Option<i64>, until: i64) -
         html! {
             (flash(msg))
             section.session-end.rest {
-                h1 { "Quiet hours" }
+                p.kicker.calm-only { "Quiet hours" }
+                h1 {
+                    span.simple-only { "Quiet hours" }
+                    span.calm-only { "Rest until " (clock_time(&user.clock(), until)) }
+                }
                 p.summary { "You asked for rest until " (format::when(&user.clock(), until)) ". Sleep helps the day's learning settle." }
+                p.summary.calm-only { "Agents won't quiz you now either." }
                 div.end-links {
                     a href="/" { "Back to decks" }
+                    a.calm-only href="/learn/sleep" { "Why sleep helps" }
                     form method="post" action="/study/anyway" {
                         @if let Some(d) = deck { input type="hidden" name="deck" value=(d); }
                         button.link type="submit" { "Study anyway" }
@@ -1518,15 +1529,28 @@ fn break_page(user: &User, msg: &Option<String>, deck: Option<i64>, minutes: i64
         Some("study-done"),
         html! {
             (flash(msg))
-            section.session-end.rest {
+            section.session-end.rest.break {
+                p.kicker.calm-only { "Break" }
                 h1 { "Time for a break" }
                 p.summary { "You have studied for " (study::minutes_words(minutes)) ". Stand up, look out of the window, then carry on if you like." }
                 div.end-links {
                     a href="/" { "Stop here" }
-                    form method="post" action="/study/keep-going" {
+                    form id="keep-going" method="post" action="/study/keep-going" {
                         @if let Some(d) = deck { input type="hidden" name="deck" value=(d); }
                         button.link type="submit" { "Keep going" }
                     }
+                }
+                // On desktops a break can run here: desk.js counts it down
+                // and sends the form above when it is over.
+                div.break-start.calm-only {
+                    button.btn.primary type="button" data-break="300" { "Start a 5 minute break" }
+                    button.btn type="submit" form="keep-going" { "Skip break" }
+                }
+                div.break-run.calm-only hidden {
+                    p.break-clock role="timer" aria-live="off" { "5:00" }
+                    div.break-line aria-hidden="true" { div.break-fill {} }
+                    p.summary { "The next card comes back by itself when the time is up." }
+                    p { button.btn type="submit" form="keep-going" { "End break now" } }
                 }
             }
         },
