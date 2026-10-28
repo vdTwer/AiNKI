@@ -749,7 +749,7 @@ html.calm .sheet fieldset.line { min-width: 0; border: 0; border-bottom: 1px sol
 html.calm .sheet fieldset.line legend { float: left; padding: 0; font-size: 1rem; font-weight: 400; }
 
 /* Yes/no as a small switch. */
-html.calm .sheet label.check input[type=checkbox] {
+html.calm .sheet label.check input[type=checkbox], html.calm .numbers-toggle input {
   appearance: none;
   -webkit-appearance: none;
   position: relative;
@@ -762,7 +762,7 @@ html.calm .sheet label.check input[type=checkbox] {
   cursor: pointer;
   transition: background-color 160ms ease;
 }
-html.calm .sheet label.check input[type=checkbox]::before {
+html.calm .sheet label.check input[type=checkbox]::before, html.calm .numbers-toggle input::before {
   content: '';
   position: absolute;
   left: 2px;
@@ -774,8 +774,8 @@ html.calm .sheet label.check input[type=checkbox]::before {
   box-shadow: 0 1px 2px rgba(var(--shadow), .2);
   transition: transform 220ms var(--ease);
 }
-html.calm .sheet label.check input[type=checkbox]:checked { background: var(--accent); }
-html.calm .sheet label.check input[type=checkbox]:checked::before { transform: translateX(14px); }
+html.calm .sheet label.check input[type=checkbox]:checked, html.calm .numbers-toggle input:checked { background: var(--accent); }
+html.calm .sheet label.check input[type=checkbox]:checked::before, html.calm .numbers-toggle input:checked::before { transform: translateX(14px); }
 html.calm .sheet label.check:hover input[type=checkbox]:not(:checked) { background: var(--faint); }
 
 /* Either/or as two words in a small track; the chosen one lifts out. */
@@ -1461,3 +1461,88 @@ html.calm .lesson-deck form { display: flex; align-items: center; justify-conten
 html.calm .lesson-deck p { margin: 0; }
 html.calm .next-lesson { margin: 1.4rem 0 3rem; color: var(--muted); font-size: .93rem; }
 html.calm .next-lesson a { color: var(--accent); }
+
+/* ----- stats ----------------------------------------------------------------
+   Three numbers to act on, then one chart per question with a note beside
+   it. The exact tables wait behind "I love numbers". */
+html.calm .stats-title { display: flex; justify-content: space-between; align-items: flex-end; gap: 1rem; }
+html.calm .numbers-toggle { display: inline-flex; align-items: center; gap: 10px; margin: 0 0 .6rem; font-size: .875rem; font-weight: 600; color: var(--muted); cursor: pointer; }
+html.calm:not(.show-numbers) .numbers { display: none; }
+html.calm.show-numbers .numbers { margin-top: 4rem; }
+html.calm.show-numbers .numbers::before { content: 'The numbers'; display: block; font-size: .75rem; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
+html.calm.show-numbers .numbers > h2:first-child, html.calm.show-numbers .numbers > .week + h2 { margin-top: .75rem; }
+html.calm .numbers .week { display: none; }
+html.calm .big3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 40px; margin: 2rem 0 0; padding: 2rem 0 2.5rem; border-top: 2px solid var(--ink); }
+html.calm .big3 > div { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
+html.calm .big3 p { margin: 0; }
+html.calm .big3 .n { font-size: 4rem; font-weight: 800; letter-spacing: -.04em; line-height: 1; font-variant-numeric: lining-nums; }
+html.calm .big3 .n.due { color: var(--accent); }
+html.calm .big3 .n.it { font-family: var(--italic); font-style: italic; font-weight: 300; letter-spacing: -.02em; }
+html.calm .big3 a { color: var(--accent); font-weight: 600; }
+html.calm .chart-sec { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: 40px; padding: 2.5rem 0; border-top: 1px solid var(--line); }
+html.calm .chart-main h2 { margin: 0 0 .4rem; padding: 0; border: 0; font-size: 1.375rem; }
+html.calm .chart-main > p { margin: 0 0 1.25rem; }
+html.calm .chart-side { display: flex; flex-direction: column; gap: 12px; padding-left: 28px; border-left: 1px solid var(--line); }
+html.calm .chart-side p { margin: 0; }
+html.calm .chart-side a { color: var(--accent); font-weight: 600; }
+html.calm .serif-note { font-family: var(--serif); font-size: 1.1875rem; line-height: 1.5; }
+html.calm .warn-note { padding-left: 12px; border-left: 2px solid var(--warn); color: var(--ink-2); }
+html.calm .chart.empty { padding: 2rem 0; color: var(--muted); }
+html.calm .chart svg { display: block; width: 100%; height: auto; overflow: visible; font-family: var(--sans); }
+html.calm .chart .axis-text { fill: var(--faint); font-size: 11px; }
+html.calm .chart .axis-text.strong { fill: var(--ink); font-weight: 600; }
+html.calm .chart .axis-text.value { fill: var(--ink); font-size: 12px; font-weight: 700; }
+html.calm .chart .grid { stroke: var(--track); stroke-width: 1; }
+html.calm .chart .aim { stroke: var(--ink); stroke-width: 1.5; stroke-dasharray: 4 4; fill: none; }
+html.calm .chart .line { fill: none; stroke: var(--accent); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+html.calm .chart .dot { fill: var(--accent); stroke: var(--paper); stroke-width: 2; }
+html.calm .chart .cross { stroke: var(--line-strong); stroke-width: 1; }
+html.calm .chart .hit { fill: transparent; }
+html.calm .chart .bar { fill: var(--line-strong); }
+html.calm .chart .bar.now { fill: var(--accent); }
+html.calm .chart .frame { fill: none; stroke: var(--line); }
+html.calm .chart [tabindex]:focus { outline: none; }
+html.calm .chart [tabindex]:focus-visible { outline: 2px solid var(--accent); }
+html.calm .chart .hit:hover + * { opacity: .8; }
+html.calm .chart .cell.h0 { fill: var(--track); }
+html.calm .chart .cell.h1 { fill: color-mix(in srgb, var(--accent) 22%, var(--paper)); }
+html.calm .chart .cell.h2 { fill: color-mix(in srgb, var(--accent) 45%, var(--paper)); }
+html.calm .chart .cell.h3 { fill: color-mix(in srgb, var(--accent) 72%, var(--paper)); }
+html.calm .chart .cell.h4 { fill: var(--accent); }
+html.calm .chart .cell:hover { stroke: var(--ink); stroke-width: 1.5; }
+html.calm .chart[data-chart=days] svg { max-width: 260px; }
+html.calm .chart-main.calib { display: grid; grid-template-columns: 260px minmax(0, 1fr); gap: 32px; align-items: start; }
+html.calm .chart-main.calib > div:last-child { display: flex; flex-direction: column; gap: 12px; }
+html.calm .chart-main.calib a { color: var(--accent); font-weight: 600; }
+/* By deck: rows of a name, a track and the value. */
+html.calm .legend { display: flex; gap: 20px; margin: 0 0 1rem; color: var(--muted); }
+html.calm .legend span { display: inline-flex; align-items: center; gap: 8px; }
+html.calm .legend span::before { content: ''; display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: var(--accent); }
+html.calm .legend .aim::before { width: 2px; height: 12px; border-radius: 1px; background: var(--ink); }
+html.calm .legend .low::before { box-sizing: border-box; background: none; border: 2px solid var(--warn); }
+html.calm .dots-scale, html.calm .dots-row .dots-track { position: relative; }
+html.calm .dots-scale { height: 18px; margin-left: 200px; margin-right: 56px; font-size: 11px; color: var(--faint); }
+html.calm .dots-scale span { position: absolute; transform: translateX(-50%); }
+html.calm .dots-row { display: grid; grid-template-columns: 184px minmax(0, 1fr) 40px; gap: 16px; align-items: center; min-height: 40px; }
+html.calm .dots-row a { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; color: var(--ink); }
+html.calm .dots-row a:hover { color: var(--accent-hover); }
+html.calm .dots-track { height: 6px; border-radius: 3px; background: var(--track); }
+html.calm .dots-track i { position: absolute; display: block; }
+html.calm .dots-track .gap { top: 2px; height: 2px; background: var(--accent); }
+html.calm .dots-track .gap.low { background: var(--warn); }
+html.calm .dots-track .aim { top: -6px; width: 2px; height: 18px; margin-left: -1px; border-radius: 1px; background: var(--ink); }
+html.calm .dots-track .dot { top: -4px; width: 14px; height: 14px; margin-left: -7px; box-sizing: border-box; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 2px var(--paper); cursor: default; }
+html.calm .dots-track .dot.low { background: var(--paper); border: 3px solid var(--warn); }
+html.calm .dots-track .dot:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+html.calm .dots-val { font-size: .875rem; font-weight: 700; text-align: right; font-variant-numeric: tabular-nums; }
+html.calm .dots-val.low { color: var(--warn); }
+/* When you felt sure: two short bars. */
+html.calm .sure-bars { display: grid; grid-template-columns: 72px minmax(0, 1fr) 40px; gap: 10px; align-items: center; font-size: .875rem; }
+html.calm .sure-bars .track { position: relative; height: 8px; border-radius: 4px; background: var(--track); overflow: hidden; }
+html.calm .sure-bars .fill { position: absolute; inset: 0 auto 0 0; border-radius: 4px; background: var(--accent); }
+html.calm .sure-bars .fill.grey { background: var(--faint); }
+html.calm .sure-bars .num { text-align: right; font-weight: 700; font-variant-numeric: tabular-nums; }
+/* One tooltip for every chart: the value first, then what it is. */
+.chart-tip { position: fixed; z-index: 20; display: flex; flex-direction: column; gap: 2px; padding: 8px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--paper); box-shadow: 0 8px 24px rgba(var(--shadow), .12); font-family: var(--sans); font-size: .8125rem; color: var(--muted); pointer-events: none; transform: translate(-50%, calc(-100% - 12px)); white-space: nowrap; }
+.chart-tip[hidden] { display: none; }
+.chart-tip strong { font-size: .9375rem; color: var(--ink); }
