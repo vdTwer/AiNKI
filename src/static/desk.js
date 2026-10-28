@@ -97,8 +97,83 @@
     if (saved && saved.until > Date.now()) go(saved); else put(null);
   }
 
+  // A deck name with "::" reads as a path: each finished part becomes a
+  // chip, the last part is typed. The real field keeps "A::B" and is sent
+  // as before. Backspace at the start, or a click on a chip, turns it all
+  // back into text to edit; leaving the field makes the chips again.
+  function pathField(input) {
+    if (input.hasAttribute('data-path')) return;
+    input.setAttribute('data-path', '');
+    var box = document.createElement('span');
+    box.className = 'path-field';
+    var chips = document.createElement('span');
+    chips.className = 'path-chips';
+    var typed = document.createElement('input');
+    typed.type = 'text';
+    typed.className = 'path-input';
+    typed.placeholder = input.placeholder;
+    typed.autocomplete = 'off';
+    if (input.maxLength > 0) typed.maxLength = input.maxLength;
+    typed.required = input.required;
+    box.appendChild(chips);
+    box.appendChild(typed);
+    input.parentNode.insertBefore(box, input);
+    var list = [];
+    var editing = false;
+    var render = function () {
+      chips.textContent = '';
+      list.forEach(function (p) {
+        var c = document.createElement('button');
+        c.type = 'button';
+        c.className = 'chip';
+        c.textContent = p;
+        c.addEventListener('click', function () { unwrap(); typed.focus(); });
+        var sep = document.createElement('span');
+        sep.className = 'sep';
+        sep.setAttribute('aria-hidden', 'true');
+        sep.textContent = '›';
+        chips.appendChild(c);
+        chips.appendChild(sep);
+      });
+    };
+    var sync = function () { input.value = list.concat([typed.value]).join('::'); };
+    var split = function () {
+      var segs = typed.value.split('::');
+      if (segs.length < 2) return;
+      var last = segs.pop();
+      segs.forEach(function (s) { s = s.trim(); if (s) list.push(s); });
+      typed.value = last.replace(/^\s+/, '');
+      render();
+    };
+    var unwrap = function () {
+      if (!list.length) return;
+      var at = list.join('::').length + 2;
+      typed.value = list.join('::') + '::' + typed.value;
+      list = [];
+      render();
+      editing = true;
+      typed.setSelectionRange(at, at);
+    };
+    typed.addEventListener('input', function () { if (!editing) split(); sync(); });
+    typed.addEventListener('blur', function () { editing = false; split(); sync(); });
+    typed.addEventListener('keydown', function (e) {
+      if (e.key === 'Backspace' && list.length && typed.selectionStart === 0 && typed.selectionEnd === 0) {
+        e.preventDefault();
+        unwrap();
+      }
+    });
+    box.addEventListener('click', function (e) { if (e.target === box) typed.focus(); });
+    var focused = document.activeElement === input;
+    typed.value = input.value;
+    split();
+    input.type = 'hidden';
+    sync();
+    if (focused || input.autofocus) typed.focus();
+  }
+
   dress(document);
   breakTimer(document);
+  Array.prototype.forEach.call(document.querySelectorAll('form[action="/decks/new"] input[name=name], form[action$="/edit"] input[name=name], input[name=new_deck]'), pathField);
   // Studying swaps in the next page without a reload.
   document.addEventListener('ainki:page', function (e) { dress(e.detail || document); });
 })();
