@@ -952,6 +952,76 @@ html.calm ul.decks .done-check { display: block; color: var(--warn); }
 html.calm ul.decks .chev { display: block; color: var(--faint); transition: transform 180ms var(--ease), color 140ms ease; }
 html.calm ul.decks a.row:hover .chev { transform: translateX(2px); color: var(--ink); }
 
+/* ----- a deck ------------------------------------------------------------ */
+/* The deck and its one action on the left, its settings beside it. Add,
+   edit, share, stats and export wait in the ⋯ menu. */
+html.calm .deck-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+  gap: 40px;
+  padding: 2.5rem 0 2.5rem;
+  border-bottom: 1px solid var(--line);
+}
+html.calm .deck-main > p { margin: .5rem 0 0; font-size: 1.125rem; color: var(--ink-2); }
+html.calm .deck-title { position: relative; display: flex; justify-content: space-between; align-items: flex-end; gap: 1rem; }
+html.calm .deck-title h1 { margin: 0; }
+html.calm .deck-main dl.stats-inline { margin: 1.75rem 0 0; }
+html.calm .deck-main .start { margin-top: 1.75rem; }
+/* The numbers in the italic, the cards due in the accent. */
+html.calm .deck-main dl.stats-inline dd { font-family: var(--italic); font-style: italic; font-weight: 400; font-size: 2.5rem; line-height: 1.1; font-variant-numeric: lining-nums tabular-nums; }
+html.calm .deck-main dl.stats-inline div:nth-child(2) dd { color: var(--accent); }
+html.calm .deck-side { display: flex; flex-direction: column; gap: .75rem; padding-left: 28px; border-left: 1px solid var(--line); }
+html.calm .deck-side p { margin: 0; }
+html.calm .deck-side p.muted.small { color: var(--ink-2); }
+html.calm .deck-side::before { content: 'About this deck'; font-size: .75rem; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
+html.calm .deck-export { display: none; }
+html.calm button.more-toggle {
+  flex: none;
+  gap: 3px;
+  width: 48px;
+  min-height: 48px;
+  padding: 0;
+  border-color: var(--line);
+}
+html.calm button.more-toggle span { width: 4px; height: 4px; border-radius: 50%; background: var(--ink); }
+html.calm button.more-toggle[aria-expanded="true"] { border-color: var(--ink); }
+html.calm .deck-menu {
+  position: absolute;
+  z-index: 5;
+  right: 0;
+  top: calc(100% + 8px);
+  display: none;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0;
+  width: 240px;
+  margin: 0;
+  padding: 6px;
+  background: var(--surface);
+  border: 1.5px solid var(--line);
+  border-radius: 14px;
+  box-shadow: 0 12px 32px rgba(var(--shadow), .10);
+}
+html.calm .deck-menu.open { display: flex; animation: calm-appear 160ms var(--ease) both; }
+html.calm .deck-menu .tile { display: none; }
+html.calm .deck-menu .btn.icon-link { justify-content: flex-start; min-height: 40px; padding: 0 12px; border-radius: 9px; font-size: .9375rem; font-weight: 500; color: var(--ink); }
+html.calm .deck-menu .btn.icon-link:is(:hover, :focus-visible) { background: var(--tint); color: var(--ink); }
+html.calm .deck-main { position: relative; }
+
+/* Its cards: a column head, the front in the serif, the back under it. */
+html.calm .cards-head { display: flex; justify-content: space-between; align-items: baseline; margin: 2.5rem 0 1rem; }
+html.calm .cards-head h2 { margin: 0; padding: 0; border: 0; }
+html.calm .cards-head a { color: var(--accent); font-weight: 600; }
+html.calm ul.list.cards { margin: 4px 0 0; }
+html.calm ul.list.cards li { border: 0; }
+html.calm ul.list.cards a.row { display: grid; grid-template-columns: minmax(0, 1fr) 140px 16px; gap: 16px; align-items: center; }
+html.calm ul.list.cards .grow { font-family: var(--serif); font-size: 1.1875rem; line-height: 1.35; }
+html.calm ul.list.cards .grow .muted { font-size: .9375rem; }
+html.calm ul.list.cards .counts { text-align: right; font-size: .875rem; color: var(--muted); }
+html.calm ul.list.cards .chev { color: var(--faint); }
+html.calm main > .table-head.calm-only { margin-top: 1rem; }
+html.calm main > .table-head .num { width: 140px; }
+
 /* ----- studying ------------------------------------------------------------ */
 html.calm main:has(> .study), html.calm main:has(> .session-end) { padding-top: 0; padding-bottom: 0; }
 html.calm .study { display: flex; flex-direction: column; min-height: 100vh; }

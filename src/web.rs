@@ -1932,7 +1932,14 @@ async fn deck_page(
         Some(&user.0),
         html! {
             (flash(&msg))
-            h1 { (deck_title(&d.name)) }
+            // On desktops: the deck and its one action on the left, its
+            // settings beside it, the rest in a menu.
+            div.deck-hero {
+            div.deck-main {
+            div.deck-title {
+                h1 { (deck_title(&d.name)) }
+                button.more-toggle.calm-only type="button" aria-label="More" aria-expanded="false" aria-controls="deck-menu" { span {} span {} span {} }
+            }
             @if !d.description.is_empty() { p { (d.description) } }
             dl.stats-inline {
                 div { dt { "New today" } dd { (format::number(summary.new_today)) } }
@@ -1943,18 +1950,26 @@ async fn deck_page(
             @if summary.due_total() > 0 {
                 p { a.btn.primary.start href=(format!("/study?deck={id}")) { "Start studying " span.arrow aria-hidden="true" { "→" } } }
             }
-            p.actions.icon-links {
+            p.actions.icon-links.deck-menu id="deck-menu" {
                 (icon_btn(&format!("/cards/new?deck={id}"), ICON_ADD, "Add card"))
                 (icon_btn(&format!("/decks/{id}/edit"), ICON_EDIT, "Edit deck"))
                 (icon_btn(&format!("/decks/{id}/edit#share"), ICON_SHARE, "Share"))
                 (icon_btn(&format!("/stats?deck={id}"), ICON_STATS, "Stats"))
+                a.btn.icon-link.calm-only href=(format!("/decks/{id}/export.csv")) { span { "Export as CSV" } }
             }
+            }
+            div.deck-side {
             p.muted.small { "Preset: " a href=(format!("/presets/{}", d.preset_id)) { (summary.preset_name) } }
             @if attention > 0 {
                 p.small { a href=(format!("/attention?deck={id}")) { (count(attention, "card")) " " (if attention == 1 { "needs" } else { "need" }) " a look" } }
             }
+            }
+            }
 
-            h2 { "Cards" }
+            div.cards-head {
+                h2 { "Cards" }
+                a.calm-only href=(format!("/cards/new?deck={id}")) { "Add card" }
+            }
             form.search method="get" action=(format!("/decks/{id}")) {
                 input type="search" name="q" value=(q.q.clone().unwrap_or_default()) placeholder="Search text" aria-label="Search";
                 select name="state" aria-label="Filter" {
@@ -1975,6 +1990,7 @@ async fn deck_page(
             } @else {
                 p.muted.small { (count(total, "card")) }
             }
+            div.table-head.calm-only aria-hidden="true" hidden[cards.is_empty()] { span.grow { "Card" } span.num { "State" } span.chev {} }
             ul.list.cards hidden[cards.is_empty()] {
                 @for c in &cards {
                     li {
@@ -1987,6 +2003,7 @@ async fn deck_page(
                             span.counts.small {
                                 (card_status(c))
                             }
+                            span.chev.calm-only aria-hidden="true" { "›" }
                         }
                     }
                 }
@@ -1997,7 +2014,7 @@ async fn deck_page(
                     @if (page + 1) * per_page < total { a.btn href=(format!("{base}&page={}", page + 1)) { "Next ›" } }
                 }
             }
-            p.icon-links { (icon_link(&format!("/decks/{id}/export.csv"), ICON_EXPORT, "Export as CSV")) }
+            p.icon-links.deck-export { (icon_link(&format!("/decks/{id}/export.csv"), ICON_EXPORT, "Export as CSV")) }
         },
     )
     .into_response())
