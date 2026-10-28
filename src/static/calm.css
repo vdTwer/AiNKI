@@ -1194,7 +1194,7 @@ html.calm .session-end {
 }
 html.calm .simple-only { display: none; }
 html.calm .session-end .kicker { color: var(--accent); }
-html.calm .end-mark { position: relative; display: block; width: 26px; height: 26px; color: var(--accent); }
+html.calm .end-mark { position: relative; display: block; width: 26px; height: 26px; color: var(--warn); }
 html.calm .end-mark .check { display: block; }
 html.calm .end-mark .check path { stroke-dasharray: 1; stroke-dashoffset: 0; }
 html.calm .end-mark .line {
@@ -1627,3 +1627,12 @@ html.calm .key-grid dl { display: grid; grid-template-columns: 64px minmax(0, 1f
 html.calm .key-grid dt { margin: 0; font-family: var(--mono); font-size: .8125rem; font-weight: 500; white-space: pre; }
 html.calm .key-grid dd { margin: 0; color: var(--ink-2); }
 html.calm .key-top h2:focus { outline: none; }
+
+/* What you already know of a multicard: one quiet paragraph under an
+   Orchid rule, the items run together. */
+html.calm .list-known { width: min(600px, 100%); margin: 1.75rem auto 0; padding: 2px 0 2px 18px; border-left: 2px solid var(--accent); text-align: left; }
+html.calm .list-known .known-label { color: var(--muted); font-size: .75rem; font-weight: 700; letter-spacing: .12em; }
+html.calm .list-known ul { display: block; font-size: 1.125rem; line-height: 1.6; }
+html.calm .list-known li { display: inline; }
+html.calm .list-known li + li::before { content: ' · '; color: var(--faint); }
+html.calm .list-known .more { margin-top: .4rem; font-family: var(--sans); font-size: .9375rem; font-style: normal; font-weight: 600; }
