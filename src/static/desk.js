@@ -31,6 +31,15 @@
       }
     }
 
+    // Home: the weekday on its own line above the date, in the label column.
+    var date = scope.querySelector('.today .date');
+    if (date && date.lastChild && date.lastChild.nodeType === 3 && date.lastChild.nodeValue.indexOf(', ') > 0) {
+      var parts = date.lastChild.nodeValue.split(', ');
+      date.lastChild.nodeValue = parts[0];
+      date.appendChild(document.createElement('br'));
+      date.appendChild(document.createTextNode(parts.slice(1).join(', ')));
+    }
+
     // Studying: when a card comes back, in words.
     Array.prototype.forEach.call(scope.querySelectorAll('.study .answers .ivl:not([data-remembered])'), function (e) {
       e.textContent = words(e.textContent.trim());
