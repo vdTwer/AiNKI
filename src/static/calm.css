@@ -104,7 +104,7 @@ html.calm {
   --italic: 'Fraunces', Georgia, serif;
   --mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
   --ease: cubic-bezier(.25, .8, .25, 1);
-  --wrap: 880px;
+  --wrap: 720px;
   --fg: var(--ink);
   --bg: var(--paper);
   --soft: var(--track);
@@ -893,10 +893,7 @@ html.calm .sheet textarea.csv { min-height: 7rem; font-family: ui-monospace, 'SF
 html.calm .sheet.paste { padding: 1.4rem 1.8rem 1rem; text-align: left; }
 /* Import: the two ways in on two thirds, what is kept in the side column.
    The drop zone is a dashed outline, the paste box a plain border. */
-html.calm main:has(input[name=kind][value=apkg]) { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); column-gap: 40px; align-content: start; grid-auto-flow: row dense; }
-html.calm main:has(input[name=kind][value=apkg]) > * { grid-column: 1; }
-html.calm main:has(input[name=kind][value=apkg]) > :is(nav.tabs, h1, .flash) { grid-column: 1 / -1; }
-html.calm main:has(input[name=kind][value=apkg]) > h2 + p + p.small { grid-column: 2; grid-row: span 3; align-self: start; display: block; margin: 2.75rem 0 0; padding-left: 28px; border-left: 1px solid var(--line); font-size: .9375rem; line-height: 1.55; color: var(--ink-2); }
+html.calm main:has(input[name=kind][value=apkg]) > h2 + p + p.small { display: block; margin: 1rem 0 1.5rem; font-size: .9375rem; line-height: 1.55; color: var(--ink-2); }
 html.calm main:has(input[name=kind][value=apkg]) > h2 + p + p.small::before { content: 'Good to know'; display: block; margin-bottom: 12px; font-size: .75rem; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
 html.calm main:has(input[name=kind][value=apkg]) > h2 + p { font-family: var(--serif); font-size: 1.125rem; line-height: 1.6; }
 html.calm main:has(input[name=kind][value=apkg]) .sheet.paste, html.calm main:has(input[name=kind][value=apkg]) .sheet.paste:focus-within { border: 1px solid var(--line); box-shadow: none; }
@@ -955,8 +952,8 @@ html.calm .counts { font-weight: 400; font-size: .93rem; color: var(--muted); }
 html.calm li.item { padding: .8rem 0; }
 /* Numbers stand on their own: large, with their name under them. */
 html.calm dl.stats-inline { gap: 0; margin: 1.6rem 0; }
-html.calm dl.stats-inline div { display: flex; flex-direction: column-reverse; gap: .1rem; padding: 0 0 0 1.4rem; border: 0; border-left: 1px solid var(--line); background: none; text-align: left; }
-html.calm dl.stats-inline div:first-child { padding-left: 0; border-left: 0; }
+html.calm dl.stats-inline div { display: flex; flex-direction: column-reverse; gap: .1rem; padding: 0 0 0 2.5rem; border: 0; background: none; text-align: left; }
+html.calm dl.stats-inline div:first-child { padding-left: 0; }
 html.calm dl.stats-inline dt { font-size: .87rem; color: var(--muted); }
 html.calm dl.stats-inline dd { font-family: var(--serif); font-optical-sizing: auto; font-weight: 400; font-size: 2.07rem; line-height: 1.2; }
 /* Facts as lines: the name on the left, the value at the end. */
@@ -972,15 +969,14 @@ html.calm table.forecast .num { color: var(--muted); font-size: .93rem; }
 html.calm img.thumb { border-radius: 8px; }
 
 /* ----- decks home --------------------------------------------------------- */
-/* Today on the left, the week beside it; the decks below as a table. */
+/* One column, one left edge: today, then the week, then the decks. */
 html.calm .hero {
   display: grid;
-  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
-  gap: 32px;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 28px;
   padding: 2rem 0 2.25rem;
   border-bottom: 1px solid var(--line);
 }
-html.calm .hero:not(:has(.today-side)) { grid-template-columns: minmax(0, 1fr); }
 html.calm .today { padding: 0; }
 html.calm .today .date { margin: 0; font-size: .75rem; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
 html.calm .today h1 { margin: .75rem 0 0; font-size: 2.5rem; line-height: 1.02; }
@@ -989,7 +985,7 @@ html.calm .today .facts { margin: .75rem 0 0; font-size: 1rem; color: var(--ink-
 html.calm .start { display: inline-flex; width: auto; margin: 1.25rem 0 0; font-size: .875rem; }
 html.calm .start .arrow { display: none; }
 html.calm .today .catch-up { margin-top: 1.25rem; }
-html.calm .today-side { display: flex; flex-direction: column; gap: .75rem; padding-left: 28px; border-left: 1px solid var(--line); }
+html.calm .today-side { display: flex; flex-direction: column; gap: .75rem; }
 html.calm .today-side p { margin: 0; }
 html.calm .today-side .week { display: flex; flex-direction: column; gap: .75rem; }
 html.calm .today-side .week h2 { margin: 0; padding: 0; border: 0; font-size: .75rem; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
@@ -1047,12 +1043,12 @@ html.calm .catch-up p button.link.calm-only { margin-left: .75rem; color: var(--
 html.calm .catch-up p a { color: var(--accent); }
 
 /* ----- a deck ------------------------------------------------------------ */
-/* The deck and its one action on the left, its settings beside it. Add,
-   edit, share, stats and export wait in the ⋯ menu. */
+/* The deck and its one action, its settings below. Add, edit, share,
+   stats and export wait in the ⋯ menu. */
 html.calm .deck-hero {
   display: grid;
-  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
-  gap: 32px;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 28px;
   padding: 1.75rem 0 2rem;
   border-bottom: 1px solid var(--line);
 }
@@ -1063,7 +1059,7 @@ html.calm .deck-main dl.stats-inline { margin: 1.25rem 0 0; }
 html.calm .deck-main .start { margin-top: 1.75rem; }
 /* The numbers in the italic, the cards due in the accent. */
 html.calm .deck-main dl.stats-inline dd { font-family: var(--italic); font-style: italic; font-weight: 400; font-size: 2.5rem; line-height: 1.1; font-variant-numeric: lining-nums tabular-nums; }
-html.calm .deck-side { display: flex; flex-direction: column; gap: .75rem; padding-left: 28px; border-left: 1px solid var(--line); }
+html.calm .deck-side { display: flex; flex-direction: column; gap: .75rem; }
 html.calm .deck-side p { margin: 0; }
 html.calm .deck-side p.muted.small { color: var(--ink-2); }
 html.calm .deck-side::before { content: 'About this deck'; font-size: .75rem; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
@@ -1525,10 +1521,10 @@ html.calm .big3 p { margin: 0; }
 html.calm .big3 .n { font-size: 3.25rem; font-weight: 400; letter-spacing: -.03em; line-height: 1; font-variant-numeric: lining-nums; }
 html.calm .big3 .n.it { font-family: var(--italic); font-style: italic; font-weight: 300; letter-spacing: -.02em; }
 html.calm .big3 a { color: var(--accent); }
-html.calm .chart-sec { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: 32px; padding: 1.75rem 0; border-top: 1px solid var(--line); }
+html.calm .chart-sec { display: grid; grid-template-columns: minmax(0, 1fr); gap: 24px; padding: 1.75rem 0; border-top: 1px solid var(--line); }
 html.calm .chart-main h2 { margin: 0 0 .4rem; padding: 0; border: 0; font-family: var(--serif); font-size: 1.375rem; font-weight: 400; letter-spacing: 0; text-transform: none; color: var(--ink); }
 html.calm .chart-main > p { margin: 0 0 1.25rem; }
-html.calm .chart-side { display: flex; flex-direction: column; gap: 12px; padding-left: 28px; border-left: 1px solid var(--line); }
+html.calm .chart-side { display: flex; flex-direction: column; gap: 12px; }
 html.calm .chart-side p { margin: 0; }
 html.calm .chart-side a { color: var(--accent); }
 html.calm .serif-note { font-family: var(--serif); font-size: 1.1875rem; line-height: 1.5; }
