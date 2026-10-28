@@ -104,7 +104,7 @@ html.calm {
   --italic: 'Fraunces', Georgia, serif;
   --mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
   --ease: cubic-bezier(.25, .8, .25, 1);
-  --wrap: 720px;
+  --wrap: 560px;
   --fg: var(--ink);
   --bg: var(--paper);
   --soft: var(--track);
@@ -1672,7 +1672,7 @@ html.calm .list-known .more { margin-top: .4rem; font-family: var(--sans); font-
    names hang there, each on a hairline that runs across both columns; the
    content keeps one left edge beside them. Narrower screens stack them. */
 @media (min-width: 75em) {
-  html.calm { --margin: 224px; --label: 176px; }
+  html.calm { --margin: 168px; --label: 128px; }
   html.calm main { max-width: calc(var(--wrap) + var(--margin) + 64px); padding-left: calc(32px + var(--margin)); }
 
   /* A section name: no height of its own, so what follows starts level with it. */
