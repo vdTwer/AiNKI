@@ -410,8 +410,163 @@
     });
   }
 
+  // ----- settings ------------------------------------------------------------
+  // Each part becomes a Swiss section: its title and what it is for on the
+  // left, the controls on the right. Changes save by themselves. Rarely
+  // touched groups fold away behind their current value. The Danger zone
+  // comes last. Without this the page is the plain form with Save buttons.
+  var PARTS = {
+    'Preferences': ['Preferences', 'How AiNKI looks, and when your day starts.'],
+    'Studying': ['Studying', 'Rest, breaks and coming back after time away.'],
+    'FSRS': ['Scheduling', 'FSRS, the model that decides when cards come back.'],
+    'Change password': ['Account', 'Your password and this session.']
+  };
+  function settings(scope) {
+    var main = scope.querySelector('main');
+    if (!main || !main.querySelector('form[action="/settings"]') || main.querySelector('.set')) return;
+    var heads = Array.prototype.filter.call(main.children, function (c) { return c.tagName === 'H2' && PARTS[c.textContent.trim()]; });
+    var sections = [];
+    heads.forEach(function (h) {
+      var part = PARTS[h.textContent.trim()];
+      var sec = document.createElement('section');
+      sec.className = 'set';
+      if (h.id) { sec.id = h.id; h.removeAttribute('id'); }
+      var head = document.createElement('div');
+      head.className = 'set-head';
+      var body = document.createElement('div');
+      body.className = 'set-body';
+      // Everything up to the next part belongs to this one.
+      var n = h.nextElementSibling;
+      while (n && !(n.tagName === 'H2' && PARTS[n.textContent.trim()]) && !n.classList.contains('build')) {
+        var next = n.nextElementSibling;
+        body.appendChild(n);
+        n = next;
+      }
+      h.textContent = part[0];
+      var p = document.createElement('p');
+      p.className = 'small muted';
+      p.textContent = part[1];
+      var saved = document.createElement('p');
+      saved.className = 'saved';
+      saved.setAttribute('role', 'status');
+      main.insertBefore(sec, h);
+      head.appendChild(h);
+      head.appendChild(p);
+      head.appendChild(saved);
+      sec.appendChild(head);
+      sec.appendChild(body);
+      sections.push(sec);
+    });
+    var account = sections[sections.length - 1];
+    var logout = main.querySelector('form.logout');
+    if (account && logout) account.querySelector('.set-body').appendChild(logout);
+
+    // The Danger zone: what can't be undone, under a Terra rule.
+    var danger = document.createElement('section');
+    danger.className = 'set danger-zone';
+    danger.innerHTML = '<div class="set-head"><h2>Danger zone</h2><p class="small muted">These can’t be undone.</p></div><div class="set-body"></div>';
+    var dbody = danger.querySelector('.set-body');
+    var reset = main.querySelector('details.danger');
+    if (reset) {
+      var line = document.createElement('div');
+      line.className = 'danger-line';
+      line.innerHTML = '<span><span class="lab">Go back to the default FSRS parameters</span><span class="sub">Your fitted parameters are dropped. You can optimize again any time.</span></span>';
+      var form = reset.querySelector('form');
+      Array.prototype.forEach.call(form.querySelectorAll('p'), function (x) { x.remove(); });
+      line.appendChild(form);
+      dbody.appendChild(line);
+      reset.remove();
+    }
+    var del = document.createElement('div');
+    del.className = 'danger-line';
+    del.innerHTML = '<span><span class="lab">Delete my account</span><span class="sub">Not possible here yet. Export your decks first, then ask for it.</span></span>';
+    dbody.appendChild(del);
+    main.insertBefore(danger, main.querySelector('.build'));
+
+    // Folds: a line that shows the current value and opens its group.
+    var fold = function (sec, label, nodes, value) {
+      if (!nodes.length || nodes.some(function (x) { return !x; })) return;
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'fold';
+      b.setAttribute('aria-expanded', 'false');
+      b.innerHTML = '<span class="lab"></span><span class="val"></span><span class="car" aria-hidden="true"></span>';
+      b.querySelector('.lab').textContent = label;
+      var inner = document.createElement('div');
+      inner.className = 'fold-body';
+      inner.hidden = true;
+      nodes[0].parentNode.insertBefore(b, nodes[0]);
+      b.parentNode.insertBefore(inner, b.nextSibling);
+      nodes.forEach(function (x) { inner.appendChild(x); });
+      var show = function () { b.querySelector('.val').textContent = value(); };
+      show();
+      inner.addEventListener('change', show);
+      b.addEventListener('click', function () {
+        var open = inner.hidden;
+        inner.hidden = !open;
+        b.setAttribute('aria-expanded', open ? 'true' : 'false');
+      });
+    };
+    var q = function (sel) { return main.querySelector(sel); };
+    var lineOf = function (sel) { var x = q(sel); return x && x.closest('.line, label.check'); };
+    var hintAfter = function (x) { var h = x && x.nextElementSibling; return h && h.classList.contains('hint') ? h : null; };
+    var opt = function (sel) { var s = q(sel); return s ? s.options[s.selectedIndex].text : ''; };
+    var four = lineOf('input[name=four_buttons]');
+    fold(four && four.closest('.set'), 'Answer buttons', [four, hintAfter(four)], function () {
+      return q('input[name=four_buttons]').checked ? 'Four: Again, Hard, Good, Easy' : 'Two: Again and Good';
+    });
+    var agent = lineOf('input[name=optimize_include_agent]');
+    fold(null, 'Reviews done through agents', [agent], function () {
+      return q('input[name=optimize_include_agent]').checked ? 'Used when optimizing' : 'Not used';
+    });
+    var quiet = lineOf('select[name=quiet_from]');
+    fold(null, 'Quiet hours', [quiet, hintAfter(quiet)], function () {
+      var a = q('select[name=quiet_from]').value, b2 = q('select[name=quiet_to]').value;
+      return a === '' || b2 === '' ? 'Off' : opt('select[name=quiet_from]') + ' to ' + opt('select[name=quiet_to]');
+    });
+    var cu = lineOf('input[name=catch_up]');
+    var cuN = lineOf('input[name=catch_up_reviews]');
+    fold(null, 'Catch-up mode', [cu, cuN, hintAfter(cuN)], function () {
+      return q('input[name=catch_up]').checked ? 'On, ' + q('input[name=catch_up_reviews]').value + ' a day' : 'Off';
+    });
+
+    // Saving as you go: the form is sent in the background and the part
+    // says so. Text size and the look need the page drawn again.
+    Array.prototype.forEach.call(main.querySelectorAll('form[action="/settings"], form[action="/settings/study"], form[action="/settings/auto-optimize"]'), function (form) {
+      var sec = form.closest('.set');
+      var status = sec && sec.querySelector('.saved');
+      var foot = form.querySelector('.form-foot');
+      if (foot) foot.hidden = true;
+      var timer = null;
+      var save = function (e) {
+        if (e) e.stopPropagation();
+        if (!form.checkValidity()) { form.reportValidity(); return; }
+        var reload = e && e.target && /^(font_scale|desktop_look)$/.test(e.target.name);
+        if (status) { status.textContent = 'Saving…'; status.className = 'saved'; }
+        fetch(form.action, { method: 'POST', credentials: 'same-origin', body: new URLSearchParams(new FormData(form)) })
+          .then(function (r) { return r.text(); })
+          .then(function (html) {
+            var doc = new DOMParser().parseFromString(html, 'text/html');
+            var note = doc.querySelector('.notice');
+            var msg = note ? note.textContent.trim() : 'Saved.';
+            if (reload && /saved/i.test(msg)) { location.reload(); return; }
+            if (status) { status.textContent = /saved/i.test(msg) ? 'Saved' : msg; status.className = 'saved ' + (/saved/i.test(msg) ? 'ok' : 'err'); }
+          })
+          .catch(function () { if (status) { status.textContent = 'Not saved. Check your connection.'; status.className = 'saved err'; } });
+      };
+      form.addEventListener('change', save);
+      form.addEventListener('input', function (e) {
+        if (e.target.type !== 'text' && e.target.type !== 'number') return;
+        clearTimeout(timer);
+        timer = setTimeout(function () { save(); }, 900);
+      });
+      form.addEventListener('submit', function (e) { e.preventDefault(); save(); });
+    });
+  }
+
   dress(document);
   breakTimer(document);
+  settings(document);
   drawCharts(document);
   numbersSwitch(document);
   Array.prototype.forEach.call(document.querySelectorAll('form[action="/decks/new"] input[name=name], form[action$="/edit"] input[name=name], input[name=new_deck]'), pathField);
