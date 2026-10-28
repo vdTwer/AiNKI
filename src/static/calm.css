@@ -594,35 +594,59 @@ html.calm .form-foot p { margin: 0; color: var(--muted); }
 html.calm .form-foot .btn.wide { display: inline-flex; flex-shrink: 0; width: auto; margin: 0; padding: .55rem 1.1rem .55rem 1.4rem; gap: .8rem; white-space: nowrap; }
 html.calm .form-foot .key { color: var(--faint); border-color: var(--line); }
 
+/* Adding a card: the card itself, flat, with front and back under a line
+   each, written on the left as they read. */
+html.calm .card-form { max-width: 820px; }
+html.calm .card-form > .sheet { padding: 8px 32px; border: 1.5px solid var(--line); box-shadow: none; text-align: left; }
+html.calm .card-form > .sheet:focus-within { border-color: var(--line-strong); box-shadow: none; }
+html.calm .card-form .face-edit { padding: 24px 0; border-radius: 0; }
+html.calm .card-form .sheet > hr.divider { width: auto; margin: 0; border-top: 1px solid var(--line); animation: none; }
+html.calm .card-form .face-label { font-size: .75rem; font-weight: 700; letter-spacing: .12em; color: var(--muted); }
+html.calm .card-form .sheet textarea { text-align: left; }
+html.calm .card-form .sheet textarea::placeholder { font-style: normal; }
+html.calm .card-form .face-edit[data-face] textarea { font-size: 1.875rem; line-height: 1.3; min-height: 2.5rem; }
+html.calm .card-form .face-edit[data-face=back] textarea { font-size: 1.5rem; line-height: 1.4; }
+html.calm .card-form .face-image { align-items: flex-start; }
+
 /* Every other form is written the same way: one sheet, no boxes. A name
    is written large at the top like a card's front; settings below are
    lines of words with their value at the end, which you click and type
    over. Switches for yes/no, a small segmented choice for either/or. */
-html.calm .sheet.form { padding: .5rem 1.8rem; text-align: left; }
-html.calm .sheet.form + .sheet.form { margin-top: 1rem; }
-html.calm .sheet .title { display: block; margin: 0; padding: 1.4rem 0 .4rem; font-weight: 400; }
-html.calm .sheet .title .face-label { margin-bottom: .3rem; }
-html.calm .sheet .title:focus-within .face-label { color: var(--accent); }
-html.calm .sheet .title input[type=text] {
+/* No box around a form: it is lines on the page, the words on the left,
+   the field on the right. */
+html.calm .sheet.form, html.calm .sheet.form:focus-within { max-width: 760px; padding: 0; border: 0; border-radius: 0; background: none; box-shadow: none; text-align: left; }
+html.calm .sheet.form + .sheet.form { margin-top: 2.5rem; }
+html.calm .sheet .title {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 26rem);
+  gap: 24px;
+  align-items: center;
+  margin: 0;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--line);
+  font-weight: 400;
+}
+html.calm .sheet.form > .title:first-child { border-top: 1px solid var(--line); }
+html.calm .sheet .title .face-label { margin: 0; font-size: 1rem; font-weight: 500; letter-spacing: normal; text-transform: none; color: var(--ink); }
+html.calm .sheet .title .face-label .sub { display: block; margin-top: 2px; font-size: .8125rem; font-weight: 400; color: var(--muted); }
+html.calm .sheet .title:focus-within .face-label { color: var(--ink); }
+html.calm .sheet .title :is(input[type=text], textarea) {
   display: block;
   width: 100%;
-  min-height: 0;
+  min-height: 44px;
   margin: 0;
-  padding: 0;
-  border: 0;
-  border-radius: 0;
-  background: none;
-  box-shadow: none;
-  font-family: var(--serif);
-  font-optical-sizing: auto;
-  font-size: 1.73rem;
-  line-height: 1.3;
+  padding: 10px 14px;
+  border: 1.5px solid var(--line);
+  border-radius: 10px;
+  background: var(--paper);
+  font-family: var(--sans);
+  font-size: 1rem;
+  line-height: 1.4;
+  text-align: left;
   color: var(--ink);
 }
-html.calm .sheet .title textarea { margin: 0; font-size: 1.13rem; line-height: 1.5; text-align: left; color: var(--ink); }
-html.calm .sheet .title + .title { padding-top: .6rem; }
-html.calm .sheet .title input::placeholder, html.calm .sheet .title textarea::placeholder { color: var(--faint); font-style: italic; opacity: 1; }
-html.calm .sheet.form hr.divider { width: 64px; margin: 1.2rem 0 .4rem; border: 0; border-top: 1px solid var(--line-strong); }
+html.calm .sheet .title input::placeholder, html.calm .sheet .title textarea::placeholder { color: var(--faint); font-style: normal; opacity: 1; }
+html.calm .sheet.form hr.divider { display: none; }
 
 html.calm .sheet .line, html.calm .sheet label.check {
   display: flex;
@@ -684,6 +708,28 @@ html.calm .sheet .hint { margin: 0; padding: 0 0 .9rem; border-bottom: 1px solid
 html.calm .sheet .hint:last-child { border-bottom: 0; }
 html.calm .sheet .title + .hint { padding-top: .3rem; border-bottom: 0; }
 html.calm .sheet .hint a { color: var(--accent); }
+/* Fields on a line are boxes to type in, like every other field. */
+html.calm .sheet .line :is(input[type=text], input[type=number], input[type=password], input[type=date], input[type=email], input[type=time], select) {
+  width: min(26rem, 100%);
+  min-height: 44px;
+  padding: 0 14px;
+  border: 1.5px solid var(--line);
+  border-radius: 10px;
+  background: var(--paper);
+  text-align: left;
+  font-family: var(--sans);
+  font-size: 1rem;
+}
+html.calm .sheet .line input[type=number] { width: 6.5rem; text-align: right; }
+html.calm .sheet .line input[type=date] { width: auto; }
+html.calm .sheet .line select { width: min(26rem, 100%); padding-right: 36px; }
+html.calm .sheet .line .select::after { right: 16px; }
+html.calm .sheet .line:hover :is(input, select) { border-color: var(--line-strong); }
+html.calm .sheet .line :is(input, select):focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-glow); }
+html.calm .sheet .line input::placeholder { font-style: normal; }
+html.calm .sheet .line .value { font-family: var(--sans); font-size: 1rem; }
+html.calm .sheet.form ~ .form-foot { max-width: 760px; }
+html.calm .sheet label.goal { margin: 0; }
 
 html.calm .sheet .line .field { display: inline-flex; align-items: baseline; gap: .35rem; }
 html.calm .sheet .line .field input { flex: none; }
@@ -797,7 +843,8 @@ html.calm label.drop {
   cursor: pointer;
   transition: border-color 160ms ease, box-shadow 220ms var(--ease), background-color 140ms ease;
 }
-html.calm label.drop:hover, html.calm label.drop.dropping { border-color: var(--line-strong); box-shadow: 0 1px 0 var(--line), 0 14px 36px rgba(var(--shadow), .08); }
+html.calm label.drop, html.calm label.drop:hover { border: 1.5px dashed var(--line-strong); box-shadow: none; }
+html.calm label.drop:hover, html.calm label.drop.dropping { border-color: var(--accent); }
 html.calm label.drop.dropping { background: color-mix(in srgb, var(--surface) 92%, var(--accent)); }
 html.calm label.drop:focus-within { outline: 2px solid var(--accent); outline-offset: 3px; }
 html.calm label.drop .drop-text { font-family: var(--serif); font-optical-sizing: auto; font-size: 1.33rem; color: var(--ink); }
@@ -806,6 +853,16 @@ html.calm label.drop .muted { font-size: .87rem; }
 html.calm label.drop input[type=file] { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; }
 html.calm .sheet textarea.csv { min-height: 7rem; font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace; font-size: .93rem; line-height: 1.6; text-align: left; }
 html.calm .sheet.paste { padding: 1.4rem 1.8rem 1rem; text-align: left; }
+/* Import: the two ways in on two thirds, what is kept in the side column.
+   The drop zone is a dashed outline, the paste box a plain border. */
+html.calm main:has(input[name=kind][value=apkg]) { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); column-gap: 40px; align-content: start; grid-auto-flow: row dense; }
+html.calm main:has(input[name=kind][value=apkg]) > * { grid-column: 1; }
+html.calm main:has(input[name=kind][value=apkg]) > :is(.masthead, nav.tabs, h1, .flash) { grid-column: 1 / -1; }
+html.calm main:has(input[name=kind][value=apkg]) > h2 + p + p.small { grid-column: 2; grid-row: span 3; align-self: start; display: block; margin: 2.75rem 0 0; padding-left: 28px; border-left: 1px solid var(--line); font-size: .9375rem; line-height: 1.55; color: var(--ink-2); }
+html.calm main:has(input[name=kind][value=apkg]) > h2 + p + p.small::before { content: 'Good to know'; display: block; margin-bottom: 12px; font-size: .75rem; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
+html.calm main:has(input[name=kind][value=apkg]) > h2 + p { font-family: var(--serif); font-size: 1.125rem; line-height: 1.6; }
+html.calm main:has(input[name=kind][value=apkg]) .sheet.paste, html.calm main:has(input[name=kind][value=apkg]) .sheet.paste:focus-within { border: 1.5px solid var(--line); box-shadow: none; }
+html.calm main:has(input[name=kind][value=apkg]) .sheet.paste:focus-within { border-color: var(--line-strong); }
 html.calm .sheet.paste label.attach { margin-top: .6rem; }
 html.calm .sheet.paste label.attach.chosen { color: var(--accent); }
 
@@ -829,23 +886,13 @@ html.calm form.search select { flex: none; width: auto; padding: 0 .4rem 0 .9rem
 html.calm form.search button { min-height: 36px; padding: .2rem 1rem; margin-left: .4rem; }
 
 /* The Add section's tabs: words with a line under the current one. */
-html.calm nav.tabs { display: flex; gap: 1.6rem; border: 0; border-radius: 0; margin: 0 0 2rem; overflow: visible; }
-html.calm nav.tabs a { position: relative; padding: .4rem 0; min-height: 0; font-weight: 500; color: var(--muted); }
+/* Tabs are small pills; the one you are on is tinted. */
+html.calm nav.tabs { display: flex; gap: 4px; border: 0; border-radius: 0; margin: 2rem 0 0; overflow: visible; }
+html.calm nav.tabs a { padding: 8px 16px; min-height: 0; border: 0; border-radius: 10px; font-size: .9375rem; font-weight: 600; color: var(--muted); transition: background-color 140ms ease, color 140ms ease; }
 html.calm nav.tabs a + a { border: 0; }
-html.calm nav.tabs a::after {
-  content: '';
-  position: absolute;
-  left: 0; right: 0; bottom: -2px;
-  height: 2px;
-  border-radius: 2px;
-  background: var(--accent);
-  transform: scaleX(0);
-  transform-origin: left;
-  transition: transform 220ms var(--ease);
-}
-html.calm nav.tabs a:hover { color: var(--accent-hover); }
-html.calm nav.tabs a[aria-current="page"] { background: none; color: var(--ink); }
-html.calm nav.tabs a[aria-current="page"]::after { transform: scaleX(1); }
+html.calm nav.tabs a:hover { background: var(--tint); color: var(--ink); }
+html.calm nav.tabs a[aria-current="page"] { background: var(--tint); color: var(--ink); }
+html.calm nav.tabs + h1 { margin: 1.5rem 0 2rem; }
 
 /* ----- lists and tables ----------------------------------------------------- */
 html.calm ul.list { border-top: 0; margin: .25rem 0; }
@@ -1310,13 +1357,41 @@ html.calm .leech-note { margin: .8rem 0 0; color: var(--muted); }
 html.calm .split-form .sheet { margin-bottom: 1.4rem; }
 
 /* ----- goals, workload and calibration ----------------------------------- */
-html.calm .sheet fieldset.goals { border: 0; margin: 0; padding: .4rem 0 .2rem; }
-html.calm .sheet fieldset.goals legend { padding: .6rem 0 .3rem; color: var(--muted); font-size: .93rem; }
-html.calm .sheet label.goal { display: flex; gap: .8rem; align-items: flex-start; padding: .6rem .2rem; border-radius: 10px; cursor: pointer; transition: background-color 140ms ease; }
-html.calm .sheet label.goal:hover { background: var(--track); }
-html.calm .sheet label.goal input { accent-color: var(--accent); margin-top: .3rem; }
-html.calm .sheet label.goal .goal-name { display: block; font-family: var(--serif); font-size: 1.13rem; }
-html.calm .sheet label.goal:has(input:checked) .goal-name { color: var(--accent); }
+/* A deck name as a path: finished parts are chips, the last is typed. */
+html.calm .path-field { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 8px; width: 100%; min-height: 44px; padding: 4px 14px; border: 1.5px solid var(--line); border-radius: 10px; background: var(--paper); cursor: text; transition: border-color 140ms ease, box-shadow 140ms ease; }
+html.calm .path-field:hover { border-color: var(--line-strong); }
+html.calm .path-field:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-glow); }
+html.calm .path-chips { display: contents; }
+html.calm .path-field .chip { display: inline-flex; align-items: center; min-height: 0; margin: 0; padding: 2px 10px; border: 0; border-radius: 8px; background: var(--tint); color: var(--muted); font-family: var(--sans); font-size: .9375rem; font-weight: 500; cursor: pointer; }
+html.calm .path-field .chip:hover { background: var(--accent-tint); color: var(--accent); }
+html.calm .path-field .sep { color: var(--faint); }
+html.calm .sheet .title .path-field input.path-input, html.calm .deck-line .path-field input.path-input, html.calm .path-field input.path-input {
+  flex: 1;
+  width: auto;
+  min-width: 8rem;
+  min-height: 32px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+  font-family: var(--sans);
+  font-size: 1rem;
+}
+html.calm .deck-line .path-field { width: 22rem; }
+
+/* What a deck is for: rows with a ring, the chosen one tinted. */
+html.calm .sheet fieldset.goals { display: flex; flex-direction: column; gap: 6px; border: 0; margin: 0; padding: 20px 0 8px; }
+html.calm .sheet fieldset.goals legend { float: left; width: 100%; padding: 20px 0 10px; font-weight: 500; color: var(--ink); font-size: 1rem; }
+html.calm .sheet label.goal { display: grid; grid-template-columns: 20px minmax(0, 1fr); gap: 12px; align-items: start; padding: 12px 14px; border: 1.5px solid transparent; border-radius: 12px; cursor: pointer; transition: background-color 140ms ease, border-color 140ms ease; }
+html.calm .sheet label.goal:hover { border-color: var(--line-strong); }
+html.calm .sheet label.goal input { appearance: none; -webkit-appearance: none; width: 18px; height: 18px; margin: 2px 0 0; border: 1.5px solid var(--line-strong); border-radius: 50%; background: var(--paper); transition: border 140ms ease; }
+html.calm .sheet label.goal input:checked { border: 5px solid var(--accent); }
+html.calm .sheet label.goal input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+html.calm .sheet label.goal .goal-name { display: block; font-weight: 600; }
+html.calm .sheet label.goal .muted.small { display: block; margin-top: 2px; font-size: .8125rem; }
+html.calm .sheet label.goal:has(input:checked) { background: var(--accent-tint); }
 html.calm :is(table.workload, table.calibration, table.retention) { width: 100%; border-collapse: collapse; font-size: .93rem; }
 html.calm :is(table.workload, table.calibration, table.retention) :is(th, td) { padding: .55rem .2rem; border-bottom: 1px solid var(--line); text-align: left; font-weight: 400; }
 html.calm :is(table.workload, table.calibration, table.retention) thead th { font-size: .8rem; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
