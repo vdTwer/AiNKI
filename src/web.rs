@@ -654,6 +654,7 @@ fn auth_form(signup: bool, error: Option<&str>, allow_signup: bool, next: Option
         html! {
             h1.brand-big { "AiNKI" }
             p.muted { "Flashcards with FSRS spaced repetition." }
+            p.tagline.calm-only { "Flashcards that come back " span.it { "just before" } " you forget them." }
             h2 { (title) }
             @if let Some(e) = error { p.notice role="alert" { (e) } }
             @if next.is_some_and(|n| n.starts_with("/oauth/")) {
