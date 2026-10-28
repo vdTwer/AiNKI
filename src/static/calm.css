@@ -259,12 +259,12 @@ html.calm ::selection { background: var(--accent-tint); }
 @keyframes calm-grow { from { transform: scaleX(0); } to { transform: scaleX(1); } }
 
 /* A small uppercase line above a heading or a block: "Today", "This week". */
-html.calm .kicker { margin: 0; font-size: .75rem; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
+html.calm .kicker { margin: 0; font-size: .75rem; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
 /* The one number or phrase that matters, in a light italic. */
 html.calm .it { font-family: var(--italic); font-style: italic; font-weight: 300; letter-spacing: -.02em; color: var(--accent); }
 
 /* The page this one belongs to: a quiet path above the heading. */
-html.calm .parent { margin: 2rem 0 -1.75rem; font-size: .875rem; font-weight: 500; }
+html.calm .parent { margin: 2rem 0 -1.75rem; font-size: .875rem; font-weight: 400; }
 html.calm .parent a { min-height: 0; color: var(--muted); transition: color 140ms ease; }
 html.calm .parent a:hover { color: var(--accent); }
 
@@ -276,7 +276,7 @@ html.calm .notice {
   border: 0;
   padding: 0;
   margin: 1.5rem 0 -1rem;
-  font-weight: 500;
+  font-weight: 400;
   font-size: .9375rem;
   color: var(--ink);
   animation: calm-appear 220ms var(--ease) both;
@@ -403,7 +403,7 @@ html.calm .icon-link {
   align-items: center;
   gap: .5rem;
   color: var(--muted);
-  font-weight: 500;
+  font-weight: 400;
   transition: color 140ms ease;
 }
 html.calm .icon-link:hover, html.calm .icon-link.held { color: var(--accent); }
@@ -414,7 +414,7 @@ html.calm .actions.quiet-links .btn, html.calm form.logout .btn {
   padding: 0;
   border: 0;
   background: none;
-  font-weight: 500;
+  font-weight: 400;
   font-size: .875rem;
   color: var(--muted);
   transition: color 140ms ease;
@@ -440,7 +440,7 @@ html.calm button:not(.link) {
   border-radius: 9px;
   font: inherit;
   font-size: .875rem;
-  font-weight: 700;
+  font-weight: 600;
   cursor: pointer;
   transition: border-color 140ms ease, background-color 140ms ease, color 140ms ease, transform 140ms var(--ease);
 }
@@ -457,7 +457,7 @@ html.calm .btn.again { border-color: var(--ink); }
 html.calm .btn.danger { border-color: var(--warn-edge); color: var(--warn); background: transparent; }
 html.calm .btn.danger:is(:hover, .held) { border-color: var(--warn); color: var(--warn); background: transparent; }
 html.calm .btn.wide { display: flex; width: 100%; margin: 1.2rem 0; font-size: 1rem; }
-html.calm button.link { min-height: 0; padding: 0; color: var(--muted); font-weight: 500; text-decoration: none; transition: color 140ms ease; }
+html.calm button.link { min-height: 0; padding: 0; color: var(--muted); font-weight: 400; text-decoration: none; transition: color 140ms ease; }
 html.calm button.link:hover { color: var(--accent); }
 /* Key hints live on the ? sheet now, not on every button. */
 html.calm .key { display: none; }
@@ -639,7 +639,7 @@ html.calm .card-form > .sheet { padding: 8px 32px; border: 1px solid var(--line)
 html.calm .card-form > .sheet:focus-within { border-color: var(--line-strong); box-shadow: none; }
 html.calm .card-form .face-edit { padding: 24px 0; border-radius: 0; }
 html.calm .card-form .sheet > hr.divider { width: auto; margin: 0; border-top: 1px solid var(--line); animation: none; }
-html.calm .card-form .face-label { font-size: .75rem; font-weight: 700; letter-spacing: .12em; color: var(--muted); }
+html.calm .card-form .face-label { font-size: .75rem; font-weight: 600; letter-spacing: .12em; color: var(--muted); }
 html.calm .card-form .sheet textarea { text-align: left; }
 html.calm .card-form .sheet textarea::placeholder { font-style: normal; }
 html.calm .card-form .face-edit[data-face] textarea { font-size: 1.875rem; line-height: 1.3; min-height: 2.5rem; }
@@ -665,7 +665,7 @@ html.calm .sheet .title {
   font-weight: 400;
 }
 html.calm .sheet.form > .title:first-child { border-top: 1px solid var(--line); }
-html.calm .sheet .title .face-label { margin: 0; font-size: 1rem; font-weight: 500; letter-spacing: normal; text-transform: none; color: var(--ink); }
+html.calm .sheet .title .face-label { margin: 0; font-size: 1rem; font-weight: 400; letter-spacing: normal; text-transform: none; color: var(--ink); }
 html.calm .sheet .title .face-label .sub { display: block; margin-top: 2px; font-size: .8125rem; font-weight: 400; color: var(--muted); }
 html.calm .sheet .title:focus-within .face-label { color: var(--ink); }
 html.calm .sheet .title :is(input[type=text], textarea) {
@@ -897,7 +897,7 @@ html.calm main:has(input[name=kind][value=apkg]) { display: grid; grid-template-
 html.calm main:has(input[name=kind][value=apkg]) > * { grid-column: 1; }
 html.calm main:has(input[name=kind][value=apkg]) > :is(nav.tabs, h1, .flash) { grid-column: 1 / -1; }
 html.calm main:has(input[name=kind][value=apkg]) > h2 + p + p.small { grid-column: 2; grid-row: span 3; align-self: start; display: block; margin: 2.75rem 0 0; padding-left: 28px; border-left: 1px solid var(--line); font-size: .9375rem; line-height: 1.55; color: var(--ink-2); }
-html.calm main:has(input[name=kind][value=apkg]) > h2 + p + p.small::before { content: 'Good to know'; display: block; margin-bottom: 12px; font-size: .75rem; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
+html.calm main:has(input[name=kind][value=apkg]) > h2 + p + p.small::before { content: 'Good to know'; display: block; margin-bottom: 12px; font-size: .75rem; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
 html.calm main:has(input[name=kind][value=apkg]) > h2 + p { font-family: var(--serif); font-size: 1.125rem; line-height: 1.6; }
 html.calm main:has(input[name=kind][value=apkg]) .sheet.paste, html.calm main:has(input[name=kind][value=apkg]) .sheet.paste:focus-within { border: 1px solid var(--line); box-shadow: none; }
 html.calm main:has(input[name=kind][value=apkg]) .sheet.paste:focus-within { border-color: var(--line-strong); }
@@ -982,7 +982,7 @@ html.calm .hero {
 }
 html.calm .hero:not(:has(.today-side)) { grid-template-columns: minmax(0, 1fr); }
 html.calm .today { padding: 0; }
-html.calm .today .date { margin: 0; font-size: .75rem; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; color: var(--accent); }
+html.calm .today .date { margin: 0; font-size: .75rem; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: var(--accent); }
 html.calm .today h1 { margin: .75rem 0 0; font-size: 2.5rem; line-height: 1.02; }
 html.calm .today h1 .count .n { font-family: var(--italic); font-style: italic; font-weight: 300; letter-spacing: -.02em; color: var(--accent); }
 html.calm .today .facts { margin: .75rem 0 0; font-size: 1rem; color: var(--ink-2); }
@@ -992,10 +992,10 @@ html.calm .today .catch-up { margin-top: 1.25rem; }
 html.calm .today-side { display: flex; flex-direction: column; gap: .75rem; padding-left: 28px; border-left: 1px solid var(--line); }
 html.calm .today-side p { margin: 0; }
 html.calm .today-side .week { display: flex; flex-direction: column; gap: .75rem; }
-html.calm .today-side .week h2 { margin: 0; padding: 0; border: 0; font-size: .75rem; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
+html.calm .today-side .week h2 { margin: 0; padding: 0; border: 0; font-size: .75rem; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
 html.calm .attention-link { display: none; }
 html.calm .home-actions .tile { display: none; }
-html.calm .home-actions .btn.icon-link { min-height: 34px; padding: 0 .9rem; border: 1px solid var(--line-strong); border-radius: 9px; font-size: .875rem; font-weight: 700; color: var(--ink); }
+html.calm .home-actions .btn.icon-link { min-height: 34px; padding: 0 .9rem; border: 1px solid var(--line-strong); border-radius: 9px; font-size: .875rem; font-weight: 600; color: var(--ink); }
 html.calm .home-actions .btn.icon-link:is(:hover, .held) { border: 1px solid var(--ink); color: var(--ink); }
 html.calm .home-actions { gap: .75rem; margin: 1.5rem 0 0; }
 
@@ -1007,7 +1007,7 @@ html.calm .table-head {
   padding: 0 0 .65rem;
   border-bottom: 1px solid var(--line);
   font-size: .75rem;
-  font-weight: 700;
+  font-weight: 600;
   letter-spacing: .12em;
   text-transform: uppercase;
   color: var(--muted);
@@ -1018,19 +1018,19 @@ html.calm ul.decks { margin: 4px 0 0; }
 html.calm ul.decks li { border-bottom: 0; }
 html.calm ul.decks a.row { display: grid; grid-template-columns: minmax(0, 1fr) 96px 96px 16px; gap: 16px; align-items: center; min-height: 64px; }
 html.calm ul.decks a.row .grow { display: flex; flex-direction: column; justify-content: center; }
-html.calm ul.decks .deck-name { font-size: 1.25rem; font-weight: 700; letter-spacing: -.015em; line-height: 1.25; }
+html.calm ul.decks .deck-name { font-family: var(--serif); font-optical-sizing: auto; font-size: 1.25rem; font-weight: 400; letter-spacing: 0; line-height: 1.25; }
 html.calm ul.decks .sub { margin-top: .2rem; font-size: .8125rem; line-height: 1.3; color: var(--muted); }
 /* Nested decks: the parents above in small type, the deck's own name below. */
-html.calm .deck-path { font-family: var(--sans); font-weight: 500; color: var(--muted); }
+html.calm .deck-path { font-family: var(--sans); font-weight: 400; color: var(--muted); }
 html.calm .deck-path .sep { margin: 0 .4em; color: var(--faint); }
 html.calm ul.decks .deck-path { margin-bottom: .1rem; font-size: .8125rem; letter-spacing: 0; }
-html.calm h1 .deck-path { display: block; margin-bottom: .4rem; font-size: .875rem; font-weight: 500; letter-spacing: 0; }
-html.calm ul.decks .num { text-align: right; font-weight: 500; font-size: 1.125rem; color: var(--ink-2); }
-html.calm ul.decks .num.due { color: var(--accent); font-weight: 700; }
+html.calm h1 .deck-path { display: block; margin-bottom: .4rem; font-size: .875rem; font-weight: 400; letter-spacing: 0; }
+html.calm ul.decks .num { text-align: right; font-weight: 400; font-size: 1.125rem; color: var(--ink-2); }
+html.calm ul.decks .num.due { color: var(--accent); font-weight: 600; }
 html.calm ul.decks .num.new { color: var(--ink-2); }
 html.calm ul.decks .num .unit, html.calm ul.decks .num .dot { display: none; }
 /* Nothing due shows as a faint dash, not in Orchid. */
-html.calm ul.decks .num.due:not(.done):not(:has(.unit)) { color: var(--faint); font-weight: 500; }
+html.calm ul.decks .num.due:not(.done):not(:has(.unit)) { color: var(--faint); font-weight: 400; }
 html.calm ul.decks .num.new:not(:has(.unit)) { color: var(--faint); }
 /* Done for today: a Terra tick, straight like the numbers. */
 html.calm ul.decks .num.done { display: flex; align-items: center; justify-content: flex-end; }
@@ -1067,7 +1067,7 @@ html.calm .deck-main dl.stats-inline div:nth-child(2) dd { color: var(--accent);
 html.calm .deck-side { display: flex; flex-direction: column; gap: .75rem; padding-left: 28px; border-left: 1px solid var(--line); }
 html.calm .deck-side p { margin: 0; }
 html.calm .deck-side p.muted.small { color: var(--ink-2); }
-html.calm .deck-side::before { content: 'About this deck'; font-size: .75rem; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
+html.calm .deck-side::before { content: 'About this deck'; font-size: .75rem; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
 html.calm .deck-export { display: none; }
 html.calm button.more-toggle {
   flex: none;
@@ -1098,7 +1098,7 @@ html.calm .deck-menu {
 }
 html.calm .deck-menu.open { display: flex; animation: calm-appear 160ms var(--ease) both; }
 html.calm .deck-menu .tile { display: none; }
-html.calm .deck-menu .btn.icon-link { justify-content: flex-start; min-height: 40px; padding: 0 12px; border-radius: 9px; font-size: .9375rem; font-weight: 500; color: var(--ink); }
+html.calm .deck-menu .btn.icon-link { justify-content: flex-start; min-height: 40px; padding: 0 12px; border-radius: 9px; font-size: .9375rem; font-weight: 400; color: var(--ink); }
 html.calm .deck-menu .btn.icon-link:is(:hover, :focus-visible) { background: var(--tint); color: var(--ink); }
 html.calm .deck-main { position: relative; }
 
@@ -1132,7 +1132,7 @@ html.calm .card-state {
   gap: 6px;
   margin: 0;
   font-size: .75rem;
-  font-weight: 700;
+  font-weight: 600;
   letter-spacing: .12em;
   text-transform: uppercase;
   color: var(--muted);
@@ -1147,7 +1147,7 @@ html.calm section.face.front {
   font-family: var(--serif);
   font-optical-sizing: auto;
   font-size: 3rem;
-  font-weight: 500;
+  font-weight: 400;
   line-height: 1.1;
   letter-spacing: -0.01em;
 }
@@ -1193,7 +1193,7 @@ html.calm .study .answers.cols-4 { width: min(840px, 100%); }
 /* Big, quiet buttons: the word, and when the card comes back in the italic. */
 html.calm .study .answers .btn { flex-direction: column; gap: 4px; min-height: 64px; padding: .7rem 1.25rem; border-radius: 11px; border-color: var(--ink); }
 html.calm .study .answers .btn.primary { border-color: var(--accent); }
-html.calm .study .answers .label { display: inline-flex; align-items: center; gap: 8px; font-size: 1.125rem; font-weight: 700; }
+html.calm .study .answers .label { display: inline-flex; align-items: center; gap: 8px; font-size: 1.125rem; font-weight: 600; }
 html.calm .study .answers .ivl { font-family: var(--italic); font-style: italic; font-size: 1rem; font-weight: 400; color: var(--muted); }
 html.calm .study .answers .btn.primary .ivl { color: var(--on-accent-soft); }
 html.calm .study-foot { margin: auto 0 0; padding: 28px 0 28px; }
@@ -1259,13 +1259,13 @@ html.calm .session-end .btn { margin-top: 1rem; }
    that fills, and the next card comes back by itself. */
 /* Quiet hours: why sleep helps is the way on; studying anyway is quieter. */
 html.calm .rest .end-links a[href="/learn/sleep"] { color: var(--accent); }
-html.calm .rest .end-links button.link { font-weight: 500; text-decoration: underline; text-underline-offset: 3px; text-decoration-thickness: 1px; }
+html.calm .rest .end-links button.link { font-weight: 400; text-decoration: underline; text-underline-offset: 3px; text-decoration-thickness: 1px; }
 html.calm .break .end-links { display: none; }
 html.calm .break-start { display: flex; gap: 12px; margin-top: 2rem; }
 html.calm .break-start .btn { margin: 0; }
 html.calm .break.running > :not(.break-run):not(.kicker) { display: none; }
 html.calm .break-run:not([hidden]) { display: flex; flex-direction: column; align-items: flex-start; width: 100%; }
-html.calm .break-clock { margin: 1rem 0 0; font-size: 6rem; font-weight: 800; letter-spacing: -.05em; line-height: .9; }
+html.calm .break-clock { margin: 1rem 0 0; font-size: 6rem; font-weight: 400; letter-spacing: -.04em; line-height: .9; }
 html.calm .break-line { width: 100%; max-width: 600px; height: 3px; margin-top: 2rem; border-radius: 2px; background: var(--track); overflow: hidden; }
 html.calm .break-fill { width: 0; height: 3px; background: var(--accent); }
 html.calm .break-run .summary { margin-top: 1.5rem; }
@@ -1287,11 +1287,11 @@ html.calm .brand-big { font-family: var(--serif); font-weight: 400; font-size: 2
 /* Log in: the name and what it does on the left, the form on the right. */
 html.calm main:has(> .brand-big) { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 420px); column-gap: 80px; align-content: center; justify-content: space-between; min-height: 100vh; padding-top: 0; padding-bottom: 0; }
 html.calm main:has(> .brand-big) > * { grid-column: 2; }
-html.calm main:has(> .brand-big) > .brand-big { grid-column: 1; grid-row: 1 / 4; align-self: center; margin: 0 0 7.5rem; font-family: var(--sans); font-size: 4.5rem; font-weight: 800; letter-spacing: -.02em; }
+html.calm main:has(> .brand-big) > .brand-big { grid-column: 1; grid-row: 1 / 4; align-self: center; margin: 0 0 7.5rem; font-family: var(--sans); font-size: 4.5rem; font-weight: 600; letter-spacing: -.02em; }
 html.calm main:has(> .brand-big) > .tagline { grid-column: 1; grid-row: 1 / 4; align-self: center; max-width: 460px; margin: 5rem 0 0; font-family: var(--serif); font-size: 1.625rem; line-height: 1.4; }
 html.calm main:has(> .brand-big) > .tagline .it { font-family: var(--italic); font-style: italic; }
 html.calm main:has(> .brand-big) > p.muted:not(.small) { display: none; }
-html.calm main:has(> .brand-big) > h2 { grid-row: 1; margin: 0 0 1rem; padding: 0; border: 0; font-size: 2.25rem; font-weight: 800; letter-spacing: -.03em; }
+html.calm main:has(> .brand-big) > h2 { grid-row: 1; margin: 0 0 1rem; padding: 0; border: 0; font-size: 2.25rem; font-weight: 600; letter-spacing: -.03em; }
 html.calm main:has(> .brand-big) form { display: flex; flex-direction: column; gap: 16px; }
 html.calm main:has(> .brand-big) form label { font-size: .875rem; font-weight: 600; }
 html.calm main:has(> .brand-big) form .btn { align-self: stretch; margin-top: 8px; }
@@ -1360,7 +1360,7 @@ html.calm ol.list-items input { position: absolute; width: 1px; height: 1px; opa
 html.calm ol.list-items label.item:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
 html.calm ol.list-items .num { display: none; }
 html.calm ol.list-items .text { flex: 1; font-family: var(--serif); font-optical-sizing: auto; }
-html.calm ol.list-items .mark { font-family: var(--sans); font-size: .875rem; font-weight: 700; letter-spacing: normal; text-transform: none; color: var(--accent); }
+html.calm ol.list-items .mark { font-family: var(--sans); font-size: .875rem; font-weight: 600; letter-spacing: normal; text-transform: none; color: var(--accent); }
 html.calm ol.list-items label.item:has(input:checked) { background: var(--accent-tint); border-color: var(--accent); }
 html.calm ol.list-items label.item:has(input:checked)::before { background: var(--accent); border-color: var(--accent); }
 html.calm ol.list-items label.item:has(input:checked)::after { opacity: 1; }
@@ -1411,7 +1411,7 @@ html.calm .path-field { display: flex; align-items: center; flex-wrap: wrap; gap
 html.calm .path-field:hover { border-color: var(--line-strong); }
 html.calm .path-field:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-glow); }
 html.calm .path-chips { display: contents; }
-html.calm .path-field .chip { display: inline-flex; align-items: center; min-height: 0; margin: 0; padding: 2px 10px; border: 0; border-radius: 8px; background: var(--tint); color: var(--muted); font-family: var(--sans); font-size: .9375rem; font-weight: 500; cursor: pointer; }
+html.calm .path-field .chip { display: inline-flex; align-items: center; min-height: 0; margin: 0; padding: 2px 10px; border: 0; border-radius: 8px; background: var(--tint); color: var(--muted); font-family: var(--sans); font-size: .9375rem; font-weight: 400; cursor: pointer; }
 html.calm .path-field .chip:hover { background: var(--accent-tint); color: var(--accent); }
 html.calm .path-field .sep { color: var(--faint); }
 html.calm .sheet .title .path-field input.path-input, html.calm .deck-line .path-field input.path-input, html.calm .path-field input.path-input {
@@ -1432,7 +1432,7 @@ html.calm .deck-line .path-field { width: 22rem; }
 
 /* What a deck is for: rows with a ring, the chosen one tinted. */
 html.calm .sheet fieldset.goals { display: flex; flex-direction: column; gap: 6px; border: 0; margin: 0; padding: 20px 0 8px; }
-html.calm .sheet fieldset.goals legend { float: left; width: 100%; padding: 20px 0 10px; font-weight: 500; color: var(--ink); font-size: 1rem; }
+html.calm .sheet fieldset.goals legend { float: left; width: 100%; padding: 20px 0 10px; font-weight: 400; color: var(--ink); font-size: 1rem; }
 html.calm .sheet label.goal { display: grid; grid-template-columns: 20px minmax(0, 1fr); gap: 12px; align-items: start; padding: 12px 14px; border: 1.5px solid transparent; border-radius: 12px; cursor: pointer; transition: background-color 140ms ease, border-color 140ms ease; }
 html.calm .sheet label.goal:hover { border-color: var(--line-strong); }
 html.calm .sheet label.goal input { appearance: none; -webkit-appearance: none; width: 18px; height: 18px; margin: 2px 0 0; border: 1.5px solid var(--line-strong); border-radius: 50%; background: var(--paper); transition: border 140ms ease; }
@@ -1468,7 +1468,7 @@ html.calm .reveal-form .sure-buttons .btn { min-height: 44px; }
 html.calm .reveal-form .sure-buttons .label { display: inline-flex; align-items: center; gap: 8px; }
 /* What you typed, set off by an Orchid rule, above the right answer. */
 html.calm .typed-echo { margin: 0 auto 1.75rem; padding: 2px 0 2px 18px; max-width: 600px; border: 0; border-left: 2px solid var(--accent); border-radius: 0; background: none; text-align: left; }
-html.calm .typed-echo .face-label { font-family: var(--sans); font-size: .75rem; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; color: var(--accent); }
+html.calm .typed-echo .face-label { font-family: var(--sans); font-size: .75rem; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: var(--accent); }
 html.calm .typed-echo .typed-text { margin: .25rem 0 0; font-family: var(--italic); font-style: italic; font-size: 1.625rem; line-height: 1.3; white-space: pre-wrap; }
 html.calm .timeout-form { text-align: center; animation: calm-appear 220ms var(--ease) both; }
 html.calm .timeout-note { margin: 1.6rem 0 0; color: var(--warn); font-size: .93rem; }
@@ -1493,7 +1493,7 @@ html.calm table.retention tr.short td:nth-child(3) { color: var(--warn); }
    Terra where it is solid, muted where it is a rule of thumb or mixed,
    Orchid where it is not supported. */
 html.calm .lead { color: var(--muted); max-width: 36rem; }
-html.calm .evidence { flex: none; border: 0; padding: .1rem .55rem; border-radius: 999px; font-size: .75rem; font-weight: 500; letter-spacing: .02em; white-space: nowrap; color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); }
+html.calm .evidence { flex: none; border: 0; padding: .1rem .55rem; border-radius: 999px; font-size: .75rem; font-weight: 400; letter-spacing: .02em; white-space: nowrap; color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); }
 html.calm .evidence:is(.mixed, .practice) { color: var(--muted); background: var(--track); }
 html.calm .evidence.against { color: var(--warn); background: color-mix(in srgb, var(--warn) 12%, transparent); }
 html.calm ul.lessons .evidence { margin-left: 1rem; }
@@ -1518,13 +1518,13 @@ html.calm .stats-title { display: flex; justify-content: space-between; align-it
 html.calm .numbers-toggle { display: inline-flex; align-items: center; gap: 10px; margin: 0 0 .6rem; font-size: .875rem; font-weight: 600; color: var(--muted); cursor: pointer; }
 html.calm:not(.show-numbers) .numbers { display: none; }
 html.calm.show-numbers .numbers { margin-top: 4rem; }
-html.calm.show-numbers .numbers::before { content: 'The numbers'; display: block; font-size: .75rem; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
+html.calm.show-numbers .numbers::before { content: 'The numbers'; display: block; font-size: .75rem; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
 html.calm.show-numbers .numbers > h2:first-child, html.calm.show-numbers .numbers > .week + h2 { margin-top: .75rem; }
 html.calm .numbers .week { display: none; }
 html.calm .big3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 32px; margin: 1.5rem 0 0; padding: 1.5rem 0 1.75rem; border-top: 1px solid var(--ink); }
 html.calm .big3 > div { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
 html.calm .big3 p { margin: 0; }
-html.calm .big3 .n { font-size: 3.25rem; font-weight: 800; letter-spacing: -.04em; line-height: 1; font-variant-numeric: lining-nums; }
+html.calm .big3 .n { font-size: 3.25rem; font-weight: 400; letter-spacing: -.03em; line-height: 1; font-variant-numeric: lining-nums; }
 html.calm .big3 .n.due { color: var(--accent); }
 html.calm .big3 .n.it { font-family: var(--italic); font-style: italic; font-weight: 300; letter-spacing: -.02em; }
 html.calm .big3 a { color: var(--accent); font-weight: 600; }
@@ -1540,7 +1540,7 @@ html.calm .chart.empty { padding: 2rem 0; color: var(--muted); }
 html.calm .chart svg { display: block; width: 100%; height: auto; overflow: visible; font-family: var(--sans); }
 html.calm .chart .axis-text { fill: var(--faint); font-size: 11px; }
 html.calm .chart .axis-text.strong { fill: var(--ink); font-weight: 600; }
-html.calm .chart .axis-text.value { fill: var(--ink); font-size: 12px; font-weight: 700; }
+html.calm .chart .axis-text.value { fill: var(--ink); font-size: 12px; font-weight: 600; }
 html.calm .chart .grid { stroke: var(--track); stroke-width: 1; }
 html.calm .chart .aim { stroke: var(--ink); stroke-width: 1.5; stroke-dasharray: 4 4; fill: none; }
 html.calm .chart .line { fill: none; stroke: var(--accent); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
@@ -1583,14 +1583,14 @@ html.calm .dots-track .aim { top: -6px; width: 2px; height: 18px; margin-left: -
 html.calm .dots-track .dot { top: -4px; width: 14px; height: 14px; margin-left: -7px; box-sizing: border-box; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 2px var(--paper); cursor: default; }
 html.calm .dots-track .dot.low { background: var(--paper); border: 3px solid var(--warn); }
 html.calm .dots-track .dot:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-html.calm .dots-val { font-size: .875rem; font-weight: 700; text-align: right; font-variant-numeric: tabular-nums; }
+html.calm .dots-val { font-size: .875rem; font-weight: 600; text-align: right; font-variant-numeric: tabular-nums; }
 html.calm .dots-val.low { color: var(--warn); }
 /* When you felt sure: two short bars. */
 html.calm .sure-bars { display: grid; grid-template-columns: 72px minmax(0, 1fr) 40px; gap: 10px; align-items: center; font-size: .875rem; }
 html.calm .sure-bars .track { position: relative; height: 8px; border-radius: 4px; background: var(--track); overflow: hidden; }
 html.calm .sure-bars .fill { position: absolute; inset: 0 auto 0 0; border-radius: 4px; background: var(--accent); }
 html.calm .sure-bars .fill.grey { background: var(--faint); }
-html.calm .sure-bars .num { text-align: right; font-weight: 700; font-variant-numeric: tabular-nums; }
+html.calm .sure-bars .num { text-align: right; font-weight: 600; font-variant-numeric: tabular-nums; }
 /* One tooltip for every chart: the value first, then what it is. */
 .chart-tip { position: fixed; z-index: 20; display: flex; flex-direction: column; gap: 2px; padding: 8px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--paper); box-shadow: 0 8px 24px rgba(var(--shadow), .12); font-family: var(--sans); font-size: .8125rem; color: var(--muted); pointer-events: none; transform: translate(-50%, calc(-100% - 12px)); white-space: nowrap; }
 .chart-tip[hidden] { display: none; }
@@ -1631,7 +1631,7 @@ html.calm button.fold {
   border-radius: 0;
   background: none;
   font-size: 1rem;
-  font-weight: 500;
+  font-weight: 400;
   text-align: left;
   color: var(--ink);
   cursor: pointer;
@@ -1647,7 +1647,7 @@ html.calm .danger-zone { border-top-color: var(--warn); }
 html.calm .danger-zone h2 { color: var(--warn); }
 html.calm .danger-line { display: flex; justify-content: space-between; align-items: center; gap: 24px; min-height: 64px; padding: 12px 0; border-bottom: 1px solid var(--warn-tint); }
 html.calm .danger-line:last-child { border-bottom: 0; }
-html.calm .danger-line .lab { display: block; font-weight: 500; }
+html.calm .danger-line .lab { display: block; font-weight: 400; }
 html.calm .danger-line .sub { display: block; margin-top: 2px; font-size: .8125rem; color: var(--muted); }
 html.calm .danger-line form { flex: none; margin: 0; }
 
@@ -1657,17 +1657,17 @@ html.calm dialog.key-sheet[open] { animation: calm-appear 200ms var(--ease) both
 html.calm dialog.key-sheet::backdrop { background: rgba(var(--shadow), .28); }
 html.calm .key-top { display: flex; justify-content: space-between; align-items: baseline; padding-bottom: 20px; border-bottom: 1px solid var(--ink); }
 html.calm .key-top h2 { margin: 0; padding: 0; border: 0; }
-html.calm .key-top .close { color: var(--muted); font-weight: 500; }
+html.calm .key-top .close { color: var(--muted); font-weight: 400; }
 html.calm .key-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 40px; padding-top: 28px; }
 html.calm .key-grid dl { display: grid; grid-template-columns: 64px minmax(0, 1fr); gap: 12px; margin: 14px 0 0; font-size: .875rem; }
-html.calm .key-grid dt { margin: 0; font-family: var(--mono); font-size: .8125rem; font-weight: 500; white-space: pre; }
+html.calm .key-grid dt { margin: 0; font-family: var(--mono); font-size: .8125rem; font-weight: 400; white-space: pre; }
 html.calm .key-grid dd { margin: 0; color: var(--ink-2); }
 html.calm .key-top h2:focus { outline: none; }
 
 /* What you already know of a multicard: one quiet paragraph under an
    Orchid rule, the items run together. */
 html.calm .list-known { width: min(600px, 100%); margin: 1.75rem auto 0; padding: 2px 0 2px 18px; border-left: 2px solid var(--accent); text-align: left; }
-html.calm .list-known .known-label { color: var(--muted); font-size: .75rem; font-weight: 700; letter-spacing: .12em; }
+html.calm .list-known .known-label { color: var(--muted); font-size: .75rem; font-weight: 600; letter-spacing: .12em; }
 html.calm .list-known ul { display: block; font-size: 1.125rem; line-height: 1.6; }
 html.calm .list-known li { display: inline; }
 html.calm .list-known li + li::before { content: ' · '; color: var(--faint); }
