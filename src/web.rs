@@ -46,6 +46,14 @@ const FONTS: &[(&str, &[u8])] = &[
     ("newsreader-latin.woff2", include_bytes!("static/fonts/newsreader-latin.woff2")),
     ("source-sans-3-latin-ext.woff2", include_bytes!("static/fonts/source-sans-3-latin-ext.woff2")),
     ("source-sans-3-latin.woff2", include_bytes!("static/fonts/source-sans-3-latin.woff2")),
+    ("fraunces-italic-latin-ext.woff2", include_bytes!("static/fonts/fraunces-italic-latin-ext.woff2")),
+    ("fraunces-italic-latin.woff2", include_bytes!("static/fonts/fraunces-italic-latin.woff2")),
+    ("schibsted-grotesk-normal-latin-ext.woff2", include_bytes!("static/fonts/schibsted-grotesk-normal-latin-ext.woff2")),
+    ("schibsted-grotesk-normal-latin.woff2", include_bytes!("static/fonts/schibsted-grotesk-normal-latin.woff2")),
+    ("source-serif-4-italic-latin-ext.woff2", include_bytes!("static/fonts/source-serif-4-italic-latin-ext.woff2")),
+    ("source-serif-4-italic-latin.woff2", include_bytes!("static/fonts/source-serif-4-italic-latin.woff2")),
+    ("source-serif-4-normal-latin-ext.woff2", include_bytes!("static/fonts/source-serif-4-normal-latin-ext.woff2")),
+    ("source-serif-4-normal-latin.woff2", include_bytes!("static/fonts/source-serif-4-normal-latin.woff2")),
 ];
 
 pub async fn serve(app: AppState) -> anyhow::Result<()> {
