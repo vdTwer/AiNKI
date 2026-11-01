@@ -1789,26 +1789,23 @@ html.calm .desk-actions .add-deck:is(:hover, :focus-visible)::after { opacity: 1
    ! beside the heading; its note opens on hover or focus and stays open
    while the pointer is on it, so its link can be reached. */
 html.calm .today-side .week { display: none; }
-html.calm .coach-tip { position: relative; display: inline-block; margin-left: .4em; vertical-align: .35em; }
+html.calm .coach-tip { position: relative; display: inline-block; margin-left: .1em; vertical-align: -.08em; }
 html.calm main button.coach-mark {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 22px;
-  height: 22px;
+  width: 32px;
+  height: 32px;
   min-height: 0;
   padding: 0;
-  border: 1px solid var(--warn);
-  border-radius: 50%;
+  border: 0;
+  border-radius: 9px;
   background: none;
-  font-family: var(--sans);
-  font-size: .8125rem;
-  font-weight: 600;
-  line-height: 1;
   color: var(--warn);
   cursor: help;
 }
-html.calm main button.coach-mark:is(:hover, :focus-visible) { background: var(--warn); color: var(--paper); border-color: var(--warn); }
+html.calm main button.coach-mark svg { display: block; }
+html.calm main button.coach-mark:is(:hover, :focus-visible) { background: var(--tint); color: var(--warn); }
 html.calm .coach-note {
   position: absolute;
   left: -12px;

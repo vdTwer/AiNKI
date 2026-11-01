@@ -51,7 +51,8 @@
       mark.type = 'button';
       mark.className = 'coach-mark';
       mark.setAttribute('aria-label', 'A note from the coach');
-      mark.textContent = '!';
+      // The note icon: a ring with a bang, drawn like the page icons.
+      mark.innerHTML = '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5v5.5"/><path d="M12 16.4v.1"/></svg>';
       var note = document.createElement('span');
       note.className = 'coach-note';
       note.setAttribute('role', 'tooltip');
