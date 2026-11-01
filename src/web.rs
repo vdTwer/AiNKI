@@ -463,12 +463,9 @@ fn page(nav: Option<Nav>, title: &str, user: Option<&User>, page_kind: Option<&s
                     }
                 }
                 main {
-                    // The desktop look's top line: the name, and where the keys are.
+                    // The desktop look: a ? under the rail that opens the key sheet.
                     @if user.is_some() {
-                        header.masthead.calm-only {
-                            a.brand href="/" { "AiNKI" }
-                            p.keys-hint { "Press " kbd { "?" } " for keys" }
-                        }
+                        button.keys-button.calm-only type="button" aria-label="Keys" data-label="Keys" { "?" }
                     }
                     (body)
                 }
@@ -921,6 +918,11 @@ async fn home(State(app): State<AppState>, user: WebUser, Flash(msg): Flash) -> 
                 (icon_btn("/cards/new", ICON_ADD, "Add card"))
                 (icon_btn("/decks/new", ICON_DECKS, "New deck"))
                 (icon_btn("/import", ICON_IMPORT, "Import"))
+            }
+            // The desktop look: a plus for a new deck, Import in words.
+            p.desk-actions.calm-only {
+                a.add-deck href="/decks/new" aria-label="New deck" data-label="New deck" { (icon(ICON_ADD, PAGE_ICON)) }
+                a href="/import" { "Import deck" }
             }
         },
     )
@@ -4044,7 +4046,7 @@ fn desk_stats(d: &DeskStats) -> Markup {
                     @if s.due_now > 0 { a.small href=(study) { "Start studying" } }
                 }
                 div {
-                    p.kicker { "Remembered this week" }
+                    p.kicker { "This week" }
                     p.n { (format::percent(this_week)) }
                     p.small.muted {
                         @if this_week.is_none() { "No reviews of learned cards this week. " }

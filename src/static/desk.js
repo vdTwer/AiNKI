@@ -31,6 +31,37 @@
       }
     }
 
+    // Home: the weekday on its own line above the date, in the label column.
+    var date = scope.querySelector('.today .date');
+    if (date && date.lastChild && date.lastChild.nodeType === 3 && date.lastChild.nodeValue.indexOf(', ') > 0) {
+      var parts = date.lastChild.nodeValue.split(', ');
+      date.lastChild.nodeValue = parts[0];
+      date.appendChild(document.createElement('br'));
+      date.appendChild(document.createTextNode(parts.slice(1).join(', ')));
+    }
+
+    // Home: the week's note stays hidden; when the coach has something to
+    // say, a ! beside the heading shows it on hover or focus.
+    var tip = scope.querySelector('.today-side .week .tip');
+    var heading = scope.querySelector('.today h1');
+    if (tip && heading && !heading.querySelector('.coach-tip')) {
+      var coach = document.createElement('span');
+      coach.className = 'coach-tip';
+      var mark = document.createElement('button');
+      mark.type = 'button';
+      mark.className = 'coach-mark';
+      mark.setAttribute('aria-label', 'A note from the coach');
+      // The note icon: a ring with a bang, drawn like the page icons.
+      mark.innerHTML = '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5v5.5"/><path d="M12 16.4v.1"/></svg>';
+      var note = document.createElement('span');
+      note.className = 'coach-note';
+      note.setAttribute('role', 'tooltip');
+      note.appendChild(tip.firstElementChild ? tip.firstElementChild.cloneNode(true) : tip.cloneNode(true));
+      coach.appendChild(mark);
+      coach.appendChild(note);
+      heading.appendChild(coach);
+    }
+
     // Studying: when a card comes back, in words.
     Array.prototype.forEach.call(scope.querySelectorAll('.study .answers .ivl:not([data-remembered])'), function (e) {
       e.textContent = words(e.textContent.trim());
@@ -313,8 +344,9 @@
       });
     },
 
-    // Each deck: its aim as a tick, what was remembered as a dot. Below aim
-    // is an open Terra ring, so it reads without colour too.
+    // Each deck: its aim as a tick and as the one number, what was remembered
+    // as a dot (its value on hover). Below aim is an open Terra ring, so it
+    // reads without colour too.
     decks: function (box) {
       var rows = box.getAttribute('data-decks').split(';').map(function (r) {
         var p = r.split('|');
@@ -323,15 +355,6 @@
       var lo = Math.min.apply(null, rows.map(function (r) { return Math.min(r.aim, r.v); }).concat([0.8]));
       lo = Math.floor((lo - 0.03) * 20) / 20;
       var P = function (v) { return ((v - lo) / (1 - lo) * 100).toFixed(2) + '%'; };
-      var scale = document.createElement('div');
-      scale.className = 'dots-scale';
-      for (var g = lo; g <= 1.0001; g += 0.05) {
-        var s = document.createElement('span');
-        s.style.left = P(g);
-        s.textContent = pct(g);
-        scale.appendChild(s);
-      }
-      box.appendChild(scale);
       rows.forEach(function (r) {
         var low = r.v < r.aim - 0.02;
         var row = document.createElement('div');
@@ -351,10 +374,10 @@
         var dot = document.createElement('i');
         dot.className = 'dot' + (low ? ' low' : '');
         dot.style.left = P(r.v);
-        hover(dot, pct(r.v) + ' remembered', r.name + ', aim ' + pct(r.aim));
+        hover(row, pct(r.v) + ' remembered', r.name + ', aim ' + pct(r.aim));
         var val = document.createElement('span');
-        val.className = 'dots-val' + (low ? ' low' : '');
-        val.textContent = pct(r.v);
+        val.className = 'dots-val';
+        val.textContent = pct(r.aim);
         track.appendChild(span);
         track.appendChild(tick);
         track.appendChild(dot);
@@ -632,13 +655,10 @@
     toggleKeys();
   });
   function keysHint(scope) {
-    var hint = scope.querySelector('.masthead .keys-hint');
-    if (!hint || hint.hasAttribute('data-ready')) return;
-    hint.setAttribute('data-ready', '');
-    hint.setAttribute('role', 'button');
-    hint.setAttribute('tabindex', '0');
-    hint.addEventListener('click', toggleKeys);
-    hint.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleKeys(); } });
+    var b = scope.querySelector('.keys-button');
+    if (!b || b.hasAttribute('data-ready')) return;
+    b.setAttribute('data-ready', '');
+    b.addEventListener('click', toggleKeys);
   }
 
   dress(document);
