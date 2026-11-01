@@ -4041,7 +4041,7 @@ fn desk_stats(d: &DeskStats) -> Markup {
                     @if s.due_now > 0 { a.small href=(study) { "Start studying" } }
                 }
                 div {
-                    p.kicker { "Remembered this week" }
+                    p.kicker { "This week" }
                     p.n { (format::percent(this_week)) }
                     p.small.muted {
                         @if this_week.is_none() { "No reviews of learned cards this week. " }
