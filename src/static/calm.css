@@ -1606,10 +1606,8 @@ html.calm .legend span { display: inline-flex; align-items: center; gap: 8px; }
 html.calm .legend span::before { content: ''; display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: var(--accent); }
 html.calm .legend .aim::before { width: 2px; height: 12px; border-radius: 1px; background: var(--ink); }
 html.calm .legend .low::before { box-sizing: border-box; background: none; border: 2px solid var(--warn); }
-html.calm .dots-scale, html.calm .dots-row .dots-track { position: relative; }
-html.calm .dots-scale { height: 18px; margin-left: 200px; margin-right: 56px; font-size: 11px; color: var(--faint); }
-html.calm .dots-scale span { position: absolute; transform: translateX(-50%); }
-html.calm .dots-row { display: grid; grid-template-columns: 184px minmax(0, 1fr) 40px; gap: 16px; align-items: center; min-height: 40px; }
+html.calm .dots-row .dots-track { position: relative; }
+html.calm .dots-row { display: grid; grid-template-columns: 140px minmax(0, 1fr) 40px; gap: 16px; align-items: center; min-height: 40px; }
 html.calm .dots-row a { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; color: var(--ink); }
 html.calm .dots-row a:hover { color: var(--accent-hover); }
 html.calm .dots-track { height: 6px; border-radius: 3px; background: var(--track); }
@@ -1620,8 +1618,7 @@ html.calm .dots-track .aim { top: -6px; width: 2px; height: 18px; margin-left: -
 html.calm .dots-track .dot { top: -4px; width: 14px; height: 14px; margin-left: -7px; box-sizing: border-box; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 2px var(--paper); cursor: default; }
 html.calm .dots-track .dot.low { background: var(--paper); border: 3px solid var(--warn); }
 html.calm .dots-track .dot:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-html.calm .dots-val { font-size: .875rem; font-weight: 600; text-align: right; font-variant-numeric: tabular-nums; }
-html.calm .dots-val.low { color: var(--warn); }
+html.calm .dots-val { font-size: .875rem; font-weight: 400; color: var(--muted); text-align: right; font-variant-numeric: tabular-nums; }
 /* When you felt sure: two short bars. */
 html.calm .sure-bars { display: grid; grid-template-columns: 72px minmax(0, 1fr) 40px; gap: 10px; align-items: center; font-size: .875rem; }
 html.calm .sure-bars .track { position: relative; height: 8px; border-radius: 4px; background: var(--track); overflow: hidden; }

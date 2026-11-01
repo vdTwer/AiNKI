@@ -322,8 +322,9 @@
       });
     },
 
-    // Each deck: its aim as a tick, what was remembered as a dot. Below aim
-    // is an open Terra ring, so it reads without colour too.
+    // Each deck: its aim as a tick and as the one number, what was remembered
+    // as a dot (its value on hover). Below aim is an open Terra ring, so it
+    // reads without colour too.
     decks: function (box) {
       var rows = box.getAttribute('data-decks').split(';').map(function (r) {
         var p = r.split('|');
@@ -332,15 +333,6 @@
       var lo = Math.min.apply(null, rows.map(function (r) { return Math.min(r.aim, r.v); }).concat([0.8]));
       lo = Math.floor((lo - 0.03) * 20) / 20;
       var P = function (v) { return ((v - lo) / (1 - lo) * 100).toFixed(2) + '%'; };
-      var scale = document.createElement('div');
-      scale.className = 'dots-scale';
-      for (var g = lo; g <= 1.0001; g += 0.05) {
-        var s = document.createElement('span');
-        s.style.left = P(g);
-        s.textContent = pct(g);
-        scale.appendChild(s);
-      }
-      box.appendChild(scale);
       rows.forEach(function (r) {
         var low = r.v < r.aim - 0.02;
         var row = document.createElement('div');
@@ -360,7 +352,7 @@
         var dot = document.createElement('i');
         dot.className = 'dot' + (low ? ' low' : '');
         dot.style.left = P(r.v);
-        hover(dot, pct(r.v) + ' remembered', r.name + ', aim ' + pct(r.aim));
+        hover(row, pct(r.v) + ' remembered', r.name + ', aim ' + pct(r.aim));
         var val = document.createElement('span');
         val.className = 'dots-val' + (low ? ' low' : '');
         val.textContent = pct(r.v);
