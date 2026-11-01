@@ -919,6 +919,11 @@ async fn home(State(app): State<AppState>, user: WebUser, Flash(msg): Flash) -> 
                 (icon_btn("/decks/new", ICON_DECKS, "New deck"))
                 (icon_btn("/import", ICON_IMPORT, "Import"))
             }
+            // The desktop look: a plus for a new deck, Import in words.
+            p.desk-actions.calm-only {
+                a.add-deck href="/decks/new" aria-label="New deck" data-label="New deck" { (icon(ICON_ADD, PAGE_ICON)) }
+                a href="/import" { "Import deck" }
+            }
         },
     )
     .into_response())
