@@ -462,7 +462,7 @@ html.calm button.link:hover { color: var(--accent); }
 /* One primary button per page. Every other action is words in Orchid (or
    Terra when it destroys something). Answer buttons, the ⋯ toggle, folds
    and other controls keep their own shapes. */
-html.calm main :is(.btn, button):not(.primary, .link, .fold, .more-toggle, .keys-button, .chip, .close, .icon-link, .answers .btn, .sure-buttons .btn, .study .btn.again, form.search button, .path-field button) {
+html.calm main :is(.btn, button):not(.primary, .link, .fold, .more-toggle, .keys-button, .coach-mark, .chip, .close, .icon-link, .answers .btn, .sure-buttons .btn, .study .btn.again, form.search button, .path-field button) {
   min-height: 32px;
   padding: 0;
   border: 0;
@@ -471,7 +471,7 @@ html.calm main :is(.btn, button):not(.primary, .link, .fold, .more-toggle, .keys
   font-weight: 600;
   color: var(--accent);
 }
-html.calm main :is(.btn, button):not(.primary, .link, .fold, .more-toggle, .keys-button, .chip, .close, .icon-link, .answers .btn, .sure-buttons .btn, .study .btn.again, form.search button, .path-field button):is(:hover, .held) {
+html.calm main :is(.btn, button):not(.primary, .link, .fold, .more-toggle, .keys-button, .coach-mark, .chip, .close, .icon-link, .answers .btn, .sure-buttons .btn, .study .btn.again, form.search button, .path-field button):is(:hover, .held) {
   border: 0;
   background: none;
   color: var(--accent-hover);
@@ -1784,3 +1784,52 @@ html.calm .desk-actions .add-deck::after {
   pointer-events: none;
 }
 html.calm .desk-actions .add-deck:is(:hover, :focus-visible)::after { opacity: 1; transform: translate(-50%, 0); }
+
+/* The week stays off the home page. The coach speaks through a small Terra
+   ! beside the heading; its note opens on hover or focus and stays open
+   while the pointer is on it, so its link can be reached. */
+html.calm .today-side .week { display: none; }
+html.calm .coach-tip { position: relative; display: inline-block; margin-left: .4em; vertical-align: .35em; }
+html.calm main button.coach-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  min-height: 0;
+  padding: 0;
+  border: 1px solid var(--warn);
+  border-radius: 50%;
+  background: none;
+  font-family: var(--sans);
+  font-size: .8125rem;
+  font-weight: 600;
+  line-height: 1;
+  color: var(--warn);
+  cursor: help;
+}
+html.calm main button.coach-mark:is(:hover, :focus-visible) { background: var(--warn); color: var(--paper); border-color: var(--warn); }
+html.calm .coach-note {
+  position: absolute;
+  left: -12px;
+  top: calc(100% + 8px);
+  z-index: 5;
+  width: 320px;
+  padding: .75rem 1rem;
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  background: var(--surface);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, .08);
+  font-family: var(--sans);
+  font-size: .875rem;
+  font-weight: 400;
+  line-height: 1.5;
+  letter-spacing: normal;
+  color: var(--ink-2);
+  visibility: hidden;
+  opacity: 0;
+  transition: opacity 120ms ease, visibility 0s linear 120ms;
+}
+html.calm .coach-note::before { content: ''; position: absolute; left: 0; right: 0; top: -10px; height: 10px; }
+html.calm .coach-note a { color: var(--accent); }
+html.calm .coach-tip:is(:hover, :focus-within) .coach-note { visibility: visible; opacity: 1; transition: opacity 120ms ease; }

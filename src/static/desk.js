@@ -40,6 +40,27 @@
       date.appendChild(document.createTextNode(parts.slice(1).join(', ')));
     }
 
+    // Home: the week's note stays hidden; when the coach has something to
+    // say, a ! beside the heading shows it on hover or focus.
+    var tip = scope.querySelector('.today-side .week .tip');
+    var heading = scope.querySelector('.today h1');
+    if (tip && heading && !heading.querySelector('.coach-tip')) {
+      var coach = document.createElement('span');
+      coach.className = 'coach-tip';
+      var mark = document.createElement('button');
+      mark.type = 'button';
+      mark.className = 'coach-mark';
+      mark.setAttribute('aria-label', 'A note from the coach');
+      mark.textContent = '!';
+      var note = document.createElement('span');
+      note.className = 'coach-note';
+      note.setAttribute('role', 'tooltip');
+      note.appendChild(tip.firstElementChild ? tip.firstElementChild.cloneNode(true) : tip.cloneNode(true));
+      coach.appendChild(mark);
+      coach.appendChild(note);
+      heading.appendChild(coach);
+    }
+
     // Studying: when a card comes back, in words.
     Array.prototype.forEach.call(scope.querySelectorAll('.study .answers .ivl:not([data-remembered])'), function (e) {
       e.textContent = words(e.textContent.trim());
@@ -354,8 +375,8 @@
         dot.style.left = P(r.v);
         hover(row, pct(r.v) + ' remembered', r.name + ', aim ' + pct(r.aim));
         var val = document.createElement('span');
-        val.className = 'dots-val' + (low ? ' low' : '');
-        val.textContent = pct(r.v);
+        val.className = 'dots-val';
+        val.textContent = pct(r.aim);
         track.appendChild(span);
         track.appendChild(tick);
         track.appendChild(dot);
