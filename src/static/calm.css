@@ -379,7 +379,7 @@ html.calm .icon-link {
   font-weight: 400;
   transition: color 140ms ease;
 }
-html.calm .icon-link:hover, html.calm .icon-link.held { color: var(--accent); }
+html.calm .icon-link:hover, html.calm .icon-link.held { color: var(--ink); }
 /* A button dressed as a quiet link: icon links, links under a list, Log out. */
 html.calm .btn.icon-link, html.calm button.link.icon-link,
 html.calm .actions.quiet-links .btn, html.calm form.logout .btn {
@@ -392,12 +392,15 @@ html.calm .actions.quiet-links .btn, html.calm form.logout .btn {
   color: var(--muted);
   transition: color 140ms ease;
 }
-html.calm .btn.icon-link:is(:hover, .held, :active) { background: none; border: 0; color: var(--accent); }
+html.calm .btn.icon-link:is(:hover, .held, :active) { background: none; border: 0; color: var(--ink); }
 html.calm .icon-links { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem 1.8rem; margin: 1.5rem 0; }
 
 /* ----- buttons ----------------------------------------------------------- */
-/* Flat, with a clear edge and soft corners. The one thing to press on a
-   page is Orchid. */
+/* Two kinds, chosen on the button board. The one thing to press on a page is
+   a small solid ink button; it never changes colour, it only glows when the
+   pointer is on it. Everything else is grey words, and a pale Orchid marker
+   stroke slides in under them on hover. Answer buttons, the ⋯ toggle, folds
+   and other controls keep their own shapes. */
 html.calm .btn,
 html.calm button:not(.link) {
   position: relative;
@@ -405,58 +408,71 @@ html.calm button:not(.link) {
   align-items: center;
   justify-content: center;
   gap: .45rem;
-  min-height: 38px;
-  padding: 0 1.125rem;
+  min-height: 40px;
+  padding: 0 1.1rem;
   background: var(--surface);
   color: var(--ink);
   border: 1px solid var(--line-strong);
-  border-radius: 9px;
+  border-radius: 10px;
   font: inherit;
-  font-size: .875rem;
-  font-weight: 500;
+  font-size: 1rem;
+  font-weight: 400;
   cursor: pointer;
-  transition: border-color 140ms ease, background-color 140ms ease, color 140ms ease, transform 140ms var(--ease);
+  transition: border-color 160ms ease, box-shadow 400ms ease, color 200ms ease, transform 160ms var(--ease);
 }
 html.calm .btn:hover, html.calm button:not(.link):hover, html.calm .btn.held, html.calm button:not(.link).held {
   color: var(--ink);
   background: var(--surface);
   border-color: var(--ink);
 }
-html.calm .btn:active, html.calm button:not(.link):active { transform: translateY(1px); }
-html.calm .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
-html.calm .btn.primary:is(:hover, .held) { background: var(--accent-hover); border-color: var(--accent-hover); color: var(--on-accent); }
+html.calm .btn:active, html.calm button:not(.link):active { transform: scale(.97); }
+html.calm .btn.primary {
+  min-height: 44px;
+  padding: 0 1.4rem;
+  background: var(--ink);
+  border-color: var(--ink);
+  color: var(--paper);
+  font-size: 1.1rem;
+}
+html.calm .btn.primary:is(:hover, :focus-visible, .held) {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: var(--paper);
+  box-shadow: 0 10px 28px -10px rgba(var(--shadow), .55), 0 0 44px -10px rgba(168, 51, 109, .45), 0 0 64px -18px rgba(200, 110, 160, .4);
+}
 html.calm .btn.again { border-color: var(--ink); }
-/* Danger is quiet: Terra words on a Terra edge, never filled. */
-html.calm .btn.danger { border-color: var(--warn-edge); color: var(--warn); background: transparent; }
-html.calm .btn.danger:is(:hover, .held) { border-color: var(--warn); color: var(--warn); background: transparent; }
-html.calm .btn.wide { display: flex; width: 100%; margin: 1.2rem 0; font-size: 1rem; }
-html.calm button.link { min-height: 0; padding: 0; color: var(--muted); font-weight: 400; text-decoration: none; transition: color 140ms ease; }
-html.calm button.link:hover { color: var(--accent); }
-/* One primary button per page. Every other action is words in Orchid (or
-   Terra when it destroys something). Answer buttons, the ⋯ toggle, folds
-   and other controls keep their own shapes. */
+/* Danger is ink, never a colour; its words say what it does. */
+html.calm .btn.danger { border-color: var(--line-strong); color: var(--ink); background: transparent; }
+html.calm .btn.danger:is(:hover, .held) { border-color: var(--ink); color: var(--ink); background: transparent; }
+html.calm .btn.wide { display: flex; width: 100%; margin: 1.2rem 0; font-size: 1.1rem; }
+
+/* The marker: a pale stroke under the lower half of the words. */
+html.calm button.link,
 html.calm main :is(.btn, button):not(.primary, .link, .fold, .more-toggle, .keys-button, .coach-mark, .chip, .close, .icon-link, .answers .btn, .sure-buttons .btn, .study .btn.again, form.search button, .path-field button) {
   min-height: 32px;
-  padding: 0;
+  padding: 0 .15rem;
   border: 0;
-  border-radius: 0;
-  background: none;
-  font-weight: 500;
-  color: var(--accent);
+  border-radius: 2px;
+  background: linear-gradient(var(--marker), var(--marker)) no-repeat 0 82% / 100% 0;
+  font-weight: 400;
+  color: var(--muted);
+  transition: background-size 380ms var(--ease), color 200ms ease;
 }
-html.calm main :is(.btn, button):not(.primary, .link, .fold, .more-toggle, .keys-button, .coach-mark, .chip, .close, .icon-link, .answers .btn, .sure-buttons .btn, .study .btn.again, form.search button, .path-field button):is(:hover, .held) {
+html.calm button.link:is(:hover, :focus-visible),
+html.calm main :is(.btn, button):not(.primary, .link, .fold, .more-toggle, .keys-button, .coach-mark, .chip, .close, .icon-link, .answers .btn, .sure-buttons .btn, .study .btn.again, form.search button, .path-field button):is(:hover, :focus-visible, .held) {
   border: 0;
-  background: none;
-  color: var(--accent-hover);
+  background: linear-gradient(var(--marker), var(--marker)) no-repeat 0 82% / 100% 42%;
+  color: var(--ink);
 }
-html.calm main :is(.btn, button).danger:not(.primary) { color: var(--warn); }
-html.calm main :is(.btn, button).danger:not(.primary):is(:hover, .held) { color: var(--warn); text-decoration: underline; text-underline-offset: 3px; }
+html.calm button.link { min-height: 0; text-decoration: none; }
+html.calm main :is(.btn, button).danger:not(.primary) { color: var(--ink); }
+html.calm main :is(.btn, button).danger:not(.primary):is(:hover, .held) { color: var(--ink); }
 
 /* Key hints live on the ? sheet now, not on every button. */
 html.calm .key { display: none; }
 html.calm .actions { gap: .75rem; }
 html.calm .actions.quiet-links { gap: 1.4rem; margin-top: 1rem; }
-html.calm .actions.quiet-links .btn:hover { color: var(--accent); }
+html.calm .actions.quiet-links .btn:hover { color: var(--ink); }
 
 /* ----- forms --------------------------------------------------------------- */
 html.calm label { font-size: .875rem; font-weight: 500; margin-bottom: 1.1rem; }
