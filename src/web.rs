@@ -458,8 +458,18 @@ fn page(nav: Option<Nav>, title: &str, user: Option<&User>, page_kind: Option<&s
                         a href="/settings" data-label="Settings" aria-current=[current(Nav::Settings)] { (nav_icon(ICON_SETTINGS)) "Settings" }
                     }
                 }
+                // The desktop look in quiet hours: one dark screen over
+                // everything, no way around it until they end.
+                @if let Some(u) = user {
+                    @if let Some(until) = study::quiet_until(u, now()) {
+                        div.sleep-wall.calm-only role="dialog" aria-modal="true" aria-labelledby="sleep-title" {
+                            h1 #sleep-title { "Go to sleep." }
+                            p { "Your cards open again at " (clock_time(&u.clock(), until)) "." }
+                        }
+                    }
+                }
                 main {
-                    // The desktop look: a ? under the rail that opens the key sheet.
+                    // The desktop look: a ? in the corner that opens the key sheet.
                     @if user.is_some() {
                         button.keys-button.calm-only type="button" aria-label="Keys" data-label="Keys" { "?" }
                     }

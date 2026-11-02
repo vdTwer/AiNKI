@@ -86,7 +86,8 @@
     var start = scope.querySelector('.break-start [data-break]');
     var run = scope.querySelector('.break-run');
     var form = document.getElementById('keep-going');
-    if (!start || !run || !form) return;
+    if (!start || !run || !form || start.hasAttribute('data-ready')) return;
+    start.setAttribute('data-ready', '');
     var section = run.closest('.break');
     var clock = run.querySelector('.break-clock');
     var fill = run.querySelector('.break-fill');
@@ -115,8 +116,9 @@
     });
     // Ending the break early, or skipping it, forgets it.
     form.addEventListener('submit', function () { clearInterval(tick); put(null); });
+    // On the desktop a break simply starts; skipping it is one click.
     var saved = get();
-    if (saved && saved.until > Date.now()) go(saved); else put(null);
+    if (saved && saved.until > Date.now()) go(saved); else { put(null); start.click(); }
   }
 
   // A deck name with "::" reads as a path: each finished part becomes a
@@ -673,7 +675,8 @@
     ['rose', 'ochre', 'orchid', 'sand', 'pale'],
     ['mauve', 'orchid', 'sand', 'rose', 'olive'],
     ['olive', 'ochre', 'pale', 'orchid', 'sand'],
-    ['pale', 'mauve', 'ochre', 'rose', 'orchid']
+    ['pale', 'mauve', 'ochre', 'rose', 'orchid'],
+    ['orchid', 'mauve', 'pale', 'orchid', 'rose']
   ];
 
   function filter() {
@@ -690,8 +693,9 @@
     document.body.appendChild(svg);
   }
 
-  function wash(kind, shape, set, count) {
-    var old = document.querySelector('body > .wash');
+  function wash(kind, shape, set, count, into) {
+    var parent = into || document.body;
+    var old = parent.querySelector(':scope > .wash');
     var key = kind + ':' + set;
     if (old && old.getAttribute('data-key') === key) return;
     if (old) old.remove();
@@ -714,7 +718,18 @@
       i.style.setProperty('--dy', b[7] + '%');
       w.appendChild(i);
     });
-    document.body.insertBefore(w, document.body.firstChild);
+    parent.insertBefore(w, parent.firstChild);
+  }
+
+  // Quiet hours cover everything: the page under the dark screen can't be
+  // reached by pointer, Tab or keys.
+  function sleepWall() {
+    var wall = document.querySelector('.sleep-wall');
+    if (!wall) return;
+    wall.removeAttribute('hidden');
+    Array.prototype.forEach.call(document.querySelectorAll('body > main, body > nav.top'), function (e) { e.inert = true; });
+    document.addEventListener('keydown', function (e) { e.stopImmediatePropagation(); }, true);
+    wash('night', WIDE, 5, 5, wall);
   }
 
   function paint() {
@@ -762,6 +777,7 @@
   }
 
   paint();
+  sleepWall();
   login();
   dress(document);
   keysHint(document);
@@ -772,5 +788,5 @@
   numbersSwitch(document);
   Array.prototype.forEach.call(document.querySelectorAll('form[action="/decks/new"] input[name=name], form[action$="/edit"] input[name=name], input[name=new_deck]'), pathField);
   // Studying swaps in the next page without a reload.
-  document.addEventListener('ainki:page', function (e) { dress(e.detail || document); paint(); });
+  document.addEventListener('ainki:page', function (e) { dress(e.detail || document); paint(); breakTimer(e.detail || document); });
 })();

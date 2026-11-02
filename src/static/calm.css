@@ -311,7 +311,7 @@ html.calm body > .wash {
   filter: url(#wet);
   animation: wash-in 2.4s var(--ease) both;
 }
-html.calm body > :not(.wash) { position: relative; z-index: 1; }
+html.calm body > :not(.wash, .sleep-wall, svg) { position: relative; z-index: 1; }
 html.calm body > nav.top { position: absolute; }
 html.calm body > .wash.corner { top: -80px; right: -60px; width: 62%; height: 620px; }
 html.calm body > .wash.corner.small { width: 50%; height: 520px; }
@@ -1251,11 +1251,12 @@ html.calm .session-end {
   flex: 1;
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
+  align-items: center;
   justify-content: flex-start;
-  max-width: 640px;
-  padding: 12vh 0 96px;
-  text-align: left;
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 16vh 0 96px;
+  text-align: center;
 }
 html.calm .simple-only { display: none; }
 html.calm .end-mark { position: relative; display: block; width: 26px; height: 26px; color: var(--warn); }
@@ -1272,11 +1273,11 @@ html.calm .end-mark .line {
   background: var(--accent);
   opacity: 0;
 }
-html.calm .session-end h1 { margin: 1.5rem 0 0; font-size: 2.375rem; line-height: 1.1; }
+html.calm .session-end h1 { margin: 1.5rem 0 0; font-size: 4rem; line-height: 1.02; }
 html.calm .session-end .kicker + h1 { margin-top: 1rem; }
 html.calm .session-end .summary { margin: 1rem 0 0; font-size: 1.125rem; line-height: 1.5; color: var(--ink-2); }
 html.calm .session-end .summary + .summary { margin-top: .5rem; font-size: .9375rem; color: var(--muted); }
-html.calm .session-end .end-links { justify-content: flex-start; gap: 1.5rem; margin-top: 2rem; font-size: .9375rem; }
+html.calm .session-end .end-links { justify-content: center; gap: 1.5rem; margin-top: 2rem; font-size: 1.05rem; }
 html.calm .session-end .end-links a, html.calm .session-end .end-links button.link { color: var(--muted); }
 html.calm .session-end .end-links a:hover, html.calm .session-end .end-links button.link:hover { color: var(--accent-hover); }
 html.calm .session-end .btn { margin-top: 1rem; }
@@ -1285,17 +1286,46 @@ html.calm .session-end .btn { margin-top: 1rem; }
    that fills, and the next card comes back by itself. */
 /* Quiet hours: why sleep helps is the way on; studying anyway is quieter. */
 html.calm .rest .end-links a[href="/learn/sleep"] { color: var(--accent); }
-html.calm .rest .end-links button.link { font-weight: 400; text-decoration: underline; text-underline-offset: 3px; text-decoration-thickness: 1px; }
 html.calm .break .end-links { display: none; }
-html.calm .break-start { display: flex; gap: 12px; margin-top: 2rem; }
+/* desk.js starts the break by itself, so its buttons stay out of sight. */
+html.calm .break-start { display: none; }
 html.calm .break-start .btn { margin: 0; }
-html.calm .break.running > :not(.break-run):not(.kicker) { display: none; }
-html.calm .break-run:not([hidden]) { display: flex; flex-direction: column; align-items: flex-start; width: 100%; }
-html.calm .break-clock { margin: 1rem 0 0; font-size: 6rem; font-weight: 400; letter-spacing: -.04em; line-height: .9; }
-html.calm .break-line { width: 100%; max-width: 600px; height: 3px; margin-top: 2rem; border-radius: 2px; background: var(--track); overflow: hidden; }
-html.calm .break-fill { width: 0; height: 3px; background: var(--accent); }
+html.calm .break.running > :not(.break-run):not(.kicker):not(h1) { display: none; }
+html.calm .break-run:not([hidden]) { display: flex; flex-direction: column; align-items: center; width: 100%; }
+html.calm .break-clock { margin: .5rem 0 0; font-style: italic; font-size: 7.5rem; font-weight: 400; letter-spacing: -.02em; line-height: .95; font-variant-numeric: lining-nums tabular-nums; }
+html.calm .break-line { width: 100%; max-width: 420px; height: 2px; margin-top: 2rem; border-radius: 2px; background: var(--track); overflow: hidden; }
+html.calm .break-fill { width: 0; height: 2px; background: var(--accent); }
 html.calm .break-run .summary { margin-top: 1.5rem; }
 html.calm .break-run .btn { margin-top: 1.5rem; }
+
+/* Quiet hours: one dark screen over everything, a night wash, and only
+   "Go to sleep." Nothing to press. */
+html.calm .sleep-wall {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1.5rem;
+  overflow: hidden;
+  background: #1e1220;
+  color: #f3f0ff;
+  text-align: center;
+}
+html.calm .sleep-wall > :not(.wash) { position: relative; z-index: 1; }
+html.calm .sleep-wall h1 { margin: 0; font-size: 11rem; line-height: .95; animation: calm-appear 1.2s var(--ease) both; }
+html.calm .sleep-wall p { margin: 0; font-size: 1.35rem; color: rgba(243, 240, 255, .62); }
+html.calm .sleep-wall > .wash { position: absolute; inset: 0; mix-blend-mode: screen; opacity: .5; filter: url(#wet); }
+html.calm .sleep-wall > .wash i {
+  position: absolute; left: var(--x); top: var(--y); width: var(--w); aspect-ratio: 1.5;
+  margin: calc(var(--w) / -2) 0 0 calc(var(--w) / -2);
+  background: radial-gradient(closest-side, rgba(var(--c), .5) 0%, rgba(var(--c), .36) 40%, rgba(var(--c), .14) 70%, rgba(var(--c), 0) 100%);
+  filter: blur(22px); border-radius: 42% 58% 63% 37% / 45% 40% 60% 55%;
+  animation: wash-flow var(--d) ease-in-out var(--dl) infinite;
+}
+html:not(.calm) .sleep-wall { display: none; }
 
 html.calm .finishing .end-mark .line { animation: calm-close-line 560ms cubic-bezier(.6, 0, .2, 1) both; }
 html.calm .finishing .end-mark .check path { animation: calm-draw 340ms var(--ease) 400ms both; }
