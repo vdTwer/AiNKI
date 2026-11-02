@@ -1081,10 +1081,15 @@ html.calm button.more-toggle {
   width: 38px;
   min-height: 38px;
   padding: 0;
-  border-color: var(--line);
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  box-shadow: none;
+  transition: background-color 160ms ease;
 }
-html.calm button.more-toggle span { width: 4px; height: 4px; border-radius: 50%; background: var(--ink); }
-html.calm button.more-toggle[aria-expanded="true"] { border-color: var(--ink); }
+html.calm button.more-toggle span { width: 4px; height: 4px; border-radius: 50%; background: var(--muted); }
+html.calm button.more-toggle:is(:hover, :focus-visible, [aria-expanded="true"]) { background: var(--marker); }
+html.calm button.more-toggle:is(:hover, :focus-visible, [aria-expanded="true"]) span { background: var(--ink); }
 html.calm .deck-menu {
   position: absolute;
   z-index: 5;
@@ -1111,7 +1116,12 @@ html.calm .deck-main { position: relative; }
 /* Its cards: a column head, the front in the serif, the back under it. */
 html.calm .cards-head { display: flex; justify-content: space-between; align-items: baseline; margin: 1.75rem 0 .75rem; }
 html.calm .cards-head h2 { margin: 0; padding: 0; border: 0; }
-html.calm .cards-head a { color: var(--accent); }
+html.calm .cards-head a {
+  color: var(--muted);
+  background: linear-gradient(var(--marker), var(--marker)) no-repeat 0 82% / 100% 0;
+  transition: background-size 200ms var(--ease), color 160ms ease;
+}
+html.calm .cards-head a:is(:hover, :focus-visible) { color: var(--ink); background-size: 100% 42%; }
 html.calm ul.list.cards { margin: 4px 0 0; }
 html.calm ul.list.cards li { border: 0; }
 html.calm ul.list.cards a.row { display: grid; grid-template-columns: minmax(0, 1fr) 140px 16px; gap: 16px; align-items: center; }
@@ -1658,7 +1668,7 @@ html.calm .big3 .n { font-size: 3.25rem; font-weight: 400; letter-spacing: -.03e
 html.calm .big3 .n.it { font-family: var(--italic); font-style: italic; font-weight: 400; letter-spacing: -.02em; }
 html.calm .big3 a { color: var(--accent); }
 html.calm .chart-sec { display: grid; grid-template-columns: minmax(0, 1fr); gap: 24px; padding: 1.75rem 0; border-top: 1px solid var(--line); }
-html.calm .chart-main h2 { margin: 0 0 .4rem; padding: 0; border: 0; font-family: var(--serif); font-size: 1.375rem; font-weight: 400; letter-spacing: 0; text-transform: none; color: var(--ink); }
+html.calm .chart-main h2 { margin: 0 0 .4rem; padding: 0; border: 0; font-family: var(--serif); font-weight: 400; letter-spacing: 0; text-transform: none; font-variant-caps: normal; font-style: italic; font-size: 1.6rem; color: var(--ink); }
 html.calm .chart-main > p { margin: 0 0 1.25rem; }
 html.calm .chart-side { display: flex; flex-direction: column; gap: 12px; }
 html.calm .chart-side p { margin: 0; }
