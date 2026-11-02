@@ -433,7 +433,7 @@ html.calm .btn.wide { display: flex; width: 100%; margin: 1.2rem 0; font-size: 1
 
 /* The marker: a pale stroke under the lower half of the words. */
 html.calm button.link,
-html.calm main :is(.btn, button):not(.primary, .link, .fold, .more-toggle, .keys-button, .coach-mark, .chip, .close, .icon-link, .answers .btn, .sure-buttons .btn, .study .btn.again, form.search button, .path-field button) {
+html.calm main :is(.btn, button):not(.primary, .link, .fold, .more-toggle, .keys-button, .coach-mark, .chip, .close, .icon-link, .answers .btn, .sure-buttons .btn, .study .btn.again, form.search button, .path-field button, .lesson-deck .btn) {
   min-height: 32px;
   padding: 0 .15rem;
   border: 0;
@@ -444,7 +444,7 @@ html.calm main :is(.btn, button):not(.primary, .link, .fold, .more-toggle, .keys
   transition: background-size 380ms var(--ease), color 200ms ease;
 }
 html.calm button.link:is(:hover, :focus-visible),
-html.calm main :is(.btn, button):not(.primary, .link, .fold, .more-toggle, .keys-button, .coach-mark, .chip, .close, .icon-link, .answers .btn, .sure-buttons .btn, .study .btn.again, form.search button, .path-field button):is(:hover, :focus-visible, .held) {
+html.calm main :is(.btn, button):not(.primary, .link, .fold, .more-toggle, .keys-button, .coach-mark, .chip, .close, .icon-link, .answers .btn, .sure-buttons .btn, .study .btn.again, form.search button, .path-field button, .lesson-deck .btn):is(:hover, :focus-visible, .held) {
   border: 0;
   background: linear-gradient(var(--marker), var(--marker)) no-repeat 0 82% / 100% 42%;
   color: var(--ink);
@@ -927,20 +927,17 @@ html.calm nav.tabs + h1 { margin: 1.5rem 0 2rem; }
 html.calm ul.list { border-top: 0; margin: .25rem 0; }
 html.calm ul.list li { border-bottom: 1px solid var(--line); transition: border-color 160ms ease; }
 html.calm ul.list li:last-child { border-bottom: 0; }
-/* A row lifted into a card takes the hairlines around it along. */
-html.calm ul.list li:has(> a.row:hover), html.calm ul.list li:has(+ li > a.row:hover),
-html.calm ul.list li:has(> a.row.held), html.calm ul.list li:has(+ li > a.row.held) { border-color: transparent; }
 html.calm a.row {
   position: relative;
   min-height: 44px;
-  padding: .45rem .75rem;
-  margin: 1px -.75rem;
+  padding: .45rem 0;
+  margin: 1px 0;
   border: 0;
-  border-radius: 9px;
-  transition: background-color 140ms ease;
+  border-radius: 0;
+  transition: text-shadow 500ms ease;
 }
-/* On hover a row lights up softly, like a pressed key. */
-html.calm a.row:hover, html.calm a.row.held { color: var(--ink); background: var(--tint); }
+/* On hover a row's words glow softly; no box, no tint. */
+html.calm a.row:is(:hover, .held, :focus-visible) { color: var(--ink); background: none; text-shadow: 0 0 16px rgba(200, 110, 160, .45), 0 0 30px rgba(168, 51, 109, .3); }
 html.calm a.row:hover .grow { text-decoration: none; }
 html.calm .counts { font-weight: 400; font-size: .93rem; color: var(--muted); }
 html.calm li.item { padding: .8rem 0; }
@@ -1029,8 +1026,7 @@ html.calm ul.decks { margin: 4px 0 0; }
 html.calm ul.decks li { border-bottom: 0; }
 html.calm ul.decks a.row { display: grid; grid-template-columns: minmax(0, 1fr) 96px 96px; gap: 16px; align-items: center; min-height: 64px; }
 html.calm ul.decks a.row .grow { display: flex; flex-direction: column; justify-content: center; }
-html.calm ul.decks .deck-name { font-family: var(--serif); font-style: italic; font-size: 1.55rem; font-weight: 400; letter-spacing: 0; line-height: 1.2; transition: text-shadow 500ms ease; }
-html.calm ul.decks a.row:is(:hover, :focus-visible) .deck-name { text-shadow: 0 0 16px rgba(200, 110, 160, .45), 0 0 30px rgba(168, 51, 109, .3); }
+html.calm ul.decks .deck-name { font-family: var(--serif); font-style: italic; font-size: 1.55rem; font-weight: 400; letter-spacing: 0; line-height: 1.2; }
 html.calm ul.decks .sub { margin-top: .2rem; font-size: .8125rem; line-height: 1.3; color: var(--muted); }
 /* Nested decks: the parents above in small type, the deck's own name below. */
 html.calm .deck-path { font-family: var(--sans); font-weight: 400; color: var(--muted); }
@@ -1577,26 +1573,67 @@ html.calm table.retention th a:hover { color: var(--accent-hover); }
 html.calm table.retention tr.short td:nth-child(3) { color: var(--warn); }
 
 /* ----- lessons ------------------------------------------------------------ */
-/* Reading width, serif text, and a small tag for how strong the evidence is:
-   Terra where it is solid, muted where it is a rule of thumb or mixed,
-   Orchid where it is not supported. */
-html.calm .lead { color: var(--muted); max-width: 36rem; }
-html.calm .evidence { flex: none; border: 0; padding: .1rem .55rem; border-radius: 999px; font-size: .75rem; font-weight: 400; letter-spacing: .02em; white-space: nowrap; color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); }
-html.calm .evidence:is(.mixed, .practice) { color: var(--muted); background: var(--track); }
-html.calm .evidence.against { color: var(--warn); background: color-mix(in srgb, var(--warn) 12%, transparent); }
-html.calm ul.lessons .evidence { margin-left: 1rem; }
-html.calm .lesson h1 { margin-bottom: .5rem; }
-html.calm .lesson-meta { margin: 0 0 1.6rem; }
-html.calm .lesson .md { max-width: 36rem; font-family: var(--serif); font-optical-sizing: auto; font-size: 1.1rem; line-height: 1.65; }
+/* Reading width and the serif at reading size. How strong the evidence is
+   shows as a small dot and words in small capitals: the dot runs from full
+   Orchid (strong) through paler Orchid to grey, ink where FSRS's own data
+   says so. */
+html.calm .lead { color: var(--muted); max-width: 36rem; font-size: 1.2rem; line-height: 1.5; }
+html.calm .evidence {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: .5rem;
+  border: 0;
+  padding: 0;
+  background: none;
+  font-size: 1rem;
+  font-weight: 400;
+  letter-spacing: .06em;
+  font-variant-caps: all-small-caps;
+  white-space: nowrap;
+  color: var(--muted);
+}
+html.calm .evidence::before { content: ''; flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); }
+html.calm .evidence.moderate::before { background: #c77ca2; }
+html.calm .evidence.mixed::before { background: #e3bcd0; }
+html.calm .evidence.fsrs::before { background: var(--ink); }
+html.calm .evidence.practice::before { background: var(--line-strong); }
+html.calm .evidence.against::before { background: var(--faint); }
+html.calm ul.lessons .evidence { margin-left: 1rem; min-width: 11rem; }
+html.calm ul.lessons a.row { padding: .9rem 0 1rem; }
+html.calm ul.lessons a.row .grow > span:first-child { font-style: italic; font-size: 1.45rem; line-height: 1.2; }
+html.calm ul.lessons .sub { display: block; margin-top: .25rem; font-size: 1.02rem; line-height: 1.4; }
+html.calm ul.lessons .chev { display: none; }
+html.calm .lesson h1 { margin-bottom: .75rem; font-size: 3.4rem; }
+html.calm .lesson-meta { margin: 0 0 1.8rem; }
+html.calm .lesson .md { max-width: 38rem; font-family: var(--serif); font-size: 1.22rem; line-height: 1.6; }
 html.calm .lesson .md h2 { margin: 2.2rem 0 .6rem; font-family: var(--sans); }
 html.calm .lesson .md ul { padding-left: 1.2rem; }
-html.calm .lesson .md li { margin: 0 0 .5rem; }
-html.calm .lesson .md li::marker { color: var(--accent); }
+html.calm .lesson .md li { margin: 0 0 .55rem; }
+html.calm .lesson .md li::marker { color: var(--faint); }
 html.calm .lesson .md a { color: var(--accent); }
-html.calm .lesson-deck { max-width: 36rem; margin: 2.6rem 0 1rem; padding-top: 1.4rem; border-top: 1px solid var(--line); }
-html.calm .lesson-deck form { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin: 0; }
-html.calm .lesson-deck p { margin: 0; }
-html.calm .next-lesson { margin: 1.4rem 0 3rem; color: var(--muted); font-size: .93rem; }
+/* Sources: smaller, grey, no bullets. */
+html.calm .lesson .md h2:last-of-type + ul { padding-left: 0; list-style: none; font-size: 1rem; line-height: 1.5; color: var(--muted); }
+html.calm .lesson-deck { max-width: 38rem; margin: 2.6rem 0 1rem; padding-top: 1.4rem; border-top: 1px solid var(--line); }
+html.calm .lesson-deck form { display: flex; flex-direction: column; align-items: flex-start; gap: 1rem; margin: 0; }
+html.calm .lesson-deck p { margin: 0; font-size: 1.05rem; }
+/* Keeping the lesson's cards is the page's one action. */
+html.calm main .lesson-deck form .btn {
+  min-height: 44px;
+  padding: 0 1.4rem;
+  border: 1px solid var(--ink);
+  border-radius: 10px;
+  background: var(--ink);
+  color: var(--paper);
+  font-size: 1.1rem;
+}
+html.calm main .lesson-deck form .btn:is(:hover, :focus-visible, .held) {
+  border-color: var(--ink);
+  background: var(--ink);
+  color: var(--paper);
+  box-shadow: 0 10px 28px -10px rgba(var(--shadow), .55), 0 0 44px -10px rgba(168, 51, 109, .45), 0 0 64px -18px rgba(200, 110, 160, .4);
+}
+html.calm .next-lesson { margin: 1.6rem 0 3rem; color: var(--muted); font-size: 1.05rem; }
 html.calm .next-lesson a { color: var(--accent); }
 
 /* ----- stats ----------------------------------------------------------------
