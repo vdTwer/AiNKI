@@ -41,14 +41,10 @@ const FAVICON_SVG: &str = include_str!("static/favicon.svg");
 const FAVICON_PNG: &[u8] = include_bytes!("static/favicon-32.png");
 const TOUCH_ICON_PNG: &[u8] = include_bytes!("static/apple-touch-icon.png");
 const FONTS: &[(&str, &[u8])] = &[
-    ("fraunces-italic-latin-ext.woff2", include_bytes!("static/fonts/fraunces-italic-latin-ext.woff2")),
-    ("fraunces-italic-latin.woff2", include_bytes!("static/fonts/fraunces-italic-latin.woff2")),
-    ("schibsted-grotesk-normal-latin-ext.woff2", include_bytes!("static/fonts/schibsted-grotesk-normal-latin-ext.woff2")),
-    ("schibsted-grotesk-normal-latin.woff2", include_bytes!("static/fonts/schibsted-grotesk-normal-latin.woff2")),
-    ("source-serif-4-italic-latin-ext.woff2", include_bytes!("static/fonts/source-serif-4-italic-latin-ext.woff2")),
-    ("source-serif-4-italic-latin.woff2", include_bytes!("static/fonts/source-serif-4-italic-latin.woff2")),
-    ("source-serif-4-normal-latin-ext.woff2", include_bytes!("static/fonts/source-serif-4-normal-latin-ext.woff2")),
-    ("source-serif-4-normal-latin.woff2", include_bytes!("static/fonts/source-serif-4-normal-latin.woff2")),
+    ("eb-garamond-italic-latin-ext.woff2", include_bytes!("static/fonts/eb-garamond-italic-latin-ext.woff2")),
+    ("eb-garamond-italic-latin.woff2", include_bytes!("static/fonts/eb-garamond-italic-latin.woff2")),
+    ("eb-garamond-normal-latin-ext.woff2", include_bytes!("static/fonts/eb-garamond-normal-latin-ext.woff2")),
+    ("eb-garamond-normal-latin.woff2", include_bytes!("static/fonts/eb-garamond-normal-latin.woff2")),
 ];
 
 pub async fn serve(app: AppState) -> anyhow::Result<()> {
