@@ -738,7 +738,40 @@
     else if (/^\/learn/.test(path)) wash('corner small', HERO, 2, 4);
     else wash('corner faint', HERO, 4, 4);
   }
+  // Log in: a greeting instead of the site's name, and the field names
+  // become placeholders, the two fields one group. The labels stay for
+  // screen readers.
+  function login() {
+    var form = document.querySelector('main > form[action="/login"], main > form[action="/signup"]');
+    if (!form || form.querySelector('.fields')) return;
+    var main = form.parentNode;
+    var h = document.createElement('h1');
+    h.className = 'greeting';
+    h.textContent = form.getAttribute('action') === '/login' ? 'Welcome back.' : 'Welcome.';
+    var first = main.querySelector('.notice') || form;
+    main.insertBefore(h, first);
+    var fields = document.createElement('div');
+    fields.className = 'fields';
+    var labels = form.querySelectorAll(':scope > label');
+    if (labels.length) form.insertBefore(fields, labels[0]);
+    Array.prototype.forEach.call(labels, function (label) {
+      var input = label.querySelector('input');
+      if (!input) return;
+      var name = '';
+      Array.prototype.slice.call(label.childNodes).forEach(function (n) {
+        if (n !== input) { name += n.textContent; n.remove(); }
+      });
+      var text = document.createElement('span');
+      text.className = 'label-text';
+      text.textContent = name.trim();
+      label.insertBefore(text, input);
+      input.placeholder = name.replace(/\(.*\)/, '').trim();
+      fields.appendChild(label);
+    });
+  }
+
   paint();
+  login();
   dress(document);
   keysHint(document);
   document.addEventListener('ainki:page', function (e) { keysHint(e.detail || document); });
