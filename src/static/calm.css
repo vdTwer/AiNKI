@@ -294,6 +294,51 @@ html.calm nav.top a:is(:hover, :focus-visible) { color: var(--ink); background-s
 html.calm nav.top a[aria-current] { color: var(--ink); border: 0; text-decoration: none; box-shadow: none; }
 html.calm nav.top .tile { display: none; }
 
+/* ----- washes -------------------------------------------------------------- */
+/* desk.js paints them: blurred pigment clouds, frayed by the #wet filter,
+   multiplied onto the white. Each drifts, turns and changes shape on its own
+   slow loop, so the page never looks quite the same twice. */
+html.calm body { position: relative; overflow-x: hidden; }
+html.calm body > svg.wash-defs { position: absolute; width: 0; height: 0; }
+html.calm body > .wash {
+  position: absolute;
+  z-index: 0;
+  pointer-events: none;
+  mix-blend-mode: multiply;
+  filter: url(#wet);
+  animation: wash-in 2.4s var(--ease) both;
+}
+html.calm body > :not(.wash) { position: relative; z-index: 1; }
+html.calm body > nav.top { position: absolute; }
+html.calm body > .wash.corner { top: -80px; right: -60px; width: 62%; height: 620px; }
+html.calm body > .wash.corner.small { width: 50%; height: 520px; }
+html.calm body > .wash.corner.faint { width: 46%; height: 480px; opacity: .7; }
+html.calm body > .wash.side { left: 0; top: 0; width: 50%; height: 100vh; min-height: 640px; }
+html.calm body > .wash.middle { left: 15%; right: 15%; top: 40px; height: 720px; opacity: .8; }
+html.calm body > .wash i {
+  position: absolute;
+  left: var(--x);
+  top: var(--y);
+  width: var(--w);
+  aspect-ratio: 1.5;
+  margin: calc(var(--w) / -2) 0 0 calc(var(--w) / -2);
+  background: radial-gradient(closest-side, rgba(var(--c), .5) 0%, rgba(var(--c), .36) 40%, rgba(var(--c), .14) 70%, rgba(var(--c), 0) 100%);
+  filter: blur(22px);
+  border-radius: 42% 58% 63% 37% / 45% 40% 60% 55%;
+  animation: wash-flow var(--d) ease-in-out var(--dl) infinite;
+  will-change: transform, border-radius;
+}
+@keyframes wash-in { from { opacity: 0; transform: scale(.94); } to { opacity: 1; transform: none; } }
+@keyframes wash-flow {
+  0%, 100% { transform: translate(0, 0) rotate(0deg) scale(1); border-radius: 42% 58% 63% 37% / 45% 40% 60% 55%; }
+  25% { transform: translate(var(--dx), calc(var(--dy) * -1)) rotate(28deg) scale(1.07); border-radius: 58% 42% 38% 62% / 55% 62% 38% 45%; }
+  50% { transform: translate(calc(var(--dx) * -.4), var(--dy)) rotate(-12deg) scale(.94); border-radius: 50% 50% 34% 66% / 38% 58% 42% 62%; }
+  75% { transform: translate(calc(var(--dx) * -1), calc(var(--dy) * .4)) rotate(18deg) scale(1.04); border-radius: 36% 64% 55% 45% / 60% 44% 56% 40%; }
+}
+@media (prefers-color-scheme: dark) {
+  html.calm body > .wash { mix-blend-mode: screen; opacity: .45; }
+}
+
 /* ----- icons --------------------------------------------------------------- */
 /* Flat line drawings. The extra layers web.rs adds for depth stay hidden. */
 html.calm .tile {

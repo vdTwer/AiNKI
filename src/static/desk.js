@@ -661,6 +661,84 @@
     b.addEventListener('click', toggleKeys);
   }
 
+
+  // ----- washes ----------------------------------------------------------
+  // Watercolour as a style element: a few clouds of pigment that drift,
+  // turn and change shape very slowly behind the page. They are blurred
+  // radial gradients under one SVG filter that frays their edges like wet
+  // paper. Pure decoration: hidden from screen readers, never in the way of
+  // the pointer, and still when the system asks for less motion.
+  var PIGMENT = {
+    orchid: '168,51,109', pale: '196,120,168', rose: '222,128,150', mauve: '150,90,140',
+    ochre: '228,172,92', sand: '214,170,120', olive: '150,142,92'
+  };
+  // x, y, width (px), pigment, seconds per turn, head start, drift x, drift y
+  var HERO = [['70%', '30%', 700, 0, 36, 5, -5, 5], ['45%', '25%', 520, 1, 43, 13, 6, 4], ['58%', '62%', 560, 2, 31, 9, -4, -5], ['88%', '70%', 420, 3, 39, 21, 5, 4], ['30%', '50%', 380, 2, 47, 17, 6, -3]];
+  var WIDE = [['30%', '30%', 700, 0, 34, 3, 6, 4], ['62%', '22%', 560, 1, 41, 11, -5, 6], ['40%', '68%', 720, 2, 37, 19, 5, -5], ['72%', '62%', 500, 3, 29, 7, -6, 5], ['18%', '86%', 520, 4, 45, 23, 4, -4], ['80%', '8%', 420, 2, 33, 15, -4, 6]];
+  var ROUND = [['35%', '45%', 620, 0, 33, 4, 5, 4], ['60%', '40%', 560, 2, 39, 12, -5, 5], ['50%', '65%', 520, 3, 29, 8, 4, -4], ['70%', '60%', 420, 1, 44, 18, -4, -3], ['25%', '60%', 380, 4, 37, 22, 5, 3]];
+  // Each place has its own set of pigments; a deck's follow from its id.
+  var SETS = [
+    ['orchid', 'pale', 'rose', 'ochre', 'mauve'],
+    ['rose', 'ochre', 'orchid', 'sand', 'pale'],
+    ['mauve', 'orchid', 'sand', 'rose', 'olive'],
+    ['olive', 'ochre', 'pale', 'orchid', 'sand'],
+    ['pale', 'mauve', 'ochre', 'rose', 'orchid']
+  ];
+
+  function filter() {
+    if (document.getElementById('wet')) return;
+    var ns = 'http://www.w3.org/2000/svg';
+    var svg = document.createElementNS(ns, 'svg');
+    svg.setAttribute('width', '0');
+    svg.setAttribute('height', '0');
+    svg.setAttribute('aria-hidden', 'true');
+    svg.setAttribute('class', 'wash-defs');
+    svg.innerHTML = '<filter id="wet" x="-10%" y="-10%" width="120%" height="120%">' +
+      '<feTurbulence type="fractalNoise" baseFrequency=".006 .009" numOctaves="3" seed="7" result="t"/>' +
+      '<feDisplacementMap in="SourceGraphic" in2="t" scale="90" xChannelSelector="R" yChannelSelector="G"/></filter>';
+    document.body.appendChild(svg);
+  }
+
+  function wash(kind, shape, set, count) {
+    var old = document.querySelector('body > .wash');
+    var key = kind + ':' + set;
+    if (old && old.getAttribute('data-key') === key) return;
+    if (old) old.remove();
+    if (!kind) return;
+    filter();
+    var w = document.createElement('div');
+    w.className = 'wash ' + kind;
+    w.setAttribute('aria-hidden', 'true');
+    w.setAttribute('data-key', key);
+    var colours = SETS[set % SETS.length];
+    shape.slice(0, count || shape.length).forEach(function (b) {
+      var i = document.createElement('i');
+      i.style.setProperty('--x', b[0]);
+      i.style.setProperty('--y', b[1]);
+      i.style.setProperty('--w', b[2] + 'px');
+      i.style.setProperty('--c', PIGMENT[colours[b[3] % colours.length]]);
+      i.style.setProperty('--d', b[4] + 's');
+      i.style.setProperty('--dl', '-' + b[5] + 's');
+      i.style.setProperty('--dx', b[6] + '%');
+      i.style.setProperty('--dy', b[7] + '%');
+      w.appendChild(i);
+    });
+    document.body.insertBefore(w, document.body.firstChild);
+  }
+
+  function paint() {
+    var page = document.body.getAttribute('data-page') || '';
+    var path = location.pathname;
+    var deck = /^\/decks\/(\d+)/.exec(path);
+    if (!document.body.hasAttribute('data-user')) wash('side', WIDE, 0);
+    else if (page === 'study') wash('', null, 0);
+    else if (page === 'study-done') wash('middle', ROUND, document.querySelector('.break') ? 3 : 0);
+    else if (page === 'home') wash('corner', HERO, 0);
+    else if (deck) wash('corner', HERO, +deck[1] + 1);
+    else if (/^\/learn/.test(path)) wash('corner small', HERO, 2, 4);
+    else wash('corner faint', HERO, 4, 4);
+  }
+  paint();
   dress(document);
   keysHint(document);
   document.addEventListener('ainki:page', function (e) { keysHint(e.detail || document); });
@@ -670,5 +748,5 @@
   numbersSwitch(document);
   Array.prototype.forEach.call(document.querySelectorAll('form[action="/decks/new"] input[name=name], form[action$="/edit"] input[name=name], input[name=new_deck]'), pathField);
   // Studying swaps in the next page without a reload.
-  document.addEventListener('ainki:page', function (e) { dress(e.detail || document); });
+  document.addEventListener('ainki:page', function (e) { dress(e.detail || document); paint(); });
 })();
