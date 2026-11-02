@@ -33,50 +33,53 @@
 }
 
 /* ---------------------------------------------------------------------------
-   Orchid: the desktop look. Applies only when theme.js has added html.calm
+   The desktop look. Applies only when theme.js has added html.calm
    (JavaScript on, wide screen with a mouse, not e-ink, not turned off in
    settings) and the <link>'s media query matches. It builds on style.css,
    which stays the simple look for phones and e-ink.
 
-   A Swiss newspaper base with a few humanist accents. Schibsted Grotesk for
-   the interface, Source Serif 4 for what you learn, a light Fraunces italic
-   for the one number or quote that matters. White paper, ink, hairlines.
-   Wild Orchid leads; Terra Cotta only marks what slipped or can't be undone.
+   One face, EB Garamond, on hard white. Ink for words, grey for what
+   whispers, Wild Orchid for what you can press and nothing else. Emphasis
+   comes from type: size, italic, weight. Colour lives in the watercolour
+   washes, which move slowly behind the page (desk.js paints them).
    ------------------------------------------------------------------------ */
 
 html.calm {
   --paper: #ffffff;
   --surface: #ffffff;
-  --tint: #f6f5f3;
-  --ink: #111111;
-  --ink-2: #3a3835;
-  --muted: #5e5b57;
-  --faint: #9a968f;
-  --line: #e4e2de;
-  --line-strong: #c9c6c0;
-  --track: #ecebe8;
+  --tint: #f7f4f1;
+  --ink: #1e1a17;
+  --ink-2: #3a342f;
+  --muted: #57514a;
+  --faint: #8a8278;
+  --line: #eee9e2;
+  --line-strong: #cfc8be;
+  --track: #eee9e2;
   --accent: #a8336d;
-  --accent-hover: #8c2a5b;
-  --accent-tint: #f6e6ee;
+  --accent-hover: #8e2a5c;
+  --accent-tint: #f4dde7;
   --accent-edge: #e3b8cd;
   --accent-glow: rgba(168, 51, 109, .16);
   --on-accent: #ffffff;
   --on-accent-soft: #f6dce8;
-  --warn: #b4462b;
-  --warn-tint: #f8e8e3;
-  --warn-edge: #ecc3b7;
+  /* No second colour: what used to be Terra is ink, set apart by type. */
+  --warn: var(--ink);
+  --warn-tint: var(--tint);
+  --warn-edge: var(--line-strong);
   --knob: #ffffff;
-  --shadow: 17, 17, 17;
+  --shadow: 30, 26, 23;
+  /* The marker that slides under a quiet button on hover. */
+  --marker: #f4dde7;
   --serif: 'EB Garamond', Georgia, serif;
   --sans: 'EB Garamond', Georgia, serif;
   --italic: 'EB Garamond', Georgia, serif;
   --mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
-  --ease: cubic-bezier(.25, .8, .25, 1);
-  --wrap: 560px;
+  --ease: cubic-bezier(.2, .7, .2, 1);
+  --wrap: 640px;
   --fg: var(--ink);
   --bg: var(--paper);
   --soft: var(--track);
-  font-size: calc(15px * var(--scale));
+  font-size: calc(18px * var(--scale));
 }
 
 @media (prefers-color-scheme: dark) {
@@ -98,11 +101,12 @@ html.calm {
     --accent-glow: rgba(225, 131, 179, .22);
     --on-accent: #1e0f17;
     --on-accent-soft: #4e2238;
-    --warn: #e8906f;
-    --warn-tint: #3a2620;
-    --warn-edge: #6e4232;
+    --warn: var(--ink);
+    --warn-tint: var(--tint);
+    --warn-edge: var(--line-strong);
     --knob: #f1eee9;
     --shadow: 0, 0, 0;
+    --marker: #4a2438;
   }
 }
 
