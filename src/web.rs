@@ -801,6 +801,7 @@ async fn home(State(app): State<AppState>, user: WebUser, Flash(msg): Flash) -> 
     let overdue = app.overdue(&access).await?;
     let quiet = study::quiet_until(&user.0, now());
     let week = app.week(&access).await?;
+    let history = app.history(&access, None).await?;
     // A rough guide; real thinking time once there's enough history.
     let minutes = ((total_due as f64 * stats.seconds_per_review.unwrap_or(12.0)) / 60.0).ceil().max(1.0) as i64;
     let mut facts = Vec::new();
@@ -827,7 +828,7 @@ async fn home(State(app): State<AppState>, user: WebUser, Flash(msg): Flash) -> 
                 @if total_due > 0 {
                     h1 { span.count { (total_due) (if total_due == 1 { " card" } else { " cards" }) } " to study today" }
                 } @else if !decks.is_empty() {
-                    h1 { "All done for today" }
+                    h1.all-done { span.simple-only { "All done for today" } span.calm-only { "All done." } }
                 } @else {
                     h1 { "Welcome to AiNKI" }
                 }
@@ -919,6 +920,9 @@ async fn home(State(app): State<AppState>, user: WebUser, Flash(msg): Flash) -> 
             p.desk-actions.calm-only {
                 a.add-deck href="/decks/new" aria-label="New deck" data-label="New deck" { (icon(ICON_ADD, PAGE_ICON)) }
                 a href="/import" { "Import deck" }
+            }
+            @if !decks.is_empty() {
+                (week_home(&week, &history.days))
             }
         },
     )
@@ -3479,6 +3483,31 @@ async fn password_update(
 }
 
 /// The last seven days in a sentence or two, and one thing worth doing.
+/// The desktop home's week: the note, and a bar for each of the last seven
+/// days with today's letter in bold.
+fn week_home(w: &insight::Week, days: &[(String, i64)]) -> Markup {
+    let last = &days[days.len().saturating_sub(7)..];
+    let most_seen = last.iter().map(|(_, n)| *n).max().unwrap_or(0);
+    let most = most_seen.max(1);
+    let label = last.iter().map(|(d, n)| format!("{d}: {n}")).collect::<Vec<_>>().join(", ");
+    html! {
+        div.week-home.calm-only {
+            (week_note(w))
+            @if most_seen > 0 {
+            div.week-bars role="img" aria-label=(format!("Reviews per day, last seven days. {label}")) {
+                @for (i, (date, n)) in last.iter().enumerate() {
+                    @let letter = chrono::NaiveDate::parse_from_str(date, "%Y-%m-%d").map(|d| d.format("%a").to_string()).unwrap_or_default();
+                    div.day.today[i + 1 == last.len()] {
+                        span.bar.empty[*n == 0] style=(format!("height: {}%", (*n * 100 / most).max(3))) {}
+                        span.letter { (letter.chars().next().unwrap_or(' ')) }
+                    }
+                }
+            }
+            }
+        }
+    }
+}
+
 fn week_note(w: &insight::Week) -> Markup {
     let pct = |v: f64| format!("{:.0}%", v * 100.0);
     html! {

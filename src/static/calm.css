@@ -969,10 +969,12 @@ html.calm .hero {
   border-bottom: 1px solid var(--line);
 }
 html.calm .today { padding: 0; }
-html.calm .today .date { margin: 0; font-size: 1.05rem; font-weight: 400; letter-spacing: .08em; font-variant-caps: all-small-caps; color: var(--muted); }
+/* No date: the page is about today anyway. */
+html.calm .today .date { display: none !important; }
 html.calm .today h1 { margin: .75rem 0 0; font-size: 2rem; line-height: 1.15; }
+html.calm .today h1.all-done { font-size: 8rem; line-height: .95; letter-spacing: -.02em; }
 /* The whoah: today's count, huge and on its own line. */
-html.calm .today h1 .count .n { display: block; margin: 0 0 .25rem -.04em; font-family: var(--italic); font-style: italic; font-weight: 400; font-size: 8rem; line-height: .95; letter-spacing: -.04em; font-variant-numeric: lining-nums; color: var(--ink); }
+html.calm .today h1 .count .n { display: block; margin: 0 0 .25rem -.04em; font-family: var(--italic); font-style: italic; font-weight: 400; font-size: 10rem; line-height: .9; letter-spacing: -.03em; font-variant-numeric: lining-nums; color: var(--ink); }
 html.calm .today .facts { margin: .75rem 0 0; font-size: 1rem; color: var(--ink-2); }
 html.calm .start { display: inline-flex; width: auto; margin: 1.25rem 0 0; font-size: .875rem; }
 html.calm .start .arrow { display: none; }
@@ -1012,19 +1014,20 @@ html.calm .table-head {
   margin: 2rem 0 0;
   padding: 0 0 .65rem;
   border-bottom: 1px solid var(--line);
-  font-size: .75rem;
-  font-weight: 500;
+  font-size: 1.05rem;
+  font-weight: 400;
   letter-spacing: .08em;
   font-variant-caps: all-small-caps;
   color: var(--muted);
 }
 html.calm .table-head .num { display: block; width: 96px; text-align: right; }
-html.calm .table-head .chev { display: block; width: 16px; }
+html.calm .table-head .chev { display: none; }
 html.calm ul.decks { margin: 4px 0 0; }
 html.calm ul.decks li { border-bottom: 0; }
-html.calm ul.decks a.row { display: grid; grid-template-columns: minmax(0, 1fr) 96px 96px 16px; gap: 16px; align-items: center; min-height: 64px; }
+html.calm ul.decks a.row { display: grid; grid-template-columns: minmax(0, 1fr) 96px 96px; gap: 16px; align-items: center; min-height: 64px; }
 html.calm ul.decks a.row .grow { display: flex; flex-direction: column; justify-content: center; }
-html.calm ul.decks .deck-name { font-family: var(--serif); font-optical-sizing: auto; font-size: 1.25rem; font-weight: 400; letter-spacing: 0; line-height: 1.25; }
+html.calm ul.decks .deck-name { font-family: var(--serif); font-style: italic; font-size: 1.55rem; font-weight: 400; letter-spacing: 0; line-height: 1.2; transition: text-shadow 500ms ease; }
+html.calm ul.decks a.row:is(:hover, :focus-visible) .deck-name { text-shadow: 0 0 16px rgba(200, 110, 160, .45), 0 0 30px rgba(168, 51, 109, .3); }
 html.calm ul.decks .sub { margin-top: .2rem; font-size: .8125rem; line-height: 1.3; color: var(--muted); }
 /* Nested decks: the parents above in small type, the deck's own name below. */
 html.calm .deck-path { font-family: var(--sans); font-weight: 400; color: var(--muted); }
@@ -1038,11 +1041,10 @@ html.calm ul.decks .num .unit, html.calm ul.decks .num .dot { display: none; }
 /* Nothing due shows as a faint dash, not in Orchid. */
 html.calm ul.decks .num.due:not(.done):not(:has(.unit)) { color: var(--faint); font-weight: 400; }
 html.calm ul.decks .num.new:not(:has(.unit)) { color: var(--faint); }
-/* Done for today: a Terra tick, straight like the numbers. */
+/* Done for today: an ink tick, straight like the numbers. */
 html.calm ul.decks .num.done { display: flex; align-items: center; justify-content: flex-end; }
 html.calm ul.decks .done-check { display: block; color: var(--warn); }
-html.calm ul.decks .chev { display: block; color: var(--faint); transition: transform 180ms var(--ease), color 140ms ease; }
-html.calm ul.decks a.row:hover .chev { transform: translateX(2px); color: var(--ink); }
+html.calm ul.decks .chev { display: none; }
 
 /* Catching up: how long it takes, in big numbers beside today. */
 html.calm .pace { display: flex; flex-direction: column; gap: .5rem; padding-top: 1.25rem; border-top: 1px solid var(--line); }
@@ -1709,6 +1711,17 @@ html.calm .list-known ul { display: block; font-size: 1.125rem; line-height: 1.6
 html.calm .list-known li { display: inline; }
 html.calm .list-known li + li::before { content: ' · '; color: var(--faint); }
 html.calm .list-known .more { margin-top: .4rem; font-family: var(--sans); font-size: .9375rem; font-style: normal; font-weight: 500; }
+
+/* The week below the decks: what happened, then a bar a day. Today is set
+   apart by its letter in bold, not by a colour. */
+html.calm .week-home .week h2 + p { margin-top: 0; font-size: 1.25rem; line-height: 1.45; }
+html.calm .week-home .week .tip { display: none; }
+html.calm .week-bars { display: grid; grid-template-columns: repeat(7, 32px); column-gap: 12px; align-items: end; margin: 1.5rem 0 0; }
+html.calm .week-bars .day { display: flex; flex-direction: column; align-items: center; justify-content: flex-end; gap: 6px; height: 120px; }
+html.calm .week-bars .bar { display: block; width: 100%; border-radius: 4px 4px 1px 1px; background: var(--accent); }
+html.calm .week-bars .bar.empty { background: var(--line-strong); }
+html.calm .week-bars .letter { font-size: .95rem; line-height: 1; color: var(--muted); }
+html.calm .week-bars .today .letter { font-weight: 700; color: var(--ink); }
 
 /* ----- labels in the margin ------------------------------------------------ */
 /* On wide screens a page gets a narrow label column on the left. Section
