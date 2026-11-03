@@ -9,7 +9,18 @@
 //!
 //! The card coach (`coach`) looks at single cards; this looks at the whole.
 
+use std::collections::{HashMap, HashSet};
+
+use chrono::{Duration, Timelike};
 use serde::Serialize;
+
+use crate::{
+    App,
+    auth::Access,
+    coach::{Attention, Kind},
+    error::Result,
+    service::{DeckSummary, Stats},
+};
 
 /// Recall figures need this many reviews of learned cards.
 pub const MIN_RETENTION_SAMPLE: i64 = 50;
@@ -783,6 +794,250 @@ fn forgotten_deck(s: &Signals) -> Option<Advice> {
     ))
 }
 
+// ----- gathering the signals -----------------------------------------------
+
+/// Answer times count up to this long; a card left open says nothing.
+const MAX_ANSWER_MS: i64 = 60_000;
+/// A pause this long between answers ends a session.
+const SESSION_GAP_SECS: i64 = 10 * 60;
+
+fn median(mut v: Vec<f64>) -> Option<f64> {
+    if v.is_empty() {
+        return None;
+    }
+    v.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    let n = v.len();
+    Some(if n % 2 == 1 { v[n / 2] } else { (v[n / 2 - 1] + v[n / 2]) / 2.0 })
+}
+
+/// Sessions from answer times (oldest first): each one's length in
+/// minutes. A pause of ten minutes or more starts a new session.
+pub fn session_lengths(answers: &[(i64, i64)]) -> Vec<f64> {
+    let mut out = Vec::new();
+    let mut start: Option<(i64, i64)> = None;
+    for &(at, ms) in answers {
+        let end = at + ms.clamp(0, MAX_ANSWER_MS) / 1000;
+        start = match start {
+            Some((first, last)) if at - last < SESSION_GAP_SECS => Some((first, end)),
+            Some((first, last)) => {
+                out.push((last - first) as f64 / 60.0);
+                Some((at, end))
+            }
+            None => Some((at, end)),
+        };
+    }
+    if let Some((first, last)) = start {
+        out.push((last - first) as f64 / 60.0);
+    }
+    out
+}
+
+/// What the home page has already looked up, so it isn't fetched twice.
+pub struct Known<'a> {
+    pub decks: &'a [DeckSummary],
+    pub stats: &'a Stats,
+    pub attention: &'a [Attention],
+    pub overdue: i64,
+}
+
+impl App {
+    /// Everything the coach would say, most important first.
+    pub async fn advice(&self, access: &Access) -> Result<Vec<Advice>> {
+        let decks = self.deck_summaries(access).await?;
+        let stats = self.stats(access, None).await?;
+        let attention = self.attention(access, None).await?;
+        let overdue = self.overdue(access).await?;
+        let known = Known { decks: &decks, stats: &stats, attention: &attention, overdue };
+        Ok(advise(&self.signals(access, &known).await?))
+    }
+
+    /// The same, from what the caller already has.
+    pub async fn advice_from(&self, access: &Access, known: &Known<'_>) -> Result<Vec<Advice>> {
+        Ok(advise(&self.signals(access, known).await?))
+    }
+
+    pub async fn signals(&self, access: &Access, known: &Known<'_>) -> Result<Signals> {
+        let user = &access.user;
+        let clock = user.clock();
+        let today = clock.today();
+        let start_today = clock.start_of_today();
+        let presets = self.list_presets(access).await?;
+        let target_of: HashMap<i64, f64> = presets.iter().map(|p| (p.id, p.desired_retention)).collect();
+        let deck_target: HashMap<i64, f64> = known
+            .decks
+            .iter()
+            .map(|d| (d.deck.id, target_of.get(&d.deck.preset_id).copied().unwrap_or(0.9)))
+            .collect();
+
+        // Six weeks of answers: recall now and before, pace, sessions.
+        #[derive(sqlx::FromRow)]
+        struct Row {
+            deck_id: i64,
+            card_id: i64,
+            rating: i64,
+            state_before: i64,
+            reviewed_at: i64,
+            duration_ms: Option<i64>,
+        }
+        let since = clock.day_start(today - Duration::days(41));
+        let rows: Vec<Row> = sqlx::query_as(
+            "SELECT deck_id, card_id, rating, state_before, reviewed_at, duration_ms FROM review_log
+             WHERE user_id = ? AND rating > 0 AND source != 'import' AND reviewed_at >= ?
+             ORDER BY reviewed_at, id",
+        )
+        .bind(access.user_id())
+        .bind(since)
+        .fetch_all(&self.db)
+        .await?;
+        let day_of = |at: i64| (today - clock.date_of(at)).num_days();
+
+        let mut s = Signals {
+            hour: chrono::DateTime::from_timestamp(clock.now, 0)
+                .map(|t| t.with_timezone(&clock.tz).hour())
+                .unwrap_or(12),
+            quiet: crate::study::quiet_until(user, clock.now).is_some(),
+            reviews_today: known.stats.reviews_today,
+            overdue: known.overdue,
+            catch_up: user.catch_up,
+            breaks_on: user.session_minutes > 0,
+            streak: known.stats.streak_days,
+            next_days: known.stats.forecast.iter().skip(1).take(7).map(|(_, n)| *n).collect(),
+            leeches: known.attention.iter().filter(|a| a.flags.iter().any(|f| f.kind == Kind::Leech)).count() as i64,
+            optimizable_reviews: self.optimizable_reviews(access).await?,
+            ever_optimized: user.optimized_at.is_some() || user.fsrs_params_updated_at.is_some(),
+            auto_optimize: user.auto_optimize,
+            ..Default::default()
+        };
+        s.other_flags = known.attention.len() as i64 - s.leeches;
+
+        let visible: HashSet<i64> = known.decks.iter().map(|d| d.deck.id).collect();
+        let mut per_day = [0i64; 14];
+        let mut new_7d: HashMap<i64, HashSet<i64>> = HashMap::new();
+        let mut recall_deck: HashMap<i64, Recall> = HashMap::new();
+        let mut target_sum = 0.0;
+        let mut answers_7d = Vec::new();
+        let mut times_7d = Vec::new();
+        for r in rows.iter().filter(|r| visible.contains(&r.deck_id)) {
+            let ago = day_of(r.reviewed_at);
+            if ago < 14 {
+                per_day[ago as usize] += 1;
+            }
+            if ago < 7 {
+                s.reviews_7 += 1;
+                answers_7d.push((r.reviewed_at, r.duration_ms.unwrap_or(0)));
+                if let Some(ms) = r.duration_ms.filter(|ms| *ms > 0) {
+                    times_7d.push(ms.min(MAX_ANSWER_MS) as f64 / 1000.0);
+                }
+                if r.state_before == 0 {
+                    new_7d.entry(r.deck_id).or_default().insert(r.card_id);
+                }
+            }
+            if r.state_before != 2 {
+                continue;
+            }
+            let ok = (r.rating > 1) as i64;
+            let add = |c: &mut Recall| {
+                c.reviews += 1;
+                c.remembered += ok;
+            };
+            if ago < 30 {
+                add(&mut s.recall_30d);
+                add(recall_deck.entry(r.deck_id).or_default());
+                target_sum += deck_target.get(&r.deck_id).copied().unwrap_or(0.9);
+            }
+            if ago < 14 {
+                add(&mut s.recall_recent);
+            } else {
+                add(&mut s.recall_before);
+            }
+        }
+        let study_days: Vec<f64> = per_day.iter().filter(|n| **n > 0).map(|n| *n as f64).collect();
+        s.study_days_14 = study_days.len() as i64;
+        s.usual_per_day = median(study_days).unwrap_or(0.0);
+        s.days_studied_7 = per_day[..7].iter().filter(|n| **n > 0).count() as i64;
+        s.new_started_7d = new_7d.values().map(|c| c.len() as i64).sum();
+        s.answer_seconds = (times_7d.len() >= 20).then(|| median(times_7d)).flatten();
+        // Today's session may still be going; only whole ones count.
+        answers_7d.retain(|(at, _)| *at < start_today);
+        let sessions = session_lengths(&answers_7d);
+        s.session_minutes = (sessions.len() >= 3).then(|| median(sessions)).flatten();
+        s.target = if s.recall_30d.reviews > 0 {
+            target_sum / s.recall_30d.reviews as f64
+        } else {
+            let t: Vec<f64> = deck_target.values().copied().collect();
+            if t.is_empty() { 0.9 } else { t.iter().sum::<f64>() / t.len() as f64 }
+        };
+        if user.confidence_check {
+            let c = self.confidence(access, None).await?;
+            s.sure = Some(Recall { reviews: c.sure, remembered: c.sure_recalled });
+        }
+
+        // The last review of each deck, however long ago.
+        let last: Vec<(i64, i64)> = sqlx::query_as(
+            "SELECT deck_id, MAX(reviewed_at) FROM review_log
+             WHERE user_id = ? AND rating > 0 AND source != 'import' GROUP BY deck_id",
+        )
+        .bind(access.user_id())
+        .fetch_all(&self.db)
+        .await?;
+        let last: HashMap<i64, i64> = last.into_iter().filter(|(d, _)| visible.contains(d)).collect();
+        s.days_since_review = last.values().max().map(|at| day_of(*at));
+
+        // Review cards due today that the limits hold back.
+        let uncapped: Vec<(i64, i64)> = sqlx::query_as(
+            "SELECT deck_id, COUNT(*) FROM cards WHERE user_id = ? AND suspended = 0 AND state = 2 AND due <= ?
+             GROUP BY deck_id",
+        )
+        .bind(access.user_id())
+        .bind(clock.now)
+        .fetch_all(&self.db)
+        .await?;
+        let uncapped: HashMap<i64, i64> = uncapped.into_iter().collect();
+
+        let mut flagged: HashMap<i64, i64> = HashMap::new();
+        for a in known.attention {
+            *flagged.entry(a.card.deck_id).or_default() += 1;
+        }
+        for d in known.decks {
+            s.due_today += d.due_total();
+            if !user.catch_up {
+                s.held_back += (uncapped.get(&d.deck.id).copied().unwrap_or(0) - d.review_due).max(0);
+            }
+            s.decks.push(DeckSignal {
+                id: d.deck.id,
+                // A nested deck by its own name: "Spanish", not the path.
+                name: d.deck.name.rsplit("::").map(str::trim).find(|p| !p.is_empty()).unwrap_or(&d.deck.name).to_string(),
+                preset_id: d.deck.preset_id,
+                recall: recall_deck.get(&d.deck.id).copied().unwrap_or_default(),
+                target: deck_target.get(&d.deck.id).copied().unwrap_or(0.9),
+                due: d.learning_due + uncapped.get(&d.deck.id).copied().unwrap_or(0),
+                new_left: d.new,
+                new_started_7d: new_7d.get(&d.deck.id).map_or(0, |c| c.len() as i64),
+                exam_in_days: d.deck.exam().map(|e| (e - today).num_days()).filter(|n| *n >= 0),
+                days_since_review: last.get(&d.deck.id).map(|at| day_of(*at)),
+                flagged: flagged.get(&d.deck.id).copied().unwrap_or(0),
+            });
+        }
+        let seconds = known.stats.seconds_per_review.unwrap_or(12.0);
+        s.minutes_due = (s.due_today as f64 * seconds / 60.0).ceil() as i64;
+
+        for p in &presets {
+            let decks: Vec<&DeckSummary> = known.decks.iter().filter(|d| d.deck.preset_id == p.id).collect();
+            s.presets.push(PresetSignal {
+                id: p.id,
+                name: p.name.clone(),
+                desired_retention: p.desired_retention,
+                new_per_day: p.new_per_day,
+                reviews_per_day: p.reviews_per_day,
+                fitted: p.fsrs_params_updated_at.is_some() || s.ever_optimized,
+                has_exam: decks.iter().any(|d| d.deck.exam().is_some()),
+                used: !decks.is_empty(),
+            });
+        }
+        Ok(s)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1169,5 +1424,23 @@ mod tests {
         for a in advise(&s) {
             assert!(!a.text.contains('—') && !a.text.contains(" - "), "{}", a.text);
         }
+    }
+    #[test]
+    fn sessions_split_at_ten_minute_pauses() {
+        let t = 1_000_000;
+        // Two answers a minute apart, then a long pause, then one more.
+        let s = session_lengths(&[(t, 10_000), (t + 60, 30_000), (t + 3600, 5_000)]);
+        assert_eq!(s.len(), 2);
+        assert!((s[0] - 1.5).abs() < 0.01, "{s:?}");
+        // A card left open for an hour counts as a minute.
+        assert!(session_lengths(&[(t, 3_600_000)])[0] <= 1.0);
+        assert!(session_lengths(&[]).is_empty());
+    }
+
+    #[test]
+    fn medians() {
+        assert_eq!(median(vec![]), None);
+        assert_eq!(median(vec![3.0, 1.0, 2.0]), Some(2.0));
+        assert_eq!(median(vec![4.0, 1.0, 2.0, 3.0]), Some(2.5));
     }
 }
