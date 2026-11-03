@@ -1464,10 +1464,19 @@ struct Found {
     score: i32,
 }
 
-/// The best of a name and its other words: the name counts more.
+/// The best of a name and its other words: the name counts more. The other
+/// words (a summary, a deck's description) are matched one word at a time,
+/// so letters scattered across a long text don't count.
 fn find_score(q: &str, name: &str, also: &str) -> Option<i32> {
     let by_name = fuzzy::score(q, name).map(|s| s + 6);
-    let by_also = (!also.is_empty()).then(|| fuzzy::score(q, &format!("{name} {also}"))).flatten();
+    let by_also = if also.is_empty() {
+        None
+    } else {
+        let words: Vec<&str> = name.split_whitespace().chain(also.split_whitespace()).collect();
+        q.split_whitespace()
+            .map(|qw| words.iter().filter_map(|w| fuzzy::score(qw, w)).max())
+            .sum::<Option<i32>>()
+    };
     by_name.max(by_also)
 }
 
@@ -1533,6 +1542,11 @@ async fn find_json(State(app): State<AppState>, user: WebUser, Query(f): Query<F
     cards.truncate(FIND_MAX_CARDS);
     found.extend(cards);
     found.sort_by(|a, b| b.score.cmp(&a.score));
+    // Letters scattered through a long text match too: next to a clear
+    // match such stragglers are noise, so they go.
+    if let Some(top) = found.first().map(|f| f.score).filter(|&s| s > 0) {
+        found.retain(|f| f.score * 2 >= top);
+    }
     found.truncate(FIND_MAX);
     Ok(([(header::CONTENT_TYPE, "application/json")], serde_json::json!({ "q": q, "results": found }).to_string()).into_response())
 }
