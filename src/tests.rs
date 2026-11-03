@@ -1101,6 +1101,64 @@ mod http {
     }
 
     #[tokio::test]
+    async fn invite_link_makes_an_account_once() {
+        let app = app_with(|c| c.allow_signup = false).await;
+        let kolja = app.create_user("kolja", "password123", "UTC").await.unwrap();
+        age(&app, kolja.id, 8).await;
+        let cookie = login_cookie(&app, "kolja").await;
+        let made = submit(&app, &cookie, "/invites", "").await;
+        assert_eq!(made.headers()[header::LOCATION], "/invites");
+        let token = app.invites(&app.user(kolja.id).await.unwrap()).await.unwrap().open[0].token.clone();
+        let path = format!("/invite/{token}");
+
+        // The page says who sent it.
+        let page = send(&app, Request::get(&path).body(Body::empty()).unwrap()).await;
+        assert_eq!(page.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(page.into_body(), usize::MAX).await.unwrap();
+        assert!(String::from_utf8_lossy(&body).contains("Kolja invited you."));
+
+        // A bad password keeps the link working.
+        let join = |name: &str, pw: &str| form(&path, "").body(Body::from(format!("username={name}&password={pw}"))).unwrap();
+        assert_eq!(send(&app, join("anna", "short")).await.status(), StatusCode::BAD_REQUEST);
+        let ok = send(&app, join("anna", "password123")).await;
+        assert_eq!(ok.headers()[header::LOCATION], "/");
+        assert!(ok.headers().get_all(header::SET_COOKIE).iter().any(|c| c.to_str().unwrap().contains("ainki_session=")));
+        assert_eq!(app.find_user("anna").await.unwrap().invited_by, Some(kolja.id));
+
+        // Used up: a second try gets the "no longer works" page.
+        let again = send(&app, join("ben", "password123")).await;
+        assert_eq!(again.status(), StatusCode::NOT_FOUND);
+        assert!(app.find_user("ben").await.is_err());
+        // Signing up without a link stays closed.
+        let open = send(&app, form("/signup", "").body(Body::from("username=ben&password=password123")).unwrap()).await;
+        assert_eq!(open.headers()[header::LOCATION], "/login");
+    }
+
+    #[tokio::test]
+    async fn the_admin_account_sees_only_the_admin_panel() {
+        let app = app().await;
+        app.create_account("admin", "password123", "UTC", None, true).await.unwrap();
+        user(&app, "kolja").await;
+        let admin = login_cookie(&app, "admin").await;
+        let get = |path: &str, cookie: &str| Request::get(path).header(header::COOKIE, cookie).body(Body::empty()).unwrap();
+        for path in ["/", "/settings", "/decks/new", "/study"] {
+            let res = send(&app, get(path, &admin)).await;
+            assert_eq!(res.headers()[header::LOCATION], "/admin", "{path}");
+        }
+        let panel = send(&app, get("/admin", &admin)).await;
+        assert_eq!(panel.status(), StatusCode::OK);
+        let body = String::from_utf8_lossy(&axum::body::to_bytes(panel.into_body(), usize::MAX).await.unwrap()).to_string();
+        assert!(body.contains("invite-graph") && body.contains("kolja#"));
+        assert!(!body.contains("nav class=\"top\""));
+        // The admin invites without waiting.
+        let made = submit(&app, &admin, "/invites", "").await;
+        assert_eq!(made.headers()[header::LOCATION], "/admin");
+        // Nobody else finds the panel.
+        let kolja = login_cookie(&app, "kolja").await;
+        assert_eq!(send(&app, get("/admin", &kolja)).await.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
     async fn flash_messages_come_from_cookies_only() {
         let app = app().await;
         user(&app, "kolja").await;
