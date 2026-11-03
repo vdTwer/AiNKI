@@ -20,6 +20,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     App, AppState,
+    advice::{self, Advice},
     auth::{Access, User},
     coach,
     error::AppError,
@@ -124,6 +125,7 @@ pub fn router(app: AppState) -> Router {
         .route("/cards/{id}/split", get(split_page).post(split_submit))
         .route("/cards/{id}/{action}", post(card_action))
         .route("/attention", get(attention_page))
+        .route("/coach/not-now", post(coach_not_now))
         .route("/learn", get(learn_page))
         .route("/learn/{slug}", get(lesson_page))
         .route("/learn/{slug}/deck", post(lesson_deck))
@@ -811,10 +813,13 @@ async fn home(State(app): State<AppState>, user: WebUser, Flash(msg): Flash) -> 
     let shares = app.incoming_shares(&access).await?;
     let stats = app.stats(&access, None).await?;
     let total_due: i64 = decks.iter().map(|d| d.due_total()).sum();
-    let attention = app.attention(&access, None).await?.len() as i64;
+    let flagged = app.attention(&access, None).await?;
+    let attention = flagged.len() as i64;
     let overdue = app.overdue(&access).await?;
     let quiet = study::quiet_until(&user.0, now());
     let week = app.week(&access).await?;
+    let known = advice::Known { decks: &decks, stats: &stats, attention: &flagged, overdue };
+    let notes = app.advice_from(&access, &known).await?;
     let history = app.history(&access, None).await?;
     // A rough guide; real thinking time once there's enough history.
     let minutes = ((total_due as f64 * stats.seconds_per_review.unwrap_or(12.0)) / 60.0).ceil().max(1.0) as i64;
@@ -856,7 +861,7 @@ async fn home(State(app): State<AppState>, user: WebUser, Flash(msg): Flash) -> 
             }
             @if !decks.is_empty() {
                 aside.today-side.calm-only {
-                    (week_note(&week))
+                    (week_note_with(&week, notes.first().map(|n| coach_note(n, "/"))))
                     @if user.0.catch_up && overdue >= 20 {
                         @let days = (overdue + user.0.catch_up_reviews - 1) / user.0.catch_up_reviews.max(1);
                         div.pace {
@@ -865,7 +870,7 @@ async fn home(State(app): State<AppState>, user: WebUser, Flash(msg): Flash) -> 
                             p.small.muted { (format::number(overdue)) " overdue, " (format::number(user.0.catch_up_reviews)) " a day." }
                         }
                     }
-                    @if attention > 0 && !matches!(week.tip, insight::Tip::Attention) {
+                    @if attention > 0 && !notes.first().is_some_and(|n| n.rule == advice::Rule::Leeches) {
                         p.small { a href="/attention" { (count(attention, "card")) " " (if attention == 1 { "needs" } else { "need" }) " a look" } }
                     }
                 }
@@ -3670,6 +3675,59 @@ fn week_home(w: &insight::Week, days: &[(String, i64)]) -> Markup {
 }
 
 fn week_note(w: &insight::Week) -> Markup {
+    let tip = match w.tip {
+        insight::Tip::Attention => Some(html! { p.tip { span { (count(w.attention, "card")) " keep slipping or ask too much at once. Fixing them saves more time than reviewing them. " a href="/attention" { "Have a look" } } } }),
+        insight::Tip::BelowTarget => Some(html! { p.tip { span { "You forgot more than you aim for. Fewer new cards for a while, or optimizing FSRS, usually brings it back. " a href="/learn/desired-retention" { "Why" } } } }),
+        insight::Tip::AboveTarget => Some(html! { p.tip { span { "You remember more than you aim for. Optimizing lets FSRS space your cards further apart. " a href="/settings#fsrs" { "Optimize" } } } }),
+        insight::Tip::Spread => Some(html! { p.tip { span { "A little every day works better than a lot on a few days. " a href="/learn/spacing" { "Why" } } } }),
+        insight::Tip::Nothing => None,
+    };
+    week_note_with(w, tip)
+}
+
+/// One note from the coach, as the week's tip: what it saw, then its link
+/// (or, for catch-up mode, a button that turns it on or off).
+fn coach_note(a: &Advice, back: &str) -> Markup {
+    html! {
+        // A div, not a p: a form inside a p would close it early.
+        div.tip data-rule=(a.rule.as_str()) {
+            span {
+                (a.text)
+                @if let Some(on) = a.catch_up_toggle {
+                    " "
+                    form.inline method="post" action="/settings/catch-up" {
+                        @if on { input type="hidden" name="on" value="1"; }
+                        button.link type="submit" { (a.link.as_ref().map_or(if on { "Catch up" } else { "Turn it off" }, |l| l.label.as_str())) }
+                    }
+                } @else if let Some(l) = &a.link {
+                    " " a href=(l.href) { (l.label) }
+                }
+                " "
+                form.inline.not-now method="post" action="/coach/not-now" {
+                    input type="hidden" name="rule" value=(a.rule.as_str());
+                    input type="hidden" name="back" value=(back);
+                    button.link type="submit" title="Hide this note for three days" { "Not now" }
+                }
+            }
+        }
+    }
+}
+
+#[derive(Deserialize)]
+struct NotNowForm {
+    rule: String,
+    back: Option<String>,
+}
+
+/// "Not now" on a coach note: quiet for three days, back where it was.
+async fn coach_not_now(State(app): State<AppState>, user: WebUser, Form(f): Form<NotNowForm>) -> WebResult {
+    let rule = advice::Rule::parse(&f.rule).ok_or_else(|| AppError::bad("unknown note"))?;
+    app.snooze_advice(&user.access(), rule).await?;
+    let back = if f.back.as_deref() == Some("/stats") { "/stats" } else { "/" };
+    Ok(redirect_msg(back, "The coach will keep that to itself for three days."))
+}
+
+fn week_note_with(w: &insight::Week, tip: Option<Markup>) -> Markup {
     let pct = |v: f64| format!("{:.0}%", v * 100.0);
     html! {
         section.week aria-label="This week" {
@@ -3689,13 +3747,7 @@ fn week_note(w: &insight::Week) -> Markup {
                     }
                 }
             }
-            @match w.tip {
-                insight::Tip::Attention => p.tip { span { (count(w.attention, "card")) " keep slipping or ask too much at once. Fixing them saves more time than reviewing them. " a href="/attention" { "Have a look" } } },
-                insight::Tip::BelowTarget => p.tip { span { "You forgot more than you aim for. Fewer new cards for a while, or optimizing FSRS, usually brings it back. " a href="/learn/desired-retention" { "Why" } } },
-                insight::Tip::AboveTarget => p.tip { span { "You remember more than you aim for. Optimizing lets FSRS space your cards further apart. " a href="/settings#fsrs" { "Optimize" } } },
-                insight::Tip::Spread => p.tip { span { "A little every day works better than a lot on a few days. " a href="/learn/spacing" { "Why" } } },
-                insight::Tip::Nothing => {},
-            }
+            @if let Some(t) = tip { (t) }
         }
     }
 }
@@ -4058,6 +4110,8 @@ async fn stats_page(State(app): State<AppState>, user: WebUser, Query(q): Query<
     let cal = app.calibration(&access, q.deck).await?;
     let sure = app.confidence(&access, q.deck).await?;
     let week = if q.deck.is_none() { Some(app.week(&access).await?) } else { None };
+    // The coach speaks about everything, so only on the stats of all decks.
+    let notes = if q.deck.is_none() { app.advice(&access).await? } else { vec![] };
     let retention: Vec<_> = app
         .deck_retention(&access)
         .await?
@@ -4070,7 +4124,7 @@ async fn stats_page(State(app): State<AppState>, user: WebUser, Query(q): Query<
     };
     let max = s.forecast.iter().map(|(_, n)| *n).max().unwrap_or(0).max(1);
     let history = app.history(&access, q.deck).await?;
-    let desk = DeskStats { user: &user.0, deck: q.deck, s: &s, cal: &cal, sure: &sure, retention: &retention, history: &history };
+    let desk = DeskStats { user: &user.0, deck: q.deck, s: &s, cal: &cal, sure: &sure, retention: &retention, history: &history, notes: &notes };
     Ok(layout_in(
         Nav::Stats,
         "Stats",
@@ -4192,6 +4246,8 @@ struct DeskStats<'a> {
     sure: &'a study::Confidence,
     retention: &'a [insight::DeckRetention],
     history: &'a crate::service::History,
+    /// What the coach would say, most important first.
+    notes: &'a [Advice],
 }
 
 /// The desktop stats: three numbers to act on, then charts, each with a
@@ -4243,6 +4299,18 @@ fn desk_stats(d: &DeskStats) -> Markup {
                     p.kicker { "Days in a row" }
                     p.n.it { (s.streak_days) }
                     p.small.muted { "You studied on " (last7) " of the last 7 days." }
+                }
+            }
+            @if !d.notes.is_empty() {
+                section.coach-notes aria-label="The coach" {
+                    h2 { "The coach" }
+                    (coach_note(&d.notes[0], "/stats"))
+                    @if d.notes.len() > 1 {
+                        details.more-notes {
+                            summary { (count(d.notes.len() as i64 - 1, "more note")) }
+                            @for n in &d.notes[1..] { (coach_note(n, "/stats")) }
+                        }
+                    }
                 }
             }
             section.chart-sec {

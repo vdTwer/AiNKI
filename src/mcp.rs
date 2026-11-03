@@ -771,6 +771,13 @@ impl AinkiMcp {
         out(json!({ "deleted": true }))
     }
 
+    #[tool(description = "What the rule-based coach would tell the user about their studying, most important first: an exam close, cards piling up, recall below the aim, too many new cards, the load ahead, habits, settings that work against them. Each note has a rule id, a sentence or two with the real numbers, and a link on the website. Pass the first one or two on in your own words when it fits; it is advice, so never change settings unless the user asks.")]
+    async fn get_coach_advice(&self, Extension(parts): Extension<Parts>) -> ToolResult {
+        let a = access(&parts)?;
+        let notes = self.app.advice(&a).await.map_err(err)?;
+        out(json!({ "advice": notes }))
+    }
+
     #[tool(description = "Cards the rule-based coach flagged: 'leech' (keeps being forgotten), 'split' (asks a lot at once: a long list that keeps failing, or slow, often missed answers) and 'duplicate' (looks like another card). Each flag has a reason. Suggest fixes to the user; change cards only when they agree.")]
     async fn list_cards_needing_attention(&self, Parameters(p): Parameters<OptionalDeckParam>, Extension(parts): Extension<Parts>) -> ToolResult {
         let a = access(&parts)?;
