@@ -1987,8 +1987,7 @@ fn deck_new_view(user: &User, presets: &[crate::service::Preset], draft: Option<
         "New deck",
         Some(user),
         html! {
-            (add_tabs("deck"))
-            h1 { "New deck" }
+            (add_head("deck", "New deck", html! {}))
             (form_error(error))
             form method="post" action="/decks/new" {
                 (deck_sheet(draft, presets, selected))
@@ -2384,11 +2383,35 @@ async fn read_card_form(mp: Multipart) -> Result<CardFormData, AppError> {
 }
 
 /// The "Add" section: one click to a new card, a new deck, or an import.
-fn add_tabs(current: &str) -> Markup {
+/// Phones keep three tabs over the page's title. On desktop the two are one
+/// title, "Add card", whose last words open a menu of the three.
+fn add_head(current: &str, title: &str, notice: Markup) -> Markup {
+    const PLACES: [(&str, &str, &str, &str); 3] = [
+        ("card", "/cards/new", "Card", "card"),
+        ("deck", "/decks/new", "Deck", "deck"),
+        ("import", "/import", "Import", "from a file"),
+    ];
+    let words = PLACES.iter().find(|p| p.0 == current).map_or("card", |p| p.3);
     html! {
-        nav.tabs aria-label="Add" {
-            @for (key, href, label) in [("card", "/cards/new", "Card"), ("deck", "/decks/new", "Deck"), ("import", "/import", "Import")] {
+        nav.tabs.simple-only aria-label="Add" {
+            @for (key, href, label, _) in PLACES {
                 a href=(href) aria-current=[(key == current).then_some("page")] { (label) }
+            }
+        }
+        (notice)
+        h1.simple-only { (title) }
+        div.add-head.calm-only {
+            h1 {
+                "Add "
+                button.add-pick type="button" aria-haspopup="true" aria-expanded="false" aria-controls="add-menu" {
+                    (words)
+                    svg.add-chev viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" { path d="M4 6l4 4 4-4" {} }
+                }
+            }
+            nav #add-menu .add-menu aria-label="Add" {
+                @for (key, href, _, words) in PLACES {
+                    a href=(href) aria-current=[(key == current).then_some("page")] { "Add " (words) }
+                }
             }
         }
     }
@@ -2538,9 +2561,7 @@ fn card_new_view(user: &User, decks: &[Deck], c: &CardDraft, msg: &Option<String
         "Add card",
         Some(user),
         html! {
-            (add_tabs("card"))
-            (flash(msg))
-            h1 { "Add card" }
+            (add_head("card", "Add card", flash(msg)))
             (form_error(error))
             (card_form("/cards/new", decks, c, "Add card", true, &[]))
         },
@@ -3932,9 +3953,7 @@ async fn import_page(State(app): State<AppState>, user: WebUser, Flash(msg): Fla
         "Import",
         Some(&user.0),
         html! {
-            (add_tabs("import"))
-            (flash(&msg))
-            h1 { "Import" }
+            (add_head("import", "Import", flash(&msg)))
             h2 { "From Anki (.apkg)" }
             p { "In Anki, use " strong { "File → Export…" } ", choose " em { "Anki Deck Package (*.apkg)" } " and tick " em { "Include scheduling information" } " to keep your progress. Upload the file here and its decks are created for you." }
             p.muted.small { "Each card keeps the first two fields of its note, the first image of each side and its review history. Cloze notes become one card per gap. " code { ".colpkg" } " backups work too." }
