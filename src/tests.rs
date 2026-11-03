@@ -92,7 +92,7 @@ async fn a_learning_card_studied_ahead_still_counts_as_due() {
     let app = app().await;
     let a = user(&app, "kolja").await;
     let deck = app.create_deck(&a, "German", "", None).await.unwrap();
-    let card = app.create_card(&a, deck.id, "Hund", "dog", None, None, false).await.unwrap();
+    let card = app.create_card(&a, deck.id, "Hund", "dog", None, None, None).await.unwrap();
     app.answer_card(&a, card.id, Rating::Again, None, None).await.unwrap();
 
     // Due in ten minutes, so studying shows it already; the home page and
