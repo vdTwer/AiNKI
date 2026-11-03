@@ -687,10 +687,52 @@
     svg.setAttribute('height', '0');
     svg.setAttribute('aria-hidden', 'true');
     svg.setAttribute('class', 'wash-defs');
-    svg.innerHTML = '<filter id="wet" x="-10%" y="-10%" width="120%" height="120%">' +
+    svg.innerHTML = '<filter id="wet" x="-30%" y="-40%" width="160%" height="180%">' +
       '<feTurbulence type="fractalNoise" baseFrequency=".006 .009" numOctaves="3" seed="7" result="t"/>' +
-      '<feDisplacementMap in="SourceGraphic" in2="t" scale="90" xChannelSelector="R" yChannelSelector="G"/></filter>';
+      '<feDisplacementMap in="SourceGraphic" in2="t" scale="90" xChannelSelector="R" yChannelSelector="G"/></filter>' +
+      // The same at half size, for clouds painted into a canvas (below).
+      '<filter id="wet-half" filterUnits="userSpaceOnUse" x="-4000" y="-4000" width="8000" height="8000">' +
+      '<feTurbulence type="fractalNoise" baseFrequency=".012 .018" numOctaves="3" seed="7" result="t"/>' +
+      '<feDisplacementMap in="SourceGraphic" in2="t" scale="45" xChannelSelector="R" yChannelSelector="G"/></filter>';
     document.body.appendChild(svg);
+  }
+
+  // A cloud painted once into a canvas at half size: a still picture the
+  // GPU only has to move, in every browser. It is blurred anyway, so half
+  // size looks the same and needs a quarter of the memory. The canvas
+  // reaches past the cloud's box (see calm.css) so the blur and the
+  // frayed edge have room. Returns null where a canvas can't filter;
+  // there the cloud is a CSS-filtered element instead.
+  var HALF = 0.5;
+  function cloud(width, rgb) {
+    var w = width, h = width / 1.5, mx = w * 0.3, my = h * 0.4;
+    var c = document.createElement('canvas');
+    var ctx = c.getContext && c.getContext('2d');
+    if (!ctx || !('filter' in ctx) || !ctx.roundRect) return null;
+    c.width = Math.round((w + 2 * mx) * HALF);
+    c.height = Math.round((h + 2 * my) * HALF);
+    ctx.filter = 'blur(' + (22 * HALF) + 'px) url(#wet-half)';
+    if (ctx.filter === 'none') return null;
+    ctx.scale(HALF, HALF);
+    ctx.translate(mx, my);
+    // The outline of border-radius: 42% 58% 63% 37% / 45% 40% 60% 55%.
+    ctx.beginPath();
+    ctx.roundRect(0, 0, w, h, [
+      { x: w * 0.42, y: h * 0.45 }, { x: w * 0.58, y: h * 0.40 },
+      { x: w * 0.63, y: h * 0.60 }, { x: w * 0.37, y: h * 0.55 }
+    ]);
+    // radial-gradient(closest-side) of a wide box is an ellipse: a circle
+    // squeezed to the box's proportions.
+    ctx.translate(w / 2, h / 2);
+    ctx.scale(1, h / w);
+    var g = ctx.createRadialGradient(0, 0, 0, 0, 0, w / 2);
+    g.addColorStop(0, 'rgba(' + rgb + ',.5)');
+    g.addColorStop(0.4, 'rgba(' + rgb + ',.36)');
+    g.addColorStop(0.7, 'rgba(' + rgb + ',.14)');
+    g.addColorStop(1, 'rgba(' + rgb + ',0)');
+    ctx.fillStyle = g;
+    ctx.fill();
+    return c;
   }
 
   function wash(kind, shape, set, count, into) {
@@ -716,6 +758,8 @@
       i.style.setProperty('--dl', '-' + b[5] + 's');
       i.style.setProperty('--dx', b[6] + '%');
       i.style.setProperty('--dy', b[7] + '%');
+      // The cloud itself, painted once; its holder moves it.
+      i.appendChild(cloud(b[2], PIGMENT[colours[b[3] % colours.length]]) || document.createElement('b'));
       w.appendChild(i);
     });
     parent.insertBefore(w, parent.firstChild);
