@@ -11,6 +11,7 @@ mod auth;
 mod coach;
 mod error;
 mod format;
+mod fuzzy;
 mod import;
 mod insight;
 mod lessons;
