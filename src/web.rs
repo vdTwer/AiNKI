@@ -475,12 +475,24 @@ fn page(nav: Option<Nav>, title: &str, user: Option<&User>, page_kind: Option<&s
                     }
                 }
                 // The desktop look in quiet hours: one dark screen over
-                // everything, no way around it until they end.
+                // everything. The only way past is a faint "study anyway"
+                // at the bottom that asks twice. Two folds, so it works
+                // without JavaScript.
                 @if let Some(u) = user {
                     @if let Some(until) = study::quiet_until(u, now()) {
                         div.sleep-wall.calm-only role="dialog" aria-modal="true" aria-labelledby="sleep-title" {
                             h1 #sleep-title { "Go to sleep." }
                             p { "Your cards open again at " (clock_time(&u.clock(), until)) "." }
+                            details.sleep-anyway {
+                                summary { "study anyway" }
+                                p { "Sleep is when today's cards settle. Studying now costs more than it brings." }
+                                details {
+                                    summary { "I know. Study anyway." }
+                                    form method="post" action="/study/anyway" {
+                                        button type="submit" { "Yes, open my cards until " (clock_time(&u.clock(), until)) }
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -3654,15 +3666,17 @@ async fn preset_view(
                 ". Higher retention means more reviews but more remembered. "
                 a href="/learn/desired-retention" { "How to choose" }
             }
-            table.workload {
-                thead { tr { th { "Remember" } th.num { "Minutes a day" } th.num { "Reviews a day" } th.num { "Known at the end" } } }
-                tbody {
-                    @for w in &workload {
-                        tr.current[w.current] {
-                            th scope="row" { (format!("{:.0}%", w.retention * 100.0)) @if w.current { span.muted.small { " this preset" } } }
-                            td.num { (format!("{:.0}", w.minutes_per_day.max(0.0))) }
-                            td.num { (format::number(w.reviews_per_day.round() as i64)) }
-                            td.num { (format::number(w.remembered.round() as i64)) }
+            div.fit {
+                table.workload {
+                    thead { tr { th { "Remember" } th.num { "Minutes a day" } th.num { "Reviews a day" } th.num { "Known at the end" } } }
+                    tbody {
+                        @for w in &workload {
+                            tr.current[w.current] {
+                                th scope="row" { (format!("{:.0}%", w.retention * 100.0)) @if w.current { span.muted.small { " this preset" } } }
+                                td.num { (format!("{:.0}", w.minutes_per_day.max(0.0))) }
+                                td.num { (format::number(w.reviews_per_day.round() as i64)) }
+                                td.num { (format::number(w.remembered.round() as i64)) }
+                            }
                         }
                     }
                 }
@@ -4489,15 +4503,17 @@ async fn stats_page(State(app): State<AppState>, user: WebUser, Query(q): Query<
                 dt { "Average recall chance now" } dd { (format::percent(s.average_retrievability)) }
             }
             @if !retention.is_empty() {
-                table.retention {
-                    thead { tr { th { "Deck" } th.num { "Aim" } th.num { "Remembered" } th.num { "Reviews" } } }
-                    tbody {
-                        @for d in &retention {
-                            tr.short[d.short()] {
-                                th scope="row" { a href=(format!("/decks/{}", d.deck_id)) { (deck_plain(&d.deck_name)) } }
-                                td.num { (format::percent(Some(d.target))) }
-                                td.num { (format::percent(d.actual)) }
-                                td.num { (format::number(d.reviews)) }
+                div.fit {
+                    table.retention {
+                        thead { tr { th { "Deck" } th.num { "Aim" } th.num { "Remembered" } th.num { "Reviews" } } }
+                        tbody {
+                            @for d in &retention {
+                                tr.short[d.short()] {
+                                    th scope="row" { a href=(format!("/decks/{}", d.deck_id)) { (deck_plain(&d.deck_name)) } }
+                                    td.num { (format::percent(Some(d.target))) }
+                                    td.num { (format::percent(d.actual)) }
+                                    td.num { (format::number(d.reviews)) }
+                                }
                             }
                         }
                     }
@@ -4523,14 +4539,16 @@ async fn stats_page(State(app): State<AppState>, user: WebUser, Query(q): Query<
                     @else if cal.actual < cal.predicted { " You forget a little more than it thinks; optimizing helps." }
                     @else { " You remember more than it thinks; optimizing helps." }
                 }
-                table.calibration {
-                    thead { tr { th { "Expected" } th.num { "Remembered" } th.num { "Reviews" } } }
-                    tbody {
-                        @for b in &cal.bins {
-                            tr {
-                                th scope="row" { (b.from) "–" (b.to) "%" }
-                                td.num { (format::percent(Some(b.actual))) }
-                                td.num { (format::number(b.reviews)) }
+                div.fit {
+                    table.calibration {
+                        thead { tr { th { "Expected" } th.num { "Remembered" } th.num { "Reviews" } } }
+                        tbody {
+                            @for b in &cal.bins {
+                                tr {
+                                    th scope="row" { (b.from) "–" (b.to) "%" }
+                                    td.num { (format::percent(Some(b.actual))) }
+                                    td.num { (format::number(b.reviews)) }
+                                }
                             }
                         }
                     }

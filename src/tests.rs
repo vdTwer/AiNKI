@@ -14,6 +14,10 @@ use crate::{
     service::{CardFilter, CardInput, PresetInput},
 };
 
+mod anki;
+mod concurrency;
+mod upgrade;
+
 async fn app() -> Arc<App> {
     app_with(|_| {}).await
 }
@@ -650,6 +654,9 @@ async fn invites_expire_and_admins_have_no_limit() {
 // ----- HTTP: security and the website flows ---------------------------------
 
 mod http {
+    mod accounts;
+    mod mcp_tools;
+
     use super::*;
     use axum::{
         body::Body,

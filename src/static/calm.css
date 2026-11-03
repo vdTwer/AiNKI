@@ -1438,8 +1438,9 @@ html.calm .break-fill { width: 0; height: 2px; background: var(--accent); }
 html.calm .break-run .summary { margin-top: 1.5rem; }
 html.calm .break-run .btn { margin-top: 1.5rem; }
 
-/* Quiet hours: one dark screen over everything, a night wash, and only
-   "Go to sleep." Nothing to press. */
+/* Quiet hours: one dark screen over everything, a night wash, and
+   "Go to sleep." The way past is a faint line at the bottom that asks
+   twice before it opens the cards. */
 html.calm .sleep-wall {
   position: fixed;
   inset: 0;
@@ -1458,6 +1459,33 @@ html.calm .sleep-wall > :not(.wash) { position: relative; z-index: 1; }
 html.calm .sleep-wall h1 { margin: 0; font-size: 11rem; line-height: .95; animation: calm-appear 1.2s var(--ease) both; }
 html.calm .sleep-wall p { margin: 0; font-size: 1.35rem; color: rgba(243, 240, 255, .62); }
 html.calm .sleep-wall > .wash { position: absolute; inset: 0; mix-blend-mode: screen; opacity: .5; }
+html.calm .sleep-wall .sleep-anyway {
+  position: absolute;
+  bottom: 2.5rem;
+  left: 50%;
+  width: min(30rem, calc(100% - 2rem));
+  transform: translateX(-50%);
+  font-size: .85rem;
+  color: rgba(243, 240, 255, .5);
+}
+html.calm .sleep-anyway summary { list-style: none; cursor: pointer; color: rgba(243, 240, 255, .22); transition: color .3s var(--ease); }
+html.calm .sleep-anyway summary::-webkit-details-marker { display: none; }
+html.calm .sleep-anyway summary:hover,
+html.calm .sleep-anyway summary:focus-visible { color: rgba(243, 240, 255, .55); }
+html.calm .sleep-anyway[open] > summary { display: none; }
+html.calm .sleep-wall .sleep-anyway p { margin: 0 0 .9rem; font-size: .85rem; color: rgba(243, 240, 255, .5); }
+html.calm .sleep-anyway details[open] > summary { display: none; }
+html.calm .sleep-anyway button {
+  padding: .45rem 1rem;
+  border: 1px solid rgba(243, 240, 255, .3);
+  border-radius: 999px;
+  background: none;
+  color: rgba(243, 240, 255, .7);
+  font: inherit;
+  cursor: pointer;
+}
+html.calm .sleep-anyway button:hover,
+html.calm .sleep-anyway button:focus-visible { border-color: rgba(243, 240, 255, .6); color: #f3f0ff; }
 html:not(.calm) .sleep-wall { display: none; }
 
 html.calm .finishing .end-mark .line { animation: calm-close-line 560ms cubic-bezier(.6, 0, .2, 1) both; }
