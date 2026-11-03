@@ -672,7 +672,7 @@ html.calm .sheet .title {
   gap: 24px;
   align-items: center;
   margin: 0;
-  padding: 10px 0;
+  padding: 14px 0;
   border-bottom: 1px solid var(--line);
   font-weight: 400;
 }
@@ -703,9 +703,9 @@ html.calm .sheet .line, html.calm .sheet label.check {
   align-items: center;
   justify-content: space-between;
   gap: 1rem;
-  min-height: 44px;
+  min-height: 50px;
   margin: 0;
-  padding: .3rem 0;
+  padding: .45rem 0;
   border-bottom: 1px solid var(--line);
   font-size: 1rem;
   font-weight: 400;
@@ -754,7 +754,7 @@ html.calm .sheet .line:hover .select::after { border-color: var(--accent-hover);
 html.calm .sheet .line :is(input, select):focus { border-bottom-color: var(--accent); box-shadow: none; }
 html.calm .sheet .line input::placeholder { color: var(--faint); font-style: italic; }
 html.calm .sheet :is(.line, label.check):has(+ .hint) { border-bottom: 0; padding-bottom: .1rem; }
-html.calm .sheet .hint { margin: 0; padding: 0 0 .9rem; border-bottom: 1px solid var(--line); font-size: .87rem; color: var(--muted); }
+html.calm .sheet .hint { margin: 0; padding: .1rem 0 1rem; border-bottom: 1px solid var(--line); font-size: .87rem; color: var(--muted); }
 html.calm .sheet .hint:last-child { border-bottom: 0; }
 html.calm .sheet .title + .hint { padding-top: .3rem; border-bottom: 0; }
 html.calm .sheet .hint a { color: var(--accent); }
@@ -967,7 +967,7 @@ html.calm dl.stats-inline dt { font-size: .87rem; color: var(--muted); }
 html.calm dl.stats-inline dd { font-family: var(--serif); font-optical-sizing: auto; font-weight: 400; font-size: 2.07rem; line-height: 1.2; }
 /* Facts as lines: the name on the left, the value at the end. */
 html.calm dl.kv { grid-template-columns: 1fr auto; gap: 0; margin: .25rem 0; }
-html.calm dl.kv dt, html.calm dl.kv dd { padding: .6rem 0; border-bottom: 1px solid var(--line); }
+html.calm dl.kv dt, html.calm dl.kv dd { padding: .75rem 0; border-bottom: 1px solid var(--line); }
 html.calm dl.kv dt:nth-last-of-type(1), html.calm dl.kv dd:last-child { border-bottom: 0; }
 html.calm dl.kv dt { font-weight: 400; color: var(--muted); }
 html.calm dl.kv dd { text-align: right; color: var(--ink); }
