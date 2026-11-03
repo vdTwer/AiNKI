@@ -65,6 +65,12 @@ test('every page, every link', async ({ page, seed, account }) => {
         .filter((h) => h.startsWith('/') && !h.startsWith('//'));
       return {
         wide: doc.scrollWidth - doc.clientWidth,
+        // The innermost element that sticks out, to name in the report.
+        culprit: (() => {
+          const out = [...document.querySelectorAll('body *')].filter((e) => e.getBoundingClientRect().right > doc.clientWidth + 1);
+          const last = out.filter((e) => !out.some((o) => o !== e && e.contains(o))).pop();
+          return last ? `${last.tagName.toLowerCase()}${last.className ? '.' + String(last.className).trim().split(/\s+/).join('.') : ''}` : '';
+        })(),
         bad: bad?.[0],
         brokenImgs,
         links,
@@ -73,7 +79,7 @@ test('every page, every link', async ({ page, seed, account }) => {
         lang: doc.lang,
       };
     });
-    if (report.wide > 1) problems.push(`${path}: scrolls sideways by ${report.wide}px`);
+    if (report.wide > 1) problems.push(`${path}: scrolls sideways by ${report.wide}px (${report.culprit})`);
     if (report.bad) problems.push(`${path}: shows "${report.bad}"`);
     if (report.brokenImgs.length) problems.push(`${path}: broken images ${report.brokenImgs.join(', ')}`);
     if (!/AiNKI/.test(report.title)) problems.push(`${path}: title "${report.title}"`);
