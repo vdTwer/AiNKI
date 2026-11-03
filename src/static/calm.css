@@ -259,6 +259,8 @@ html.calm nav.top .tile {
   transition: opacity 120ms ease, transform var(--dur) var(--spring), color 140ms ease;
 }
 html.calm nav.top a[aria-current="page"] .tile { color: var(--terra-deep); }
+/* Far away (app.js), the icons are not drawn at all. */
+html.calm nav.top.far:not(:focus-within) .tile { display: none; }
 
 /* Step three: over an icon it tilts toward the pointer, lights up and
    its name appears. */

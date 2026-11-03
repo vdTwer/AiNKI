@@ -340,7 +340,8 @@
   (function () {
     var nav = document.querySelector('nav.top');
     if (!calm || !nav) return;
-    var far = 160, close = 56, frame = 0, px = -1, py = -1, box = null;
+    var far = 160, close = 56, frame = 0, px = -1, py = -1, box = null, gone = 0;
+    nav.classList.add('far');
     // The rail is fixed in place, so its box only moves with the window.
     // Measuring it each frame would force a layout after the tilt's writes.
     window.addEventListener('resize', function () { box = null; });
@@ -357,6 +358,12 @@
       // Far from the rail this stays 0: writing it anyway would restyle
       // every icon in the rail on each move of the mouse.
       put(nav.style, '--near', near.toFixed(3));
+      // While the pointer is far away the icons are not drawn at all; their
+      // seven 3D layers each would otherwise sit on the GPU unseen. They
+      // go once they have faded out, and come back before they fade in.
+      clearTimeout(gone);
+      if (near > 0) nav.classList.remove('far');
+      else gone = setTimeout(function () { nav.classList.add('far'); }, 250);
     }
     function later() { if (!frame) frame = requestAnimationFrame(update); }
     document.addEventListener('pointermove', function (e) {
