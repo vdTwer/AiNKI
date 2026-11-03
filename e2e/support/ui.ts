@@ -32,3 +32,26 @@ export async function open(details: Locator) {
   }
   await expect(details).toHaveAttribute('open', '');
 }
+
+/**
+ * Open every closed fold on the page: <details> (except danger zones) and
+ * the desktop look's fold lines, which live outside the forms they open.
+ */
+export async function unfold(page: Page) {
+  for (const b of await page.locator('main button.fold[aria-expanded=false]').all()) {
+    if (await b.isVisible()) await b.click();
+  }
+  for (const d of await page.locator('main details:not([open]):not(.danger)').all()) {
+    if (await d.locator('summary').isVisible()) await d.locator('summary').click();
+  }
+}
+
+/**
+ * Make a field visible: on the desktop, settings sit in folds that open
+ * one at a time, behind a line named after the group.
+ */
+export async function reveal(page: Page, field: Locator, fold: RegExp) {
+  if (await field.isVisible()) return;
+  const line = page.locator('main button.fold').filter({ hasText: fold });
+  if (await line.count()) await line.first().click();
+}

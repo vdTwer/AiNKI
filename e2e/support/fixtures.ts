@@ -4,7 +4,7 @@ import { execFileSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
 import path from 'node:path';
-import { test as base, expect, type Page, type APIRequestContext } from '@playwright/test';
+import { test as base, expect, type Page, type APIRequestContext, type BrowserContext } from '@playwright/test';
 import { binary, dataDir } from './env.ts';
 
 export { expect };
@@ -65,11 +65,21 @@ export async function logIn(request: APIRequestContext, account: Account): Promi
 
 /** Quick data: decks and cards through the website's own forms. */
 export class Seed {
-  constructor(private readonly request: APIRequestContext, private readonly account: Account) {}
+  constructor(
+    private readonly request: APIRequestContext,
+    private readonly account: Account,
+    private readonly context?: BrowserContext,
+  ) {}
+
+  /** The forms leave a flash message ("Card added.") for the next page. */
+  private async forgetFlash() {
+    await this.context?.clearCookies({ name: 'ainki_flash' });
+  }
 
   async deck(name: string, extra: Record<string, string> = {}): Promise<number> {
     const res = await this.request.post('/decks/new', { form: { name, description: '', ...extra }, maxRedirects: 0 });
     expect(res.status(), `deck ${name} created`).toBe(303);
+    await this.forgetFlash();
     const [{ id }] = sql<{ id: number }>(
       'SELECT id FROM decks WHERE user_id = ? AND name = ? ORDER BY id DESC LIMIT 1',
       this.account.id,
@@ -84,6 +94,7 @@ export class Seed {
       maxRedirects: 0,
     });
     expect(res.status(), `card ${front} created`).toBe(303);
+    await this.forgetFlash();
     const [{ id }] = sql<{ id: number }>(
       'SELECT id FROM cards WHERE deck_id = ? AND front = ? ORDER BY id DESC LIMIT 1',
       deckId,
@@ -133,7 +144,7 @@ export const test = base.extend<Fixtures>({
     { auto: true },
   ],
   seed: async ({ page, account }, use) => {
-    await use(new Seed(page.request, account));
+    await use(new Seed(page.request, account, page.context()));
   },
   allowErrors: async ({}, use) => {
     await use([]);
