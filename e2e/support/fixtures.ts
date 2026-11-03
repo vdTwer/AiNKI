@@ -123,11 +123,15 @@ type Fixtures = {
 
 export const test = base.extend<Fixtures>({
   look: ['calm', { option: true }],
-  account: async ({ look, page }, use) => {
-    const account = makeAccount('user', { look });
-    await logIn(page.request, account);
-    await use(account);
-  },
+  // Every test starts logged in; logged-out pages use a new context.
+  account: [
+    async ({ look, page }, use) => {
+      const account = makeAccount('user', { look });
+      await logIn(page.request, account);
+      await use(account);
+    },
+    { auto: true },
+  ],
   seed: async ({ page, account }, use) => {
     await use(new Seed(page.request, account));
   },
