@@ -789,18 +789,20 @@
     else if (/^\/learn/.test(path)) wash('corner small', HERO, 2, 4);
     else wash('corner faint', HERO, 4, 4);
   }
-  // Log in: a greeting instead of the site's name, and the field names
+  // Log in, sign up and invites: a greeting instead of the site's name, and the field names
   // become placeholders, the two fields one group. The labels stay for
   // screen readers.
   function login() {
-    var form = document.querySelector('main > form[action="/login"], main > form[action="/signup"]');
+    var form = document.querySelector('main > form[action="/login"], main > form[action="/signup"], main > form.invite');
     if (!form || form.querySelector('.fields')) return;
     var main = form.parentNode;
-    var h = document.createElement('h1');
-    h.className = 'greeting';
-    h.textContent = form.getAttribute('action') === '/login' ? 'Welcome back.' : 'Welcome.';
-    var first = main.querySelector('.notice') || form;
-    main.insertBefore(h, first);
+    // An invite brings its own greeting: who sent it.
+    if (!main.querySelector(':scope > h1.greeting')) {
+      var h = document.createElement('h1');
+      h.className = 'greeting';
+      h.textContent = form.getAttribute('action') === '/login' ? 'Welcome back.' : 'Welcome.';
+      main.insertBefore(h, main.querySelector('.notice') || form);
+    }
     var fields = document.createElement('div');
     fields.className = 'fields';
     var labels = form.querySelectorAll(':scope > label');
