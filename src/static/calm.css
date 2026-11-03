@@ -315,7 +315,9 @@ html.calm body > .wash {
   animation: wash-in 2.4s var(--ease) both;
 }
 html.calm body > :not(.wash, .sleep-wall, svg) { position: relative; z-index: 1; }
-html.calm body > nav.top { position: absolute; }
+/* The nav comes before main in the page, so it needs its own layer or main,
+   which spans the column, sits over its first words. */
+html.calm body > nav.top { position: absolute; z-index: 10; }
 html.calm body > .wash.corner { top: -80px; right: -60px; width: 62%; height: 620px; }
 html.calm body > .wash.corner.small { width: 50%; height: 520px; }
 html.calm body > .wash.corner.faint { width: 46%; height: 480px; opacity: .7; }
