@@ -28,6 +28,8 @@ pub const MIN_RETENTION_SAMPLE: i64 = 50;
 const MIN_DECK_SAMPLE: i64 = 30;
 /// "Your usual" pace needs this many study days in the last fourteen.
 pub const MIN_PACE_DAYS: i64 = 7;
+/// "Not now" keeps a rule quiet this long.
+pub const SNOOZE_SECS: i64 = 3 * 86_400;
 /// Each new card brings about this many reviews in its first month.
 const REVIEWS_PER_NEW_CARD: f64 = 10.0;
 
@@ -835,12 +837,35 @@ impl App {
         let attention = self.attention(access, None).await?;
         let overdue = self.overdue(access).await?;
         let known = Known { decks: &decks, stats: &stats, attention: &attention, overdue };
-        Ok(advise(&self.signals(access, &known).await?))
+        self.advice_from(access, &known).await
     }
 
-    /// The same, from what the caller already has.
+    /// The same, from what the caller already has. Rules put off with
+    /// "Not now" stay out.
     pub async fn advice_from(&self, access: &Access, known: &Known<'_>) -> Result<Vec<Advice>> {
-        Ok(advise(&self.signals(access, known).await?))
+        let quiet: Vec<String> = sqlx::query_scalar("SELECT rule FROM coach_snoozes WHERE user_id = ? AND until > ?")
+            .bind(access.user_id())
+            .bind(crate::now())
+            .fetch_all(&self.db)
+            .await?;
+        let mut notes = advise(&self.signals(access, known).await?);
+        notes.retain(|n| !quiet.iter().any(|q| q == n.rule.as_str()));
+        Ok(notes)
+    }
+
+    /// "Not now": the rule stays quiet for three days.
+    pub async fn snooze_advice(&self, access: &Access, rule: Rule) -> Result<()> {
+        access.require_write()?;
+        sqlx::query(
+            "INSERT INTO coach_snoozes (user_id, rule, until) VALUES (?, ?, ?)
+             ON CONFLICT (user_id, rule) DO UPDATE SET until = excluded.until",
+        )
+        .bind(access.user_id())
+        .bind(rule.as_str())
+        .bind(crate::now() + SNOOZE_SECS)
+        .execute(&self.db)
+        .await?;
+        Ok(())
     }
 
     pub async fn signals(&self, access: &Access, known: &Known<'_>) -> Result<Signals> {

@@ -1614,6 +1614,12 @@ async fn the_coach_warns_before_an_exam() {
     let notes = app.advice(&a).await.unwrap();
     assert_eq!(notes[0].rule, Rule::ExamClose);
     assert!(notes[0].text.starts_with("Your Spanish exam is in 12 days and 300 cards are still new."), "{}", notes[0].text);
+
+    // "Not now" keeps it quiet for three days, then it is back.
+    app.snooze_advice(&a, Rule::ExamClose).await.unwrap();
+    assert!(app.advice(&a).await.unwrap().iter().all(|n| n.rule != Rule::ExamClose));
+    sqlx::query("UPDATE coach_snoozes SET until = ?").bind(now() - 1).execute(&app.db).await.unwrap();
+    assert_eq!(app.advice(&a).await.unwrap()[0].rule, Rule::ExamClose);
 }
 
 #[tokio::test]
