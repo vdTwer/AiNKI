@@ -1247,6 +1247,8 @@ mod http {
         assert!(attention["cards"].as_array().unwrap().is_empty());
         let insights = mcp_tool(&app, &token, "get_insights", serde_json::json!({})).await;
         assert_eq!(insights["week"]["reviews"], 0);
+        let advice = mcp_tool(&app, &token, "get_coach_advice", serde_json::json!({})).await;
+        assert!(advice["advice"].as_array().unwrap().is_empty());
         let work = mcp_tool(&app, &token, "get_workload", serde_json::json!({ "preset_id": deck.preset_id })).await;
         assert!(work["options"].as_array().unwrap().len() >= 4);
     }
