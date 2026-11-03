@@ -123,7 +123,7 @@ html.calm body {
 
 html.calm main {
   max-width: calc(var(--wrap) + 64px);
-  padding: 0 32px 96px;
+  padding: 0 32px 48px;
 }
 
 /* No masthead: a page starts with its own content. The only fixed thing
