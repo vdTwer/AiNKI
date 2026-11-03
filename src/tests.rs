@@ -1569,3 +1569,77 @@ async fn big_collection_stays_fast() {
     app.overdue(&a).await.unwrap();
     println!("overdue: {:?}", t.elapsed());
 }
+
+/// Log one answer as if it happened `days_ago` days back, at noon.
+async fn log_answer(app: &App, a: &Access, card: i64, deck: i64, days_ago: i64, state_before: i64, remembered: bool) {
+    let clock = a.user.clock();
+    let at = clock.day_start(clock.today() - chrono::Duration::days(days_ago)) + 8 * 3600;
+    sqlx::query(
+        "INSERT INTO review_log (user_id, card_id, deck_id, rating, reviewed_at, state_before, elapsed_days,
+            scheduled_secs, duration_ms, source) VALUES (?, ?, ?, ?, ?, ?, 1, 86400, 6000, 'web')",
+    )
+    .bind(a.user_id())
+    .bind(card)
+    .bind(deck)
+    .bind(if remembered { 3 } else { 1 })
+    .bind(at)
+    .bind(state_before)
+    .execute(&app.db)
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
+async fn the_coach_stays_quiet_for_a_new_user() {
+    let app = app().await;
+    let a = user(&app, "kolja").await;
+    let deck = app.create_deck(&a, "German", "", None).await.unwrap();
+    app.create_card(&a, deck.id, "Hund", "dog", None, None, None).await.unwrap();
+    assert!(app.advice(&a).await.unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn the_coach_warns_before_an_exam() {
+    use crate::advice::Rule;
+    let app = app().await;
+    let a = user(&app, "kolja").await;
+    let deck = app.create_deck(&a, "Languages::Spanish", "", None).await.unwrap();
+    for i in 0..300 {
+        app.create_card(&a, deck.id, &format!("word {i}"), "x", None, None, None).await.unwrap();
+    }
+    let exam = (a.user.clock().today() + chrono::Duration::days(12)).format("%Y-%m-%d").to_string();
+    app.update_deck(&a, deck.id, None, None, None, Some(&exam)).await.unwrap();
+    let notes = app.advice(&a).await.unwrap();
+    assert_eq!(notes[0].rule, Rule::ExamClose);
+    assert!(notes[0].text.starts_with("Your Spanish exam is in 12 days and 300 cards are still new."), "{}", notes[0].text);
+}
+
+#[tokio::test]
+async fn the_coach_reads_recall_and_pace_from_the_log() {
+    use crate::advice::{Known, Rule};
+    let app = app().await;
+    let a = user(&app, "kolja").await;
+    let deck = app.create_deck(&a, "Facts", "", None).await.unwrap();
+    let card = app.create_card(&a, deck.id, "Capital of Peru", "Lima", None, None, None).await.unwrap();
+    // Twenty answers a day for fourteen days, only seven in ten remembered.
+    for day in 1..=14 {
+        for i in 0..20 {
+            log_answer(&app, &a, card.id, deck.id, day, 2, i % 10 < 7).await;
+        }
+    }
+    let decks = app.deck_summaries(&a).await.unwrap();
+    let stats = app.stats(&a, None).await.unwrap();
+    let known = Known { decks: &decks, stats: &stats, attention: &[], overdue: 0 };
+    let s = app.signals(&a, &known).await.unwrap();
+    // The fourteen days end today, so the oldest day falls out.
+    assert_eq!(s.study_days_14, 13);
+    assert_eq!(s.usual_per_day, 20.0);
+    assert_eq!(s.recall_30d.reviews, 280);
+    assert_eq!(s.recall_30d.remembered, 196);
+    assert_eq!(s.days_since_review, Some(1));
+    assert_eq!(s.days_studied_7, 6);
+    assert!((s.target - 0.9).abs() < 1e-9);
+    let notes = app.advice(&a).await.unwrap();
+    assert!(notes.iter().any(|n| n.rule == Rule::BelowTarget), "{notes:?}");
+    assert!(notes.iter().all(|n| n.rule != Rule::DeckLags), "one deck is the whole picture");
+}
