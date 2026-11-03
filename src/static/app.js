@@ -234,6 +234,35 @@
 
   // ----- page details (run again after every swap) --------------------------
 
+  // The side rail: dots far away, icons up close. --near goes from 0 to 1
+  // as the pointer comes within reach of the rail.
+  (function () {
+    var nav = document.querySelector('nav.top');
+    if (!calm || !nav) return;
+    var far = 160, close = 56, frame = 0, px = -1, py = -1;
+    function update() {
+      frame = 0;
+      var near = 0;
+      if (px >= 0) {
+        var r = nav.getBoundingClientRect();
+        var dx = Math.max(r.left - px, 0, px - r.right);
+        var dy = Math.max(r.top - py, 0, py - r.bottom);
+        var d = Math.sqrt(dx * dx + dy * dy);
+        near = Math.max(0, Math.min(1, (far - d) / (far - close)));
+      }
+      nav.style.setProperty('--near', near.toFixed(3));
+    }
+    function later() { if (!frame) frame = requestAnimationFrame(update); }
+    document.addEventListener('pointermove', function (e) {
+      if (e.pointerType !== 'mouse') return;
+      px = e.clientX; py = e.clientY;
+      later();
+    });
+    document.addEventListener('mouseout', function (e) {
+      if (!e.relatedTarget) { px = -1; later(); }
+    });
+  })();
+
   function setup(scope) {
     // Long card text is set smaller and left-aligned.
     var faces = scope.querySelectorAll('section.face');
