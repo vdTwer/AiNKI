@@ -1,0 +1,98 @@
+# Runs every test on pushes and pull requests. It never deploys.
+#
+#   rust     cargo test (unit, HTTP, MCP, Anki import, migration checks)
+#   e2e      Playwright in Chromium and Firefox, desktop, simple look and phone
+#   upgrade  seeds data with the v1 binary, then checks it with this one
+name: Test
+
+on:
+  push:
+    branches: [main, v2]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: test-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  # The last commit of v1 as it runs in production. Keep it pinned after
+  # v2 reaches main, so the upgrade job keeps testing the real jump.
+  V1_REF: 3a7f20b35305a1afc08a58770dbca399469ce858
+
+jobs:
+  rust:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test --locked
+
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: e2e/package-lock.json
+      - run: cargo build --locked
+      - name: Install dependencies and browsers
+        working-directory: e2e
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium firefox
+      - name: Type-check the tests
+        working-directory: e2e
+        run: npm run typecheck
+      - name: Run Playwright
+        working-directory: e2e
+        run: npm test
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: |
+            e2e/playwright-report
+            e2e/test-results
+          retention-days: 7
+
+  upgrade:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: v1 migrations are untouched
+        run: git diff --exit-code "$V1_REF" -- $(git ls-tree --name-only "$V1_REF" migrations/)
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Build v1
+        run: |
+          git worktree add ../v1 "$V1_REF"
+          cargo build --locked --manifest-path ../v1/Cargo.toml --target-dir ../v1-target
+      - run: cargo build --locked
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: e2e/package-lock.json
+      - name: Install dependencies and Chromium
+        working-directory: e2e
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+      - name: Seed with v1
+        working-directory: e2e
+        run: AINKI_BIN="$GITHUB_WORKSPACE/../v1-target/debug/ainki" npm run upgrade:v1
+      - name: Check with this version
+        working-directory: e2e
+        run: npm run upgrade:v2
