@@ -305,7 +305,12 @@ html.calm body[data-page=study] nav.top:is(:hover, :focus-within) { opacity: 1; 
    only its holder (i) moves, and only by transform, which the GPU does on
    its own. Animating the shape or filtering the whole wash would repaint
    and re-filter hundreds of thousands of pixels on every frame. */
-html.calm body { position: relative; overflow-x: hidden; }
+/* The clouds reach well past their boxes, and past the page's foot, which
+   made pages scroll into empty space. body clips them at its own edge and
+   is at least a screen tall; html takes the sideways clip so that body's
+   is not handed on to the window, where clip would stop all scrolling. */
+html.calm { overflow-x: hidden; }
+html.calm body { position: relative; min-height: 100vh; overflow: clip; }
 html.calm body > svg.wash-defs { position: absolute; width: 0; height: 0; }
 html.calm body > .wash {
   position: absolute;
