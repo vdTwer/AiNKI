@@ -62,12 +62,24 @@ test('quiet hours: a rest screen, and Study anyway lifts it', async ({ page, see
   await page.goto('/study');
   await expect(page.locator('main .study .face.front')).toHaveCount(0);
   if (await isCalm(page)) {
-    // The desktop look: one dark screen over everything, no way around.
+    // The desktop look: one dark screen over everything. The way past is
+    // a faint line that asks twice.
     const wall = page.locator('.sleep-wall');
     await expect(wall).toBeVisible();
     await expect(wall.locator('h1')).toHaveText('Go to sleep.');
-    await expect(page.getByRole('button', { name: 'Study anyway' })).not.toBeInViewport({ ratio: 1 }).catch(() => {});
     expect(await page.locator('body > main').evaluate((m) => (m as HTMLElement).inert)).toBe(true);
+    const faint = wall.getByText('study anyway', { exact: true });
+    await expect(faint).toBeVisible();
+    const color = await faint.evaluate((e) => getComputedStyle(e).color);
+    expect(Number(/,\s*([\d.]+)\)$/.exec(color)?.[1] ?? 1)).toBeLessThan(0.4);
+    await faint.click();
+    await expect(wall).toContainText('Sleep is when');
+    const yes = wall.getByRole('button', { name: /open my cards/i });
+    await expect(yes).toBeHidden();
+    await wall.getByText('I know. Study anyway.').click();
+    await yes.click();
+    await expect(page.locator('.sleep-wall')).toHaveCount(0);
+    await expect(page.locator('main .study .face.front')).toHaveText('q');
     return;
   }
   await expect(page.locator('main')).toContainText('Quiet hours');
@@ -77,9 +89,8 @@ test('quiet hours: a rest screen, and Study anyway lifts it', async ({ page, see
 
 test.describe('desktop', () => {
   desktopOnly();
-  // Kolja's call: is this intended? Set quiet hours that include "now" and
-  // the desktop site, settings included, is closed until they end.
-  test('quiet hours also cover Settings, so they cannot be undone on the desktop', async ({ page, account }) => {
+  // Settings sit under the wall too; the way past is "study anyway".
+  test('quiet hours also cover Settings', async ({ page, account }) => {
     quietNow(account.id);
     await page.goto('/settings');
     await expect(page.locator('.sleep-wall')).toBeVisible();
