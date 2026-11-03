@@ -125,6 +125,7 @@ pub fn router(app: AppState) -> Router {
         .route("/cards/{id}/split", get(split_page).post(split_submit))
         .route("/cards/{id}/{action}", post(card_action))
         .route("/attention", get(attention_page))
+        .route("/coach/not-now", post(coach_not_now))
         .route("/learn", get(learn_page))
         .route("/learn/{slug}", get(lesson_page))
         .route("/learn/{slug}/deck", post(lesson_deck))
@@ -860,7 +861,7 @@ async fn home(State(app): State<AppState>, user: WebUser, Flash(msg): Flash) -> 
             }
             @if !decks.is_empty() {
                 aside.today-side.calm-only {
-                    (week_note_with(&week, notes.first().map(coach_note)))
+                    (week_note_with(&week, notes.first().map(|n| coach_note(n, "/"))))
                     @if user.0.catch_up && overdue >= 20 {
                         @let days = (overdue + user.0.catch_up_reviews - 1) / user.0.catch_up_reviews.max(1);
                         div.pace {
@@ -3686,9 +3687,10 @@ fn week_note(w: &insight::Week) -> Markup {
 
 /// One note from the coach, as the week's tip: what it saw, then its link
 /// (or, for catch-up mode, a button that turns it on or off).
-fn coach_note(a: &Advice) -> Markup {
+fn coach_note(a: &Advice, back: &str) -> Markup {
     html! {
-        p.tip data-rule=(a.rule.as_str()) {
+        // A div, not a p: a form inside a p would close it early.
+        div.tip data-rule=(a.rule.as_str()) {
             span {
                 (a.text)
                 @if let Some(on) = a.catch_up_toggle {
@@ -3700,9 +3702,29 @@ fn coach_note(a: &Advice) -> Markup {
                 } @else if let Some(l) = &a.link {
                     " " a href=(l.href) { (l.label) }
                 }
+                " "
+                form.inline.not-now method="post" action="/coach/not-now" {
+                    input type="hidden" name="rule" value=(a.rule.as_str());
+                    input type="hidden" name="back" value=(back);
+                    button.link type="submit" title="Hide this note for three days" { "Not now" }
+                }
             }
         }
     }
+}
+
+#[derive(Deserialize)]
+struct NotNowForm {
+    rule: String,
+    back: Option<String>,
+}
+
+/// "Not now" on a coach note: quiet for three days, back where it was.
+async fn coach_not_now(State(app): State<AppState>, user: WebUser, Form(f): Form<NotNowForm>) -> WebResult {
+    let rule = advice::Rule::parse(&f.rule).ok_or_else(|| AppError::bad("unknown note"))?;
+    app.snooze_advice(&user.access(), rule).await?;
+    let back = if f.back.as_deref() == Some("/stats") { "/stats" } else { "/" };
+    Ok(redirect_msg(back, "The coach will keep that to itself for three days."))
 }
 
 fn week_note_with(w: &insight::Week, tip: Option<Markup>) -> Markup {
@@ -4282,7 +4304,13 @@ fn desk_stats(d: &DeskStats) -> Markup {
             @if !d.notes.is_empty() {
                 section.coach-notes aria-label="The coach" {
                     h2 { "The coach" }
-                    @for n in d.notes.iter().take(3) { (coach_note(n)) }
+                    (coach_note(&d.notes[0], "/stats"))
+                    @if d.notes.len() > 1 {
+                        details.more-notes {
+                            summary { (count(d.notes.len() as i64 - 1, "more note")) }
+                            @for n in &d.notes[1..] { (coach_note(n, "/stats")) }
+                        }
+                    }
                 }
             }
             section.chart-sec {
