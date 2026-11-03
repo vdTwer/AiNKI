@@ -577,6 +577,78 @@ async fn oauth_flow() {
 
 // ----- HTTP: security and the website flows ---------------------------------
 
+/// Moves an account (and its invites) `days` into the past.
+async fn age(app: &App, user_id: i64, days: i64) {
+    let secs = days * 86_400;
+    sqlx::query("UPDATE users SET created_at = created_at - ? WHERE id = ?").bind(secs).bind(user_id).execute(&app.db).await.unwrap();
+    sqlx::query("UPDATE invites SET created_at = created_at - ? WHERE user_id = ?").bind(secs).bind(user_id).execute(&app.db).await.unwrap();
+}
+
+#[tokio::test]
+async fn one_invite_a_week_after_the_first_week() {
+    let app = app().await;
+    let kolja = app.create_user("kolja", "password123", "UTC").await.unwrap();
+    // A new account waits a week.
+    let first = app.invites(&kolja).await.unwrap();
+    assert!(first.new_account);
+    assert_eq!(first.next_at, Some(kolja.created_at + crate::invites::WEEK));
+    assert!(app.create_invite(&kolja).await.is_err());
+
+    age(&app, kolja.id, 8).await;
+    let kolja = app.user(kolja.id).await.unwrap();
+    let invite = app.create_invite(&kolja).await.unwrap();
+    // One a week.
+    assert!(app.create_invite(&kolja).await.is_err());
+    let state = app.invites(&kolja).await.unwrap();
+    assert!(!state.new_account);
+    assert_eq!(state.open.len(), 1);
+    assert!(state.next_at.is_some());
+
+    // Taking an unused link back gives the week back.
+    app.cancel_invite(&kolja, invite.id).await.unwrap();
+    assert!(app.invites(&kolja).await.unwrap().next_at.is_none());
+    let invite = app.create_invite(&kolja).await.unwrap();
+
+    // The link makes one account, which remembers who invited it.
+    let (_, from) = app.open_invite(&invite.token).await.unwrap().unwrap();
+    assert_eq!(from.id, kolja.id);
+    let anna = app.create_account("anna", "password123", "UTC", Some(&invite.token), false).await.unwrap();
+    assert_eq!(anna.invited_by, Some(kolja.id));
+    assert!(app.open_invite(&invite.token).await.unwrap().is_none());
+    assert!(app.create_account("ben", "password123", "UTC", Some(&invite.token), false).await.is_err());
+    assert!(app.find_user("ben").await.is_err());
+    // A used link can't be taken back.
+    assert!(app.cancel_invite(&kolja, invite.id).await.is_err());
+    let state = app.invites(&kolja).await.unwrap();
+    assert_eq!(state.joined.len(), 1);
+    assert!(state.open.is_empty());
+
+    // A week later there is a new one.
+    age(&app, kolja.id, 7).await;
+    assert!(app.create_invite(&kolja).await.is_ok());
+}
+
+#[tokio::test]
+async fn invites_expire_and_admins_have_no_limit() {
+    let app = app().await;
+    let admin = app.create_account("admin", "password123", "UTC", None, true).await.unwrap();
+    let a = app.create_invite(&admin).await.unwrap();
+    let b = app.create_invite(&admin).await.unwrap();
+    sqlx::query("UPDATE invites SET expires_at = ? WHERE id = ?").bind(now() - 1).bind(a.id).execute(&app.db).await.unwrap();
+    assert!(app.open_invite(&a.token).await.unwrap().is_none());
+    assert!(app.create_account("late", "password123", "UTC", Some(&a.token), false).await.is_err());
+    assert!(app.open_invite(&b.token).await.unwrap().is_some());
+    assert!(app.open_invite("not-a-token").await.unwrap().is_none());
+
+    let anna = app.create_account("anna", "password123", "UTC", Some(&b.token), false).await.unwrap();
+    // Only the admin sees the accounts.
+    assert!(app.accounts(&anna).await.is_err());
+    let all = app.accounts(&admin).await.unwrap();
+    assert_eq!(all.len(), 2);
+    assert_eq!(all[1].invited_by, Some(admin.id));
+    assert_eq!(all[0].invites_sent, 2);
+}
+
 mod http {
     use super::*;
     use axum::{
