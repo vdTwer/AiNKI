@@ -586,7 +586,7 @@
     ['Studying', [['Space', 'Show the answer, or Done on a multicard'], ['1', 'Again'], ['3', 'Good'], ['2  4', 'Hard and Easy, when shown'], ['+', 'Ten more seconds on a timed card']]],
     ['Before the answer', [['S', 'Sure'], ['U', 'Not sure'], ['Enter', 'Check a typed answer']]],
     ['Multicards', [['1 – 9', 'Mark an item as remembered']]],
-    ['Anywhere', [['?', 'Show or hide this list'], ['Esc', 'Close']]]
+    ['Anywhere', [['A – Z or /', 'Find anything'], ['?', 'Show or hide this list'], ['Esc', 'Close']]]
   ];
   var sheet = null;
   function keySheet() {
@@ -820,11 +820,142 @@
     });
   }
 
+
+  // ----- quick find ---------------------------------------------------------
+  // A sheet over the page that finds places, decks, lessons and cards as you
+  // type. The server matches fuzzily (/find). It opens from the rail's first
+  // dot, with /, or by simply typing a letter anywhere outside a field; while
+  // studying only / opens it, since letters there answer the card.
+  var finder = null;
+  function findSheet() {
+    if (finder) return finder;
+    var d = document.createElement('dialog');
+    d.className = 'find-sheet';
+    d.setAttribute('aria-label', 'Find');
+    d.innerHTML =
+      '<div class="find-box">' +
+      '<label class="find-field"><span>Go to</span>' +
+      '<input type="search" autocomplete="off" spellcheck="false" role="combobox" aria-expanded="true" aria-controls="find-results" aria-autocomplete="list"></label>' +
+      '<ul class="find-results" id="find-results" role="listbox" aria-label="Results"></ul>' +
+      '<p class="find-none" hidden>Nothing found.</p>' +
+      '</div>';
+    var input = d.querySelector('input');
+    var list = d.querySelector('ul');
+    var none = d.querySelector('.find-none');
+    var active = 0, items = [], timer = 0, ctrl = null, asked = null;
+
+    function mark(i) {
+      if (!items.length) return;
+      active = (i + items.length) % items.length;
+      items.forEach(function (a, n) {
+        a.classList.toggle('on', n === active);
+        a.setAttribute('aria-selected', n === active ? 'true' : 'false');
+      });
+      input.setAttribute('aria-activedescendant', items[active].id);
+      items[active].scrollIntoView({ block: 'nearest' });
+    }
+    function show(results) {
+      list.textContent = '';
+      items = results.map(function (r, n) {
+        var li = document.createElement('li');
+        var a = document.createElement('a');
+        a.href = r.href;
+        a.id = 'find-' + n;
+        a.setAttribute('role', 'option');
+        a.className = 'find-row ' + r.kind;
+        var t = document.createElement('span');
+        t.className = 't';
+        t.textContent = r.title;
+        a.appendChild(t);
+        if (r.sub) {
+          var s = document.createElement('span');
+          s.className = 's';
+          s.textContent = r.sub;
+          a.appendChild(s);
+        }
+        a.addEventListener('pointermove', function () { if (active !== n) mark(n); });
+        li.appendChild(a);
+        list.appendChild(li);
+        return a;
+      });
+      none.hidden = items.length > 0 || !input.value.trim();
+      active = 0;
+      mark(0);
+    }
+    function ask() {
+      var q = input.value.trim();
+      if (q === asked) return;
+      asked = q;
+      if (ctrl) ctrl.abort();
+      ctrl = typeof AbortController === 'function' ? new AbortController() : null;
+      fetch('/find?q=' + encodeURIComponent(q), { credentials: 'same-origin', signal: ctrl ? ctrl.signal : undefined, headers: { Accept: 'application/json' } })
+        .then(function (r) { return r.ok ? r.json() : null; })
+        .then(function (j) { if (j && j.q === input.value.trim()) show(j.results || []); })
+        .catch(function () {});
+    }
+    input.addEventListener('input', function () {
+      clearTimeout(timer);
+      timer = setTimeout(ask, 80);
+    });
+    input.addEventListener('keydown', function (e) {
+      // A search field would only clear itself on Esc; here Esc closes.
+      if (e.key === 'Escape') { e.preventDefault(); d.close(); return; }
+      if (e.key === 'ArrowDown' || (e.key === 'Tab' && !e.shiftKey && items.length)) { e.preventDefault(); mark(active + 1); }
+      else if (e.key === 'ArrowUp' || (e.key === 'Tab' && e.shiftKey && items.length)) { e.preventDefault(); mark(active - 1); }
+      else if (e.key === 'Enter') {
+        e.preventDefault();
+        clearTimeout(timer);
+        if (items[active] && input.value.trim() === asked) items[active].click();
+        else { ask(); }
+      }
+    });
+    // A click beside the box closes the sheet.
+    d.addEventListener('click', function (e) { if (e.target === d || e.target.classList.contains('find-box')) d.close(); });
+    d.addEventListener('close', function () { input.value = ''; asked = null; list.textContent = ''; items = []; none.hidden = true; });
+    d.open_with = function (text) {
+      if (!d.open) d.showModal();
+      input.value = text || '';
+      input.focus();
+      asked = null;
+      ask();
+    };
+    document.body.appendChild(d);
+    finder = d;
+    return d;
+  }
+  function findable() {
+    // Quiet hours block everything; another sheet already has the keys.
+    return !document.querySelector('.sleep-wall') && !document.querySelector('dialog[open]:not(.find-sheet)');
+  }
+  function openFind(text) {
+    if (findable()) findSheet().open_with(text);
+  }
+  document.addEventListener('keydown', function (e) {
+    if (e.defaultPrevented || e.isComposing) return;
+    var t = e.target;
+    if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
+    if ((e.ctrlKey || e.metaKey) && !e.altKey && e.key.toLowerCase() === 'k') { e.preventDefault(); openFind(''); return; }
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+    if (e.key === '/') { e.preventDefault(); openFind(''); return; }
+    // Letters start a search, but not while studying: there they answer.
+    if (e.key.length === 1 && /\p{L}/u.test(e.key) && !document.querySelector('main .study')) {
+      e.preventDefault();
+      openFind(e.key);
+    }
+  });
+  function findDot() {
+    var b = document.querySelector('nav.top .find-dot');
+    if (!b || b.hasAttribute('data-ready')) return;
+    b.setAttribute('data-ready', '');
+    b.addEventListener('click', function () { openFind(''); });
+  }
+
   paint();
   sleepWall();
   login();
   dress(document);
   keysHint(document);
+  findDot();
   document.addEventListener('ainki:page', function (e) { keysHint(e.detail || document); });
   breakTimer(document);
   settings(document);

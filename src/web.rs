@@ -449,6 +449,8 @@ fn page(nav: Option<Nav>, title: &str, user: Option<&User>, page_kind: Option<&s
                 // dots on the left that become icons as the pointer nears.
                 @if user.is_some() {
                     nav.top aria-label="Main" {
+                        // The desktop look: the first dot finds anything (desk.js).
+                        button.find-dot.calm-only type="button" data-label="Find" aria-label="Find" aria-haspopup="dialog" { (nav_icon(ICON_FIND)) }
                         a.brand href="/" data-label="AiNKI" aria-current=[current(Nav::Decks)] { "AiNKI" }
                         a.rail-only href="/" data-label="Decks" aria-current=[current(Nav::Decks)] { (nav_icon(ICON_DECKS)) "Decks" }
                         a href="/study" data-label="Study" aria-current=[current(Nav::Study)] { (nav_icon(ICON_STUDY)) "Study" }
@@ -487,6 +489,7 @@ fn page(nav: Option<Nav>, title: &str, user: Option<&User>, page_kind: Option<&s
 // them at 26px; in a page, next to a word, at 20px.
 const ICON_DECKS: &str = r#"<rect x="4" y="9.5" width="16" height="10.5" rx="2"/><path d="M6.5 6.5h11M9 3.5h6"/>"#;
 const ICON_STUDY: &str = r#"<rect x="5" y="3.5" width="14" height="17" rx="2.5"/><path d="M9 10.5l2 2 4-4"/><path d="M9 16.5h6"/>"#;
+const ICON_FIND: &str = r#"<circle cx="10.5" cy="10.5" r="5.5"/><path d="M14.5 14.5l5 5"/>"#;
 const ICON_ADD: &str = r#"<path d="M12 5v14M5 12h14"/>"#;
 const ICON_STATS: &str = r#"<path d="M5 20V13M12 20V5M19 20v-9"/>"#;
 const ICON_LEARN: &str = r#"<path d="M12 6.5C10 5 7.5 4.5 4.5 4.5v13.5c3 0 5.5.5 7.5 2 2-1.5 4.5-2 7.5-2V4.5c-3 0-5.5.5-7.5 2z"/><path d="M12 6.5v13.5"/>"#;
