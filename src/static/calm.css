@@ -338,6 +338,7 @@ html.calm .wash i > b {
   border-radius: 42% 58% 63% 37% / 45% 40% 60% 55%;
   filter: blur(22px) url(#wet);
 }
+html.calm .wash i > canvas { position: absolute; left: -30%; top: -40%; width: 160%; height: 180%; }
 @keyframes wash-in { from { opacity: 0; transform: scale(.94); } to { opacity: 1; transform: none; } }
 /* The stretch along one side or the other stands in for the change of
    shape: a cloud's outline can't change on the GPU, its proportions can. */
