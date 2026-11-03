@@ -575,8 +575,6 @@ async fn oauth_flow() {
         .is_err());
 }
 
-// ----- HTTP: security and the website flows ---------------------------------
-
 /// Moves an account (and its invites) `days` into the past.
 async fn age(app: &App, user_id: i64, days: i64) {
     let secs = days * 86_400;
@@ -648,6 +646,8 @@ async fn invites_expire_and_admins_have_no_limit() {
     assert_eq!(all[1].invited_by, Some(admin.id));
     assert_eq!(all[0].invites_sent, 2);
 }
+
+// ----- HTTP: security and the website flows ---------------------------------
 
 mod http {
     use super::*;
