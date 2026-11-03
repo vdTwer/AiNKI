@@ -653,6 +653,8 @@ async fn invites_expire_and_admins_have_no_limit() {
 // ----- HTTP: security and the website flows ---------------------------------
 
 mod http {
+    mod mcp_tools;
+
     use super::*;
     use axum::{
         body::Body,
