@@ -24,7 +24,7 @@ use crate::{
     auth::{Access, User},
     coach,
     error::AppError,
-    fuzzy, import, insight, lessons, markdown, mcp, media, multi::{self, Piece, Split}, now, oauth, presets,
+    fuzzy, import, insight, invites, lessons, markdown, mcp, media, multi::{self, Piece, Split}, now, oauth, presets,
     security::{self, ClientIp, Flash},
     scheduler::{self, CardState, Rating},
     study,
@@ -109,6 +109,10 @@ pub fn router(app: AppState) -> Router {
         .route("/login", get(login_page).post(login))
         .route("/signup", get(signup_page).post(signup))
         .route("/logout", post(logout))
+        .route("/invites", get(invites_page).post(invite_create))
+        .route("/invites/{id}/cancel", post(invite_cancel))
+        .route("/invite/{token}", get(invite_page).post(invite_accept))
+        .route("/admin", get(admin_page))
         .route("/oauth/authorize", get(oauth::authorize_page).post(oauth::authorize_submit))
         .route("/study", get(study))
         .route("/study/answer", post(study_answer))
@@ -206,6 +210,11 @@ impl axum::extract::OptionalFromRequestParts<AppState> for WebUser {
     }
 }
 
+/// Where the admin account may go: its panel and making invites.
+fn admin_may(path: &str) -> bool {
+    path == "/admin" || path == "/invites" || path.starts_with("/invites/")
+}
+
 /// The login page, coming back here afterwards when this was a page view.
 fn login_url(parts: &Parts) -> String {
     let here = parts.uri.path_and_query().map(|p| p.as_str()).unwrap_or("/");
@@ -222,6 +231,8 @@ impl FromRequestParts<AppState> for WebUser {
 
     async fn from_request_parts(parts: &mut Parts, app: &AppState) -> Result<Self, Self::Rejection> {
         match session_from_parts(parts, app).await {
+            // The admin account has no decks: it sees the admin panel only.
+            Some(user) if user.is_admin && !admin_may(parts.uri.path()) => Err(redirect("/admin")),
             Some(user) => Ok(WebUser(user)),
             None => Err(Redirect::to(&login_url(parts)).into_response()),
         }
@@ -449,7 +460,7 @@ fn page(nav: Option<Nav>, title: &str, user: Option<&User>, page_kind: Option<&s
             body data-user=[user.map(|u| u.id)] data-page=[page_kind] {
                 // On phones a bar across the top; in the Calm look one dot in
                 // the top right corner that opens into a row of icons on hover.
-                @if user.is_some() {
+                @if user.is_some_and(|u| !u.is_admin) {
                     nav.top aria-label="Main" {
                         // The desktop look: the first icon finds anything (desk.js).
                         button.find-dot.calm-only type="button" data-label="Find" aria-label="Find" aria-haspopup="dialog" { (nav_icon(ICON_FIND)) }
@@ -475,7 +486,7 @@ fn page(nav: Option<Nav>, title: &str, user: Option<&User>, page_kind: Option<&s
                 }
                 main {
                     // The desktop look: a ? in the corner that opens the key sheet.
-                    @if user.is_some() {
+                    @if user.is_some_and(|u| !u.is_admin) {
                         button.keys-button.calm-only type="button" aria-label="Keys" data-label="Keys" { "?" }
                     }
                     (body)
@@ -805,6 +816,317 @@ async fn logout(State(app): State<AppState>, jar: CookieJar) -> Response {
     (jar.remove(Cookie::build(name).path("/")), Redirect::to("/login")).into_response()
 }
 
+// ----- invites ------------------------------------------------------------
+
+/// "tomorrow", or "on Friday, 18 December".
+fn on_day(clock: &scheduler::Clock, ts: i64) -> String {
+    match format::day(clock, clock.date_of(ts)) {
+        d if d == "today" || d == "tomorrow" => d,
+        d => format!("on {d}"),
+    }
+}
+
+/// The open links, each to copy or take back, and when the next one comes.
+fn invite_links(inv: &invites::Invites, base: &str, clock: &scheduler::Clock) -> Markup {
+    html! {
+        @for i in &inv.open {
+            div.invite-link {
+                pre.copy id=(format!("invite-{}", i.id)) { (base) "/invite/" (i.token) }
+                div.invite-meta.muted.small {
+                    span.grow { "Works once, until " (format::day(clock, clock.date_of(i.expires_at))) "." }
+                    button.link type="button" data-copy=(format!("invite-{}", i.id)) hidden { "Copy" }
+                    form.inline method="post" action=(format!("/invites/{}/cancel", i.id)) {
+                        button.link type="submit" { "Take it back" }
+                    }
+                }
+            }
+        }
+        @match inv.next_at {
+            None => form method="post" action="/invites" {
+                button.btn.primary type="submit" { (if inv.open.is_empty() { "Make an invite link" } else { "Make another link" }) }
+            },
+            Some(t) if inv.new_account => p.muted { "You can invite someone " (on_day(clock, t).replace("on ", "from ")) ", a week after you joined." },
+            Some(t) => p.muted { "Your next invite is ready " (on_day(clock, t)) "." },
+        }
+    }
+}
+
+async fn invites_page(State(app): State<AppState>, user: WebUser, headers: HeaderMap, Flash(msg): Flash) -> WebResult {
+    let u = &user.0;
+    let inv = app.invites(u).await?;
+    let clock = u.clock();
+    let base = oauth::base_url(&app, &headers);
+    Ok(layout_in(
+        Nav::Settings,
+        "Invite",
+        Some(u),
+        html! {
+            (flash(&msg))
+            (parent("/settings", "Settings"))
+            h1 { "Invite someone" }
+            p { "AiNKI grows by invitation. Once a week you can send one person a link. It works once, for 30 days." }
+            (invite_links(&inv, &base, &clock))
+            @if !inv.joined.is_empty() {
+                h2 { "Joined through you" }
+                ul.list {
+                    @for (who, at) in &inv.joined {
+                        li.item { span.grow { (who.handle()) } span.muted.small { (capitalize(&format::day(&clock, clock.date_of(*at)))) } }
+                    }
+                }
+            }
+        },
+    )
+    .into_response())
+}
+
+async fn invite_create(State(app): State<AppState>, user: WebUser) -> WebResult {
+    let to = if user.0.is_admin { "/admin" } else { "/invites" };
+    let made = app.create_invite(&user.0).await.map(|_| redirect(to));
+    or_back(to, made)
+}
+
+async fn invite_cancel(State(app): State<AppState>, user: WebUser, Path(id): Path<i64>) -> WebResult {
+    let to = if user.0.is_admin { "/admin" } else { "/invites" };
+    let done = app.cancel_invite(&user.0, id).await.map(|_| redirect_msg(to, "The link no longer works."));
+    or_back(to, done)
+}
+
+/// The page behind an invite link: the first thing a new person sees.
+/// Quiet on purpose: who invited them, one sentence on what AiNKI is, a
+/// name and a password, and one button.
+fn invite_form(token: &str, from: &User, error: Option<&str>, name: &str) -> Markup {
+    layout(
+        "You're invited",
+        None,
+        html! {
+            h1.greeting.invited {
+                @if from.is_admin { "You're invited." } @else { (capitalize(&from.username)) " invited you." }
+            }
+            p.lede {
+                "AiNKI is a quiet place to learn things by heart. "
+                "Each card comes back just before you would forget it, so a few minutes a day are enough."
+            }
+            @if let Some(e) = error { p.notice role="alert" { (e) } }
+            form.invite method="post" action=(format!("/invite/{token}")) {
+                label {
+                    "Choose a name"
+                    input type="text" name="username" value=(name) required minlength="2" maxlength="32"
+                        autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false";
+                }
+                label {
+                    "Choose a password"
+                    input type="password" name="password" required minlength="8" autocomplete="new-password";
+                }
+                input type="hidden" name="timezone" id="tz" value="";
+                button.btn.primary type="submit" { "Begin" }
+            }
+            p.small.muted.after { "Already have an account? " a href="/login" { "Log in" } }
+        },
+    )
+}
+
+/// A link that was used, taken back or is too old.
+fn invite_gone() -> Response {
+    (
+        StatusCode::NOT_FOUND,
+        layout(
+            "Invite",
+            None,
+            html! {
+                h1.greeting.invited { "This link no longer works." }
+                p.lede { "It has been used, taken back, or is older than 30 days. Ask whoever sent it for a new one." }
+                p.small.muted.after { "Already have an account? " a href="/login" { "Log in" } }
+            },
+        ),
+    )
+        .into_response()
+}
+
+async fn invite_page(State(app): State<AppState>, user: Option<WebUser>, Path(token): Path<String>) -> WebResult {
+    let Some((_, from)) = app.open_invite(&token).await? else {
+        return Ok(invite_gone());
+    };
+    // Someone with an account opened a link meant for someone new (most
+    // likely the one who made it, to see what it looks like): show the page,
+    // but signing up would log them out, so say so.
+    let note = user.map(|u| format!("You're logged in as {}. This link is for someone new.", u.0.handle()));
+    Ok(invite_form(&token, &from, note.as_deref(), "").into_response())
+}
+
+async fn invite_accept(
+    State(app): State<AppState>,
+    ClientIp(ip): ClientIp,
+    jar: CookieJar,
+    Path(token): Path<String>,
+    Form(f): Form<LoginForm>,
+) -> Response {
+    if app.limiter.check_and_hit(&format!("signup-ip:{ip}"), 10, Duration::from_secs(3600)) {
+        return security::too_many_requests(3600);
+    }
+    let from = match app.open_invite(&token).await {
+        Ok(Some((_, from))) => from,
+        Ok(None) => return invite_gone(),
+        Err(e) => return WebError(e).into_response(),
+    };
+    let result = async {
+        let user = app.create_account(&f.username, &f.password, &f.timezone, Some(&token), false).await?;
+        let session = app.create_session(user.id).await?;
+        Ok::<_, AppError>((user, session))
+    }
+    .await;
+    match result {
+        Ok((user, session)) => {
+            let welcome = format!("Your name here is {}. Use it, with your password, to log in.", user.handle());
+            (jar.add(session_cookie(&app, session)).add(flash_cookie(&welcome)), Redirect::to("/")).into_response()
+        }
+        Err(e) => form_again(invite_form(&token, &from, Some(&capitalize(&e.to_string())), f.username.trim())),
+    }
+}
+
+// ----- admin --------------------------------------------------------------
+
+/// Who invited whom, drawn as a tree that grows to the right: each account
+/// a dot with its name, the ones it invited on a branch below it. Accounts
+/// nobody invited (the first ones, the admin) are the roots. A filled dot
+/// studied in the last 30 days; a ring didn't.
+fn invite_graph(accounts: &[invites::Account]) -> Markup {
+    const ROW: f64 = 34.0;
+    const INDENT: f64 = 30.0;
+    const TOP: f64 = 18.0;
+    const LEFT: f64 = 8.0;
+    let ids: std::collections::HashSet<i64> = accounts.iter().map(|a| a.id).collect();
+    let mut children: HashMap<Option<i64>, Vec<&invites::Account>> = HashMap::new();
+    for a in accounts {
+        // An inviter that is gone makes its people roots.
+        let parent = a.invited_by.filter(|p| ids.contains(p) && *p != a.id);
+        children.entry(parent).or_default().push(a);
+    }
+    // Depth first: each account takes the next row.
+    struct Node<'a> { a: &'a invites::Account, depth: usize, row: usize, parent_row: Option<usize> }
+    let mut nodes: Vec<Node> = Vec::new();
+    let mut stack: Vec<(&invites::Account, usize, Option<usize>)> =
+        children.get(&None).map(|r| r.iter().rev().map(|a| (*a, 0, None)).collect()).unwrap_or_default();
+    let mut seen = std::collections::HashSet::new();
+    while let Some((a, depth, parent_row)) = stack.pop() {
+        if !seen.insert(a.id) {
+            continue;
+        }
+        let row = nodes.len();
+        nodes.push(Node { a, depth, row, parent_row });
+        if let Some(kids) = children.get(&Some(a.id)) {
+            for k in kids.iter().rev() {
+                stack.push((*k, depth + 1, Some(row)));
+            }
+        }
+    }
+    let x = |d: usize| LEFT + d as f64 * INDENT;
+    let y = |r: usize| TOP + r as f64 * ROW;
+    let width = nodes
+        .iter()
+        .map(|n| x(n.depth) + 16.0 + (n.a.handle().len() as f64) * 8.6 + 110.0)
+        .fold(320.0_f64, f64::max)
+        .ceil();
+    let height = (y(nodes.len().max(1)) - ROW + TOP).ceil();
+    let active = now() - 30 * 86_400;
+    html! {
+        div.graph-wrap {
+            svg.invite-graph width=(width) height=(height) viewBox=(format!("0 0 {width} {height}")) role="img"
+                aria-label=(format!("Invitation graph of {} accounts", nodes.len())) {
+                @for n in &nodes {
+                    @if let Some(pr) = n.parent_row {
+                        // Down from the inviter's dot, then a soft turn right to this one.
+                        @let (px, py, cy, cx) = (x(n.depth - 1), y(pr) + 6.0, y(n.row), x(n.depth) - 6.0);
+                        path.edge d=(format!("M{px} {py}V{:.1}Q{px} {cy} {:.1} {cy}H{cx}", cy - 9.0, px + 9.0)) {}
+                    }
+                }
+                @for n in &nodes {
+                    @let (cx, cy) = (x(n.depth), y(n.row));
+                    @let studied = n.a.last_review.is_some_and(|t| t >= active);
+                    g.node.admin[n.a.is_admin] {
+                        circle.dot.idle[!studied && !n.a.is_admin] cx=(cx) cy=(cy) r="4.5" {}
+                        text x=(cx + 14.0) y=(cy + 5.0) {
+                            tspan.name { (n.a.username) }
+                            @if n.a.is_admin { tspan.tag { " (admin)" } } @else { tspan.tag { "#" (format!("{:04}", n.a.discriminator)) } }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// "Today", "Yesterday", "24 Sep", "24 Sep 2025": for tables.
+fn short_date(clock: &scheduler::Clock, ts: i64) -> String {
+    let d = clock.date_of(ts);
+    match (clock.today() - d).num_days() {
+        0 => "Today".into(),
+        1 => "Yesterday".into(),
+        _ if chrono::Datelike::year(&d) == chrono::Datelike::year(&clock.today()) => d.format("%-d %b").to_string(),
+        _ => d.format("%-d %b %Y").to_string(),
+    }
+}
+
+async fn admin_page(State(app): State<AppState>, user: WebUser, headers: HeaderMap, Flash(msg): Flash) -> WebResult {
+    let u = &user.0;
+    if !u.is_admin {
+        return Err(AppError::NotFound.into());
+    }
+    let accounts = app.accounts(u).await?;
+    let inv = app.invites(u).await?;
+    let clock = u.clock();
+    let base = oauth::base_url(&app, &headers);
+    let names: HashMap<i64, String> =
+        accounts.iter().map(|a| (a.id, if a.is_admin { "admin".to_string() } else { a.handle() })).collect();
+    let people: Vec<&invites::Account> = accounts.iter().filter(|a| !a.is_admin).collect();
+    let month = now() - 30 * 86_400;
+    let new_this_month = people.iter().filter(|a| a.created_at >= month).count() as i64;
+    let studying = people.iter().filter(|a| a.last_review.is_some_and(|t| t >= month)).count() as i64;
+    Ok(page(
+        None,
+        "Admin",
+        Some(u),
+        Some("admin"),
+        html! {
+            (flash(&msg))
+            h1 { "Accounts" }
+            p.facts {
+                (count(people.len() as i64, "account")) " · "
+                (format::number(new_this_month)) " joined in the last 30 days · "
+                (format::number(studying)) " studied in that time"
+            }
+            h2 { "Who invited whom" }
+            @if accounts.is_empty() { p.muted { "No accounts yet." } } @else { (invite_graph(&accounts)) }
+            p.muted.small { "A filled dot studied in the last 30 days; a ring didn't." }
+            h2 { "All accounts" }
+            div.table-wrap {
+                table.accounts {
+                    thead { tr {
+                        th { "Account" } th { "Joined" } th { "Invited by" }
+                        th.num { "Cards" } th.num title="Reviews in the last 30 days" { "Reviews" } th.num { "Last studied" }
+                    } }
+                    tbody {
+                        @for a in &people {
+                            tr {
+                                td { (a.handle()) }
+                                td { (short_date(&clock, a.created_at)) }
+                                td { (a.invited_by.and_then(|i| names.get(&i)).map(String::as_str).unwrap_or(format::NONE)) }
+                                td.num { (format::number(a.cards)) }
+                                td.num { (format::number(a.reviews_30d)) }
+                                td.num { (a.last_review.map(|t| short_date(&clock, t)).unwrap_or_else(|| "Never".into())) }
+                            }
+                        }
+                    }
+                }
+            }
+            h2 { "Invite" }
+            p { "The admin account can make as many links as it likes. Each works once, for 30 days." }
+            (invite_links(&inv, &base, &clock))
+            form.logout method="post" action="/logout" { button.link type="submit" { "Log out" } }
+        },
+    )
+    .into_response())
+}
+
 // ----- home ---------------------------------------------------------------
 
 async fn home(State(app): State<AppState>, user: WebUser, Flash(msg): Flash) -> WebResult {
@@ -849,7 +1171,7 @@ async fn home(State(app): State<AppState>, user: WebUser, Flash(msg): Flash) -> 
                 } @else if !decks.is_empty() {
                     h1.all-done { span.simple-only { "All done for today" } span.calm-only { "All done." } }
                 } @else {
-                    h1 { "Welcome to AiNKI" }
+                    h1 { span.simple-only { "Welcome to AiNKI" } span.calm-only { "Welcome, " (capitalize(&user.0.username)) "." } }
                 }
                 @if !facts.is_empty() { p.facts { (facts.join(" · ")) } }
                 @if let Some(t) = quiet {
@@ -896,7 +1218,20 @@ async fn home(State(app): State<AppState>, user: WebUser, Flash(msg): Flash) -> 
                 p.muted.small { "Accepting gives you your own copy. Your progress is yours; later changes by the sender don't carry over." }
             }
             @if decks.is_empty() {
-                p { "No decks yet. Create one, or bring your Anki decks along." }
+                p.simple-only { "No decks yet. Create one, or bring your Anki decks along." }
+                // The desktop look: someone new gets three quiet ways in.
+                div.calm-only.first-steps {
+                    p.lede { "Three ways to begin." }
+                    ul.list.links {
+                        @for (href, name, sub) in [
+                            ("/learn", "Read a short lesson", "How memory works, in a few minutes. Each lesson can become your first deck."),
+                            ("/decks/new", "Make a deck", "Write your own cards, one fact on each."),
+                            ("/import", "Bring your Anki decks", "From an .apkg or a CSV file."),
+                        ] {
+                            li { a.row href=(href) { span.grow { span { (name) } span.sub.muted.small { (sub) } } span.chev aria-hidden="true" { "›" } } }
+                        }
+                    }
+                }
             } @else {
                 div.table-head aria-hidden="true" {
                     span.grow { "Decks" }
@@ -936,7 +1271,7 @@ async fn home(State(app): State<AppState>, user: WebUser, Flash(msg): Flash) -> 
                 (icon_btn("/import", ICON_IMPORT, "Import"))
             }
             // The desktop look: a plus for a new deck, Import in words.
-            p.desk-actions.calm-only {
+            p.desk-actions.calm-only hidden[decks.is_empty()] {
                 a.add-deck href="/decks/new" aria-label="New deck" data-label="New deck" { (icon(ICON_ADD, PAGE_ICON)) }
                 a href="/import" { "Import deck" }
             }
@@ -3472,6 +3807,7 @@ async fn settings_page(State(app): State<AppState>, user: WebUser, Flash(msg): F
                     ("/access", "Agent access", "Connect Claude and other agents"),
                     ("/import", "Import", "From Anki or a CSV file"),
                     ("/learn", "Learn", "How memory and scheduling work, and how to write good cards"),
+                    ("/invites", "Invite someone", "One person a week"),
                 ] {
                     li { a.row href=(href) { span.grow { span { (name) } span.sub.muted.small { (sub) } } span.chev aria-hidden="true" { "›" } } }
                 }

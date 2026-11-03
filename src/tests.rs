@@ -575,6 +575,78 @@ async fn oauth_flow() {
         .is_err());
 }
 
+/// Moves an account (and its invites) `days` into the past.
+async fn age(app: &App, user_id: i64, days: i64) {
+    let secs = days * 86_400;
+    sqlx::query("UPDATE users SET created_at = created_at - ? WHERE id = ?").bind(secs).bind(user_id).execute(&app.db).await.unwrap();
+    sqlx::query("UPDATE invites SET created_at = created_at - ? WHERE user_id = ?").bind(secs).bind(user_id).execute(&app.db).await.unwrap();
+}
+
+#[tokio::test]
+async fn one_invite_a_week_after_the_first_week() {
+    let app = app().await;
+    let kolja = app.create_user("kolja", "password123", "UTC").await.unwrap();
+    // A new account waits a week.
+    let first = app.invites(&kolja).await.unwrap();
+    assert!(first.new_account);
+    assert_eq!(first.next_at, Some(kolja.created_at + crate::invites::WEEK));
+    assert!(app.create_invite(&kolja).await.is_err());
+
+    age(&app, kolja.id, 8).await;
+    let kolja = app.user(kolja.id).await.unwrap();
+    let invite = app.create_invite(&kolja).await.unwrap();
+    // One a week.
+    assert!(app.create_invite(&kolja).await.is_err());
+    let state = app.invites(&kolja).await.unwrap();
+    assert!(!state.new_account);
+    assert_eq!(state.open.len(), 1);
+    assert!(state.next_at.is_some());
+
+    // Taking an unused link back gives the week back.
+    app.cancel_invite(&kolja, invite.id).await.unwrap();
+    assert!(app.invites(&kolja).await.unwrap().next_at.is_none());
+    let invite = app.create_invite(&kolja).await.unwrap();
+
+    // The link makes one account, which remembers who invited it.
+    let (_, from) = app.open_invite(&invite.token).await.unwrap().unwrap();
+    assert_eq!(from.id, kolja.id);
+    let anna = app.create_account("anna", "password123", "UTC", Some(&invite.token), false).await.unwrap();
+    assert_eq!(anna.invited_by, Some(kolja.id));
+    assert!(app.open_invite(&invite.token).await.unwrap().is_none());
+    assert!(app.create_account("ben", "password123", "UTC", Some(&invite.token), false).await.is_err());
+    assert!(app.find_user("ben").await.is_err());
+    // A used link can't be taken back.
+    assert!(app.cancel_invite(&kolja, invite.id).await.is_err());
+    let state = app.invites(&kolja).await.unwrap();
+    assert_eq!(state.joined.len(), 1);
+    assert!(state.open.is_empty());
+
+    // A week later there is a new one.
+    age(&app, kolja.id, 7).await;
+    assert!(app.create_invite(&kolja).await.is_ok());
+}
+
+#[tokio::test]
+async fn invites_expire_and_admins_have_no_limit() {
+    let app = app().await;
+    let admin = app.create_account("admin", "password123", "UTC", None, true).await.unwrap();
+    let a = app.create_invite(&admin).await.unwrap();
+    let b = app.create_invite(&admin).await.unwrap();
+    sqlx::query("UPDATE invites SET expires_at = ? WHERE id = ?").bind(now() - 1).bind(a.id).execute(&app.db).await.unwrap();
+    assert!(app.open_invite(&a.token).await.unwrap().is_none());
+    assert!(app.create_account("late", "password123", "UTC", Some(&a.token), false).await.is_err());
+    assert!(app.open_invite(&b.token).await.unwrap().is_some());
+    assert!(app.open_invite("not-a-token").await.unwrap().is_none());
+
+    let anna = app.create_account("anna", "password123", "UTC", Some(&b.token), false).await.unwrap();
+    // Only the admin sees the accounts.
+    assert!(app.accounts(&anna).await.is_err());
+    let all = app.accounts(&admin).await.unwrap();
+    assert_eq!(all.len(), 2);
+    assert_eq!(all[1].invited_by, Some(admin.id));
+    assert_eq!(all[0].invites_sent, 2);
+}
+
 // ----- HTTP: security and the website flows ---------------------------------
 
 mod http {
@@ -1026,6 +1098,64 @@ mod http {
         let second = send(&app, signup("stranger")).await;
         assert_eq!(second.headers()[header::LOCATION], "/login");
         assert!(app.find_user("stranger").await.is_err());
+    }
+
+    #[tokio::test]
+    async fn invite_link_makes_an_account_once() {
+        let app = app_with(|c| c.allow_signup = false).await;
+        let kolja = app.create_user("kolja", "password123", "UTC").await.unwrap();
+        age(&app, kolja.id, 8).await;
+        let cookie = login_cookie(&app, "kolja").await;
+        let made = submit(&app, &cookie, "/invites", "").await;
+        assert_eq!(made.headers()[header::LOCATION], "/invites");
+        let token = app.invites(&app.user(kolja.id).await.unwrap()).await.unwrap().open[0].token.clone();
+        let path = format!("/invite/{token}");
+
+        // The page says who sent it.
+        let page = send(&app, Request::get(&path).body(Body::empty()).unwrap()).await;
+        assert_eq!(page.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(page.into_body(), usize::MAX).await.unwrap();
+        assert!(String::from_utf8_lossy(&body).contains("Kolja invited you."));
+
+        // A bad password keeps the link working.
+        let join = |name: &str, pw: &str| form(&path, "").body(Body::from(format!("username={name}&password={pw}"))).unwrap();
+        assert_eq!(send(&app, join("anna", "short")).await.status(), StatusCode::BAD_REQUEST);
+        let ok = send(&app, join("anna", "password123")).await;
+        assert_eq!(ok.headers()[header::LOCATION], "/");
+        assert!(ok.headers().get_all(header::SET_COOKIE).iter().any(|c| c.to_str().unwrap().contains("ainki_session=")));
+        assert_eq!(app.find_user("anna").await.unwrap().invited_by, Some(kolja.id));
+
+        // Used up: a second try gets the "no longer works" page.
+        let again = send(&app, join("ben", "password123")).await;
+        assert_eq!(again.status(), StatusCode::NOT_FOUND);
+        assert!(app.find_user("ben").await.is_err());
+        // Signing up without a link stays closed.
+        let open = send(&app, form("/signup", "").body(Body::from("username=ben&password=password123")).unwrap()).await;
+        assert_eq!(open.headers()[header::LOCATION], "/login");
+    }
+
+    #[tokio::test]
+    async fn the_admin_account_sees_only_the_admin_panel() {
+        let app = app().await;
+        app.create_account("admin", "password123", "UTC", None, true).await.unwrap();
+        user(&app, "kolja").await;
+        let admin = login_cookie(&app, "admin").await;
+        let get = |path: &str, cookie: &str| Request::get(path).header(header::COOKIE, cookie).body(Body::empty()).unwrap();
+        for path in ["/", "/settings", "/decks/new", "/study"] {
+            let res = send(&app, get(path, &admin)).await;
+            assert_eq!(res.headers()[header::LOCATION], "/admin", "{path}");
+        }
+        let panel = send(&app, get("/admin", &admin)).await;
+        assert_eq!(panel.status(), StatusCode::OK);
+        let body = String::from_utf8_lossy(&axum::body::to_bytes(panel.into_body(), usize::MAX).await.unwrap()).to_string();
+        assert!(body.contains("invite-graph") && body.contains("kolja#"));
+        assert!(!body.contains("nav class=\"top\""));
+        // The admin invites without waiting.
+        let made = submit(&app, &admin, "/invites", "").await;
+        assert_eq!(made.headers()[header::LOCATION], "/admin");
+        // Nobody else finds the panel.
+        let kolja = login_cookie(&app, "kolja").await;
+        assert_eq!(send(&app, get("/admin", &kolja)).await.status(), StatusCode::NOT_FOUND);
     }
 
     #[tokio::test]

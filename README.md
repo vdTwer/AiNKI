@@ -20,7 +20,7 @@ cd AiNKI
 docker compose up -d
 ```
 
-Open <http://localhost:8080> and create your account. The first account can always sign up; after that signup is closed unless you set `AINKI_ALLOW_SIGNUP=true` (or create accounts with `ainki create-user`, see below). Data lives in the `ainki-data` Docker volume.
+Open <http://localhost:8080> and create your account. The first account can always sign up; after that, new people join through invite links (Settings → Invite someone), unless you set `AINKI_ALLOW_SIGNUP=true`. Data lives in the `ainki-data` Docker volume.
 
 AiNKI listens on `127.0.0.1:8080` only, so it is reachable from this machine but not directly from the network. Put a reverse proxy with HTTPS in front of it.
 
@@ -49,15 +49,25 @@ All optional, in `.env`:
 | Variable | Default | Meaning |
 | --- | --- | --- |
 | `AINKI_PUBLIC_URL` | (from request) | Your public address, e.g. `https://cards.example.com`. Needed for connecting Claude (OAuth issuer and MCP URL); also turns on Secure cookies and HSTS. |
-| `AINKI_ALLOW_SIGNUP` | `false` | Let anyone create an account. The first account can always sign up. |
+| `AINKI_ALLOW_SIGNUP` | `false` | Let anyone create an account without an invite. The first account can always sign up. |
 | `AINKI_TIMEZONE` | `UTC` | Default timezone for new accounts. Each user can change theirs. |
 | `AINKI_PORT` | `8080` | Port on the host. |
 | `AINKI_LISTEN` | `127.0.0.1` | Host address to listen on. `0.0.0.0` exposes AiNKI without a proxy (plain HTTP, not recommended). |
 | `AINKI_SECURE_COOKIES` | `false` | Force Secure cookies even without an `https://` public URL. |
 
+### Invites and the admin account
+
+Every account can make one invite link a week, starting a week after it joined. A link works once, for 30 days, and can be taken back while unused.
+
+The admin account is separate from your own. It has no decks; logging in shows only the admin panel: who invited whom, and an overview of all accounts. It can make invite links without a limit. Create it once:
+
+```sh
+docker compose exec ainki ainki create-admin admin 'a-long-password'
+```
+
 ### Admin commands
 
-There's no email, so accounts and password resets are done by the admin:
+There's no email, so password resets are done on the server:
 
 ```sh
 docker compose exec ainki ainki create-user anna 'initial-password'

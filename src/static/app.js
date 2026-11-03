@@ -31,6 +31,19 @@
     try { tz.value = Intl.DateTimeFormat().resolvedOptions().timeZone; } catch (e) {}
   }
 
+  // Invite links: a Copy button, where the browser lets us copy.
+  Array.prototype.forEach.call(document.querySelectorAll('button[data-copy]'), function (b) {
+    var from = document.getElementById(b.getAttribute('data-copy'));
+    if (!from || !navigator.clipboard) return;
+    b.hidden = false;
+    b.addEventListener('click', function () {
+      navigator.clipboard.writeText(from.textContent.trim()).then(function () {
+        b.textContent = 'Copied';
+        setTimeout(function () { b.textContent = 'Copy'; }, 1600);
+      });
+    });
+  });
+
   // Card form: only show the new deck name when "New deck…" is picked.
   var deckSelect = document.querySelector('[data-new-deck-select]');
   var newDeckField = document.getElementById('new-deck-field');

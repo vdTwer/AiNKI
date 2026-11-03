@@ -50,6 +50,10 @@ pub struct User {
     pub catch_up_reviews: i64,
     /// Ask "sure or not?" before showing the answer.
     pub confidence_check: bool,
+    /// The account whose invite link made this one, if any.
+    pub invited_by: Option<i64>,
+    /// The admin account: sees only the admin panel (see `invites`).
+    pub is_admin: bool,
 }
 
 impl User {
@@ -242,6 +246,19 @@ pub fn parse_handle(handle: &str) -> (String, Option<i64>) {
 
 impl App {
     pub async fn create_user(&self, username: &str, password: &str, timezone: &str) -> Result<User> {
+        self.create_account(username, password, timezone, None, false).await
+    }
+
+    /// A new account. With an invite token, the invite is used up in the
+    /// same transaction, so one link can't make two accounts.
+    pub async fn create_account(
+        &self,
+        username: &str,
+        password: &str,
+        timezone: &str,
+        invite: Option<&str>,
+        admin: bool,
+    ) -> Result<User> {
         let username = username.trim();
         validate_username(username)?;
         validate_password(password)?;
@@ -272,17 +289,41 @@ impl App {
         };
 
         let mut tx = self.db.begin().await?;
+        let claimed: Option<(i64, i64)> = match invite {
+            Some(token) => {
+                let row = sqlx::query_as(
+                    "UPDATE invites SET used_at = ? WHERE token = ? AND used_at IS NULL AND expires_at > ?
+                     RETURNING id, user_id",
+                )
+                .bind(now())
+                .bind(token)
+                .bind(now())
+                .fetch_optional(&mut *tx)
+                .await?;
+                Some(row.ok_or_else(|| AppError::bad("this invite has been used or has expired"))?)
+            }
+            None => None,
+        };
         let id: i64 = sqlx::query_scalar(
-            "INSERT INTO users (username, discriminator, password_hash, timezone, created_at)
-             VALUES (?, ?, ?, ?, ?) RETURNING id",
+            "INSERT INTO users (username, discriminator, password_hash, timezone, created_at, invited_by, is_admin)
+             VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING id",
         )
         .bind(username)
         .bind(discriminator)
         .bind(&hash)
         .bind(&tz)
         .bind(now())
+        .bind(claimed.map(|c| c.1))
+        .bind(admin)
         .fetch_one(&mut *tx)
         .await?;
+        if let Some((invite_id, _)) = claimed {
+            sqlx::query("UPDATE invites SET used_by = ? WHERE id = ?")
+                .bind(id)
+                .bind(invite_id)
+                .execute(&mut *tx)
+                .await?;
+        }
         for t in presets::TEMPLATES {
             sqlx::query(
                 "INSERT INTO presets (user_id, name, description, desired_retention, new_per_day,
