@@ -16,14 +16,14 @@ use axum_extra::extract::{
     cookie::{Cookie, CookieJar, SameSite},
 };
 use maud::{DOCTYPE, Markup, PreEscaped, html};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use crate::{
     App, AppState,
     auth::{Access, User},
     coach,
     error::AppError,
-    import, insight, lessons, markdown, mcp, media, multi::{self, Piece, Split}, now, oauth, presets,
+    fuzzy, import, insight, lessons, markdown, mcp, media, multi::{self, Piece, Split}, now, oauth, presets,
     security::{self, ClientIp, Flash},
     scheduler::{self, CardState, Rating},
     study,
@@ -147,6 +147,7 @@ pub fn router(app: AppState) -> Router {
         .route("/media/{id}", get(media_file))
         .layer(small)
         .route("/cards/preview", post(card_preview_json))
+        .route("/find", get(find_json))
         .route("/cards/new", get(card_new_page).post(card_create).layer(card_upload))
         .route("/cards/{id}", get(card_page).post(card_update).layer(card_upload))
         .route(
@@ -1419,6 +1420,118 @@ async fn card_preview_json(State(app): State<AppState>, user: WebUser, Form(f): 
         serde_json::json!({ "splits": splits, "html": html, "hints": hint_lines(&hints).into_string() }).to_string(),
     )
         .into_response())
+}
+
+// ----- quick find ---------------------------------------------------------
+
+#[derive(Deserialize)]
+struct FindQuery {
+    #[serde(default)]
+    q: String,
+}
+
+/// Places the quick find knows besides decks, lessons and cards. The words
+/// after the name are what people may type for it.
+const FIND_PLACES: &[(&str, &str, &str)] = &[
+    ("Today", "/", "home decks start"),
+    ("Study", "/study", "review learn cards now"),
+    ("Add a card", "/cards/new", "new card write"),
+    ("New deck", "/decks/new", "create deck"),
+    ("Import", "/import", "anki apkg csv upload"),
+    ("Stats", "/stats", "statistics progress charts week retention"),
+    ("Learn", "/learn", "lessons how memory works"),
+    ("Settings", "/settings", "preferences options account password quiet hours breaks"),
+    ("Presets", "/presets", "fsrs retention limits steps"),
+    ("Agent access", "/access", "tokens claude mcp api keys"),
+    ("Cards to look at", "/attention", "coach leeches attention"),
+];
+
+/// Results shown at most, and at most this many of them cards.
+const FIND_MAX: usize = 9;
+const FIND_MAX_CARDS: usize = 5;
+
+/// One line of the quick find: what it is, where it leads.
+#[derive(Serialize)]
+struct Found {
+    kind: &'static str,
+    title: String,
+    sub: String,
+    href: String,
+    #[serde(skip)]
+    score: i32,
+}
+
+/// The best of a name and its other words: the name counts more.
+fn find_score(q: &str, name: &str, also: &str) -> Option<i32> {
+    let by_name = fuzzy::score(q, name).map(|s| s + 6);
+    let by_also = (!also.is_empty()).then(|| fuzzy::score(q, &format!("{name} {also}"))).flatten();
+    by_name.max(by_also)
+}
+
+/// Fits a card's words to one line of the list.
+fn find_line(text: &str, max: usize) -> String {
+    let plain = markdown::plain(text);
+    if plain.chars().count() <= max {
+        return plain;
+    }
+    let cut: String = plain.chars().take(max).collect();
+    let cut = cut.rsplit_once(' ').map(|(a, _)| a).filter(|a| a.len() > max / 2).unwrap_or(&cut);
+    format!("{cut}…")
+}
+
+async fn find_json(State(app): State<AppState>, user: WebUser, Query(f): Query<FindQuery>) -> WebResult {
+    let access = user.access();
+    let q = f.q.trim();
+    let q = &q[..q.char_indices().nth(64).map_or(q.len(), |(i, _)| i)];
+    let decks = app.decks(&access).await?;
+    let mut found: Vec<Found> = Vec::new();
+
+    // Nothing typed yet: the places, then the decks.
+    if q.is_empty() {
+        for (name, href, _) in FIND_PLACES.iter().filter(|p| matches!(p.1, "/" | "/stats" | "/learn" | "/settings")) {
+            found.push(Found { kind: "place", title: name.to_string(), sub: String::new(), href: href.to_string(), score: 0 });
+        }
+        for d in &decks {
+            found.push(Found { kind: "deck", title: deck_plain(&d.name), sub: "Deck".into(), href: format!("/decks/{}", d.id), score: 0 });
+        }
+        found.truncate(FIND_MAX);
+        return Ok(([(header::CONTENT_TYPE, "application/json")], serde_json::json!({ "q": q, "results": found }).to_string()).into_response());
+    }
+
+    for (name, href, also) in FIND_PLACES {
+        if let Some(s) = find_score(q, name, also) {
+            found.push(Found { kind: "place", title: name.to_string(), sub: String::new(), href: href.to_string(), score: s + 4 });
+        }
+    }
+    let mut names = HashMap::new();
+    for d in &decks {
+        let title = deck_plain(&d.name);
+        if let Some(s) = find_score(q, &title, &d.description) {
+            found.push(Found { kind: "deck", title: title.clone(), sub: "Deck".into(), href: format!("/decks/{}", d.id), score: s + 3 });
+        }
+        names.insert(d.id, title);
+    }
+    for l in lessons::all() {
+        if let Some(s) = find_score(q, &l.title, &l.summary) {
+            found.push(Found { kind: "lesson", title: l.title.clone(), sub: "Lesson".into(), href: format!("/learn/{}", l.slug), score: s + 1 });
+        }
+    }
+    let mut cards: Vec<Found> = Vec::new();
+    for c in app.card_texts(&access).await? {
+        let front = fuzzy::score(q, &c.front);
+        // A match on the back alone counts for less.
+        let back = fuzzy::score(q, &c.back).map(|s| s - 10);
+        let Some(s) = front.max(back) else { continue };
+        let deck = names.get(&c.deck_id).cloned().unwrap_or_default();
+        cards.push(Found { kind: "card", title: find_line(&c.front, 80), sub: deck, href: format!("/cards/{}", c.id), score: s });
+    }
+    // Newest first already, so equal scores keep the newer card on top.
+    cards.sort_by(|a, b| b.score.cmp(&a.score));
+    cards.truncate(FIND_MAX_CARDS);
+    found.extend(cards);
+    found.sort_by(|a, b| b.score.cmp(&a.score));
+    found.truncate(FIND_MAX);
+    Ok(([(header::CONTENT_TYPE, "application/json")], serde_json::json!({ "q": q, "results": found }).to_string()).into_response())
 }
 
 async fn study(State(app): State<AppState>, user: WebUser, Flash(msg): Flash, Query(q): Query<StudyQuery>) -> WebResult {

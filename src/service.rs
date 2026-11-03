@@ -206,6 +206,15 @@ pub struct CardInput {
     pub multi: Option<Option<Split>>,
 }
 
+/// A card's text, as the quick find reads it.
+#[derive(Debug, sqlx::FromRow)]
+pub struct CardText {
+    pub id: i64,
+    pub deck_id: i64,
+    pub front: String,
+    pub back: String,
+}
+
 #[derive(Debug, Default, Clone, Deserialize)]
 pub struct CardFilter {
     pub deck_id: Option<i64>,
@@ -1013,6 +1022,19 @@ impl App {
         .await?;
         tx.commit().await?;
         self.card(access, id).await
+    }
+
+    /// Every visible card's front and the start of its back, for the quick
+    /// find, newest first. Only the text: the find scores it in memory.
+    pub async fn card_texts(&self, access: &Access) -> Result<Vec<CardText>> {
+        let all: Vec<CardText> = sqlx::query_as(
+            "SELECT id, deck_id, front, substr(back, 1, 300) AS back FROM cards
+             WHERE user_id = ? ORDER BY created_at DESC, id DESC",
+        )
+        .bind(access.user_id())
+        .fetch_all(&self.db)
+        .await?;
+        Ok(all.into_iter().filter(|c| access.can_see_deck(c.deck_id)).collect())
     }
 
     pub async fn list_cards(&self, access: &Access, filter: &CardFilter) -> Result<(Vec<Card>, i64)> {

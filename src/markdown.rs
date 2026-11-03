@@ -30,6 +30,20 @@ pub fn render(src: &str) -> String {
         .to_string()
 }
 
+/// The words of card text without its Markdown, on one line: for lists
+/// that show a card in a few words (the quick find).
+pub fn plain(src: &str) -> String {
+    let mut out = String::new();
+    for e in Parser::new_ext(src, options()) {
+        match e {
+            Event::Text(t) | Event::Code(t) => out.push_str(&t),
+            Event::SoftBreak | Event::HardBreak | Event::End(_) => out.push(' '),
+            _ => {}
+        }
+    }
+    out.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
 /// Lines that look like list items but are indented four spaces or more
 /// right under a line of text are, in Markdown, more of that text: the
 /// dashes would show. Text pasted from elsewhere often looks like that, so
