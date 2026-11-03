@@ -37,7 +37,8 @@ mod web;
 pub struct Config {
     pub data_dir: PathBuf,
     pub bind: String,
-    /// Open registration. The very first account can always sign up.
+    /// Open registration. Otherwise signing up takes an invite link; the
+    /// very first account can always sign up.
     pub allow_signup: bool,
     pub secure_cookies: bool,
     pub default_timezone: String,
@@ -188,6 +189,7 @@ fn healthcheck(config: &Config) -> anyhow::Result<()> {
 const USAGE: &str = "usage:
   ainki                                  run the server
   ainki create-user <name> <password>    create an account
+  ainki create-admin <name> <password>   create the admin account (admin panel only)
   ainki reset-password <name#tag> <new>  set a user's password
   ainki list-users                       list all accounts
   ainki healthcheck                      exit 0 if the server answers";
@@ -235,6 +237,14 @@ async fn main() -> anyhow::Result<()> {
             println!("created {}", user.handle());
             Ok(())
         }
+        ["create-admin", name, password] => {
+            let user = app
+                .create_account(name, password, &app.config.default_timezone.clone(), None, true)
+                .await
+                .map_err(|e| anyhow::anyhow!("{e}"))?;
+            println!("created admin {}; log in to see the admin panel", user.handle());
+            Ok(())
+        }
         ["reset-password", handle, password] => {
             let user = app.find_user(handle).await.map_err(|e| anyhow::anyhow!("{e}"))?;
             app.set_password(user.id, password).await.map_err(|e| anyhow::anyhow!("{e}"))?;
@@ -250,7 +260,7 @@ async fn main() -> anyhow::Result<()> {
                 .fetch_all(&app.db)
                 .await?;
             for u in users {
-                println!("{}", u.handle());
+                println!("{}{}", u.handle(), if u.is_admin { " (admin)" } else { "" });
             }
             Ok(())
         }
