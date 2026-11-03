@@ -330,3 +330,18 @@ table.retention tr.short td { font-weight: 700; }
 .timer-meta button.link { width: auto; margin: 0; }
 .typed-echo .face-label { display: block; font-size: .8rem; font-weight: 700; text-transform: uppercase; }
 .timer-meta { align-items: center; }
+
+/* Invites and the admin panel. New pages only; nothing above changes. */
+.invite-link pre { margin-bottom: .25rem; }
+.invite-link form.inline { display: inline; }
+.invite-link button.link { min-height: 0; }
+.graph-wrap, .table-wrap { overflow-x: auto; margin: .5rem 0; }
+.invite-graph { display: block; font-family: inherit; }
+.invite-graph .edge { fill: none; stroke: var(--fg); stroke-width: 1.5; }
+.invite-graph .dot { fill: var(--fg); }
+.invite-graph .dot.idle { fill: var(--bg); stroke: var(--fg); stroke-width: 1.5; }
+.invite-graph text { fill: var(--fg); font-size: 16px; }
+.invite-graph .tag { fill: var(--muted); }
+table.accounts { width: 100%; border-collapse: collapse; }
+table.accounts :is(th, td) { text-align: left; padding: .45rem .5rem .45rem 0; border-bottom: 1px solid var(--fg); white-space: nowrap; }
+table.accounts .num { text-align: right; font-variant-numeric: tabular-nums; }

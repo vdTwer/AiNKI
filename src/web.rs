@@ -899,7 +899,7 @@ fn invite_form(token: &str, from: &User, error: Option<&str>, name: &str) -> Mar
         None,
         html! {
             h1.greeting.invited {
-                @if from.is_admin { "You're invited." } @else { (from.username) " invited you." }
+                @if from.is_admin { "You're invited." } @else { (capitalize(&from.username)) " invited you." }
             }
             p.lede {
                 "AiNKI is a quiet place to learn things by heart. "
@@ -1035,23 +1035,33 @@ fn invite_graph(accounts: &[invites::Account]) -> Markup {
                     @if let Some(pr) = n.parent_row {
                         // Down from the inviter's dot, then a soft turn right to this one.
                         @let (px, py, cy, cx) = (x(n.depth - 1), y(pr) + 6.0, y(n.row), x(n.depth) - 6.0);
-                        path.edge d=(format!("M{px} {py}V{:.1}Q{px} {cy} {:.1} {cy}H{cx}", cy - 9.0, px + 9.0));
+                        path.edge d=(format!("M{px} {py}V{:.1}Q{px} {cy} {:.1} {cy}H{cx}", cy - 9.0, px + 9.0)) {}
                     }
                 }
                 @for n in &nodes {
                     @let (cx, cy) = (x(n.depth), y(n.row));
                     @let studied = n.a.last_review.is_some_and(|t| t >= active);
                     g.node.admin[n.a.is_admin] {
-                        circle.dot.idle[!studied] cx=(cx) cy=(cy) r="4.5";
+                        circle.dot.idle[!studied && !n.a.is_admin] cx=(cx) cy=(cy) r="4.5" {}
                         text x=(cx + 14.0) y=(cy + 5.0) {
                             tspan.name { (n.a.username) }
-                            tspan.tag { "#" (format!("{:04}", n.a.discriminator)) }
-                            @if n.a.is_admin { tspan.tag { "  admin" } }
+                            @if n.a.is_admin { tspan.tag { " (admin)" } } @else { tspan.tag { "#" (format!("{:04}", n.a.discriminator)) } }
                         }
                     }
                 }
             }
         }
+    }
+}
+
+/// "Today", "Yesterday", "24 Sep", "24 Sep 2025": for tables.
+fn short_date(clock: &scheduler::Clock, ts: i64) -> String {
+    let d = clock.date_of(ts);
+    match (clock.today() - d).num_days() {
+        0 => "Today".into(),
+        1 => "Yesterday".into(),
+        _ if chrono::Datelike::year(&d) == chrono::Datelike::year(&clock.today()) => d.format("%-d %b").to_string(),
+        _ => d.format("%-d %b %Y").to_string(),
     }
 }
 
@@ -1090,17 +1100,17 @@ async fn admin_page(State(app): State<AppState>, user: WebUser, headers: HeaderM
                 table.accounts {
                     thead { tr {
                         th { "Account" } th { "Joined" } th { "Invited by" }
-                        th.num { "Cards" } th.num { "Reviews, 30 days" } th { "Last studied" }
+                        th.num { "Cards" } th.num title="Reviews in the last 30 days" { "Reviews" } th.num { "Last studied" }
                     } }
                     tbody {
                         @for a in &people {
                             tr {
                                 td { (a.handle()) }
-                                td { (capitalize(&format::day(&clock, clock.date_of(a.created_at)))) }
+                                td { (short_date(&clock, a.created_at)) }
                                 td { (a.invited_by.and_then(|i| names.get(&i)).map(String::as_str).unwrap_or(format::NONE)) }
                                 td.num { (format::number(a.cards)) }
                                 td.num { (format::number(a.reviews_30d)) }
-                                td { (a.last_review.map(|t| capitalize(&format::day(&clock, clock.date_of(t)))).unwrap_or_else(|| "Never".into())) }
+                                td.num { (a.last_review.map(|t| short_date(&clock, t)).unwrap_or_else(|| "Never".into())) }
                             }
                         }
                     }
