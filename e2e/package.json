@@ -7,7 +7,9 @@
     "test": "NODE_OPTIONS=--disable-warning=ExperimentalWarning playwright test",
     "test:chromium": "E2E_BROWSERS=chromium NODE_OPTIONS=--disable-warning=ExperimentalWarning playwright test",
     "typecheck": "tsc -p .",
-    "report": "playwright show-report"
+    "report": "playwright show-report",
+    "upgrade:v1": "UPGRADE_STEP=seed NODE_OPTIONS=--disable-warning=ExperimentalWarning playwright test -c playwright.upgrade.config.ts",
+    "upgrade:v2": "E2E_KEEP_DATA=1 UPGRADE_STEP=check NODE_OPTIONS=--disable-warning=ExperimentalWarning playwright test -c playwright.upgrade.config.ts"
   },
   "devDependencies": {
     "@playwright/test": "1.63.0",
