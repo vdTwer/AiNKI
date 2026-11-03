@@ -475,12 +475,24 @@ fn page(nav: Option<Nav>, title: &str, user: Option<&User>, page_kind: Option<&s
                     }
                 }
                 // The desktop look in quiet hours: one dark screen over
-                // everything, no way around it until they end.
+                // everything. The only way past is a faint "study anyway"
+                // at the bottom that asks twice. Two folds, so it works
+                // without JavaScript.
                 @if let Some(u) = user {
                     @if let Some(until) = study::quiet_until(u, now()) {
                         div.sleep-wall.calm-only role="dialog" aria-modal="true" aria-labelledby="sleep-title" {
                             h1 #sleep-title { "Go to sleep." }
                             p { "Your cards open again at " (clock_time(&u.clock(), until)) "." }
+                            details.sleep-anyway {
+                                summary { "study anyway" }
+                                p { "Sleep is when today's cards settle. Studying now costs more than it brings." }
+                                details {
+                                    summary { "I know. Study anyway." }
+                                    form method="post" action="/study/anyway" {
+                                        button type="submit" { "Yes, open my cards until " (clock_time(&u.clock(), until)) }
+                                    }
+                                }
+                            }
                         }
                     }
                 }
