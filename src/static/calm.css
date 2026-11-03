@@ -1794,6 +1794,17 @@ html.calm .big3 p { margin: 0; }
 html.calm .big3 .n { font-size: 3.25rem; font-weight: 400; letter-spacing: -.03em; line-height: 1; font-variant-numeric: lining-nums; }
 html.calm .big3 .n.it { font-family: var(--italic); font-style: italic; font-weight: 400; letter-spacing: -.02em; }
 html.calm .big3 a { color: var(--accent); }
+/* The coach on Stats: up to three notes, most important first, each with
+   the Terra dot of the week's tip. */
+html.calm .coach-notes { padding: 1.75rem 0 1.5rem; }
+html.calm .coach-notes .tip { display: flex; gap: .6rem; align-items: baseline; margin: 0 0 .7rem; max-width: 34rem; color: var(--ink-2); font-size: .9375rem; line-height: 1.5; }
+html.calm .coach-notes .tip::before { content: ''; flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--warn); transform: translateY(-.1em); }
+html.calm .coach-notes .tip a, html.calm .coach-notes .tip button.link { color: var(--accent); }
+/* The exact numbers repeat the week; the coach above already says what to do. */
+html.calm .numbers .week .tip { display: none; }
+/* A catch-up button inside a note flows with its sentence. */
+html.calm .tip form.inline, html.calm .coach-note form.inline { display: inline; margin: 0; }
+html.calm .coach-note button.link { padding: 0; border: 0; background: none; font: inherit; color: var(--accent); cursor: pointer; }
 html.calm .chart-sec { display: grid; grid-template-columns: minmax(0, 1fr); gap: 24px; padding: 1.75rem 0; border-top: 1px solid var(--line); }
 html.calm .chart-main h2 { margin: 0 0 .4rem; padding: 0; border: 0; font-family: var(--serif); font-weight: 400; letter-spacing: 0; text-transform: none; font-variant-caps: normal; font-style: italic; font-size: 1.6rem; color: var(--ink); }
 html.calm .chart-main > p { margin: 0 0 1.25rem; }
