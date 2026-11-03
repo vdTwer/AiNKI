@@ -116,6 +116,8 @@ type Fixtures = {
   look: Look;
   account: Account;
   seed: Seed;
+  /** Push a pattern here when a test provokes an error on purpose. */
+  allowErrors: RegExp[];
   pageErrors: string[];
 };
 
@@ -129,18 +131,25 @@ export const test = base.extend<Fixtures>({
   seed: async ({ page, account }, use) => {
     await use(new Seed(page.request, account));
   },
+  allowErrors: async ({}, use) => {
+    await use([]);
+  },
   pageErrors: [
-    async ({ page }, use) => {
+    async ({ page, allowErrors }, use) => {
       const errors: string[] = [];
       watchErrors(page, errors);
       await use(errors);
-      expect(errors, 'no script errors on the page').toEqual([]);
+      const unexpected = errors.filter((e) => !allowErrors.some((re) => re.test(e)));
+      expect(unexpected, 'no script errors on the page').toEqual([]);
     },
     { auto: true },
   ],
 });
 
-/** For tests that only run in one kind of browser setup. */
-export function onlyCalm(calm: boolean) {
-  test.skip(!calm, 'the desktop look only');
+/** A form the server refused shows up in the console as a 4xx. */
+export const REFUSED = /Failed to load resource: the server responded with a status of 4\d\d/;
+
+/** Skip unless the browser draws the desktop look (desktop projects with look=calm). */
+export function desktopOnly() {
+  test.skip(({ look, isMobile, viewport }) => look !== 'calm' || isMobile || (viewport?.width ?? 0) < 960, 'the desktop look only');
 }
