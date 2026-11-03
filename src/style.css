@@ -333,7 +333,9 @@ table.retention tr.short td { font-weight: 700; }
 
 /* Invites and the admin panel. New pages only; nothing above changes. */
 .invite-link pre { margin-bottom: .25rem; }
-.invite-link form.inline { display: inline; }
+.invite-meta { display: flex; flex-wrap: wrap; align-items: center; gap: .25rem 1rem; }
+.invite-meta .grow { flex: 1 1 auto; }
+.invite-link form.inline { display: inline; margin: 0; }
 .invite-link button.link { min-height: 0; }
 .graph-wrap, .table-wrap { overflow-x: auto; margin: .5rem 0; }
 .invite-graph { display: block; font-family: inherit; }

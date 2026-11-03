@@ -2179,3 +2179,33 @@ html.calm .find-none { margin: 1rem 0 0; color: var(--muted); }
   html.calm dialog.find-sheet[open] { animation: none; }
   html.calm .find-row .t { transition: none; }
 }
+
+/* ----- invites and the admin panel ------------------------------------------- */
+/* A link to send: in a quiet field, with "Take it back" under it in grey. */
+html.calm .invite-link { margin: 1.25rem 0; }
+html.calm .invite-link pre.copy {
+  margin: 0 0 .4rem;
+  padding: .7rem 1rem;
+  border: 1px solid rgba(var(--shadow), .24);
+  border-radius: 12px;
+  background: var(--surface);
+  font-family: var(--mono);
+  font-size: .85rem;
+  color: var(--ink);
+}
+html.calm .invite-meta { font-size: .93rem; }
+html.calm .invite-link button.link { padding: 0; font-size: .93rem; color: var(--muted); }
+html.calm .invite-link button.link:is(:hover, :focus-visible) { color: var(--accent-hover); }
+/* The graph: hairline branches, ink dots, grey tags. */
+html.calm .invite-graph .edge { stroke: var(--line-strong); stroke-width: 1; }
+html.calm .invite-graph .dot { fill: var(--ink); }
+html.calm .invite-graph .dot.idle { fill: var(--paper); stroke: var(--muted); stroke-width: 1.25; }
+html.calm .invite-graph text { fill: var(--ink); font-family: var(--serif); font-size: 16px; }
+html.calm .invite-graph .tag { fill: var(--faint); }
+html.calm table.accounts :is(th, td) { padding: .6rem 1rem .6rem 0; border-bottom: 1px solid var(--line); font-size: .95rem; }
+html.calm table.accounts :is(th, td):last-child { padding-right: 0; }
+html.calm table.accounts th { font-weight: 400; color: var(--muted); }
+html.calm table.accounts td:first-child { color: var(--ink); }
+html.calm table.accounts td { color: var(--ink-2); font-variant-numeric: tabular-nums; }
+html.calm body[data-page=admin] form.logout { margin-top: 3rem; }
+html.calm body[data-page=admin] form.logout button.link { padding: 0; color: var(--muted); }

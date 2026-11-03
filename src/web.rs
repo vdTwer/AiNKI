@@ -831,9 +831,10 @@ fn invite_links(inv: &invites::Invites, base: &str, clock: &scheduler::Clock) ->
     html! {
         @for i in &inv.open {
             div.invite-link {
-                pre.copy { (base) "/invite/" (i.token) }
-                p.muted.small {
-                    "Works once, until " (format::day(clock, clock.date_of(i.expires_at))) ". "
+                pre.copy id=(format!("invite-{}", i.id)) { (base) "/invite/" (i.token) }
+                div.invite-meta.muted.small {
+                    span.grow { "Works once, until " (format::day(clock, clock.date_of(i.expires_at))) "." }
+                    button.link type="button" data-copy=(format!("invite-{}", i.id)) hidden { "Copy" }
                     form.inline method="post" action=(format!("/invites/{}/cancel", i.id)) {
                         button.link type="submit" { "Take it back" }
                     }
@@ -1074,7 +1075,8 @@ async fn admin_page(State(app): State<AppState>, user: WebUser, headers: HeaderM
     let inv = app.invites(u).await?;
     let clock = u.clock();
     let base = oauth::base_url(&app, &headers);
-    let names: HashMap<i64, String> = accounts.iter().map(|a| (a.id, a.handle())).collect();
+    let names: HashMap<i64, String> =
+        accounts.iter().map(|a| (a.id, if a.is_admin { "admin".to_string() } else { a.handle() })).collect();
     let people: Vec<&invites::Account> = accounts.iter().filter(|a| !a.is_admin).collect();
     let month = now() - 30 * 86_400;
     let new_this_month = people.iter().filter(|a| a.created_at >= month).count() as i64;
