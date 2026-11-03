@@ -50,6 +50,10 @@ pub struct User {
     pub catch_up_reviews: i64,
     /// Ask "sure or not?" before showing the answer.
     pub confidence_check: bool,
+    /// The account whose invite link made this one, if any.
+    pub invited_by: Option<i64>,
+    /// The admin account: sees only the admin panel (see `invites`).
+    pub is_admin: bool,
 }
 
 impl User {
