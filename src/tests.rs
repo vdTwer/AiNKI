@@ -660,6 +660,46 @@ mod http {
     }
 
     #[tokio::test]
+    async fn quick_find_is_fuzzy_and_private() {
+        let app = app().await;
+        let a = user(&app, "kolja").await;
+        let deck = app.create_deck(&a, "Languages::Spanish verbs", "", None).await.unwrap();
+        app.create_card(&a, deck.id, "**hablar**", "to speak", None, None, None).await.unwrap();
+        let b = user(&app, "anna").await;
+        let theirs = app.create_deck(&b, "Anna's secrets", "", None).await.unwrap();
+        app.create_card(&b, theirs.id, "hablar en secreto", "whisper", None, None, None).await.unwrap();
+        let cookie = login_cookie(&app, "kolja").await;
+        let find = |q: &str| {
+            let req = Request::get(format!("/find?q={}", urlencode(q))).header(header::COOKIE, cookie.clone()).body(Body::empty()).unwrap();
+            let app = app.clone();
+            async move {
+                let res = send(&app, req).await;
+                assert_eq!(res.status(), StatusCode::OK);
+                serde_json::from_str::<serde_json::Value>(&text(res).await).unwrap()["results"].as_array().unwrap().clone()
+            }
+        };
+
+        // A typo still finds the deck, shown with its path.
+        let r = find("spnish").await;
+        assert_eq!(r[0]["title"], "Languages › Spanish verbs");
+        assert_eq!(r[0]["href"], format!("/decks/{}", deck.id));
+        // Cards are found by their words, without the Markdown.
+        let r = find("hblr").await;
+        let card = r.iter().find(|x| x["kind"] == "card").unwrap();
+        assert_eq!(card["title"], "hablar");
+        assert_eq!(card["sub"], "Languages › Spanish verbs");
+        // Only your own cards.
+        assert!(!find("secreto").await.iter().any(|x| x["kind"] == "card"));
+        // Places by other words for them, lessons by title.
+        assert_eq!(find("password").await[0]["href"], "/settings");
+        assert!(find("forgetting").await.iter().any(|x| x["kind"] == "lesson"));
+        // Nothing typed: the places and the decks.
+        let r = find("").await;
+        assert_eq!(r[0]["title"], "Today");
+        assert!(r.iter().any(|x| x["kind"] == "deck"));
+    }
+
+    #[tokio::test]
     async fn card_create_and_edit_through_the_website() {
         let app = app().await;
         let a = user(&app, "kolja").await;
