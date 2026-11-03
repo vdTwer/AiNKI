@@ -96,18 +96,17 @@ test('undo brings the last card back, answer showing', async ({ page, seed, acco
   expect(sql('SELECT 1 FROM review_log WHERE user_id = ?', account.id)).toHaveLength(0);
 });
 
-test('Again brings the card back later in the same session', async ({ page, seed, account }) => {
+test('Again brings the card back in the same session', async ({ page, seed }) => {
   const deck = await seed.deck('One');
   await seed.card(deck, 'only card', 'answer');
   await page.goto('/study');
   await showAnswer(page).click();
   await answers(page).getByRole('button', { name: /again/i }).click();
-  // Its learning step is minutes away: nothing more right now, but the
-  // page says when it comes back instead of claiming the day is done.
-  await expect(page.locator('main')).toContainText(/minute|again|later|back/i);
-  sql('UPDATE cards SET due = unixepoch() - 1 WHERE user_id = ?', account.id);
-  await page.goto('/study');
+  // Nothing else is due, so its short learning step is not waited out:
+  // the card comes straight back, now marked as learning.
+  await expect(page.locator('main')).toContainText('Learning');
   await expect(front(page)).toHaveText('only card');
+  await expect(showAnswer(page)).toBeVisible();
 });
 
 test('answering a card twice from two tabs counts once', async ({ page, seed, context, account }) => {
