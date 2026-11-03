@@ -335,18 +335,23 @@
   (function () {
     var nav = document.querySelector('nav.top');
     if (!calm || !nav) return;
-    var far = 160, close = 56, frame = 0, px = -1, py = -1;
+    var far = 160, close = 56, frame = 0, px = -1, py = -1, box = null;
+    // The rail is fixed in place, so its box only moves with the window.
+    // Measuring it each frame would force a layout after the tilt's writes.
+    window.addEventListener('resize', function () { box = null; });
     function update() {
       frame = 0;
       var near = 0;
       if (px >= 0) {
-        var r = nav.getBoundingClientRect();
+        var r = box || (box = nav.getBoundingClientRect());
         var dx = Math.max(r.left - px, 0, px - r.right);
         var dy = Math.max(r.top - py, 0, py - r.bottom);
         var d = Math.sqrt(dx * dx + dy * dy);
         near = Math.max(0, Math.min(1, (far - d) / (far - close)));
       }
-      nav.style.setProperty('--near', near.toFixed(3));
+      // Far from the rail this stays 0: writing it anyway would restyle
+      // every icon in the rail on each move of the mouse.
+      put(nav.style, '--near', near.toFixed(3));
     }
     function later() { if (!frame) frame = requestAnimationFrame(update); }
     document.addEventListener('pointermove', function (e) {
