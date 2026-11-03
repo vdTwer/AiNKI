@@ -112,6 +112,7 @@ pub fn router(app: AppState) -> Router {
         .route("/invites", get(invites_page).post(invite_create))
         .route("/invites/{id}/cancel", post(invite_cancel))
         .route("/invite/{token}", get(invite_page).post(invite_accept))
+        .route("/admin", get(admin_page))
         .route("/oauth/authorize", get(oauth::authorize_page).post(oauth::authorize_submit))
         .route("/study", get(study))
         .route("/study/answer", post(study_answer))
@@ -209,6 +210,11 @@ impl axum::extract::OptionalFromRequestParts<AppState> for WebUser {
     }
 }
 
+/// Where the admin account may go: its panel and making invites.
+fn admin_may(path: &str) -> bool {
+    path == "/admin" || path == "/invites" || path.starts_with("/invites/")
+}
+
 /// The login page, coming back here afterwards when this was a page view.
 fn login_url(parts: &Parts) -> String {
     let here = parts.uri.path_and_query().map(|p| p.as_str()).unwrap_or("/");
@@ -225,6 +231,8 @@ impl FromRequestParts<AppState> for WebUser {
 
     async fn from_request_parts(parts: &mut Parts, app: &AppState) -> Result<Self, Self::Rejection> {
         match session_from_parts(parts, app).await {
+            // The admin account has no decks: it sees the admin panel only.
+            Some(user) if user.is_admin && !admin_may(parts.uri.path()) => Err(redirect("/admin")),
             Some(user) => Ok(WebUser(user)),
             None => Err(Redirect::to(&login_url(parts)).into_response()),
         }
@@ -452,7 +460,7 @@ fn page(nav: Option<Nav>, title: &str, user: Option<&User>, page_kind: Option<&s
             body data-user=[user.map(|u| u.id)] data-page=[page_kind] {
                 // On phones a bar across the top; in the Calm look one dot in
                 // the top right corner that opens into a row of icons on hover.
-                @if user.is_some() {
+                @if user.is_some_and(|u| !u.is_admin) {
                     nav.top aria-label="Main" {
                         // The desktop look: the first icon finds anything (desk.js).
                         button.find-dot.calm-only type="button" data-label="Find" aria-label="Find" aria-haspopup="dialog" { (nav_icon(ICON_FIND)) }
@@ -478,7 +486,7 @@ fn page(nav: Option<Nav>, title: &str, user: Option<&User>, page_kind: Option<&s
                 }
                 main {
                     // The desktop look: a ? in the corner that opens the key sheet.
-                    @if user.is_some() {
+                    @if user.is_some_and(|u| !u.is_admin) {
                         button.keys-button.calm-only type="button" aria-label="Keys" data-label="Keys" { "?" }
                     }
                     (body)
@@ -972,6 +980,139 @@ async fn invite_accept(
         }
         Err(e) => form_again(invite_form(&token, &from, Some(&capitalize(&e.to_string())), f.username.trim())),
     }
+}
+
+// ----- admin --------------------------------------------------------------
+
+/// Who invited whom, drawn as a tree that grows to the right: each account
+/// a dot with its name, the ones it invited on a branch below it. Accounts
+/// nobody invited (the first ones, the admin) are the roots. A filled dot
+/// studied in the last 30 days; a ring didn't.
+fn invite_graph(accounts: &[invites::Account]) -> Markup {
+    const ROW: f64 = 34.0;
+    const INDENT: f64 = 30.0;
+    const TOP: f64 = 18.0;
+    const LEFT: f64 = 8.0;
+    let ids: std::collections::HashSet<i64> = accounts.iter().map(|a| a.id).collect();
+    let mut children: HashMap<Option<i64>, Vec<&invites::Account>> = HashMap::new();
+    for a in accounts {
+        // An inviter that is gone makes its people roots.
+        let parent = a.invited_by.filter(|p| ids.contains(p) && *p != a.id);
+        children.entry(parent).or_default().push(a);
+    }
+    // Depth first: each account takes the next row.
+    struct Node<'a> { a: &'a invites::Account, depth: usize, row: usize, parent_row: Option<usize> }
+    let mut nodes: Vec<Node> = Vec::new();
+    let mut stack: Vec<(&invites::Account, usize, Option<usize>)> =
+        children.get(&None).map(|r| r.iter().rev().map(|a| (*a, 0, None)).collect()).unwrap_or_default();
+    let mut seen = std::collections::HashSet::new();
+    while let Some((a, depth, parent_row)) = stack.pop() {
+        if !seen.insert(a.id) {
+            continue;
+        }
+        let row = nodes.len();
+        nodes.push(Node { a, depth, row, parent_row });
+        if let Some(kids) = children.get(&Some(a.id)) {
+            for k in kids.iter().rev() {
+                stack.push((*k, depth + 1, Some(row)));
+            }
+        }
+    }
+    let x = |d: usize| LEFT + d as f64 * INDENT;
+    let y = |r: usize| TOP + r as f64 * ROW;
+    let width = nodes
+        .iter()
+        .map(|n| x(n.depth) + 16.0 + (n.a.handle().len() as f64) * 8.6 + 110.0)
+        .fold(320.0_f64, f64::max)
+        .ceil();
+    let height = (y(nodes.len().max(1)) - ROW + TOP).ceil();
+    let active = now() - 30 * 86_400;
+    html! {
+        div.graph-wrap {
+            svg.invite-graph width=(width) height=(height) viewBox=(format!("0 0 {width} {height}")) role="img"
+                aria-label=(format!("Invitation graph of {} accounts", nodes.len())) {
+                @for n in &nodes {
+                    @if let Some(pr) = n.parent_row {
+                        // Down from the inviter's dot, then a soft turn right to this one.
+                        @let (px, py, cy, cx) = (x(n.depth - 1), y(pr) + 6.0, y(n.row), x(n.depth) - 6.0);
+                        path.edge d=(format!("M{px} {py}V{:.1}Q{px} {cy} {:.1} {cy}H{cx}", cy - 9.0, px + 9.0));
+                    }
+                }
+                @for n in &nodes {
+                    @let (cx, cy) = (x(n.depth), y(n.row));
+                    @let studied = n.a.last_review.is_some_and(|t| t >= active);
+                    g.node.admin[n.a.is_admin] {
+                        circle.dot.idle[!studied] cx=(cx) cy=(cy) r="4.5";
+                        text x=(cx + 14.0) y=(cy + 5.0) {
+                            tspan.name { (n.a.username) }
+                            tspan.tag { "#" (format!("{:04}", n.a.discriminator)) }
+                            @if n.a.is_admin { tspan.tag { "  admin" } }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+async fn admin_page(State(app): State<AppState>, user: WebUser, headers: HeaderMap, Flash(msg): Flash) -> WebResult {
+    let u = &user.0;
+    if !u.is_admin {
+        return Err(AppError::NotFound.into());
+    }
+    let accounts = app.accounts(u).await?;
+    let inv = app.invites(u).await?;
+    let clock = u.clock();
+    let base = oauth::base_url(&app, &headers);
+    let names: HashMap<i64, String> = accounts.iter().map(|a| (a.id, a.handle())).collect();
+    let people: Vec<&invites::Account> = accounts.iter().filter(|a| !a.is_admin).collect();
+    let month = now() - 30 * 86_400;
+    let new_this_month = people.iter().filter(|a| a.created_at >= month).count() as i64;
+    let studying = people.iter().filter(|a| a.last_review.is_some_and(|t| t >= month)).count() as i64;
+    Ok(page(
+        None,
+        "Admin",
+        Some(u),
+        Some("admin"),
+        html! {
+            (flash(&msg))
+            h1 { "Accounts" }
+            p.facts {
+                (count(people.len() as i64, "account")) " · "
+                (format::number(new_this_month)) " joined in the last 30 days · "
+                (format::number(studying)) " studied in that time"
+            }
+            h2 { "Who invited whom" }
+            @if accounts.is_empty() { p.muted { "No accounts yet." } } @else { (invite_graph(&accounts)) }
+            p.muted.small { "A filled dot studied in the last 30 days; a ring didn't." }
+            h2 { "All accounts" }
+            div.table-wrap {
+                table.accounts {
+                    thead { tr {
+                        th { "Account" } th { "Joined" } th { "Invited by" }
+                        th.num { "Cards" } th.num { "Reviews, 30 days" } th { "Last studied" }
+                    } }
+                    tbody {
+                        @for a in &people {
+                            tr {
+                                td { (a.handle()) }
+                                td { (capitalize(&format::day(&clock, clock.date_of(a.created_at)))) }
+                                td { (a.invited_by.and_then(|i| names.get(&i)).map(String::as_str).unwrap_or(format::NONE)) }
+                                td.num { (format::number(a.cards)) }
+                                td.num { (format::number(a.reviews_30d)) }
+                                td { (a.last_review.map(|t| capitalize(&format::day(&clock, clock.date_of(t)))).unwrap_or_else(|| "Never".into())) }
+                            }
+                        }
+                    }
+                }
+            }
+            h2 { "Invite" }
+            p { "The admin account can make as many links as it likes. Each works once, for 30 days." }
+            (invite_links(&inv, &base, &clock))
+            form.logout method="post" action="/logout" { button.link type="submit" { "Log out" } }
+        },
+    )
+    .into_response())
 }
 
 // ----- home ---------------------------------------------------------------
