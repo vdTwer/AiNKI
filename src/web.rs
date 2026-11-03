@@ -445,11 +445,11 @@ fn page(nav: Option<Nav>, title: &str, user: Option<&User>, page_kind: Option<&s
                 }
             }
             body data-user=[user.map(|u| u.id)] data-page=[page_kind] {
-                // On phones a bar across the top; in the Calm look a rail of
-                // dots on the left that become icons as the pointer nears.
+                // On phones a bar across the top; in the Calm look one dot in
+                // the top right corner that opens into a row of icons on hover.
                 @if user.is_some() {
                     nav.top aria-label="Main" {
-                        // The desktop look: the first dot finds anything (desk.js).
+                        // The desktop look: the first icon finds anything (desk.js).
                         button.find-dot.calm-only type="button" data-label="Find" aria-label="Find" aria-haspopup="dialog" { (nav_icon(ICON_FIND)) }
                         a.brand href="/" data-label="AiNKI" aria-current=[current(Nav::Decks)] { "AiNKI" }
                         a.rail-only href="/" data-label="Decks" aria-current=[current(Nav::Decks)] { (nav_icon(ICON_DECKS)) "Decks" }
