@@ -8,6 +8,7 @@ use sqlx::{
 use tracing_subscriber::EnvFilter;
 
 mod auth;
+mod advice;
 mod coach;
 mod error;
 mod format;
