@@ -41,14 +41,10 @@ const FAVICON_SVG: &str = include_str!("static/favicon.svg");
 const FAVICON_PNG: &[u8] = include_bytes!("static/favicon-32.png");
 const TOUCH_ICON_PNG: &[u8] = include_bytes!("static/apple-touch-icon.png");
 const FONTS: &[(&str, &[u8])] = &[
-    ("fraunces-italic-latin-ext.woff2", include_bytes!("static/fonts/fraunces-italic-latin-ext.woff2")),
-    ("fraunces-italic-latin.woff2", include_bytes!("static/fonts/fraunces-italic-latin.woff2")),
-    ("schibsted-grotesk-normal-latin-ext.woff2", include_bytes!("static/fonts/schibsted-grotesk-normal-latin-ext.woff2")),
-    ("schibsted-grotesk-normal-latin.woff2", include_bytes!("static/fonts/schibsted-grotesk-normal-latin.woff2")),
-    ("source-serif-4-italic-latin-ext.woff2", include_bytes!("static/fonts/source-serif-4-italic-latin-ext.woff2")),
-    ("source-serif-4-italic-latin.woff2", include_bytes!("static/fonts/source-serif-4-italic-latin.woff2")),
-    ("source-serif-4-normal-latin-ext.woff2", include_bytes!("static/fonts/source-serif-4-normal-latin-ext.woff2")),
-    ("source-serif-4-normal-latin.woff2", include_bytes!("static/fonts/source-serif-4-normal-latin.woff2")),
+    ("eb-garamond-italic-latin-ext.woff2", include_bytes!("static/fonts/eb-garamond-italic-latin-ext.woff2")),
+    ("eb-garamond-italic-latin.woff2", include_bytes!("static/fonts/eb-garamond-italic-latin.woff2")),
+    ("eb-garamond-normal-latin-ext.woff2", include_bytes!("static/fonts/eb-garamond-normal-latin-ext.woff2")),
+    ("eb-garamond-normal-latin.woff2", include_bytes!("static/fonts/eb-garamond-normal-latin.woff2")),
 ];
 
 pub async fn serve(app: AppState) -> anyhow::Result<()> {
@@ -462,8 +458,18 @@ fn page(nav: Option<Nav>, title: &str, user: Option<&User>, page_kind: Option<&s
                         a href="/settings" data-label="Settings" aria-current=[current(Nav::Settings)] { (nav_icon(ICON_SETTINGS)) "Settings" }
                     }
                 }
+                // The desktop look in quiet hours: one dark screen over
+                // everything, no way around it until they end.
+                @if let Some(u) = user {
+                    @if let Some(until) = study::quiet_until(u, now()) {
+                        div.sleep-wall.calm-only role="dialog" aria-modal="true" aria-labelledby="sleep-title" {
+                            h1 #sleep-title { "Go to sleep." }
+                            p { "Your cards open again at " (clock_time(&u.clock(), until)) "." }
+                        }
+                    }
+                }
                 main {
-                    // The desktop look: a ? under the rail that opens the key sheet.
+                    // The desktop look: a ? in the corner that opens the key sheet.
                     @if user.is_some() {
                         button.keys-button.calm-only type="button" aria-label="Keys" data-label="Keys" { "?" }
                     }
@@ -805,6 +811,7 @@ async fn home(State(app): State<AppState>, user: WebUser, Flash(msg): Flash) -> 
     let overdue = app.overdue(&access).await?;
     let quiet = study::quiet_until(&user.0, now());
     let week = app.week(&access).await?;
+    let history = app.history(&access, None).await?;
     // A rough guide; real thinking time once there's enough history.
     let minutes = ((total_due as f64 * stats.seconds_per_review.unwrap_or(12.0)) / 60.0).ceil().max(1.0) as i64;
     let mut facts = Vec::new();
@@ -831,7 +838,7 @@ async fn home(State(app): State<AppState>, user: WebUser, Flash(msg): Flash) -> 
                 @if total_due > 0 {
                     h1 { span.count { (total_due) (if total_due == 1 { " card" } else { " cards" }) } " to study today" }
                 } @else if !decks.is_empty() {
-                    h1 { "All done for today" }
+                    h1.all-done { span.simple-only { "All done for today" } span.calm-only { "All done." } }
                 } @else {
                     h1 { "Welcome to AiNKI" }
                 }
@@ -923,6 +930,9 @@ async fn home(State(app): State<AppState>, user: WebUser, Flash(msg): Flash) -> 
             p.desk-actions.calm-only {
                 a.add-deck href="/decks/new" aria-label="New deck" data-label="New deck" { (icon(ICON_ADD, PAGE_ICON)) }
                 a href="/import" { "Import deck" }
+            }
+            @if !decks.is_empty() {
+                (week_home(&week, &history.days))
             }
         },
     )
@@ -3483,6 +3493,31 @@ async fn password_update(
 }
 
 /// The last seven days in a sentence or two, and one thing worth doing.
+/// The desktop home's week: the note, and a bar for each of the last seven
+/// days with today's letter in bold.
+fn week_home(w: &insight::Week, days: &[(String, i64)]) -> Markup {
+    let last = &days[days.len().saturating_sub(7)..];
+    let most_seen = last.iter().map(|(_, n)| *n).max().unwrap_or(0);
+    let most = most_seen.max(1);
+    let label = last.iter().map(|(d, n)| format!("{d}: {n}")).collect::<Vec<_>>().join(", ");
+    html! {
+        div.week-home.calm-only {
+            (week_note(w))
+            @if most_seen > 0 {
+            div.week-bars role="img" aria-label=(format!("Reviews per day, last seven days. {label}")) {
+                @for (i, (date, n)) in last.iter().enumerate() {
+                    @let letter = chrono::NaiveDate::parse_from_str(date, "%Y-%m-%d").map(|d| d.format("%a").to_string()).unwrap_or_default();
+                    div.day.today[i + 1 == last.len()] {
+                        span.bar.empty[*n == 0] style=(format!("height: {}%", (*n * 100 / most).max(3))) {}
+                        span.letter { (letter.chars().next().unwrap_or(' ')) }
+                    }
+                }
+            }
+            }
+        }
+    }
+}
+
 fn week_note(w: &insight::Week) -> Markup {
     let pct = |v: f64| format!("{:.0}%", v * 100.0);
     html! {

@@ -1,114 +1,85 @@
-/* Fonts, served from /fonts. Variable, so one file covers every weight. */
+/* EB Garamond, served from /fonts. Variable, so one file covers 400 to 800. */
 @font-face {
-  font-family: 'Schibsted Grotesk';
+  font-family: 'EB Garamond';
   font-style: normal;
-  font-weight: 400 900;
+  font-weight: 400 800;
   font-display: swap;
-  src: url(/fonts/schibsted-grotesk-normal-latin-ext.woff2) format('woff2');
+  src: url(/fonts/eb-garamond-normal-latin-ext.woff2) format('woff2');
   unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
 }
 @font-face {
-  font-family: 'Schibsted Grotesk';
+  font-family: 'EB Garamond';
   font-style: normal;
-  font-weight: 400 900;
+  font-weight: 400 800;
   font-display: swap;
-  src: url(/fonts/schibsted-grotesk-normal-latin.woff2) format('woff2');
+  src: url(/fonts/eb-garamond-normal-latin.woff2) format('woff2');
   unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
 }
 @font-face {
-  font-family: 'Source Serif 4';
-  font-style: normal;
-  font-weight: 400 600;
+  font-family: 'EB Garamond';
+  font-style: italic;
+  font-weight: 400 800;
   font-display: swap;
-  src: url(/fonts/source-serif-4-normal-latin-ext.woff2) format('woff2');
+  src: url(/fonts/eb-garamond-italic-latin-ext.woff2) format('woff2');
   unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
 }
 @font-face {
-  font-family: 'Source Serif 4';
-  font-style: normal;
-  font-weight: 400 600;
-  font-display: swap;
-  src: url(/fonts/source-serif-4-normal-latin.woff2) format('woff2');
-  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
-}
-@font-face {
-  font-family: 'Source Serif 4';
+  font-family: 'EB Garamond';
   font-style: italic;
-  font-weight: 400 600;
+  font-weight: 400 800;
   font-display: swap;
-  src: url(/fonts/source-serif-4-italic-latin-ext.woff2) format('woff2');
-  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
-}
-@font-face {
-  font-family: 'Source Serif 4';
-  font-style: italic;
-  font-weight: 400 600;
-  font-display: swap;
-  src: url(/fonts/source-serif-4-italic-latin.woff2) format('woff2');
-  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
-}
-@font-face {
-  font-family: 'Fraunces';
-  font-style: italic;
-  font-weight: 300 500;
-  font-display: swap;
-  src: url(/fonts/fraunces-italic-latin-ext.woff2) format('woff2');
-  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
-}
-@font-face {
-  font-family: 'Fraunces';
-  font-style: italic;
-  font-weight: 300 500;
-  font-display: swap;
-  src: url(/fonts/fraunces-italic-latin.woff2) format('woff2');
+  src: url(/fonts/eb-garamond-italic-latin.woff2) format('woff2');
   unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
 }
 
 /* ---------------------------------------------------------------------------
-   Orchid: the desktop look. Applies only when theme.js has added html.calm
+   The desktop look. Applies only when theme.js has added html.calm
    (JavaScript on, wide screen with a mouse, not e-ink, not turned off in
    settings) and the <link>'s media query matches. It builds on style.css,
    which stays the simple look for phones and e-ink.
 
-   A Swiss newspaper base with a few humanist accents. Schibsted Grotesk for
-   the interface, Source Serif 4 for what you learn, a light Fraunces italic
-   for the one number or quote that matters. White paper, ink, hairlines.
-   Wild Orchid leads; Terra Cotta only marks what slipped or can't be undone.
+   One face, EB Garamond, on hard white. Ink for words, grey for what
+   whispers, Wild Orchid for what you can press and nothing else. Emphasis
+   comes from type: size, italic, weight. Colour lives in the watercolour
+   washes, which move slowly behind the page (desk.js paints them).
    ------------------------------------------------------------------------ */
 
 html.calm {
   --paper: #ffffff;
   --surface: #ffffff;
-  --tint: #f6f5f3;
-  --ink: #111111;
-  --ink-2: #3a3835;
-  --muted: #5e5b57;
-  --faint: #9a968f;
-  --line: #e4e2de;
-  --line-strong: #c9c6c0;
-  --track: #ecebe8;
+  --tint: #f7f4f1;
+  --ink: #1e1a17;
+  --ink-2: #3a342f;
+  --muted: #57514a;
+  --faint: #8a8278;
+  --line: #eee9e2;
+  --line-strong: #cfc8be;
+  --track: #eee9e2;
   --accent: #a8336d;
-  --accent-hover: #8c2a5b;
-  --accent-tint: #f6e6ee;
+  --accent-hover: #8e2a5c;
+  --accent-tint: #f4dde7;
   --accent-edge: #e3b8cd;
   --accent-glow: rgba(168, 51, 109, .16);
   --on-accent: #ffffff;
   --on-accent-soft: #f6dce8;
-  --warn: #b4462b;
-  --warn-tint: #f8e8e3;
-  --warn-edge: #ecc3b7;
+  /* No second colour: what used to be Terra is ink, set apart by type. */
+  --warn: var(--ink);
+  --warn-tint: var(--tint);
+  --warn-edge: var(--line-strong);
   --knob: #ffffff;
-  --shadow: 17, 17, 17;
-  --serif: 'Source Serif 4', Georgia, serif;
-  --sans: 'Schibsted Grotesk', system-ui, -apple-system, 'Segoe UI', sans-serif;
-  --italic: 'Fraunces', Georgia, serif;
+  --shadow: 30, 26, 23;
+  /* The marker that slides under a quiet button on hover. */
+  --marker: #f4dde7;
+  --serif: 'EB Garamond', Georgia, serif;
+  --sans: 'EB Garamond', Georgia, serif;
+  --italic: 'EB Garamond', Georgia, serif;
   --mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
-  --ease: cubic-bezier(.25, .8, .25, 1);
-  --wrap: 560px;
+  --ease: cubic-bezier(.2, .7, .2, 1);
+  --wrap: 640px;
   --fg: var(--ink);
   --bg: var(--paper);
   --soft: var(--track);
-  font-size: calc(15px * var(--scale));
+  font-size: calc(18px * var(--scale));
 }
 
 @media (prefers-color-scheme: dark) {
@@ -130,11 +101,12 @@ html.calm {
     --accent-glow: rgba(225, 131, 179, .22);
     --on-accent: #1e0f17;
     --on-accent-soft: #4e2238;
-    --warn: #e8906f;
-    --warn-tint: #3a2620;
-    --warn-edge: #6e4232;
+    --warn: var(--ink);
+    --warn-tint: var(--tint);
+    --warn-edge: var(--line-strong);
     --knob: #f1eee9;
     --shadow: 0, 0, 0;
+    --marker: #4a2438;
   }
 }
 
@@ -174,7 +146,7 @@ html.calm main > button.keys-button {
   color: var(--muted);
   font-family: inherit;
   font-size: .9375rem;
-  font-weight: 600;
+  font-weight: 500;
   line-height: 1;
   cursor: pointer;
   transition: border-color 140ms ease, color 140ms ease;
@@ -190,7 +162,7 @@ html.calm main > button.keys-button::after {
   padding: .3rem .65rem;
   white-space: nowrap;
   font-size: .8125rem;
-  font-weight: 600;
+  font-weight: 500;
   line-height: 1.4;
   color: var(--paper);
   background: var(--ink);
@@ -220,23 +192,24 @@ html.calm kbd {
   vertical-align: .05em;
 }
 
+/* Page titles: the italic, large and light. */
 html.calm h1 {
   font-family: var(--serif);
-  font-optical-sizing: auto;
+  font-style: italic;
   font-weight: 400;
-  font-size: 2.25rem;
-  line-height: 1.15;
-  letter-spacing: -.01em;
-  margin: 1.75rem 0 .6rem;
+  font-size: 3rem;
+  line-height: 1.05;
+  letter-spacing: -.005em;
+  margin: 1.75rem 0 .75rem;
 }
-/* Section titles whisper: small grey capitals over a hairline. */
+/* Section titles whisper: grey small capitals over a hairline. */
 html.calm h2 {
   font-family: var(--sans);
-  font-size: .75rem;
-  font-weight: 600;
+  font-size: 1.05rem;
+  font-weight: 400;
   line-height: 1.4;
-  letter-spacing: .12em;
-  text-transform: uppercase;
+  letter-spacing: .08em;
+  font-variant-caps: all-small-caps;
   color: var(--muted);
   margin: 2.5rem 0 .75rem;
   padding: 0 0 .5rem;
@@ -259,9 +232,9 @@ html.calm ::selection { background: var(--accent-tint); }
 @keyframes calm-grow { from { transform: scaleX(0); } to { transform: scaleX(1); } }
 
 /* A small uppercase line above a heading or a block: "Today", "This week". */
-html.calm .kicker { margin: 0; font-size: .75rem; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
+html.calm .kicker { margin: 0; font-size: 1.05rem; font-weight: 400; letter-spacing: .08em; font-variant-caps: all-small-caps; color: var(--muted); }
 /* The one number or phrase that matters, in a light italic. */
-html.calm .it { font-family: var(--italic); font-style: italic; font-weight: 300; letter-spacing: -.02em; }
+html.calm .it { font-family: var(--italic); font-style: italic; font-weight: 400; letter-spacing: 0; }
 
 /* The page this one belongs to: a quiet path above the heading. */
 html.calm .parent { margin: 2rem 0 -1.75rem; font-size: .875rem; font-weight: 400; }
@@ -283,105 +256,90 @@ html.calm .notice {
 }
 html.calm .notice::before { content: ''; flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
 
-/* ----- side rail ---------------------------------------------------------- */
-/* Three steps. Far away it is a column of dots. As the pointer comes near
-   (app.js sets --near from 0 to 1 by distance) each dot grows into an icon
-   on a small tile. Over a tile, the tile gets an ink edge and its name
-   appears beside it. The page you are on is Orchid. Keyboard focus shows
-   the tiles. */
+/* ----- navigation ---------------------------------------------------------- */
+/* A quiet line of words in the top right corner: where you can go, the page
+   you are on in ink, the rest in grey with the marker on hover. No icons. */
 html.calm nav.top {
-  --near: 0;
-  position: fixed;
-  left: 0;
-  top: 50%;
-  transform: translateY(-50%);
+  position: absolute;
+  top: 28px;
+  right: 40px;
   z-index: 10;
   display: flex;
-  flex-direction: column;
-  align-items: flex-start;
+  flex-direction: row;
+  align-items: baseline;
   flex-wrap: nowrap;
-  gap: 8px;
+  gap: 1.6rem;
   max-width: none;
   margin: 0;
-  padding: 20px 18px;
+  padding: 0;
   border: 0;
-  font-size: .9375rem;
+  background: none;
+  font-size: 1.05rem;
 }
-html.calm nav.top:focus-within { --near: 1; }
 html.calm nav.top a.brand { display: none; }
 html.calm nav.top a {
-  position: relative;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex: none;
-  width: 44px;
-  height: 44px;
+  display: inline;
   min-height: 0;
-  padding: 0;
-  font-size: 0;
+  padding: 0 .1rem;
+  border: 0;
+  border-radius: 2px;
+  font-size: inherit;
   font-weight: 400;
-  color: var(--ink);
+  color: var(--muted);
+  background: linear-gradient(var(--marker), var(--marker)) no-repeat 0 82% / 100% 0;
+  transition: background-size 380ms var(--ease), color 200ms ease;
 }
-html.calm nav.top a.rail-only { display: flex; }
-html.calm nav.top a:hover, html.calm nav.top a:focus-visible { background: none; }
-html.calm nav.top a:focus-visible { outline: none; }
+html.calm nav.top a.rail-only { display: inline; }
+html.calm nav.top a:is(:hover, :focus-visible) { color: var(--ink); background-size: 100% 42%; }
+html.calm nav.top a[aria-current] { color: var(--ink); border: 0; text-decoration: none; box-shadow: none; }
+html.calm nav.top .tile { display: none; }
+/* While studying the words step back until the pointer comes. */
+html.calm body[data-page=study] nav.top { opacity: .35; transition: opacity 300ms ease; }
+html.calm body[data-page=study] nav.top:is(:hover, :focus-within) { opacity: 1; }
 
-/* Step one: the dot. It fades as the tile grows out of it. */
-html.calm nav.top a::before {
-  content: '';
+/* ----- washes -------------------------------------------------------------- */
+/* desk.js paints them: blurred pigment clouds, frayed by the #wet filter,
+   multiplied onto the white. Each drifts, turns and changes shape on its own
+   slow loop, so the page never looks quite the same twice. */
+html.calm body { position: relative; overflow-x: hidden; }
+html.calm body > svg.wash-defs { position: absolute; width: 0; height: 0; }
+html.calm body > .wash {
   position: absolute;
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--line-strong);
-  opacity: clamp(0, calc(1 - var(--near) * 1.6), 1);
-  transition: opacity 120ms ease, background-color 140ms ease;
-}
-html.calm nav.top a[aria-current="page"]::before { width: 8px; height: 8px; background: var(--accent); }
-
-/* Step two: the tile. */
-html.calm nav.top .tile {
-  position: absolute;
-  inset: 0;
-  width: 44px;
-  height: 44px;
-  border-radius: 12px;
-  border: 1px solid var(--line);
-  background: var(--surface);
-  color: var(--ink);
-  opacity: clamp(0, calc(var(--near) * 1.6 - .4), 1);
-  transform: scale(calc(.4 + var(--near) * .6));
-  transition: opacity 120ms ease, transform 200ms var(--ease), border-color 140ms ease, background-color 140ms ease, color 140ms ease;
-}
-html.calm nav.top .tile svg { left: 50%; top: 50%; width: 24px; height: 24px; margin: -12px 0 0 -12px; }
-html.calm nav.top a[aria-current="page"] .tile { background: var(--accent-tint); border-color: var(--accent-tint); color: var(--accent); }
-html.calm nav.top a:is(:hover, .held, :focus-visible) .tile { border-color: var(--ink); }
-
-/* Step three: its name. */
-html.calm nav.top a::after {
-  content: attr(data-label);
-  content: attr(data-label) / '';
-  position: absolute;
-  left: calc(100% + 12px);
-  top: 50%;
-  padding: .3rem .65rem;
-  white-space: nowrap;
-  font-size: .8125rem;
-  font-weight: 600;
-  line-height: 1.4;
-  color: var(--paper);
-  background: var(--ink);
-  border-radius: 8px;
-  opacity: 0;
-  transform: translate(-4px, -50%);
-  transition: opacity 100ms ease, transform 160ms var(--ease);
+  z-index: 0;
   pointer-events: none;
+  mix-blend-mode: multiply;
+  filter: url(#wet);
+  animation: wash-in 2.4s var(--ease) both;
 }
-html.calm nav.top a:hover::after, html.calm nav.top a.held::after, html.calm nav.top a:focus-visible::after {
-  opacity: 1;
-  transform: translate(0, -50%);
-  transition: opacity 140ms ease 60ms, transform 200ms var(--ease) 60ms;
+html.calm body > :not(.wash, .sleep-wall, svg) { position: relative; z-index: 1; }
+html.calm body > nav.top { position: absolute; }
+html.calm body > .wash.corner { top: -80px; right: -60px; width: 62%; height: 620px; }
+html.calm body > .wash.corner.small { width: 50%; height: 520px; }
+html.calm body > .wash.corner.faint { width: 46%; height: 480px; opacity: .7; }
+html.calm body > .wash.side { left: 0; top: 0; width: 50%; height: 100vh; min-height: 640px; }
+html.calm body > .wash.middle { left: 15%; right: 15%; top: 40px; height: 720px; opacity: .8; }
+html.calm body > .wash i {
+  position: absolute;
+  left: var(--x);
+  top: var(--y);
+  width: var(--w);
+  aspect-ratio: 1.5;
+  margin: calc(var(--w) / -2) 0 0 calc(var(--w) / -2);
+  background: radial-gradient(closest-side, rgba(var(--c), .5) 0%, rgba(var(--c), .36) 40%, rgba(var(--c), .14) 70%, rgba(var(--c), 0) 100%);
+  filter: blur(22px);
+  border-radius: 42% 58% 63% 37% / 45% 40% 60% 55%;
+  animation: wash-flow var(--d) ease-in-out var(--dl) infinite;
+  will-change: transform, border-radius;
+}
+@keyframes wash-in { from { opacity: 0; transform: scale(.94); } to { opacity: 1; transform: none; } }
+@keyframes wash-flow {
+  0%, 100% { transform: translate(0, 0) rotate(0deg) scale(1); border-radius: 42% 58% 63% 37% / 45% 40% 60% 55%; }
+  25% { transform: translate(var(--dx), calc(var(--dy) * -1)) rotate(28deg) scale(1.07); border-radius: 58% 42% 38% 62% / 55% 62% 38% 45%; }
+  50% { transform: translate(calc(var(--dx) * -.4), var(--dy)) rotate(-12deg) scale(.94); border-radius: 50% 50% 34% 66% / 38% 58% 42% 62%; }
+  75% { transform: translate(calc(var(--dx) * -1), calc(var(--dy) * .4)) rotate(18deg) scale(1.04); border-radius: 36% 64% 55% 45% / 60% 44% 56% 40%; }
+}
+@media (prefers-color-scheme: dark) {
+  html.calm body > .wash { mix-blend-mode: screen; opacity: .45; }
 }
 
 /* ----- icons --------------------------------------------------------------- */
@@ -406,7 +364,7 @@ html.calm .icon-link {
   font-weight: 400;
   transition: color 140ms ease;
 }
-html.calm .icon-link:hover, html.calm .icon-link.held { color: var(--accent); }
+html.calm .icon-link:hover, html.calm .icon-link.held { color: var(--ink); }
 /* A button dressed as a quiet link: icon links, links under a list, Log out. */
 html.calm .btn.icon-link, html.calm button.link.icon-link,
 html.calm .actions.quiet-links .btn, html.calm form.logout .btn {
@@ -419,12 +377,15 @@ html.calm .actions.quiet-links .btn, html.calm form.logout .btn {
   color: var(--muted);
   transition: color 140ms ease;
 }
-html.calm .btn.icon-link:is(:hover, .held, :active) { background: none; border: 0; color: var(--accent); }
+html.calm .btn.icon-link:is(:hover, .held, :active) { background: none; border: 0; color: var(--ink); }
 html.calm .icon-links { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem 1.8rem; margin: 1.5rem 0; }
 
 /* ----- buttons ----------------------------------------------------------- */
-/* Flat, with a clear edge and soft corners. The one thing to press on a
-   page is Orchid. */
+/* Two kinds, chosen on the button board. The one thing to press on a page is
+   a small solid ink button; it never changes colour, it only glows when the
+   pointer is on it. Everything else is grey words, and a pale Orchid marker
+   stroke slides in under them on hover. Answer buttons, the ⋯ toggle, folds
+   and other controls keep their own shapes. */
 html.calm .btn,
 html.calm button:not(.link) {
   position: relative;
@@ -432,61 +393,74 @@ html.calm button:not(.link) {
   align-items: center;
   justify-content: center;
   gap: .45rem;
-  min-height: 38px;
-  padding: 0 1.125rem;
+  min-height: 40px;
+  padding: 0 1.1rem;
   background: var(--surface);
   color: var(--ink);
   border: 1px solid var(--line-strong);
-  border-radius: 9px;
+  border-radius: 10px;
   font: inherit;
-  font-size: .875rem;
-  font-weight: 600;
+  font-size: 1rem;
+  font-weight: 400;
   cursor: pointer;
-  transition: border-color 140ms ease, background-color 140ms ease, color 140ms ease, transform 140ms var(--ease);
+  transition: border-color 160ms ease, box-shadow 400ms ease, color 200ms ease, transform 160ms var(--ease);
 }
 html.calm .btn:hover, html.calm button:not(.link):hover, html.calm .btn.held, html.calm button:not(.link).held {
   color: var(--ink);
   background: var(--surface);
   border-color: var(--ink);
 }
-html.calm .btn:active, html.calm button:not(.link):active { transform: translateY(1px); }
-html.calm .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
-html.calm .btn.primary:is(:hover, .held) { background: var(--accent-hover); border-color: var(--accent-hover); color: var(--on-accent); }
+html.calm .btn:active, html.calm button:not(.link):active { transform: scale(.97); }
+html.calm .btn.primary {
+  min-height: 44px;
+  padding: 0 1.4rem;
+  background: var(--ink);
+  border-color: var(--ink);
+  color: var(--paper);
+  font-size: 1.1rem;
+}
+html.calm .btn.primary:is(:hover, :focus-visible, .held) {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: var(--paper);
+  box-shadow: 0 10px 28px -10px rgba(var(--shadow), .55), 0 0 44px -10px rgba(168, 51, 109, .45), 0 0 64px -18px rgba(200, 110, 160, .4);
+}
 html.calm .btn.again { border-color: var(--ink); }
-/* Danger is quiet: Terra words on a Terra edge, never filled. */
-html.calm .btn.danger { border-color: var(--warn-edge); color: var(--warn); background: transparent; }
-html.calm .btn.danger:is(:hover, .held) { border-color: var(--warn); color: var(--warn); background: transparent; }
-html.calm .btn.wide { display: flex; width: 100%; margin: 1.2rem 0; font-size: 1rem; }
-html.calm button.link { min-height: 0; padding: 0; color: var(--muted); font-weight: 400; text-decoration: none; transition: color 140ms ease; }
-html.calm button.link:hover { color: var(--accent); }
-/* One primary button per page. Every other action is words in Orchid (or
-   Terra when it destroys something). Answer buttons, the ⋯ toggle, folds
-   and other controls keep their own shapes. */
-html.calm main :is(.btn, button):not(.primary, .link, .fold, .more-toggle, .keys-button, .coach-mark, .chip, .close, .icon-link, .answers .btn, .sure-buttons .btn, .study .btn.again, form.search button, .path-field button) {
+/* Danger is ink, never a colour; its words say what it does. */
+html.calm .btn.danger { border-color: var(--line-strong); color: var(--ink); background: transparent; }
+html.calm .btn.danger:is(:hover, .held) { border-color: var(--ink); color: var(--ink); background: transparent; }
+html.calm .btn.wide { display: flex; width: 100%; margin: 1.2rem 0; font-size: 1.1rem; }
+
+/* The marker: a pale stroke under the lower half of the words. */
+html.calm button.link,
+html.calm main :is(.btn, button):not(.primary, .link, .fold, .more-toggle, .keys-button, .coach-mark, .chip, .close, .icon-link, .answers .btn, .sure-buttons .btn, .study .btn.again, form.search button, .path-field button, .lesson-deck .btn) {
   min-height: 32px;
-  padding: 0;
+  padding: 0 .15rem;
   border: 0;
-  border-radius: 0;
-  background: none;
-  font-weight: 600;
-  color: var(--accent);
+  border-radius: 2px;
+  background: linear-gradient(var(--marker), var(--marker)) no-repeat 0 82% / 100% 0;
+  font-weight: 400;
+  color: var(--muted);
+  transition: background-size 380ms var(--ease), color 200ms ease;
 }
-html.calm main :is(.btn, button):not(.primary, .link, .fold, .more-toggle, .keys-button, .coach-mark, .chip, .close, .icon-link, .answers .btn, .sure-buttons .btn, .study .btn.again, form.search button, .path-field button):is(:hover, .held) {
+html.calm button.link:is(:hover, :focus-visible),
+html.calm main :is(.btn, button):not(.primary, .link, .fold, .more-toggle, .keys-button, .coach-mark, .chip, .close, .icon-link, .answers .btn, .sure-buttons .btn, .study .btn.again, form.search button, .path-field button, .lesson-deck .btn):is(:hover, :focus-visible, .held) {
   border: 0;
-  background: none;
-  color: var(--accent-hover);
+  background: linear-gradient(var(--marker), var(--marker)) no-repeat 0 82% / 100% 42%;
+  color: var(--ink);
 }
-html.calm main :is(.btn, button).danger:not(.primary) { color: var(--warn); }
-html.calm main :is(.btn, button).danger:not(.primary):is(:hover, .held) { color: var(--warn); text-decoration: underline; text-underline-offset: 3px; }
+html.calm button.link { min-height: 0; text-decoration: none; }
+html.calm main :is(.btn, button).danger:not(.primary) { color: var(--ink); }
+html.calm main :is(.btn, button).danger:not(.primary):is(:hover, .held) { color: var(--ink); }
 
 /* Key hints live on the ? sheet now, not on every button. */
 html.calm .key { display: none; }
 html.calm .actions { gap: .75rem; }
 html.calm .actions.quiet-links { gap: 1.4rem; margin-top: 1rem; }
-html.calm .actions.quiet-links .btn:hover { color: var(--accent); }
+html.calm .actions.quiet-links .btn:hover { color: var(--ink); }
 
 /* ----- forms --------------------------------------------------------------- */
-html.calm label { font-size: .875rem; font-weight: 600; margin-bottom: 1.1rem; }
+html.calm label { font-size: .875rem; font-weight: 500; margin-bottom: 1.1rem; }
 html.calm label.check { font-size: 1rem; font-weight: 400; min-height: 2.4rem; }
 html.calm label.check input { accent-color: var(--accent); width: 1.05rem; height: 1.05rem; }
 html.calm input[type=text], html.calm input[type=password], html.calm input[type=number],
@@ -512,7 +486,7 @@ html.calm input:focus, html.calm select:focus, html.calm textarea:focus {
 html.calm input[type=file] { font-size: .9375rem; }
 html.calm input[type=file]::file-selector-button {
   font: inherit;
-  font-weight: 600;
+  font-weight: 500;
   margin-right: .8rem;
   padding: .4rem .9rem;
   color: var(--ink);
@@ -522,7 +496,7 @@ html.calm input[type=file]::file-selector-button {
   cursor: pointer;
 }
 html.calm fieldset { border: 0; border-radius: 0; padding: 0; }
-html.calm legend { font-size: .875rem; font-weight: 600; }
+html.calm legend { font-size: .875rem; font-weight: 500; }
 /* Writing a card: the card itself, as it will look when you study it.
    The front large, a short line, the back below; the deck as one quiet
    line above. Images are picked, dropped or pasted onto a side. */
@@ -589,9 +563,9 @@ html.calm .face-label {
   display: block;
   margin: 0 0 .5rem;
   font-size: .8rem;
-  font-weight: 600;
+  font-weight: 500;
   letter-spacing: .06em;
-  text-transform: uppercase;
+  font-variant-caps: all-small-caps;
   color: var(--faint);
   transition: color 140ms ease;
 }
@@ -659,7 +633,7 @@ html.calm .card-form > .sheet { padding: 8px 32px; border: 1px solid var(--line)
 html.calm .card-form > .sheet:focus-within { border-color: var(--line-strong); box-shadow: none; }
 html.calm .card-form .face-edit { padding: 24px 0; border-radius: 0; }
 html.calm .card-form .sheet > hr.divider { width: auto; margin: 0; border-top: 1px solid var(--line); animation: none; }
-html.calm .card-form .face-label { font-size: .75rem; font-weight: 600; letter-spacing: .12em; color: var(--muted); }
+html.calm .card-form .face-label { font-size: 1.05rem; font-weight: 400; letter-spacing: .08em; color: var(--muted); }
 html.calm .card-form .sheet textarea { text-align: left; }
 html.calm .card-form .sheet textarea::placeholder { font-style: normal; }
 html.calm .card-form .face-edit[data-face] textarea { font-size: 1.875rem; line-height: 1.3; min-height: 2.5rem; }
@@ -914,7 +888,7 @@ html.calm .sheet.paste { padding: 1.4rem 1.8rem 1rem; text-align: left; }
 /* Import: the two ways in on two thirds, what is kept in the side column.
    The drop zone is a dashed outline, the paste box a plain border. */
 html.calm main:has(input[name=kind][value=apkg]) > h2 + p + p.small { display: block; margin: 1rem 0 1.5rem; font-size: .9375rem; line-height: 1.55; color: var(--ink-2); }
-html.calm main:has(input[name=kind][value=apkg]) > h2 + p + p.small::before { content: 'Good to know'; display: block; margin-bottom: 12px; font-size: .75rem; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
+html.calm main:has(input[name=kind][value=apkg]) > h2 + p + p.small::before { content: 'Good to know'; display: block; margin-bottom: 12px; font-size: 1.05rem; font-weight: 400; letter-spacing: .08em; font-variant-caps: all-small-caps; color: var(--muted); }
 html.calm main:has(input[name=kind][value=apkg]) > h2 + p { font-family: var(--serif); font-size: 1.125rem; line-height: 1.6; }
 html.calm main:has(input[name=kind][value=apkg]) .sheet.paste, html.calm main:has(input[name=kind][value=apkg]) .sheet.paste:focus-within { border: 1px solid var(--line); box-shadow: none; }
 html.calm main:has(input[name=kind][value=apkg]) .sheet.paste:focus-within { border-color: var(--line-strong); }
@@ -943,7 +917,7 @@ html.calm form.search button { min-height: 36px; padding: .2rem 1rem; margin-lef
 /* The Add section's tabs: words with a line under the current one. */
 /* Tabs are small pills; the one you are on is tinted. */
 html.calm nav.tabs { display: flex; gap: 4px; border: 0; border-radius: 0; margin: 2rem 0 0; overflow: visible; }
-html.calm nav.tabs a { padding: 8px 16px; min-height: 0; border: 0; border-radius: 10px; font-size: .9375rem; font-weight: 600; color: var(--muted); transition: background-color 140ms ease, color 140ms ease; }
+html.calm nav.tabs a { padding: 8px 16px; min-height: 0; border: 0; border-radius: 10px; font-size: .9375rem; font-weight: 500; color: var(--muted); transition: background-color 140ms ease, color 140ms ease; }
 html.calm nav.tabs a + a { border: 0; }
 html.calm nav.tabs a:hover { background: var(--tint); color: var(--ink); }
 html.calm nav.tabs a[aria-current="page"] { background: var(--tint); color: var(--ink); }
@@ -953,20 +927,17 @@ html.calm nav.tabs + h1 { margin: 1.5rem 0 2rem; }
 html.calm ul.list { border-top: 0; margin: .25rem 0; }
 html.calm ul.list li { border-bottom: 1px solid var(--line); transition: border-color 160ms ease; }
 html.calm ul.list li:last-child { border-bottom: 0; }
-/* A row lifted into a card takes the hairlines around it along. */
-html.calm ul.list li:has(> a.row:hover), html.calm ul.list li:has(+ li > a.row:hover),
-html.calm ul.list li:has(> a.row.held), html.calm ul.list li:has(+ li > a.row.held) { border-color: transparent; }
 html.calm a.row {
   position: relative;
   min-height: 44px;
-  padding: .45rem .75rem;
-  margin: 1px -.75rem;
+  padding: .45rem 0;
+  margin: 1px 0;
   border: 0;
-  border-radius: 9px;
-  transition: background-color 140ms ease;
+  border-radius: 0;
+  transition: text-shadow 500ms ease;
 }
-/* On hover a row lights up softly, like a pressed key. */
-html.calm a.row:hover, html.calm a.row.held { color: var(--ink); background: var(--tint); }
+/* On hover a row's words glow softly; no box, no tint. */
+html.calm a.row:is(:hover, .held, :focus-visible) { color: var(--ink); background: none; text-shadow: 0 0 16px rgba(200, 110, 160, .45), 0 0 30px rgba(168, 51, 109, .3); }
 html.calm a.row:hover .grow { text-decoration: none; }
 html.calm .counts { font-weight: 400; font-size: .93rem; color: var(--muted); }
 html.calm li.item { padding: .8rem 0; }
@@ -998,10 +969,12 @@ html.calm .hero {
   border-bottom: 1px solid var(--line);
 }
 html.calm .today { padding: 0; }
-html.calm .today .date { margin: 0; font-size: .75rem; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
+/* No date: the page is about today anyway. */
+html.calm .today .date { display: none !important; }
 html.calm .today h1 { margin: .75rem 0 0; font-size: 2rem; line-height: 1.15; }
+html.calm .today h1.all-done { font-size: 8rem; line-height: .95; letter-spacing: -.02em; }
 /* The whoah: today's count, huge and on its own line. */
-html.calm .today h1 .count .n { display: block; margin: 0 0 .25rem -.04em; font-family: var(--italic); font-style: italic; font-weight: 300; font-size: 8rem; line-height: .95; letter-spacing: -.04em; font-variant-numeric: lining-nums; color: var(--ink); }
+html.calm .today h1 .count .n { display: block; margin: 0 0 .25rem -.04em; font-family: var(--italic); font-style: italic; font-weight: 400; font-size: 10rem; line-height: .9; letter-spacing: -.03em; font-variant-numeric: lining-nums; color: var(--ink); }
 html.calm .today .facts { margin: .75rem 0 0; font-size: 1rem; color: var(--ink-2); }
 html.calm .start { display: inline-flex; width: auto; margin: 1.25rem 0 0; font-size: .875rem; }
 html.calm .start .arrow { display: none; }
@@ -1009,7 +982,7 @@ html.calm .today .catch-up { margin-top: 1.25rem; }
 html.calm .today-side { display: flex; flex-direction: column; gap: .75rem; }
 html.calm .today-side p { margin: 0; }
 html.calm .today-side .week { display: flex; flex-direction: column; gap: .75rem; }
-html.calm .today-side .week h2 { margin: 0; padding: 0; border: 0; font-size: .75rem; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
+html.calm .today-side .week h2 { margin: 0; padding: 0; border: 0; font-size: 1.05rem; font-weight: 400; letter-spacing: .08em; font-variant-caps: all-small-caps; color: var(--muted); }
 html.calm .attention-link { display: none; }
 /* Add card, New deck, Import: icons only, their names show on hover. */
 html.calm .home-actions { gap: 4px; margin: 1rem 0 0 -8px; }
@@ -1022,7 +995,7 @@ html.calm .home-actions .btn.icon-link span:not(.tile) {
   padding: .3rem .65rem;
   white-space: nowrap;
   font-size: .8125rem;
-  font-weight: 600;
+  font-weight: 500;
   line-height: 1.4;
   color: var(--paper);
   background: var(--ink);
@@ -1041,19 +1014,19 @@ html.calm .table-head {
   margin: 2rem 0 0;
   padding: 0 0 .65rem;
   border-bottom: 1px solid var(--line);
-  font-size: .75rem;
-  font-weight: 600;
-  letter-spacing: .12em;
-  text-transform: uppercase;
+  font-size: 1.05rem;
+  font-weight: 400;
+  letter-spacing: .08em;
+  font-variant-caps: all-small-caps;
   color: var(--muted);
 }
 html.calm .table-head .num { display: block; width: 96px; text-align: right; }
-html.calm .table-head .chev { display: block; width: 16px; }
+html.calm .table-head .chev { display: none; }
 html.calm ul.decks { margin: 4px 0 0; }
 html.calm ul.decks li { border-bottom: 0; }
-html.calm ul.decks a.row { display: grid; grid-template-columns: minmax(0, 1fr) 96px 96px 16px; gap: 16px; align-items: center; min-height: 64px; }
+html.calm ul.decks a.row { display: grid; grid-template-columns: minmax(0, 1fr) 96px 96px; gap: 16px; align-items: center; min-height: 64px; }
 html.calm ul.decks a.row .grow { display: flex; flex-direction: column; justify-content: center; }
-html.calm ul.decks .deck-name { font-family: var(--serif); font-optical-sizing: auto; font-size: 1.25rem; font-weight: 400; letter-spacing: 0; line-height: 1.25; }
+html.calm ul.decks .deck-name { font-family: var(--serif); font-style: italic; font-size: 1.55rem; font-weight: 400; letter-spacing: 0; line-height: 1.2; }
 html.calm ul.decks .sub { margin-top: .2rem; font-size: .8125rem; line-height: 1.3; color: var(--muted); }
 /* Nested decks: the parents above in small type, the deck's own name below. */
 html.calm .deck-path { font-family: var(--sans); font-weight: 400; color: var(--muted); }
@@ -1061,22 +1034,21 @@ html.calm .deck-path .sep { margin: 0 .4em; color: var(--faint); }
 html.calm ul.decks .deck-path { margin-bottom: .1rem; font-size: .8125rem; letter-spacing: 0; }
 html.calm h1 .deck-path { display: block; margin-bottom: .4rem; font-size: .875rem; font-weight: 400; letter-spacing: 0; }
 html.calm ul.decks .num { text-align: right; font-weight: 400; font-size: 1.125rem; color: var(--ink-2); }
-html.calm ul.decks .num.due { color: var(--ink); font-weight: 600; }
+html.calm ul.decks .num.due { color: var(--ink); font-weight: 500; }
 html.calm ul.decks .num.new { color: var(--ink-2); }
 html.calm ul.decks .num .unit, html.calm ul.decks .num .dot { display: none; }
 /* Nothing due shows as a faint dash, not in Orchid. */
 html.calm ul.decks .num.due:not(.done):not(:has(.unit)) { color: var(--faint); font-weight: 400; }
 html.calm ul.decks .num.new:not(:has(.unit)) { color: var(--faint); }
-/* Done for today: a Terra tick, straight like the numbers. */
+/* Done for today: an ink tick, straight like the numbers. */
 html.calm ul.decks .num.done { display: flex; align-items: center; justify-content: flex-end; }
 html.calm ul.decks .done-check { display: block; color: var(--warn); }
-html.calm ul.decks .chev { display: block; color: var(--faint); transition: transform 180ms var(--ease), color 140ms ease; }
-html.calm ul.decks a.row:hover .chev { transform: translateX(2px); color: var(--ink); }
+html.calm ul.decks .chev { display: none; }
 
 /* Catching up: how long it takes, in big numbers beside today. */
 html.calm .pace { display: flex; flex-direction: column; gap: .5rem; padding-top: 1.25rem; border-top: 1px solid var(--line); }
 html.calm .pace p { margin: 0; }
-html.calm .pace-days { font-size: 1.125rem; font-weight: 600; }
+html.calm .pace-days { font-size: 1.125rem; font-weight: 500; }
 html.calm .pace-days .n { margin-right: .1em; font-family: var(--italic); font-style: italic; font-weight: 400; font-size: 3rem; line-height: 1; }
 html.calm .catch-up p button.link.calm-only { margin-left: .75rem; color: var(--muted); text-decoration: underline; text-underline-offset: 3px; text-decoration-thickness: 1px; }
 html.calm .catch-up p a { color: var(--accent); }
@@ -1101,7 +1073,7 @@ html.calm .deck-main dl.stats-inline dd { font-family: var(--italic); font-style
 html.calm .deck-side { display: flex; flex-direction: column; gap: .75rem; }
 html.calm .deck-side p { margin: 0; }
 html.calm .deck-side p.muted.small { color: var(--ink-2); }
-html.calm .deck-side::before { content: 'About this deck'; font-size: .75rem; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
+html.calm .deck-side::before { content: 'About this deck'; font-size: 1.05rem; font-weight: 400; letter-spacing: .08em; font-variant-caps: all-small-caps; color: var(--muted); }
 html.calm .deck-export { display: none; }
 html.calm button.more-toggle {
   flex: none;
@@ -1109,10 +1081,15 @@ html.calm button.more-toggle {
   width: 38px;
   min-height: 38px;
   padding: 0;
-  border-color: var(--line);
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  box-shadow: none;
+  transition: background-color 160ms ease;
 }
-html.calm button.more-toggle span { width: 4px; height: 4px; border-radius: 50%; background: var(--ink); }
-html.calm button.more-toggle[aria-expanded="true"] { border-color: var(--ink); }
+html.calm button.more-toggle span { width: 4px; height: 4px; border-radius: 50%; background: var(--muted); }
+html.calm button.more-toggle:is(:hover, :focus-visible, [aria-expanded="true"]) { background: var(--marker); }
+html.calm button.more-toggle:is(:hover, :focus-visible, [aria-expanded="true"]) span { background: var(--ink); }
 html.calm .deck-menu {
   position: absolute;
   z-index: 5;
@@ -1139,7 +1116,12 @@ html.calm .deck-main { position: relative; }
 /* Its cards: a column head, the front in the serif, the back under it. */
 html.calm .cards-head { display: flex; justify-content: space-between; align-items: baseline; margin: 1.75rem 0 .75rem; }
 html.calm .cards-head h2 { margin: 0; padding: 0; border: 0; }
-html.calm .cards-head a { color: var(--accent); }
+html.calm .cards-head a {
+  color: var(--muted);
+  background: linear-gradient(var(--marker), var(--marker)) no-repeat 0 82% / 100% 0;
+  transition: background-size 200ms var(--ease), color 160ms ease;
+}
+html.calm .cards-head a:is(:hover, :focus-visible) { color: var(--ink); background-size: 100% 42%; }
 html.calm ul.list.cards { margin: 4px 0 0; }
 html.calm ul.list.cards li { border: 0; }
 html.calm ul.list.cards a.row { display: grid; grid-template-columns: minmax(0, 1fr) 140px 16px; gap: 16px; align-items: center; }
@@ -1166,9 +1148,9 @@ html.calm .card-state {
   gap: 6px;
   margin: 0;
   font-size: .75rem;
-  font-weight: 600;
-  letter-spacing: .12em;
-  text-transform: uppercase;
+  font-weight: 500;
+  letter-spacing: .08em;
+  font-variant-caps: all-small-caps;
   color: var(--muted);
 }
 html.calm .card-state .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--faint); }
@@ -1211,7 +1193,7 @@ html.calm .study hr.divider {
 html.calm .study.revealed .reveal { display: none; }
 html.calm .study .reveal { display: flex; justify-content: center; margin: 0; }
 html.calm .study .reveal { margin-top: 2.5rem; }
-html.calm .study .reveal .show { display: inline-flex; width: auto; min-width: 200px; min-height: 44px; margin: 0; font-size: 1.0625rem; }
+html.calm .study .reveal .show { display: inline-flex; width: auto; margin: 0; }
 html.calm .study .answers {
   position: static;
   display: grid;
@@ -1224,17 +1206,34 @@ html.calm .study .answers {
   animation: calm-appear 220ms var(--ease) 100ms both;
 }
 html.calm .study .answers.cols-4 { width: min(840px, 100%); }
-/* Big, quiet buttons: the word, and when the card comes back in the italic. */
-html.calm .study .answers .btn { flex-direction: column; gap: 4px; min-height: 64px; padding: .7rem 1.25rem; border-radius: 11px; border-color: var(--ink); }
-html.calm .study .answers .btn.primary { border-color: var(--accent); }
-html.calm .study .answers .label { display: inline-flex; align-items: center; gap: 8px; font-size: 1.125rem; font-weight: 600; }
-html.calm .study .answers .ivl { font-family: var(--italic); font-style: italic; font-size: 1rem; font-weight: 400; color: var(--muted); }
-html.calm .study .answers .btn.primary .ivl { color: var(--on-accent-soft); }
+/* The answers follow the button rule: Good is the small ink button, the
+   others are words with the marker. Under each, in the italic, when the
+   card comes back. */
+html.calm .study .answers { display: flex; justify-content: center; align-items: flex-start; gap: 2.25rem; }
+html.calm .study .answers .btn {
+  flex-direction: column;
+  gap: 2px;
+  min-height: 0;
+  padding: .55rem 1.3rem;
+  border: 0;
+  border-radius: 10px;
+  background: none;
+  color: var(--muted);
+  transition: background-size 380ms var(--ease), color 200ms ease, box-shadow 400ms ease, transform 160ms var(--ease);
+}
+html.calm .study .answers .btn:not(.primary) .label { padding: 0 .15rem; background: linear-gradient(var(--marker), var(--marker)) no-repeat 0 82% / 100% 0; transition: background-size 380ms var(--ease); }
+html.calm .study .answers .btn:is(:hover, :focus-visible, .held) { border: 0; background: none; color: var(--ink); }
+html.calm .study .answers .btn:not(.primary):is(:hover, :focus-visible, .held) .label { background-size: 100% 42%; }
+html.calm .study .answers .btn.primary { background: var(--ink); color: var(--paper); }
+html.calm .study .answers .btn.primary:is(:hover, :focus-visible, .held) { background: var(--ink); color: var(--paper); box-shadow: 0 10px 28px -10px rgba(var(--shadow), .55), 0 0 44px -10px rgba(168, 51, 109, .45), 0 0 64px -18px rgba(200, 110, 160, .4); }
+html.calm .study .answers .label { display: inline-flex; align-items: center; gap: 8px; font-size: 1.25rem; font-weight: 400; }
+html.calm .study .answers .ivl { font-family: var(--italic); font-style: italic; font-size: .95rem; font-weight: 400; color: var(--faint); }
+html.calm .study .answers .btn.primary .ivl { color: rgba(255, 255, 255, .68); }
 html.calm .study-foot { margin: auto 0 0; padding: 28px 0 28px; }
 html.calm .study-foot .progress { height: 2px; border-radius: 2px; background: var(--track); }
 html.calm .study-foot .bar { height: 2px; border-radius: 2px; background: var(--accent); transition: width 320ms var(--ease), background-color 900ms var(--ease); }
-/* A miss takes its share back: the line slips back, briefly orchid. */
-html.calm .study-foot .bar.slip { background: var(--warn); }
+/* A miss takes its share back: the line slips back, briefly grey. */
+html.calm .study-foot .bar.slip { background: var(--faint); }
 html.calm .study-meta { margin: .6rem 0 0; font-size: .87rem; color: var(--muted); }
 html.calm .study-meta a { color: var(--muted); }
 html.calm .study-meta a:hover { color: var(--accent-hover); }
@@ -1258,11 +1257,12 @@ html.calm .session-end {
   flex: 1;
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
+  align-items: center;
   justify-content: flex-start;
-  max-width: 640px;
-  padding: 12vh 0 96px;
-  text-align: left;
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 16vh 0 96px;
+  text-align: center;
 }
 html.calm .simple-only { display: none; }
 html.calm .end-mark { position: relative; display: block; width: 26px; height: 26px; color: var(--warn); }
@@ -1279,11 +1279,11 @@ html.calm .end-mark .line {
   background: var(--accent);
   opacity: 0;
 }
-html.calm .session-end h1 { margin: 1.5rem 0 0; font-size: 2.375rem; line-height: 1.1; }
+html.calm .session-end h1 { margin: 1.5rem 0 0; font-size: 4rem; line-height: 1.02; }
 html.calm .session-end .kicker + h1 { margin-top: 1rem; }
 html.calm .session-end .summary { margin: 1rem 0 0; font-size: 1.125rem; line-height: 1.5; color: var(--ink-2); }
 html.calm .session-end .summary + .summary { margin-top: .5rem; font-size: .9375rem; color: var(--muted); }
-html.calm .session-end .end-links { justify-content: flex-start; gap: 1.5rem; margin-top: 2rem; font-size: .9375rem; }
+html.calm .session-end .end-links { justify-content: center; gap: 1.5rem; margin-top: 2rem; font-size: 1.05rem; }
 html.calm .session-end .end-links a, html.calm .session-end .end-links button.link { color: var(--muted); }
 html.calm .session-end .end-links a:hover, html.calm .session-end .end-links button.link:hover { color: var(--accent-hover); }
 html.calm .session-end .btn { margin-top: 1rem; }
@@ -1292,17 +1292,46 @@ html.calm .session-end .btn { margin-top: 1rem; }
    that fills, and the next card comes back by itself. */
 /* Quiet hours: why sleep helps is the way on; studying anyway is quieter. */
 html.calm .rest .end-links a[href="/learn/sleep"] { color: var(--accent); }
-html.calm .rest .end-links button.link { font-weight: 400; text-decoration: underline; text-underline-offset: 3px; text-decoration-thickness: 1px; }
 html.calm .break .end-links { display: none; }
-html.calm .break-start { display: flex; gap: 12px; margin-top: 2rem; }
+/* desk.js starts the break by itself, so its buttons stay out of sight. */
+html.calm .break-start { display: none; }
 html.calm .break-start .btn { margin: 0; }
-html.calm .break.running > :not(.break-run):not(.kicker) { display: none; }
-html.calm .break-run:not([hidden]) { display: flex; flex-direction: column; align-items: flex-start; width: 100%; }
-html.calm .break-clock { margin: 1rem 0 0; font-size: 6rem; font-weight: 400; letter-spacing: -.04em; line-height: .9; }
-html.calm .break-line { width: 100%; max-width: 600px; height: 3px; margin-top: 2rem; border-radius: 2px; background: var(--track); overflow: hidden; }
-html.calm .break-fill { width: 0; height: 3px; background: var(--accent); }
+html.calm .break.running > :not(.break-run):not(.kicker):not(h1) { display: none; }
+html.calm .break-run:not([hidden]) { display: flex; flex-direction: column; align-items: center; width: 100%; }
+html.calm .break-clock { margin: .5rem 0 0; font-style: italic; font-size: 7.5rem; font-weight: 400; letter-spacing: -.02em; line-height: .95; font-variant-numeric: lining-nums tabular-nums; }
+html.calm .break-line { width: 100%; max-width: 420px; height: 2px; margin-top: 2rem; border-radius: 2px; background: var(--track); overflow: hidden; }
+html.calm .break-fill { width: 0; height: 2px; background: var(--accent); }
 html.calm .break-run .summary { margin-top: 1.5rem; }
 html.calm .break-run .btn { margin-top: 1.5rem; }
+
+/* Quiet hours: one dark screen over everything, a night wash, and only
+   "Go to sleep." Nothing to press. */
+html.calm .sleep-wall {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1.5rem;
+  overflow: hidden;
+  background: #1e1220;
+  color: #f3f0ff;
+  text-align: center;
+}
+html.calm .sleep-wall > :not(.wash) { position: relative; z-index: 1; }
+html.calm .sleep-wall h1 { margin: 0; font-size: 11rem; line-height: .95; animation: calm-appear 1.2s var(--ease) both; }
+html.calm .sleep-wall p { margin: 0; font-size: 1.35rem; color: rgba(243, 240, 255, .62); }
+html.calm .sleep-wall > .wash { position: absolute; inset: 0; mix-blend-mode: screen; opacity: .5; filter: url(#wet); }
+html.calm .sleep-wall > .wash i {
+  position: absolute; left: var(--x); top: var(--y); width: var(--w); aspect-ratio: 1.5;
+  margin: calc(var(--w) / -2) 0 0 calc(var(--w) / -2);
+  background: radial-gradient(closest-side, rgba(var(--c), .5) 0%, rgba(var(--c), .36) 40%, rgba(var(--c), .14) 70%, rgba(var(--c), 0) 100%);
+  filter: blur(22px); border-radius: 42% 58% 63% 37% / 45% 40% 60% 55%;
+  animation: wash-flow var(--d) ease-in-out var(--dl) infinite;
+}
+html:not(.calm) .sleep-wall { display: none; }
 
 html.calm .finishing .end-mark .line { animation: calm-close-line 560ms cubic-bezier(.6, 0, .2, 1) both; }
 html.calm .finishing .end-mark .check path { animation: calm-draw 340ms var(--ease) 400ms both; }
@@ -1316,37 +1345,69 @@ html.calm .finishing h1 { animation: calm-appear 320ms var(--ease) 520ms both; }
 html.calm .finishing .summary, html.calm .finishing .end-links { animation: calm-appear 320ms var(--ease) 600ms both; }
 
 /* ----- login --------------------------------------------------------------- */
-html.calm .brand-big { font-family: var(--serif); font-weight: 400; font-size: 2.07rem; letter-spacing: 0; margin: 0; }
-/* Log in: the name and what it does on the left, the form on the right. */
-html.calm main:has(> .brand-big) { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 420px); column-gap: 80px; align-content: center; justify-content: space-between; min-height: 100vh; padding-top: 0; padding-bottom: 0; }
-html.calm main:has(> .brand-big) > * { grid-column: 2; }
-html.calm main:has(> .brand-big) > .brand-big { grid-column: 1; grid-row: 1 / 4; align-self: center; margin: 0 0 7.5rem; font-family: var(--sans); font-size: 4.5rem; font-weight: 600; letter-spacing: -.02em; }
-html.calm main:has(> .brand-big) > .tagline { grid-column: 1; grid-row: 1 / 4; align-self: center; max-width: 460px; margin: 5rem 0 0; font-family: var(--serif); font-size: 1.625rem; line-height: 1.4; }
-html.calm main:has(> .brand-big) > .tagline .it { font-family: var(--italic); font-style: italic; }
-html.calm main:has(> .brand-big) > p.muted:not(.small) { display: none; }
-html.calm main:has(> .brand-big) > h2 { grid-row: 1; margin: 0 0 1rem; padding: 0; border: 0; font-size: 2.25rem; font-weight: 600; letter-spacing: -.03em; }
-html.calm main:has(> .brand-big) form { display: flex; flex-direction: column; gap: 16px; }
-html.calm main:has(> .brand-big) form label { font-size: .875rem; font-weight: 600; }
-html.calm main:has(> .brand-big) form .btn { align-self: stretch; margin-top: 8px; }
-html.calm main:has(> .brand-big) > p:last-child { font-size: .875rem; color: var(--muted); }
+/* The wash fills the left half; on the right, on plain white, a greeting
+   and the two fields as one group, with their names as placeholders
+   (desk.js moves them in). No name of the site, no tagline, and nothing
+   on the form reacts to the pointer. */
+html.calm main:has(> .brand-big) {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  align-content: center;
+  max-width: none;
+  min-height: 100vh;
+  margin: 0;
+  padding: 0;
+}
+html.calm main:has(> .brand-big) > * { grid-column: 2; width: 100%; max-width: 420px; margin-left: 72px; box-sizing: border-box; }
+html.calm main:has(> .brand-big) > :is(.brand-big, .tagline, p.muted:not(.small), h2) { display: none; }
+html.calm main:has(> .brand-big) > h1.greeting { margin: 0 0 1.5rem 72px; font-size: 3.6rem; line-height: 1.02; }
+html.calm main:has(> .brand-big) form { display: flex; flex-direction: column; gap: 22px; margin-top: 0; }
+html.calm main:has(> .brand-big) form .fields {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid rgba(var(--shadow), .24);
+  border-radius: 16px;
+  overflow: hidden;
+  background: var(--surface);
+}
+html.calm main:has(> .brand-big) form .fields:focus-within { border-color: var(--ink); }
+html.calm main:has(> .brand-big) form label { margin: 0; font-size: 1.15rem; font-weight: 400; }
+html.calm main:has(> .brand-big) form .fields label + label { border-top: 1px solid rgba(var(--shadow), .14); }
+html.calm main:has(> .brand-big) form .fields input {
+  display: block;
+  width: 100%;
+  margin: 0;
+  min-height: 0;
+  padding: .7rem 1rem;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  font-size: 1.15rem;
+}
+html.calm main:has(> .brand-big) form .fields input:is(:hover, :focus) { border: 0; box-shadow: none; }
+html.calm main:has(> .brand-big) form .fields input::placeholder { color: var(--faint); }
+html.calm main:has(> .brand-big) form .label-text { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+html.calm main:has(> .brand-big) form .btn.primary { align-self: flex-start; }
+html.calm main:has(> .brand-big) form .btn.primary:is(:hover, :focus-visible) { box-shadow: none; }
+html.calm main:has(> .brand-big) > p:last-child { font-size: 1rem; color: var(--muted); }
 
 @media (prefers-reduced-motion: reduce) {
   html.calm *, html.calm *::before, html.calm *::after { animation: none !important; transition: none !important; }
   html.calm .btn, html.calm button, html.calm a.row { transform: none !important; }
-  html.calm nav.top .tile { transform: scale(calc(.4 + var(--near) * .6)) !important; }
 }
 
 /* ----- list cards ------------------------------------------------------------
    The front can carry the items you already know; the back is a column of
    rows you tap when you remembered one. Rows hover like buttons. */
 html.calm .list-known { margin: 1.4rem 0 0; font-family: var(--serif); font-optical-sizing: auto; color: var(--muted); }
-html.calm .list-known .known-label { margin: 0 0 .4rem; font-family: var(--sans); font-size: .8rem; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--faint); }
+html.calm .list-known .known-label { margin: 0 0 .4rem; font-family: var(--sans); font-size: .8rem; font-weight: 500; letter-spacing: .06em; font-variant-caps: all-small-caps; color: var(--faint); }
 html.calm .list-known ul { display: flex; flex-wrap: wrap; justify-content: center; gap: .15rem 1.1rem; margin: 0; padding: 0; list-style: none; font-size: 1.13rem; line-height: 1.4; }
 html.calm .list-known .more { margin: .5rem 0 0; font-size: 1.13rem; font-style: italic; color: var(--ink); }
 html.calm section.face.back.list { width: 100%; max-width: 600px; text-align: left; }
 html.calm section.face.back.list > .md { margin-bottom: 1rem; }
 html.calm section.face.back.list ol.list-items + .md { margin-top: 1.1rem; }
-html.calm ol.list-items .text :is(h1, h2, h3, h4, h5, h6) { margin: 0 0 .15rem; padding: 0; border: 0; font-family: inherit; font-size: inherit; font-weight: 600; line-height: inherit; letter-spacing: normal; text-transform: none; color: inherit; }
+html.calm ol.list-items .text :is(h1, h2, h3, h4, h5, h6) { margin: 0 0 .15rem; padding: 0; border: 0; font-family: inherit; font-size: inherit; font-weight: 500; line-height: inherit; letter-spacing: normal; text-transform: none; color: inherit; }
 html.calm ol.list-items .text :is(p, ul, ol) { margin: 0; }
 html.calm ol.list-items .text :is(ul, ol) { padding-left: 1.1rem; }
 html.calm .list-how { margin: 0 0 1rem; font-family: var(--sans); font-size: .875rem; color: var(--muted); text-align: center; }
@@ -1393,7 +1454,7 @@ html.calm ol.list-items input { position: absolute; width: 1px; height: 1px; opa
 html.calm ol.list-items label.item:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
 html.calm ol.list-items .num { display: none; }
 html.calm ol.list-items .text { flex: 1; font-family: var(--serif); font-optical-sizing: auto; }
-html.calm ol.list-items .mark { font-family: var(--sans); font-size: .875rem; font-weight: 600; letter-spacing: normal; text-transform: none; color: var(--accent); }
+html.calm ol.list-items .mark { font-family: var(--sans); font-size: .875rem; font-weight: 500; letter-spacing: normal; text-transform: none; color: var(--accent); }
 html.calm ol.list-items label.item:has(input:checked) { background: var(--accent-tint); border-color: var(--accent); }
 html.calm ol.list-items label.item:has(input:checked)::before { background: var(--accent); border-color: var(--accent); }
 html.calm ol.list-items label.item:has(input:checked)::after { opacity: 1; }
@@ -1430,7 +1491,7 @@ html.calm .coach {
 }
 html.calm .coach-flag + .coach-flag { margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--line); }
 html.calm .coach-flag p { margin: .25rem 0; }
-html.calm .coach-label { font-size: .8rem; letter-spacing: .06em; text-transform: uppercase; color: var(--warn); }
+html.calm .coach-label { font-size: .8rem; letter-spacing: .06em; font-variant-caps: all-small-caps; color: var(--warn); }
 html.calm .coach .actions { margin: .8rem 0 0; }
 html.calm .write-hints:empty { display: none; }
 html.calm .coach-hint { display: flex; gap: .6rem; align-items: baseline; margin: .9rem 0 0; font-size: .93rem; color: var(--muted); }
@@ -1471,12 +1532,12 @@ html.calm .sheet label.goal:hover { border-color: var(--line-strong); }
 html.calm .sheet label.goal input { appearance: none; -webkit-appearance: none; width: 18px; height: 18px; margin: 2px 0 0; border: 1.5px solid var(--line-strong); border-radius: 50%; background: var(--paper); transition: border 140ms ease; }
 html.calm .sheet label.goal input:checked { border: 5px solid var(--accent); }
 html.calm .sheet label.goal input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-html.calm .sheet label.goal .goal-name { display: block; font-weight: 600; }
+html.calm .sheet label.goal .goal-name { display: block; font-weight: 500; }
 html.calm .sheet label.goal .muted.small { display: block; margin-top: 2px; font-size: .8125rem; }
 html.calm .sheet label.goal:has(input:checked) { background: var(--accent-tint); }
 html.calm :is(table.workload, table.calibration, table.retention) { width: 100%; border-collapse: collapse; font-size: .93rem; }
 html.calm :is(table.workload, table.calibration, table.retention) :is(th, td) { padding: .55rem .2rem; border-bottom: 1px solid var(--line); text-align: left; font-weight: 400; }
-html.calm :is(table.workload, table.calibration, table.retention) thead th { font-size: .8rem; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+html.calm :is(table.workload, table.calibration, table.retention) thead th { font-size: .8rem; letter-spacing: .06em; font-variant-caps: all-small-caps; color: var(--muted); }
 html.calm :is(table.workload, table.calibration, table.retention) .num { text-align: right; font-variant-numeric: tabular-nums; }
 html.calm table.workload tr.current th { color: var(--accent); }
 
@@ -1487,7 +1548,7 @@ html.calm .timer { width: min(600px, 100%); margin: 2.5rem auto 0; }
 html.calm .timer-line { height: 3px; border-radius: 2px; background: var(--track); overflow: hidden; }
 html.calm .timer-fill { height: 3px; width: 100%; border-radius: 2px; background: var(--accent); transition: background-color 400ms var(--ease); }
 html.calm .timer.low .timer-fill { background: var(--warn); }
-html.calm .timer-meta { display: flex; justify-content: space-between; align-items: baseline; margin: .6rem 0 0; font-size: .875rem; font-weight: 600; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+html.calm .timer-meta { display: flex; justify-content: space-between; align-items: baseline; margin: .6rem 0 0; font-size: .875rem; font-weight: 500; color: var(--ink-2); font-variant-numeric: tabular-nums; }
 html.calm .timer.low .timer-secs { color: var(--warn); }
 html.calm .timer .extend { color: var(--muted); font-size: .87rem; }
 html.calm .timer .extend:hover { color: var(--accent-hover); }
@@ -1501,7 +1562,7 @@ html.calm .reveal-form .sure-buttons .btn { min-height: 44px; }
 html.calm .reveal-form .sure-buttons .label { display: inline-flex; align-items: center; gap: 8px; }
 /* What you typed, set off by an Orchid rule, above the right answer. */
 html.calm .typed-echo { margin: 0 auto 1.75rem; padding: 2px 0 2px 18px; max-width: 600px; border: 0; border-left: 2px solid var(--accent); border-radius: 0; background: none; text-align: left; }
-html.calm .typed-echo .face-label { font-family: var(--sans); font-size: .75rem; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: var(--accent); }
+html.calm .typed-echo .face-label { font-family: var(--sans); font-size: 1.05rem; font-weight: 400; letter-spacing: .08em; font-variant-caps: all-small-caps; color: var(--accent); }
 html.calm .typed-echo .typed-text { margin: .25rem 0 0; font-family: var(--italic); font-style: italic; font-size: 1.625rem; line-height: 1.3; white-space: pre-wrap; }
 html.calm .timeout-form { text-align: center; animation: calm-appear 220ms var(--ease) both; }
 html.calm .timeout-note { margin: 1.6rem 0 0; color: var(--warn); font-size: .93rem; }
@@ -1522,36 +1583,77 @@ html.calm table.retention th a:hover { color: var(--accent-hover); }
 html.calm table.retention tr.short td:nth-child(3) { color: var(--warn); }
 
 /* ----- lessons ------------------------------------------------------------ */
-/* Reading width, serif text, and a small tag for how strong the evidence is:
-   Terra where it is solid, muted where it is a rule of thumb or mixed,
-   Orchid where it is not supported. */
-html.calm .lead { color: var(--muted); max-width: 36rem; }
-html.calm .evidence { flex: none; border: 0; padding: .1rem .55rem; border-radius: 999px; font-size: .75rem; font-weight: 400; letter-spacing: .02em; white-space: nowrap; color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); }
-html.calm .evidence:is(.mixed, .practice) { color: var(--muted); background: var(--track); }
-html.calm .evidence.against { color: var(--warn); background: color-mix(in srgb, var(--warn) 12%, transparent); }
-html.calm ul.lessons .evidence { margin-left: 1rem; }
-html.calm .lesson h1 { margin-bottom: .5rem; }
-html.calm .lesson-meta { margin: 0 0 1.6rem; }
-html.calm .lesson .md { max-width: 36rem; font-family: var(--serif); font-optical-sizing: auto; font-size: 1.1rem; line-height: 1.65; }
+/* Reading width and the serif at reading size. How strong the evidence is
+   shows as a small dot and words in small capitals: the dot runs from full
+   Orchid (strong) through paler Orchid to grey, ink where FSRS's own data
+   says so. */
+html.calm .lead { color: var(--muted); max-width: 36rem; font-size: 1.2rem; line-height: 1.5; }
+html.calm .evidence {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: .5rem;
+  border: 0;
+  padding: 0;
+  background: none;
+  font-size: 1rem;
+  font-weight: 400;
+  letter-spacing: .06em;
+  font-variant-caps: all-small-caps;
+  white-space: nowrap;
+  color: var(--muted);
+}
+html.calm .evidence::before { content: ''; flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); }
+html.calm .evidence.moderate::before { background: #c77ca2; }
+html.calm .evidence.mixed::before { background: #e3bcd0; }
+html.calm .evidence.fsrs::before { background: var(--ink); }
+html.calm .evidence.practice::before { background: var(--line-strong); }
+html.calm .evidence.against::before { background: var(--faint); }
+html.calm ul.lessons .evidence { margin-left: 1rem; min-width: 11rem; }
+html.calm ul.lessons a.row { padding: .9rem 0 1rem; }
+html.calm ul.lessons a.row .grow > span:first-child { font-style: italic; font-size: 1.45rem; line-height: 1.2; }
+html.calm ul.lessons .sub { display: block; margin-top: .25rem; font-size: 1.02rem; line-height: 1.4; }
+html.calm ul.lessons .chev { display: none; }
+html.calm .lesson h1 { margin-bottom: .75rem; font-size: 3.4rem; }
+html.calm .lesson-meta { margin: 0 0 1.8rem; }
+html.calm .lesson .md { max-width: 38rem; font-family: var(--serif); font-size: 1.22rem; line-height: 1.6; }
 html.calm .lesson .md h2 { margin: 2.2rem 0 .6rem; font-family: var(--sans); }
 html.calm .lesson .md ul { padding-left: 1.2rem; }
-html.calm .lesson .md li { margin: 0 0 .5rem; }
-html.calm .lesson .md li::marker { color: var(--accent); }
+html.calm .lesson .md li { margin: 0 0 .55rem; }
+html.calm .lesson .md li::marker { color: var(--faint); }
 html.calm .lesson .md a { color: var(--accent); }
-html.calm .lesson-deck { max-width: 36rem; margin: 2.6rem 0 1rem; padding-top: 1.4rem; border-top: 1px solid var(--line); }
-html.calm .lesson-deck form { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin: 0; }
-html.calm .lesson-deck p { margin: 0; }
-html.calm .next-lesson { margin: 1.4rem 0 3rem; color: var(--muted); font-size: .93rem; }
+/* Sources: smaller, grey, no bullets. */
+html.calm .lesson .md h2:last-of-type + ul { padding-left: 0; list-style: none; font-size: 1rem; line-height: 1.5; color: var(--muted); }
+html.calm .lesson-deck { max-width: 38rem; margin: 2.6rem 0 1rem; padding-top: 1.4rem; border-top: 1px solid var(--line); }
+html.calm .lesson-deck form { display: flex; flex-direction: column; align-items: flex-start; gap: 1rem; margin: 0; }
+html.calm .lesson-deck p { margin: 0; font-size: 1.05rem; }
+/* Keeping the lesson's cards is the page's one action. */
+html.calm main .lesson-deck form .btn {
+  min-height: 44px;
+  padding: 0 1.4rem;
+  border: 1px solid var(--ink);
+  border-radius: 10px;
+  background: var(--ink);
+  color: var(--paper);
+  font-size: 1.1rem;
+}
+html.calm main .lesson-deck form .btn:is(:hover, :focus-visible, .held) {
+  border-color: var(--ink);
+  background: var(--ink);
+  color: var(--paper);
+  box-shadow: 0 10px 28px -10px rgba(var(--shadow), .55), 0 0 44px -10px rgba(168, 51, 109, .45), 0 0 64px -18px rgba(200, 110, 160, .4);
+}
+html.calm .next-lesson { margin: 1.6rem 0 3rem; color: var(--muted); font-size: 1.05rem; }
 html.calm .next-lesson a { color: var(--accent); }
 
 /* ----- stats ----------------------------------------------------------------
    Three numbers to act on, then one chart per question with a note beside
    it. The exact tables wait behind "I love numbers". */
 html.calm .stats-title { display: flex; justify-content: space-between; align-items: flex-end; gap: 1rem; }
-html.calm .numbers-toggle { display: inline-flex; align-items: center; gap: 10px; margin: 0 0 .6rem; font-size: .875rem; font-weight: 600; color: var(--muted); cursor: pointer; }
+html.calm .numbers-toggle { display: inline-flex; align-items: center; gap: 10px; margin: 0 0 .6rem; font-size: .875rem; font-weight: 500; color: var(--muted); cursor: pointer; }
 html.calm:not(.show-numbers) .numbers { display: none; }
 html.calm.show-numbers .numbers { margin-top: 4rem; }
-html.calm.show-numbers .numbers::before { content: 'The numbers'; display: block; font-size: .75rem; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
+html.calm.show-numbers .numbers::before { content: 'The numbers'; display: block; font-size: 1.05rem; font-weight: 400; letter-spacing: .08em; font-variant-caps: all-small-caps; color: var(--muted); }
 html.calm.show-numbers .numbers > h2:first-child, html.calm.show-numbers .numbers > .week + h2 { margin-top: .75rem; }
 html.calm .numbers .week { display: none; }
 html.calm .big3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 32px; margin: 1.5rem 0 0; padding: 1.5rem 0 1.75rem; border-top: 1px solid var(--ink); }
@@ -1563,10 +1665,10 @@ html.calm .big3 > div > .kicker { align-self: end; }
 html.calm .big3 > div > .n { align-self: end; }
 html.calm .big3 p { margin: 0; }
 html.calm .big3 .n { font-size: 3.25rem; font-weight: 400; letter-spacing: -.03em; line-height: 1; font-variant-numeric: lining-nums; }
-html.calm .big3 .n.it { font-family: var(--italic); font-style: italic; font-weight: 300; letter-spacing: -.02em; }
+html.calm .big3 .n.it { font-family: var(--italic); font-style: italic; font-weight: 400; letter-spacing: -.02em; }
 html.calm .big3 a { color: var(--accent); }
 html.calm .chart-sec { display: grid; grid-template-columns: minmax(0, 1fr); gap: 24px; padding: 1.75rem 0; border-top: 1px solid var(--line); }
-html.calm .chart-main h2 { margin: 0 0 .4rem; padding: 0; border: 0; font-family: var(--serif); font-size: 1.375rem; font-weight: 400; letter-spacing: 0; text-transform: none; color: var(--ink); }
+html.calm .chart-main h2 { margin: 0 0 .4rem; padding: 0; border: 0; font-family: var(--serif); font-weight: 400; letter-spacing: 0; text-transform: none; font-variant-caps: normal; font-style: italic; font-size: 1.6rem; color: var(--ink); }
 html.calm .chart-main > p { margin: 0 0 1.25rem; }
 html.calm .chart-side { display: flex; flex-direction: column; gap: 12px; }
 html.calm .chart-side p { margin: 0; }
@@ -1576,8 +1678,8 @@ html.calm .warn-note { padding-left: 12px; border-left: 2px solid var(--warn); c
 html.calm .chart.empty { padding: 2rem 0; color: var(--muted); }
 html.calm .chart svg { display: block; width: 100%; height: auto; overflow: visible; font-family: var(--sans); }
 html.calm .chart .axis-text { fill: var(--faint); font-size: 11px; }
-html.calm .chart .axis-text.strong { fill: var(--ink); font-weight: 600; }
-html.calm .chart .axis-text.value { fill: var(--ink); font-size: 12px; font-weight: 600; }
+html.calm .chart .axis-text.strong { fill: var(--ink); font-weight: 500; }
+html.calm .chart .axis-text.value { fill: var(--ink); font-size: 12px; font-weight: 500; }
 html.calm .chart .grid { stroke: var(--track); stroke-width: 1; }
 html.calm .chart .aim { stroke: var(--ink); stroke-width: 1.5; stroke-dasharray: 4 4; fill: none; }
 html.calm .chart .line { fill: none; stroke: var(--accent); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
@@ -1608,7 +1710,7 @@ html.calm .legend .aim::before { width: 2px; height: 12px; border-radius: 1px; b
 html.calm .legend .low::before { box-sizing: border-box; background: none; border: 2px solid var(--warn); }
 html.calm .dots-row .dots-track { position: relative; }
 html.calm .dots-row { display: grid; grid-template-columns: 140px minmax(0, 1fr) 40px; gap: 16px; align-items: center; min-height: 40px; }
-html.calm .dots-row a { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; color: var(--ink); }
+html.calm .dots-row a { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; color: var(--ink); }
 html.calm .dots-row a:hover { color: var(--accent-hover); }
 html.calm .dots-track { height: 6px; border-radius: 3px; background: var(--track); }
 html.calm .dots-track i { position: absolute; display: block; }
@@ -1624,7 +1726,7 @@ html.calm .sure-bars { display: grid; grid-template-columns: 72px minmax(0, 1fr)
 html.calm .sure-bars .track { position: relative; height: 8px; border-radius: 4px; background: var(--track); overflow: hidden; }
 html.calm .sure-bars .fill { position: absolute; inset: 0 auto 0 0; border-radius: 4px; background: var(--accent); }
 html.calm .sure-bars .fill.grey { background: var(--faint); }
-html.calm .sure-bars .num { text-align: right; font-weight: 600; font-variant-numeric: tabular-nums; }
+html.calm .sure-bars .num { text-align: right; font-weight: 500; font-variant-numeric: tabular-nums; }
 /* One tooltip for every chart: the value first, then what it is. */
 .chart-tip { position: fixed; z-index: 20; display: flex; flex-direction: column; gap: 2px; padding: 8px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--paper); box-shadow: 0 8px 24px rgba(var(--shadow), .12); font-family: var(--sans); font-size: .8125rem; color: var(--muted); pointer-events: none; transform: translate(-50%, calc(-100% - 12px)); white-space: nowrap; }
 .chart-tip[hidden] { display: none; }
@@ -1635,7 +1737,7 @@ html.calm .sure-bars .num { text-align: right; font-weight: 600; font-variant-nu
    controls on the right, saved as you go. The Danger zone is last. */
 html.calm main:has(form[action="/settings"]) ul.list.links { display: flex; flex-wrap: wrap; gap: 8px 24px; margin: 1rem 0 2.5rem; border: 0; }
 html.calm main:has(form[action="/settings"]) ul.list.links li { border: 0; }
-html.calm main:has(form[action="/settings"]) ul.list.links a.row { display: inline; min-height: 0; padding: 0; background: none; color: var(--accent); font-weight: 600; }
+html.calm main:has(form[action="/settings"]) ul.list.links a.row { display: inline; min-height: 0; padding: 0; background: none; color: var(--accent); font-weight: 500; }
 html.calm main:has(form[action="/settings"]) ul.list.links a.row:hover { color: var(--accent-hover); }
 html.calm main:has(form[action="/settings"]) ul.list.links :is(.sub, .chev) { display: none; }
 html.calm .set { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; padding: 22px 0 28px; border-top: 1px solid var(--ink); }
@@ -1647,7 +1749,7 @@ html.calm .set-body .sheet.form { max-width: none; }
 html.calm .set-body .form-foot { max-width: none; }
 html.calm .set-body form.logout { margin: 1.5rem 0 0; }
 html.calm .set-body details.danger { margin-top: 1.5rem; }
-html.calm .saved { min-height: 1.25em; font-size: .8125rem; font-weight: 600; color: var(--muted); }
+html.calm .saved { min-height: 1.25em; font-size: .8125rem; font-weight: 500; color: var(--muted); }
 html.calm .saved.ok { color: var(--accent); }
 html.calm .saved.err { color: var(--warn); }
 /* A fold: the setting and its current value; it opens the group. */
@@ -1701,11 +1803,22 @@ html.calm .key-top h2:focus { outline: none; }
 /* What you already know of a multicard: one quiet paragraph under an
    Orchid rule, the items run together. */
 html.calm .list-known { width: min(600px, 100%); margin: 1.75rem auto 0; padding: 2px 0 2px 18px; border-left: 2px solid var(--accent); text-align: left; }
-html.calm .list-known .known-label { color: var(--muted); font-size: .75rem; font-weight: 600; letter-spacing: .12em; }
+html.calm .list-known .known-label { color: var(--muted); font-size: 1.05rem; font-weight: 400; letter-spacing: .08em; }
 html.calm .list-known ul { display: block; font-size: 1.125rem; line-height: 1.6; }
 html.calm .list-known li { display: inline; }
 html.calm .list-known li + li::before { content: ' · '; color: var(--faint); }
-html.calm .list-known .more { margin-top: .4rem; font-family: var(--sans); font-size: .9375rem; font-style: normal; font-weight: 600; }
+html.calm .list-known .more { margin-top: .4rem; font-family: var(--sans); font-size: .9375rem; font-style: normal; font-weight: 500; }
+
+/* The week below the decks: what happened, then a bar a day. Today is set
+   apart by its letter in bold, not by a colour. */
+html.calm .week-home .week h2 + p { margin-top: 0; font-size: 1.25rem; line-height: 1.45; }
+html.calm .week-home .week .tip { display: none; }
+html.calm .week-bars { display: grid; grid-template-columns: repeat(7, 32px); column-gap: 12px; align-items: end; margin: 1.5rem 0 0; }
+html.calm .week-bars .day { display: flex; flex-direction: column; align-items: center; justify-content: flex-end; gap: 6px; height: 120px; }
+html.calm .week-bars .bar { display: block; width: 100%; border-radius: 4px 4px 1px 1px; background: var(--accent); }
+html.calm .week-bars .bar.empty { background: var(--line-strong); }
+html.calm .week-bars .letter { font-size: .95rem; line-height: 1; color: var(--muted); }
+html.calm .week-bars .today .letter { font-weight: 700; color: var(--ink); }
 
 /* ----- labels in the margin ------------------------------------------------ */
 /* On wide screens a page gets a narrow label column on the left. Section
@@ -1760,7 +1873,7 @@ html.calm .list-known .more { margin-top: .4rem; font-family: var(--sans); font-
 /* Below the decks: a plus for a new deck, Import in words. */
 html.calm .home-actions { display: none; }
 html.calm .desk-actions { display: flex; align-items: center; gap: 20px; margin: 1rem 0 0 -8px; }
-html.calm .desk-actions a { color: var(--accent); font-weight: 600; font-size: .9375rem; }
+html.calm .desk-actions a { color: var(--accent); font-weight: 500; font-size: .9375rem; }
 html.calm .desk-actions a:hover { color: var(--accent-hover); }
 html.calm .desk-actions .add-deck { position: relative; display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; border-radius: 9px; color: var(--ink-2); }
 html.calm .desk-actions .add-deck:is(:hover, :focus-visible) { color: var(--accent); background: var(--tint); }
@@ -1773,7 +1886,7 @@ html.calm .desk-actions .add-deck::after {
   padding: .3rem .65rem;
   white-space: nowrap;
   font-size: .8125rem;
-  font-weight: 600;
+  font-weight: 500;
   line-height: 1.4;
   color: var(--paper);
   background: var(--ink);
