@@ -530,7 +530,7 @@ html.calm .btn.wide { display: flex; width: 100%; margin: 1.2rem 0; font-size: 1
 
 /* The marker: a pale stroke under the lower half of the words. */
 html.calm button.link,
-html.calm main :is(.btn, button):not(.primary, .link, .fold, .more-toggle, .keys-button, .coach-mark, .chip, .close, .icon-link, .answers .btn, .sure-buttons .btn, .study .btn.again, form.search button, .path-field button, .lesson-deck .btn) {
+html.calm main :is(.btn, button):not(.primary, .link, .fold, .more-toggle, .keys-button, .coach-mark, .chip, .close, .icon-link, .answers .btn, .sure-buttons .btn, .study .btn.again, form.search button, .path-field button, .lesson-deck .btn, .add-pick) {
   min-height: 32px;
   padding: 0 .15rem;
   border: 0;
@@ -541,7 +541,7 @@ html.calm main :is(.btn, button):not(.primary, .link, .fold, .more-toggle, .keys
   transition: background-size 380ms var(--ease), color 200ms ease;
 }
 html.calm button.link:is(:hover, :focus-visible),
-html.calm main :is(.btn, button):not(.primary, .link, .fold, .more-toggle, .keys-button, .coach-mark, .chip, .close, .icon-link, .answers .btn, .sure-buttons .btn, .study .btn.again, form.search button, .path-field button, .lesson-deck .btn):is(:hover, :focus-visible, .held) {
+html.calm main :is(.btn, button):not(.primary, .link, .fold, .more-toggle, .keys-button, .coach-mark, .chip, .close, .icon-link, .answers .btn, .sure-buttons .btn, .study .btn.again, form.search button, .path-field button, .lesson-deck .btn, .add-pick):is(:hover, :focus-visible, .held) {
   border: 0;
   background: linear-gradient(var(--marker), var(--marker)) no-repeat 0 82% / 100% 42%;
   color: var(--ink);
@@ -1011,14 +1011,51 @@ html.calm form.search :is(input, select):focus { box-shadow: none; }
 html.calm form.search select { flex: none; width: auto; padding: 0 .4rem 0 .9rem; border-left: 1px solid var(--line); color: var(--muted); cursor: pointer; }
 html.calm form.search button { min-height: 36px; padding: .2rem 1rem; margin-left: .4rem; }
 
-/* The Add section's tabs: words with a line under the current one. */
-/* Tabs are small pills; the one you are on is tinted. */
-html.calm nav.tabs { display: flex; gap: 4px; border: 0; border-radius: 0; margin: 2rem 0 0; overflow: visible; }
-html.calm nav.tabs a { padding: 8px 16px; min-height: 0; border: 0; border-radius: 10px; font-size: .9375rem; font-weight: 500; color: var(--muted); transition: background-color 140ms ease, color 140ms ease; }
-html.calm nav.tabs a + a { border: 0; }
-html.calm nav.tabs a:hover { background: var(--tint); color: var(--ink); }
-html.calm nav.tabs a[aria-current="page"] { background: var(--tint); color: var(--ink); }
-html.calm nav.tabs + h1 { margin: 1.5rem 0 2rem; }
+/* The Add section's tabs are for phones; desktop has Add's title menu. */
+html.calm nav.tabs { display: none; }
+/* On desktop the tabs and the title are one line: "Add card", whose last
+   words open a small menu of card, deck and file. */
+html.calm .add-head { position: relative; margin: 1.75rem 0 2rem; }
+html.calm .add-head h1 { margin: 0; }
+html.calm button.add-pick {
+  display: inline-flex;
+  align-items: baseline;
+  gap: .15em;
+  min-height: 0;
+  margin: 0;
+  padding: 0 .05em;
+  border: 0;
+  border-radius: 2px;
+  font: inherit;
+  letter-spacing: inherit;
+  color: var(--accent);
+  cursor: pointer;
+  background: linear-gradient(var(--marker), var(--marker)) no-repeat 0 82% / 100% 0;
+  box-shadow: none;
+  transition: background-size 380ms var(--ease), color 200ms ease;
+}
+html.calm button.add-pick:is(:hover, :focus-visible, [aria-expanded="true"]) { color: var(--accent-hover); background-size: 100% 36%; }
+html.calm .add-chev { width: .4em; height: .4em; align-self: center; margin-top: .1em; transition: transform 200ms var(--ease); }
+html.calm button.add-pick[aria-expanded="true"] .add-chev { transform: rotate(180deg); }
+html.calm .add-menu {
+  position: absolute;
+  z-index: 5;
+  left: 2.6em;
+  top: calc(100% + 8px);
+  display: none;
+  flex-direction: column;
+  width: 220px;
+  padding: 6px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  box-shadow: 0 12px 32px rgba(var(--shadow), .10);
+}
+html.calm .add-menu.open { display: flex; animation: calm-appear 160ms var(--ease) both; }
+html.calm .add-menu a { display: flex; align-items: center; min-height: 40px; padding: 0 12px; border-radius: 9px; font-size: .9375rem; color: var(--ink); }
+html.calm .add-menu a:is(:hover, :focus-visible) { background: var(--tint); color: var(--ink); }
+html.calm .add-menu a[aria-current] { color: var(--muted); }
+html.calm .add-menu a[aria-current]::after { content: '✓'; margin-left: auto; color: var(--accent); }
 
 /* ----- lists and tables ----------------------------------------------------- */
 html.calm ul.list { border-top: 0; margin: .25rem 0; }

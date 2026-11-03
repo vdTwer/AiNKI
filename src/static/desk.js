@@ -58,14 +58,15 @@
       e.textContent = words(e.textContent.trim());
     });
 
-    // A ⋯ button opens the menu it controls; Escape or a click elsewhere
-    // closes it.
-    Array.prototype.forEach.call(scope.querySelectorAll('button.more-toggle[aria-controls]'), function (b) {
+    // A ⋯ button, or the words of Add's title, opens the menu it controls;
+    // Escape or a click elsewhere closes it.
+    Array.prototype.forEach.call(scope.querySelectorAll('button.more-toggle[aria-controls], button.add-pick[aria-controls]'), function (b) {
       var menu = document.getElementById(b.getAttribute('aria-controls'));
       if (!menu || b.hasAttribute('data-ready')) return;
       b.setAttribute('data-ready', '');
-      // The menu hangs from the button, under it.
-      b.parentNode.appendChild(menu);
+      // The menu hangs from the button, under it. Add's stays beside its
+      // title, since a menu is not part of a heading.
+      if (!b.classList.contains('add-pick')) b.parentNode.appendChild(menu);
       var set = function (open) {
         menu.classList.toggle('open', open);
         b.setAttribute('aria-expanded', open ? 'true' : 'false');
