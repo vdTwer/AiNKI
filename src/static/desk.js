@@ -687,7 +687,7 @@
     svg.setAttribute('height', '0');
     svg.setAttribute('aria-hidden', 'true');
     svg.setAttribute('class', 'wash-defs');
-    svg.innerHTML = '<filter id="wet" x="-10%" y="-10%" width="120%" height="120%">' +
+    svg.innerHTML = '<filter id="wet" x="-30%" y="-40%" width="160%" height="180%">' +
       '<feTurbulence type="fractalNoise" baseFrequency=".006 .009" numOctaves="3" seed="7" result="t"/>' +
       '<feDisplacementMap in="SourceGraphic" in2="t" scale="90" xChannelSelector="R" yChannelSelector="G"/></filter>';
     document.body.appendChild(svg);
@@ -716,6 +716,8 @@
       i.style.setProperty('--dl', '-' + b[5] + 's');
       i.style.setProperty('--dx', b[6] + '%');
       i.style.setProperty('--dy', b[7] + '%');
+      // The cloud itself, painted once; its holder moves it.
+      i.appendChild(document.createElement('b'));
       w.appendChild(i);
     });
     parent.insertBefore(w, parent.firstChild);
