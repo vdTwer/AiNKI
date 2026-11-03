@@ -338,6 +338,8 @@ table.retention tr.short td { font-weight: 700; }
 .invite-link form.inline { display: inline; margin: 0; }
 .invite-link button.link { min-height: 0; }
 .graph-wrap, .table-wrap { overflow-x: auto; margin: .5rem 0; }
+/* A table that may not fit a narrow phone scrolls by itself, not the page. */
+.fit { overflow-x: auto; }
 .invite-graph { display: block; font-family: inherit; }
 .invite-graph .edge { fill: none; stroke: var(--fg); stroke-width: 1.5; }
 .invite-graph .dot { fill: var(--fg); }
