@@ -251,6 +251,8 @@
     var x = Math.max(0, Math.min(1, (px - r.left) / r.width));
     var y = Math.max(0, Math.min(1, (py - r.top) / r.height));
     var s = el.style;
+    clearTimeout(el.ainkiFlat);
+    if (!el.classList.contains('tilting')) el.classList.add('tilting');
     put(s, '--dur', '90ms');
     put(s, '--spring', 'linear');
     put(s, '--rx', ((0.5 - y) * max).toFixed(2) + 'deg');
@@ -270,6 +272,9 @@
     put(s, '--ry', '0deg');
     put(s, '--sx', '0px');
     put(s, '--sy', '2px');
+    // Once it has sprung back, it lies flat again (see .tilting in calm.css).
+    clearTimeout(el.ainkiFlat);
+    el.ainkiFlat = setTimeout(function () { el.classList.remove('tilting'); }, 600);
   }
 
   function letGo(except) {

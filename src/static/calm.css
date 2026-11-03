@@ -1114,6 +1114,13 @@ html.calm .finishing .summary, html.calm .finishing .end-links { animation: calm
 html.calm .brand-big { font-family: var(--serif); font-weight: 400; font-size: 2.07rem; letter-spacing: 0; margin: 0; }
 html.calm main:has(.brand-big) { padding-top: 22vh; }
 
+/* At rest, whatever tilts lies flat. Its tilt carries a perspective, and
+   any perspective, even with no angle, makes the browser give the element
+   its own GPU layer for as long as the page is open: every button, row
+   and list item. Flat looks exactly the same, so the perspective is only
+   there while app.js leans it or lets it spring back (.tilting). */
+html.calm :is(.btn, button:not(.link), a.row, ol.list-items label.item):not(.tilting, :active) { transform: none; }
+
 @media (prefers-reduced-motion: reduce) {
   html.calm *, html.calm *::before, html.calm *::after { animation: none !important; transition: none !important; }
   html.calm .btn, html.calm button, html.calm a.row { transform: none !important; }
