@@ -504,7 +504,9 @@ fn deck_lags(s: &Signals) -> Option<Advice> {
         reviews: s.recall_30d.reviews - d.recall.reviews,
         remembered: s.recall_30d.remembered - d.recall.remembered,
     };
-    if rest.reviews >= MIN_DECK_SAMPLE && rest.rate().is_some_and(|r| r < s.target - 0.05) {
+    // Only when the rest is known and fine; with one deck, or all short,
+    // `below_target` speaks instead.
+    if rest.rate_over(MIN_DECK_SAMPLE).is_none_or(|r| r < s.target - 0.05) {
         return None;
     }
     let (why, to) = cause(s, Some(d));
@@ -1225,6 +1227,15 @@ mod tests {
         // Too few reviews in that deck: nothing.
         s.decks[1].recall = Recall { reviews: 20, remembered: 10 };
         assert_eq!(first(&s), None);
+    }
+
+    #[test]
+    fn a_single_short_deck_is_below_target() {
+        let mut s = steady();
+        s.recall_30d = Recall { reviews: 2000, remembered: 1600 };
+        s.decks[0].recall = s.recall_30d;
+        s.new_started_7d = 0;
+        assert_eq!(first(&s), Some(Rule::BelowTarget));
     }
 
     #[test]
