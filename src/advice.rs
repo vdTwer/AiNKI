@@ -462,7 +462,9 @@ fn leeches(s: &Signals) -> Option<Advice> {
 
 /// The likely reason recall is short, as a sentence, and where to act.
 fn cause(s: &Signals, deck: Option<&DeckSignal>) -> (String, Option<Link>) {
-    if let Some(d) = deck.filter(|d| d.flagged > 0) {
+    // When the leech note already speaks, flagged cards aren't news here.
+    let leech_note = s.leeches > 0 || s.other_flags >= 5;
+    if let Some(d) = deck.filter(|d| d.flagged > 0 && !leech_note) {
         return (
             format!("{} in it keep slipping or ask a lot at once.", cards(d.flagged)),
             link("/attention", "Have a look"),
@@ -1221,9 +1223,16 @@ mod tests {
     fn one_lagging_deck_is_named_with_its_cause() {
         let mut s = two_decks();
         s.decks[1].flagged = 4;
+        s.other_flags = 4;
         let a = advise(&s);
         assert_eq!(a[0].rule, Rule::DeckLags);
         assert!(a[0].text.starts_with("French: you remembered 80%, you aim for 90%. 4 cards"), "{}", a[0].text);
+        // With the leech note above it, the deck note names another cause.
+        s.leeches = 1;
+        let a = advise(&s);
+        assert_eq!(a[1].rule, Rule::DeckLags);
+        assert!(!a[1].text.contains("keep slipping"), "{}", a[1].text);
+        s.leeches = 0;
         // Too few reviews in that deck: nothing.
         s.decks[1].recall = Recall { reviews: 20, remembered: 10 };
         assert_eq!(first(&s), None);
