@@ -14,6 +14,8 @@ use crate::{
     service::{CardFilter, CardInput, PresetInput},
 };
 
+mod upgrade;
+
 async fn app() -> Arc<App> {
     app_with(|_| {}).await
 }
