@@ -49,7 +49,6 @@ pub enum Rule {
     TooFast,
     HeavyDay,
     BackAfterGap,
-    RunAtRisk,
     FewDays,
     LongSittings,
     SlowAnswers,
@@ -61,7 +60,7 @@ pub enum Rule {
 }
 
 impl Rule {
-    pub const ALL: [Rule; 22] = [
+    pub const ALL: [Rule; 21] = [
         Rule::ExamClose,
         Rule::PileUp,
         Rule::CaughtUp,
@@ -75,7 +74,6 @@ impl Rule {
         Rule::TooFast,
         Rule::HeavyDay,
         Rule::BackAfterGap,
-        Rule::RunAtRisk,
         Rule::FewDays,
         Rule::LongSittings,
         Rule::SlowAnswers,
@@ -101,7 +99,6 @@ impl Rule {
             Rule::TooFast => "too_fast",
             Rule::HeavyDay => "heavy_day",
             Rule::BackAfterGap => "back_after_gap",
-            Rule::RunAtRisk => "run_at_risk",
             Rule::FewDays => "few_days",
             Rule::LongSittings => "long_sittings",
             Rule::SlowAnswers => "slow_answers",
@@ -213,8 +210,6 @@ pub struct Signals {
     pub days_since_review: Option<i64>,
     pub days_studied_7: i64,
     pub reviews_7: i64,
-    /// Days in a row up to yesterday (or today, if studied).
-    pub streak: i64,
 
     // Ahead.
     /// Cards falling due on each of the next seven days (tomorrow first).
@@ -337,7 +332,6 @@ pub fn check(rule: Rule, s: &Signals) -> Option<Advice> {
         Rule::TooFast => too_fast(s),
         Rule::HeavyDay => heavy_day(s),
         Rule::BackAfterGap => back_after_gap(s),
-        Rule::RunAtRisk => run_at_risk(s),
         Rule::FewDays => few_days(s),
         Rule::LongSittings => long_sittings(s),
         Rule::SlowAnswers => slow_answers(s),
@@ -645,17 +639,6 @@ fn back_after_gap(s: &Signals) -> Option<Advice> {
     })
 }
 
-fn run_at_risk(s: &Signals) -> Option<Advice> {
-    let fires = s.streak >= 3 && s.reviews_today == 0 && s.hour >= 18 && s.due_today > 0 && !s.quiet;
-    fires.then(|| {
-        note(
-            Rule::RunAtRisk,
-            format!("Ten minutes keeps your {}-day run going.", s.streak),
-            None,
-        )
-    })
-}
-
 fn few_days(s: &Signals) -> Option<Advice> {
     (s.days_studied_7 > 0 && s.days_studied_7 <= 3 && s.reviews_7 > 20).then(|| {
         note(
@@ -904,7 +887,6 @@ impl App {
             overdue: known.overdue,
             catch_up: user.catch_up,
             breaks_on: user.session_minutes > 0,
-            streak: known.stats.streak_days,
             next_days: known.stats.forecast.iter().skip(1).take(7).map(|(_, n)| *n).collect(),
             leeches: known.attention.iter().filter(|a| a.flags.iter().any(|f| f.kind == Kind::Leech)).count() as i64,
             optimizable_reviews: self.optimizable_reviews(access).await?,
@@ -1070,7 +1052,6 @@ mod tests {
             days_since_review: Some(1),
             days_studied_7: 7,
             reviews_7: 700,
-            streak: 14,
             next_days: vec![100; 7],
             recall_30d: Recall { reviews: 2000, remembered: 1800 },
             target: 0.9,
@@ -1339,25 +1320,9 @@ mod tests {
     fn welcome_back_without_blame() {
         let mut s = steady();
         s.days_since_review = Some(4);
-        s.streak = 0;
         let a = advise(&s);
         assert_eq!(a[0].rule, Rule::BackAfterGap);
         assert!(a[0].text.starts_with("Welcome back. 100 cards waited for you, about 20 minutes."));
-    }
-
-    #[test]
-    fn run_at_risk_only_in_the_evening() {
-        let mut s = steady();
-        s.days_since_review = Some(1);
-        s.reviews_today = 0;
-        s.hour = 19;
-        assert_eq!(first(&s), Some(Rule::RunAtRisk));
-        assert!(advise(&s)[0].text.contains("14-day run"));
-        s.hour = 12;
-        assert_eq!(first(&s), None);
-        s.hour = 19;
-        s.reviews_today = 5;
-        assert_eq!(first(&s), None);
     }
 
     #[test]
