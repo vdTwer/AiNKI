@@ -2209,3 +2209,7 @@ html.calm table.accounts td:first-child { color: var(--ink); }
 html.calm table.accounts td { color: var(--ink-2); font-variant-numeric: tabular-nums; }
 html.calm body[data-page=admin] form.logout { margin-top: 3rem; }
 html.calm body[data-page=admin] form.logout button.link { padding: 0; color: var(--muted); }
+
+/* ----- home for someone new ---------------------------------------------------- */
+html.calm .first-steps { margin-top: 1rem; }
+html.calm .first-steps .lede { margin: 0 0 .75rem; font-size: 1.25rem; color: var(--muted); }

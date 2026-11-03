@@ -1171,7 +1171,7 @@ async fn home(State(app): State<AppState>, user: WebUser, Flash(msg): Flash) -> 
                 } @else if !decks.is_empty() {
                     h1.all-done { span.simple-only { "All done for today" } span.calm-only { "All done." } }
                 } @else {
-                    h1 { "Welcome to AiNKI" }
+                    h1 { span.simple-only { "Welcome to AiNKI" } span.calm-only { "Welcome, " (capitalize(&user.0.username)) "." } }
                 }
                 @if !facts.is_empty() { p.facts { (facts.join(" · ")) } }
                 @if let Some(t) = quiet {
@@ -1218,7 +1218,20 @@ async fn home(State(app): State<AppState>, user: WebUser, Flash(msg): Flash) -> 
                 p.muted.small { "Accepting gives you your own copy. Your progress is yours; later changes by the sender don't carry over." }
             }
             @if decks.is_empty() {
-                p { "No decks yet. Create one, or bring your Anki decks along." }
+                p.simple-only { "No decks yet. Create one, or bring your Anki decks along." }
+                // The desktop look: someone new gets three quiet ways in.
+                div.calm-only.first-steps {
+                    p.lede { "Three ways to begin." }
+                    ul.list.links {
+                        @for (href, name, sub) in [
+                            ("/learn", "Read a short lesson", "How memory works, in a few minutes. Each lesson can become your first deck."),
+                            ("/decks/new", "Make a deck", "Write your own cards, one fact on each."),
+                            ("/import", "Bring your Anki decks", "From an .apkg or a CSV file."),
+                        ] {
+                            li { a.row href=(href) { span.grow { span { (name) } span.sub.muted.small { (sub) } } span.chev aria-hidden="true" { "›" } } }
+                        }
+                    }
+                }
             } @else {
                 div.table-head aria-hidden="true" {
                     span.grow { "Decks" }
@@ -1258,7 +1271,7 @@ async fn home(State(app): State<AppState>, user: WebUser, Flash(msg): Flash) -> 
                 (icon_btn("/import", ICON_IMPORT, "Import"))
             }
             // The desktop look: a plus for a new deck, Import in words.
-            p.desk-actions.calm-only {
+            p.desk-actions.calm-only hidden[decks.is_empty()] {
                 a.add-deck href="/decks/new" aria-label="New deck" data-label="New deck" { (icon(ICON_ADD, PAGE_ICON)) }
                 a href="/import" { "Import deck" }
             }
