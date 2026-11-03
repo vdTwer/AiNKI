@@ -79,7 +79,8 @@ html.calm {
   --fg: var(--ink);
   --bg: var(--paper);
   --soft: var(--track);
-  font-size: calc(18px * var(--scale));
+  /* 17px, not 18: a touch smaller, so the same page holds more air. */
+  font-size: calc(17px * var(--scale));
 }
 
 @media (prefers-color-scheme: dark) {
@@ -197,7 +198,7 @@ html.calm h1 {
   font-family: var(--serif);
   font-style: italic;
   font-weight: 400;
-  font-size: 3rem;
+  font-size: 2.75rem;
   line-height: 1.05;
   letter-spacing: -.005em;
   margin: 1.75rem 0 .75rem;
@@ -988,10 +989,10 @@ html.calm .hero {
 html.calm .today { padding: 0; }
 /* No date: the page is about today anyway. */
 html.calm .today .date { display: none !important; }
-html.calm .today h1 { margin: .75rem 0 0; font-size: 2rem; line-height: 1.15; }
-html.calm .today h1.all-done { font-size: 8rem; line-height: .95; letter-spacing: -.02em; }
+html.calm .today h1 { margin: .75rem 0 0; font-size: 1.875rem; line-height: 1.15; }
+html.calm .today h1.all-done { font-size: 7rem; line-height: .95; letter-spacing: -.02em; }
 /* The whoah: today's count, huge and on its own line. */
-html.calm .today h1 .count .n { display: block; margin: 0 0 .25rem -.04em; font-family: var(--italic); font-style: italic; font-weight: 400; font-size: 10rem; line-height: .9; letter-spacing: -.03em; font-variant-numeric: lining-nums; color: var(--ink); }
+html.calm .today h1 .count .n { display: block; margin: 0 0 .25rem -.04em; font-family: var(--italic); font-style: italic; font-weight: 400; font-size: 9rem; line-height: .9; letter-spacing: -.03em; font-variant-numeric: lining-nums; color: var(--ink); }
 html.calm .today .facts { margin: .75rem 0 0; font-size: 1rem; color: var(--ink-2); }
 html.calm .start { display: inline-flex; width: auto; margin: 1.25rem 0 0; font-size: .875rem; }
 html.calm .start .arrow { display: none; }
@@ -1043,7 +1044,7 @@ html.calm ul.decks { margin: 4px 0 0; }
 html.calm ul.decks li { border-bottom: 0; }
 html.calm ul.decks a.row { display: grid; grid-template-columns: minmax(0, 1fr) 96px 96px; gap: 16px; align-items: center; min-height: 64px; }
 html.calm ul.decks a.row .grow { display: flex; flex-direction: column; justify-content: center; }
-html.calm ul.decks .deck-name { font-family: var(--serif); font-style: italic; font-size: 1.55rem; font-weight: 400; letter-spacing: 0; line-height: 1.2; }
+html.calm ul.decks .deck-name { font-family: var(--serif); font-style: italic; font-size: 1.4rem; font-weight: 400; letter-spacing: 0; line-height: 1.2; }
 html.calm ul.decks .sub { margin-top: .2rem; font-size: .8125rem; line-height: 1.3; color: var(--muted); }
 /* Nested decks: the parents above in small type, the deck's own name below. */
 html.calm .deck-path { font-family: var(--sans); font-weight: 400; color: var(--muted); }
@@ -1086,7 +1087,7 @@ html.calm .deck-title h1 { margin: 0; }
 html.calm .deck-main dl.stats-inline { margin: 1.25rem 0 0; }
 html.calm .deck-main .start { margin-top: 1.75rem; }
 /* The numbers in the italic, the cards due in the accent. */
-html.calm .deck-main dl.stats-inline dd { font-family: var(--italic); font-style: italic; font-weight: 400; font-size: 2.5rem; line-height: 1.1; font-variant-numeric: lining-nums tabular-nums; }
+html.calm .deck-main dl.stats-inline dd { font-family: var(--italic); font-style: italic; font-weight: 400; font-size: 2.25rem; line-height: 1.1; font-variant-numeric: lining-nums tabular-nums; }
 html.calm .deck-side { display: flex; flex-direction: column; gap: .75rem; }
 html.calm .deck-side p { margin: 0; }
 html.calm .deck-side p.muted.small { color: var(--ink-2); }
@@ -1296,7 +1297,7 @@ html.calm .end-mark .line {
   background: var(--accent);
   opacity: 0;
 }
-html.calm .session-end h1 { margin: 1.5rem 0 0; font-size: 4rem; line-height: 1.02; }
+html.calm .session-end h1 { margin: 1.5rem 0 0; font-size: 3.5rem; line-height: 1.02; }
 html.calm .session-end .kicker + h1 { margin-top: 1rem; }
 html.calm .session-end .summary { margin: 1rem 0 0; font-size: 1.125rem; line-height: 1.5; color: var(--ink-2); }
 html.calm .session-end .summary + .summary { margin-top: .5rem; font-size: .9375rem; color: var(--muted); }
