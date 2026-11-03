@@ -1794,12 +1794,23 @@ html.calm .big3 p { margin: 0; }
 html.calm .big3 .n { font-size: 3.25rem; font-weight: 400; letter-spacing: -.03em; line-height: 1; font-variant-numeric: lining-nums; }
 html.calm .big3 .n.it { font-family: var(--italic); font-style: italic; font-weight: 400; letter-spacing: -.02em; }
 html.calm .big3 a { color: var(--accent); }
-/* The coach on Stats: up to three notes, most important first, each with
+/* The coach on Stats: the first note, the others behind a fold, each with
    the Terra dot of the week's tip. */
 html.calm .coach-notes { padding: 1.75rem 0 1.5rem; }
 html.calm .coach-notes .tip { display: flex; gap: .6rem; align-items: baseline; margin: 0 0 .7rem; max-width: 34rem; color: var(--ink-2); font-size: .9375rem; line-height: 1.5; }
 html.calm .coach-notes .tip::before { content: ''; flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--warn); transform: translateY(-.1em); }
 html.calm .coach-notes .tip a, html.calm .coach-notes .tip button.link { color: var(--accent); }
+html.calm .more-notes { margin: .2rem 0 0; }
+html.calm .more-notes > summary { display: inline-flex; align-items: center; gap: .5rem; list-style: none; cursor: pointer; font-size: .9375rem; font-weight: 500; color: var(--accent); }
+html.calm .more-notes > summary::-webkit-details-marker { display: none; }
+html.calm .more-notes > summary::after { content: ''; width: 6px; height: 6px; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: translateY(-2px) rotate(45deg); transition: transform 160ms var(--ease); }
+html.calm .more-notes[open] > summary::after { transform: translateY(1px) rotate(-135deg); }
+html.calm .more-notes > summary:hover { color: var(--accent-hover); }
+html.calm .more-notes[open] > summary { margin-bottom: .8rem; }
+/* "Not now" is quieter than the note's own link. */
+html.calm :is(.coach-notes, .coach-note) .not-now button.link { padding: 0; border: 0; background: none; font: inherit; color: var(--muted); cursor: pointer; }
+html.calm :is(.coach-notes, .coach-note) .not-now button.link:hover { color: var(--accent-hover); }
+html.calm :is(.coach-notes, .coach-note) .not-now { margin-left: .35em; }
 /* The exact numbers repeat the week; the coach above already says what to do. */
 html.calm .numbers .week .tip { display: none; }
 /* A catch-up button inside a note flows with its sentence. */
