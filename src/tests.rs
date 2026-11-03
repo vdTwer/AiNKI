@@ -14,6 +14,7 @@ use crate::{
     service::{CardFilter, CardInput, PresetInput},
 };
 
+mod anki;
 mod upgrade;
 
 async fn app() -> Arc<App> {
