@@ -692,7 +692,10 @@
       '<feTurbulence type="fractalNoise" baseFrequency=".006 .009" numOctaves="3" seed="7" result="t"/>' +
       '<feDisplacementMap in="SourceGraphic" in2="t" scale="90" xChannelSelector="R" yChannelSelector="G"/></filter>' +
       // The same at half size, for clouds painted into a canvas (below).
-      '<filter id="wet-half" filterUnits="userSpaceOnUse" x="-4000" y="-4000" width="8000" height="8000">' +
+      // Its region is in canvas pixels and only needs to cover the largest
+      // canvas (a 720px cloud: 576 x 432). A browser may compute the noise
+      // for the whole region, so a huge one can stall the page.
+      '<filter id="wet-half" filterUnits="userSpaceOnUse" x="0" y="0" width="640" height="480">' +
       '<feTurbulence type="fractalNoise" baseFrequency=".012 .018" numOctaves="3" seed="7" result="t"/>' +
       '<feDisplacementMap in="SourceGraphic" in2="t" scale="45" xChannelSelector="R" yChannelSelector="G"/></filter>';
     document.body.appendChild(svg);
@@ -759,9 +762,14 @@
       i.style.setProperty('--dl', '-' + b[5] + 's');
       i.style.setProperty('--dx', b[6] + '%');
       i.style.setProperty('--dy', b[7] + '%');
-      // The cloud itself, painted once; its holder moves it.
-      i.appendChild(cloud(b[2], PIGMENT[colours[b[3] % colours.length]]) || document.createElement('b'));
       w.appendChild(i);
+      // The cloud itself, painted once; its holder moves it. One cloud per
+      // task, after the page is up: painting is slow without a GPU, and the
+      // wash fades in anyway.
+      setTimeout(function () {
+        if (!w.isConnected) return;
+        i.appendChild(cloud(b[2], PIGMENT[colours[b[3] % colours.length]]) || document.createElement('b'));
+      }, 0);
     });
     parent.insertBefore(w, parent.firstChild);
   }
