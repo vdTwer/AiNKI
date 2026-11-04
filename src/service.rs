@@ -991,7 +991,7 @@ impl App {
     pub async fn reset_card(&self, access: &Access, id: i64) -> Result<Card> {
         access.require_write()?;
         let card = self.card(access, id).await?;
-        let mut tx = self.db.begin().await?;
+        let mut tx = self.db.begin_with("BEGIN IMMEDIATE").await?;
         sqlx::query(
             "UPDATE cards SET state = 0, step = 0, stability = NULL, difficulty = NULL, due = 0,
                 last_review = NULL, reps = 0, lapses = 0, updated_at = ? WHERE id = ? AND user_id = ?",
@@ -1248,7 +1248,7 @@ impl App {
         let out = scheduler::answer(&fsrs, &cfg, card.id, &before, rating, &clock)?;
         let c = &out.card;
 
-        let mut tx = self.db.begin().await?;
+        let mut tx = self.db.begin_with("BEGIN IMMEDIATE").await?;
         let updated = sqlx::query(
             "UPDATE cards SET state = ?, step = ?, stability = ?, difficulty = ?, due = ?,
                 last_review = ?, reps = ?, lapses = ?, updated_at = ?
@@ -1360,7 +1360,7 @@ impl App {
         if newest != last.id {
             return Ok(None);
         }
-        let mut tx = self.db.begin().await?;
+        let mut tx = self.db.begin_with("BEGIN IMMEDIATE").await?;
         sqlx::query(
             "UPDATE cards SET state = ?, step = ?, stability = ?, difficulty = ?, due = ?,
                 last_review = ?, reps = ?, lapses = ?, updated_at = ? WHERE id = ? AND user_id = ?",

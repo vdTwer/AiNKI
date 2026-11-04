@@ -288,7 +288,7 @@ impl App {
             }
         };
 
-        let mut tx = self.db.begin().await?;
+        let mut tx = self.db.begin_with("BEGIN IMMEDIATE").await?;
         let claimed: Option<(i64, i64)> = match invite {
             Some(token) => {
                 let row = sqlx::query_as(
@@ -527,7 +527,7 @@ impl App {
         let name: String = name.chars().filter(|c| !c.is_control()).take(100).collect();
         let name = name.as_str();
         let prefix = if oauth_client_id.is_some() { "oauth".to_string() } else { secret[..12].to_string() };
-        let mut tx = self.db.begin().await?;
+        let mut tx = self.db.begin_with("BEGIN IMMEDIATE").await?;
         let id: i64 = sqlx::query_scalar(
             "INSERT INTO api_tokens (user_id, name, token_hash, prefix, can_write, can_review, all_decks,
                 created_at, oauth_client_id)
