@@ -31,6 +31,29 @@ pub struct User {
     /// 'calm' or 'simple'; only matters on desktop computers.
     pub desktop_look: String,
     pub created_at: i64,
+    /// Re-optimize FSRS about once a month (see `tuning`).
+    pub auto_optimize: bool,
+    pub optimized_at: Option<i64>,
+    /// Reviews there were at the last optimization.
+    pub optimized_reviews: i64,
+    /// What the last optimization did, in a sentence.
+    pub optimize_note: Option<String>,
+    /// Quiet hours, whole hours in the user's timezone (see `study`).
+    pub quiet_from: Option<i64>,
+    pub quiet_to: Option<i64>,
+    pub quiet_lifted_until: Option<i64>,
+    /// Suggest a break after this many minutes of studying; 0 for never.
+    pub session_minutes: i64,
+    pub break_skipped_at: Option<i64>,
+    /// Catch-up mode: no new cards, at most `catch_up_reviews` a day.
+    pub catch_up: bool,
+    pub catch_up_reviews: i64,
+    /// Ask "sure or not?" before showing the answer.
+    pub confidence_check: bool,
+    /// The account whose invite link made this one, if any.
+    pub invited_by: Option<i64>,
+    /// The admin account: sees only the admin panel (see `invites`).
+    pub is_admin: bool,
 }
 
 impl User {
@@ -223,6 +246,19 @@ pub fn parse_handle(handle: &str) -> (String, Option<i64>) {
 
 impl App {
     pub async fn create_user(&self, username: &str, password: &str, timezone: &str) -> Result<User> {
+        self.create_account(username, password, timezone, None, false).await
+    }
+
+    /// A new account. With an invite token, the invite is used up in the
+    /// same transaction, so one link can't make two accounts.
+    pub async fn create_account(
+        &self,
+        username: &str,
+        password: &str,
+        timezone: &str,
+        invite: Option<&str>,
+        admin: bool,
+    ) -> Result<User> {
         let username = username.trim();
         validate_username(username)?;
         validate_password(password)?;
@@ -252,23 +288,47 @@ impl App {
             }
         };
 
-        let mut tx = self.db.begin().await?;
+        let mut tx = self.db.begin_with("BEGIN IMMEDIATE").await?;
+        let claimed: Option<(i64, i64)> = match invite {
+            Some(token) => {
+                let row = sqlx::query_as(
+                    "UPDATE invites SET used_at = ? WHERE token = ? AND used_at IS NULL AND expires_at > ?
+                     RETURNING id, user_id",
+                )
+                .bind(now())
+                .bind(token)
+                .bind(now())
+                .fetch_optional(&mut *tx)
+                .await?;
+                Some(row.ok_or_else(|| AppError::bad("this invite has been used or has expired"))?)
+            }
+            None => None,
+        };
         let id: i64 = sqlx::query_scalar(
-            "INSERT INTO users (username, discriminator, password_hash, timezone, created_at)
-             VALUES (?, ?, ?, ?, ?) RETURNING id",
+            "INSERT INTO users (username, discriminator, password_hash, timezone, created_at, invited_by, is_admin)
+             VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING id",
         )
         .bind(username)
         .bind(discriminator)
         .bind(&hash)
         .bind(&tz)
         .bind(now())
+        .bind(claimed.map(|c| c.1))
+        .bind(admin)
         .fetch_one(&mut *tx)
         .await?;
+        if let Some((invite_id, _)) = claimed {
+            sqlx::query("UPDATE invites SET used_by = ? WHERE id = ?")
+                .bind(id)
+                .bind(invite_id)
+                .execute(&mut *tx)
+                .await?;
+        }
         for t in presets::TEMPLATES {
             sqlx::query(
                 "INSERT INTO presets (user_id, name, description, desired_retention, new_per_day,
-                    reviews_per_day, learning_steps, relearning_steps, max_interval, created_at)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    reviews_per_day, learning_steps, relearning_steps, max_interval, created_at, template)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             )
             .bind(id)
             .bind(t.name)
@@ -280,6 +340,7 @@ impl App {
             .bind(t.relearning_steps)
             .bind(t.max_interval)
             .bind(now())
+            .bind(t.key)
             .execute(&mut *tx)
             .await?;
         }
@@ -346,7 +407,10 @@ impl App {
 
     pub async fn set_password(&self, user_id: i64, password: &str) -> Result<()> {
         validate_password(password)?;
-        let hash = hash_password(password)?;
+        let pw = password.to_string();
+        let hash = tokio::task::spawn_blocking(move || hash_password(&pw))
+            .await
+            .map_err(|e| AppError::Internal(e.into()))??;
         sqlx::query("UPDATE users SET password_hash = ? WHERE id = ?")
             .bind(hash)
             .bind(user_id)
@@ -356,7 +420,11 @@ impl App {
     }
 
     pub async fn change_password(&self, user: &User, current: &str, new: &str) -> Result<()> {
-        if current.len() > MAX_PASSWORD_BYTES || !verify_password(current, &user.password_hash) {
+        // Argon2 takes tens of milliseconds: off the request threads, as at login.
+        let (pw, hash) = (current.to_string(), user.password_hash.clone());
+        let ok = current.len() <= MAX_PASSWORD_BYTES
+            && tokio::task::spawn_blocking(move || verify_password(&pw, &hash)).await.unwrap_or(false);
+        if !ok {
             return Err(AppError::bad("current password is wrong"));
         }
         self.set_password(user.id, new).await?;
@@ -459,7 +527,7 @@ impl App {
         let name: String = name.chars().filter(|c| !c.is_control()).take(100).collect();
         let name = name.as_str();
         let prefix = if oauth_client_id.is_some() { "oauth".to_string() } else { secret[..12].to_string() };
-        let mut tx = self.db.begin().await?;
+        let mut tx = self.db.begin_with("BEGIN IMMEDIATE").await?;
         let id: i64 = sqlx::query_scalar(
             "INSERT INTO api_tokens (user_id, name, token_hash, prefix, can_write, can_review, all_decks,
                 created_at, oauth_client_id)
@@ -557,11 +625,15 @@ impl App {
         .fetch_optional(&self.db)
         .await?
         .ok_or(AppError::Unauthorized)?;
-        sqlx::query("UPDATE api_tokens SET last_used_at = ? WHERE id = ?")
-            .bind(now())
-            .bind(token.id)
-            .execute(&self.db)
-            .await?;
+        // At most once a minute: a quiz through an agent calls on every
+        // question, and each write would take the database's write lock.
+        if token.last_used_at.is_none_or(|t| now() - t >= 60) {
+            sqlx::query("UPDATE api_tokens SET last_used_at = ? WHERE id = ?")
+                .bind(now())
+                .bind(token.id)
+                .execute(&self.db)
+                .await?;
+        }
         let decks = if token.all_decks {
             None
         } else {

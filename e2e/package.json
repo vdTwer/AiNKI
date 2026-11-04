@@ -1,0 +1,22 @@
+{
+  "name": "ainki-e2e",
+  "private": true,
+  "description": "Browser tests of the real AiNKI server (Playwright).",
+  "type": "module",
+  "scripts": {
+    "test": "NODE_OPTIONS=--disable-warning=ExperimentalWarning playwright test",
+    "test:chromium": "E2E_BROWSERS=chromium NODE_OPTIONS=--disable-warning=ExperimentalWarning playwright test",
+    "typecheck": "tsc -p .",
+    "report": "playwright show-report",
+    "upgrade:v1": "UPGRADE_STEP=seed NODE_OPTIONS=--disable-warning=ExperimentalWarning playwright test -c playwright.upgrade.config.ts",
+    "upgrade:v2": "E2E_KEEP_DATA=1 UPGRADE_STEP=check NODE_OPTIONS=--disable-warning=ExperimentalWarning playwright test -c playwright.upgrade.config.ts"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.63.0",
+    "@types/node": "22.19.1",
+    "typescript": "5.9.3"
+  },
+  "engines": {
+    "node": ">=22.18"
+  }
+}

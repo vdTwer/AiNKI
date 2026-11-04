@@ -31,6 +31,19 @@
     try { tz.value = Intl.DateTimeFormat().resolvedOptions().timeZone; } catch (e) {}
   }
 
+  // Invite links: a Copy button, where the browser lets us copy.
+  Array.prototype.forEach.call(document.querySelectorAll('button[data-copy]'), function (b) {
+    var from = document.getElementById(b.getAttribute('data-copy'));
+    if (!from || !navigator.clipboard) return;
+    b.hidden = false;
+    b.addEventListener('click', function () {
+      navigator.clipboard.writeText(from.textContent.trim()).then(function () {
+        b.textContent = 'Copied';
+        setTimeout(function () { b.textContent = 'Copy'; }, 1600);
+      });
+    });
+  });
+
   // Card form: only show the new deck name when "New deck…" is picked.
   var deckSelect = document.querySelector('[data-new-deck-select]');
   var newDeckField = document.getElementById('new-deck-field');
@@ -62,6 +75,8 @@
   var backText = document.getElementById('back');
   if (multiPick && previewBox && previewToggle && frontText && backText) {
     var sheet = previewBox.previousElementSibling;
+    // The coach's hints while writing: a long list, or a card like this one.
+    var hintBox = document.querySelector('.card-form .write-hints');
     var previewing = false;
     var asked = 0;
     var chosen = function () {
@@ -71,6 +86,8 @@
     var refresh = function () {
       var n = ++asked;
       var body = new URLSearchParams({ front: frontText.value, back: backText.value, multi: chosen() });
+      var editing = multiPick.closest('form').getAttribute('data-card');
+      if (editing) body.append('card', editing);
       fetch('/cards/preview', {
         method: 'POST',
         credentials: 'same-origin',
@@ -92,6 +109,7 @@
         multiPick.hidden = !any;
         previewBox.innerHTML = v.html;
         setup(previewBox);
+        if (hintBox && typeof v.hints === 'string') hintBox.innerHTML = v.hints;
       }).catch(function () {});
     };
     var timer = null;
@@ -205,6 +223,14 @@
     });
   }
 
+  // A form marked data-autosubmit saves as soon as it changes (a switch);
+  // without JavaScript it has its own button.
+  document.addEventListener('change', function (e) {
+    var form = e.target.closest && e.target.closest('form[data-autosubmit]');
+    if (!form) return;
+    if (form.requestSubmit) form.requestSubmit(); else form.submit();
+  });
+
   // Picking a file to import: the field names the file and takes drops.
   Array.prototype.forEach.call(document.querySelectorAll('form:not(.card-form) label.file'), function (label) {
     var input = label.querySelector('input[type=file]');
@@ -221,136 +247,11 @@
 
   // ----- page details (run again after every swap) --------------------------
 
-  // Buttons are small cards: while the pointer is over one it tilts toward
-  // it (the side under the pointer dips away), then springs back. Small
-  // ones get a closer perspective and a steeper angle, or the tilt would
-  // be too faint to read as one.
-  //
-  // Leaving is forgiving: a card stays tilted and lit (.held) while the
-  // pointer is within a small margin around it, and only springs back once
-  // it is clearly gone. Entering has no margin, and entering another card
-  // lets the held one go at once.
-  var held = [];
-
-  function grace() { return Math.min(24, Math.max(10, window.innerWidth * 0.02)); }
-
-  function lean(el, e) {
-    var r = el.getBoundingClientRect();
-    var row = el.matches('.row');
-    var base = row ? 3 : el.closest('.answers') ? 10 : 8;
-    var max = row ? base : base * Math.max(1, Math.min(1.8, 220 / r.width));
-    var x = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width));
-    var y = Math.max(0, Math.min(1, (e.clientY - r.top) / r.height));
-    var s = el.style;
-    s.setProperty('--dur', '90ms');
-    s.setProperty('--spring', 'linear');
-    s.setProperty('--rx', ((0.5 - y) * max).toFixed(2) + 'deg');
-    s.setProperty('--ry', ((x - 0.5) * max).toFixed(2) + 'deg');
-    s.setProperty('--sx', ((0.5 - x) * 10).toFixed(1) + 'px');
-    s.setProperty('--sy', (2 + (0.5 - y) * 8).toFixed(1) + 'px');
-    s.setProperty('--gx', (x * 100).toFixed(1) + '%');
-    s.setProperty('--gy', (y * 100).toFixed(1) + '%');
-  }
-
-  function rest(el) {
-    el.classList.remove('held');
-    var s = el.style;
-    s.removeProperty('--dur');
-    s.removeProperty('--spring');
-    s.setProperty('--rx', '0deg');
-    s.setProperty('--ry', '0deg');
-    s.setProperty('--sx', '0px');
-    s.setProperty('--sy', '2px');
-  }
-
-  function letGo(except) {
-    held = held.filter(function (el) {
-      if (el === except) return true;
-      rest(el);
-      return false;
-    });
-  }
-
-  function tilt(el) {
-    if (el.closest('.quiet-links')) return;
-    var row = el.matches('.row');
-    // An icon tilts on its own, with the close perspective of the rail.
-    var icon = el.matches('.icon-link');
-    el.addEventListener('pointerenter', function () {
-      letGo(el);
-      el.classList.remove('held');
-      held = held.filter(function (h) { return h !== el; });
-      var w = el.getBoundingClientRect().width;
-      el.style.setProperty('--persp', (icon ? 240 : row ? 700 : Math.max(240, Math.min(700, w * 3))).toFixed(0) + 'px');
-    });
-    el.addEventListener('pointermove', function (e) { lean(el, e); });
-    el.addEventListener('pointerleave', function (e) {
-      if (e.pointerType !== 'mouse' || !el.isConnected) { rest(el); return; }
-      el.classList.add('held');
-      held.push(el);
-    });
-  }
-
-  document.addEventListener('pointermove', function (e) {
-    if (!held.length) return;
-    var g = grace();
-    held = held.filter(function (el) {
-      var r = el.getBoundingClientRect();
-      var inside = el.isConnected &&
-        e.clientX >= r.left - g && e.clientX <= r.right + g &&
-        e.clientY >= r.top - g && e.clientY <= r.bottom + g;
-      if (inside) lean(el, e); else rest(el);
-      return inside;
-    });
-  });
-  // The pointer left the window, or the page scrolled under it.
-  document.addEventListener('mouseout', function (e) { if (!e.relatedTarget) letGo(null); });
-  window.addEventListener('scroll', function () { letGo(null); }, { passive: true });
-
-  // The side rail: dots far away, icons up close. --near goes from 0 to 1
-  // as the pointer comes within reach of the rail.
-  (function () {
-    var nav = document.querySelector('nav.top');
-    if (!calm || !nav) return;
-    var far = 160, close = 56, frame = 0, px = -1, py = -1;
-    function update() {
-      frame = 0;
-      var near = 0;
-      if (px >= 0) {
-        var r = nav.getBoundingClientRect();
-        var dx = Math.max(r.left - px, 0, px - r.right);
-        var dy = Math.max(r.top - py, 0, py - r.bottom);
-        var d = Math.sqrt(dx * dx + dy * dy);
-        near = Math.max(0, Math.min(1, (far - d) / (far - close)));
-      }
-      nav.style.setProperty('--near', near.toFixed(3));
-    }
-    function later() { if (!frame) frame = requestAnimationFrame(update); }
-    document.addEventListener('pointermove', function (e) {
-      if (e.pointerType !== 'mouse') return;
-      px = e.clientX; py = e.clientY;
-      later();
-    });
-    document.addEventListener('mouseout', function (e) {
-      if (!e.relatedTarget) { px = -1; later(); }
-    });
-  })();
-
   function setup(scope) {
     // Long card text is set smaller and left-aligned.
     var faces = scope.querySelectorAll('section.face');
     for (var f = 0; f < faces.length; f++) {
       if ((faces[f].textContent || '').trim().length > LONG_TEXT) faces[f].classList.add('long');
-    }
-    if (calm && motion) {
-      // Hidden buttons have no size yet; they are set up when shown.
-      var els = scope.querySelectorAll('.btn, button:not(.link), a.row, label.row, nav.top a:not(.brand), .icon-link');
-      for (var t = 0; t < els.length; t++) {
-        if (!els[t].closest('[hidden]') && !els[t].hasAttribute('data-tilt')) {
-          els[t].setAttribute('data-tilt', '');
-          tilt(els[t]);
-        }
-      }
     }
   }
   setup(document);
@@ -360,16 +261,77 @@
   function main() { return document.querySelector('main'); }
   function studying() { return !!document.querySelector('main .study, main .session-end'); }
 
+  // Elements marked data-stay keep their own hidden state on the reveal:
+  // the timer, the timeout form, the typed answer's echo.
   function reveal() {
     var study = document.querySelector('.study:not(.revealed)');
     if (!study) return false;
+    stopTimer();
     study.classList.add('revealed');
-    var hidden = study.querySelectorAll('[hidden]');
-    for (var i = 0; i < hidden.length; i++) hidden[i].hidden = false;
-    var show = study.querySelector('.reveal');
-    if (show) show.hidden = true;
+    var hidden = study.querySelectorAll('[hidden]:not([data-stay])');
+    for (var i = 0; i < hidden.length; i++) {
+      if (!hidden[i].closest('[data-stay][hidden]')) hidden[i].hidden = false;
+    }
+    var shows = study.querySelectorAll('.reveal, .timer');
+    for (var j = 0; j < shows.length; j++) shows[j].hidden = true;
     setup(study);
     return true;
+  }
+
+  // ----- timed cards ------------------------------------------------------------
+
+  // A timed card counts down under the card. "+10 s" adds time once; when
+  // time runs out the answer is shown and the card counts as forgotten.
+  var timer = null;
+
+  function stopTimer() {
+    if (timer) cancelAnimationFrame(timer.frame);
+    timer = null;
+  }
+
+  function startTimer(scope) {
+    stopTimer();
+    var box = scope.querySelector('.study:not(.revealed) .timer');
+    if (!box) return;
+    var fill = box.querySelector('.timer-fill');
+    var secs = box.querySelector('.timer-secs');
+    var more = box.querySelector('.extend');
+    var total = +box.getAttribute('data-limit') * 1000;
+    var t = { end: Date.now() + total, total: total, frame: 0, more: more };
+    timer = t;
+    if (more) more.hidden = false;
+    var tick = function () {
+      if (timer !== t) return;
+      if (!box.isConnected) { stopTimer(); return; }
+      var left = t.end - Date.now();
+      if (left <= 0) { stopTimer(); timeUp(); return; }
+      fill.style.width = (left / t.total * 100).toFixed(2) + '%';
+      box.classList.toggle('low', left <= 3000);
+      secs.textContent = Math.ceil(left / 1000) + ' s';
+      t.frame = requestAnimationFrame(tick);
+    };
+    tick();
+  }
+
+  function extendTimer() {
+    if (!timer || !timer.more || timer.more.hidden) return;
+    timer.end += 10000;
+    timer.total = Math.max(timer.total, timer.end - Date.now());
+    timer.more.hidden = true;
+  }
+
+  function timeUp() {
+    var study = document.querySelector('.study:not(.revealed)');
+    if (!study || !reveal()) return;
+    study.classList.add('timed-out');
+    var answers = study.querySelectorAll('form.answers, .list-answer .answers');
+    for (var i = 0; i < answers.length; i++) answers[i].hidden = true;
+    var form = study.querySelector('.timeout-form');
+    if (form) {
+      form.hidden = false;
+      var go = form.querySelector('button');
+      if (go) go.focus({ preventScroll: true });
+    }
   }
 
   var busy = false;
@@ -438,7 +400,19 @@
     if (url) history.replaceState(null, '', url.replace(/#.*$/, ''));
     window.scrollTo(0, 0);
     setup(next);
+    begin(next);
+    // The desktop extras (desk.js) dress the new page too.
+    document.dispatchEvent(new CustomEvent('ainki:page', { detail: next }));
   }
+
+  // A card's front has just come up: the clock starts, the answer box
+  // takes the keys.
+  function begin(scope) {
+    startTimer(scope);
+    var box = scope.querySelector('.study:not(.revealed) .typed-answer input');
+    if (box) box.focus({ preventScroll: true });
+  }
+  begin(document);
 
   function send(form, submitter) {
     if (busy) return;
@@ -471,7 +445,24 @@
   document.addEventListener('click', function (e) {
     var show = e.target.closest && e.target.closest('.study .reveal a.show');
     if (show && reveal()) e.preventDefault();
+    if (e.target.closest && e.target.closest('.timer .extend')) extendTimer();
   });
+
+  // The reveal as a form (typed answers, the sure check): what was typed
+  // goes above the answer, and sure or not goes along with the rating.
+  function revealFrom(form, submitter) {
+    var sure = submitter && submitter.name === 'sure' ? submitter.value : '';
+    var fields = document.querySelectorAll('main .study input.sure-field');
+    for (var i = 0; i < fields.length; i++) fields[i].value = sure;
+    var typed = form.querySelector('input[name=typed]');
+    var echo = document.querySelector('main .study .typed-echo');
+    if (typed && echo) {
+      var text = typed.value.trim();
+      echo.querySelector('.typed-text').textContent = text;
+      echo.hidden = !text;
+    }
+    reveal();
+  }
 
   // A list card's Done says how many you remembered.
   document.addEventListener('change', function (e) {
@@ -485,6 +476,11 @@
 
   document.addEventListener('submit', function (e) {
     var form = e.target;
+    if (form.matches('.study .reveal-form')) {
+      e.preventDefault();
+      revealFrom(form, e.submitter);
+      return;
+    }
     var action = form.getAttribute('action');
     if (!studying() || (action !== '/study/answer' && action !== '/study/undo')) return;
     e.preventDefault();
@@ -492,7 +488,8 @@
   });
 
   // Keyboard: space shows the answer (then means Good, or Done on a list
-  // card), 1-4 answer; on a list card 1-9 mark items as remembered.
+  // card), 1-4 answer; on a list card 1-9 mark items as remembered. With
+  // the sure check S and U show the answer, and + adds time to a timed card.
   document.addEventListener('keydown', function (e) {
     if (e.ctrlKey || e.metaKey || e.altKey) return;
     var tag = e.target.tagName;
@@ -500,17 +497,17 @@
     if (!document.querySelector('main .study')) return;
     // Enter and space on a focused link or button do what it says.
     if ((e.key === ' ' || e.key === 'Enter') && (tag === 'A' || tag === 'BUTTON') && !e.target.matches('.reveal a.show')) return;
-    var k = e.key === ' ' || e.key === 'Enter' ? ' ' : e.key;
-    if (!/^[ 1-9]$/.test(k)) return;
-    e.preventDefault();
-    if (busy) return;
-    if (k === ' ' && reveal()) return;
+    var k = e.key === ' ' || e.key === 'Enter' ? ' ' : e.key.toLowerCase();
+    if (!/^[ 1-9su+]$/.test(k)) return;
     var visible = function (key) {
       var els = document.querySelectorAll('main [data-key="' + key + '"]');
       for (var i = 0; i < els.length; i++) if (!els[i].closest('[hidden]')) return els[i];
       return null;
     };
     var el = visible(k) || (k === ' ' ? visible('3') : null);
-    if (el) el.click();
+    if (!el && !/^[ 1-9]$/.test(k)) return;
+    e.preventDefault();
+    if (busy || !el) return;
+    el.click();
   });
 })();
