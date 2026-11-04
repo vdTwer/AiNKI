@@ -4454,7 +4454,7 @@ struct StatsQuery {
     deck: Option<i64>,
 }
 
-async fn stats_page(State(app): State<AppState>, user: WebUser, Query(q): Query<StatsQuery>) -> WebResult {
+async fn stats_page(State(app): State<AppState>, user: WebUser, Flash(msg): Flash, Query(q): Query<StatsQuery>) -> WebResult {
     let access = user.access();
     let s = app.stats(&access, q.deck).await?;
     let cal = app.calibration(&access, q.deck).await?;
@@ -4480,6 +4480,7 @@ async fn stats_page(State(app): State<AppState>, user: WebUser, Query(q): Query<
         "Stats",
         Some(&user.0),
         html! {
+            (flash(&msg))
             @if let Some(d) = &deck { (parent(&format!("/decks/{}", d.id), &deck_plain(&d.name))) }
             div.stats-title {
                 h1 { "Stats" }

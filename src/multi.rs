@@ -360,7 +360,7 @@ impl App {
     /// its end; a studied card that becomes a multicard starts every item
     /// from its memory.
     pub(crate) async fn sync_items(&self, card: &Card, multi: Option<Split>) -> Result<()> {
-        let mut tx = self.db.begin().await?;
+        let mut tx = self.db.begin_with("BEGIN IMMEDIATE").await?;
         let Some(how) = multi else {
             sqlx::query("DELETE FROM card_items WHERE card_id = ?").bind(card.id).execute(&mut *tx).await?;
             sqlx::query("UPDATE cards SET multi = NULL WHERE id = ?").bind(card.id).execute(&mut *tx).await?;
@@ -509,7 +509,7 @@ impl App {
             .unwrap_or(0);
         let interval_secs = (c.due - clock.now).max(0);
 
-        let mut tx = self.db.begin().await?;
+        let mut tx = self.db.begin_with("BEGIN IMMEDIATE").await?;
         let updated = sqlx::query(
             "UPDATE cards SET state = ?, step = ?, stability = ?, difficulty = ?, due = ?,
                 last_review = ?, reps = ?, lapses = ?, updated_at = ?

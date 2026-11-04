@@ -422,7 +422,7 @@ impl App {
     async fn issue_tokens(&self, grant_id: i64, scope: String) -> Result<TokenResponse> {
         let access = format!("ainki_at_{}", random_hex(24));
         let refresh = format!("ainki_rt_{}", random_hex(32));
-        let mut tx = self.db.begin().await?;
+        let mut tx = self.db.begin_with("BEGIN IMMEDIATE").await?;
         // Expired tokens are garbage.
         sqlx::query("DELETE FROM oauth_tokens WHERE expires_at < ?")
             .bind(now())

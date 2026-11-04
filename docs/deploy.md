@@ -72,3 +72,60 @@ collaborator, nothing reaches production without you. If you add
 collaborators later, also set "Required approvals" to 1. GitHub doesn't let
 you approve your own pull request, so add yourself to the bypass list if you
 want to keep merging your own.
+
+## Upgrading from v1 to v2
+
+v2 adds migrations 0009 to 0014. They run by themselves when the new
+version starts. They only go forward: v1 refuses to start on a database
+that has migrations it does not know. So take a backup first; going back
+means restoring it.
+
+### Before the merge
+
+In the server's checkout:
+
+```sh
+# Keep the v1 image, so going back needs no rebuild.
+docker tag ainki:latest ainki:v1
+# A consistent copy of ainki.db and media/.
+docker compose stop
+docker run --rm -v ainki_ainki-data:/data -v "$PWD":/backup debian:trixie-slim \
+  tar czf /backup/ainki-v1-$(date +%F).tgz -C /data .
+docker compose start
+```
+
+Copy the tarball off the server as well. While you are there, check that
+`docker-compose.override.yml` does not set `AINKI_ALLOW_SIGNUP=true`:
+v2 makes signup invite-only only while it is false.
+
+To rehearse, unpack a copy on your own machine and start v2 on it with
+`AINKI_DATA_DIR=<the copy> cargo run --release`.
+
+### The merge
+
+Merge v2 into `main` with a merge commit (not squash or rebase), so later v2
+work still merges cleanly. The push deploys as usual.
+
+### After the deploy
+
+1. Settings shows the new build; `docker compose logs ainki` has no errors.
+2. Create the admin account once:
+   `docker compose exec ainki ainki create-admin admin 'a-long-password'`.
+3. Study a few cards, open Stats, and open an invite link in a private
+   window.
+
+### Going back
+
+Reviews made on v2 since the backup are lost.
+
+```sh
+docker compose stop
+docker run --rm -v ainki_ainki-data:/data -v "$PWD":/backup debian:trixie-slim \
+  sh -c 'rm -rf /data/* && tar xzf /backup/ainki-v1-<date>.tgz -C /data'
+git checkout --detach <last v1 commit>
+docker tag ainki:v1 ainki:latest
+docker compose up -d --no-build
+```
+
+Then revert the merge on `main`, or the next deploy brings v2 back. The
+deploy's own `git checkout main` returns the checkout to the branch.

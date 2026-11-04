@@ -119,11 +119,8 @@ test('the coach says nothing to a new learner', async ({ page, seed }) => {
   }
 });
 
-test.describe('known bugs', () => {
-  // Stats never shows flash messages, so "Not now" there is silent (Home
-  // says "The coach will keep that to itself for three days.").
+test.describe('desktop', () => {
   desktopOnly();
-  test.fail();
   test('Not now on Stats confirms it', async ({ page, seed }) => {
     const deck = await seed.deck('Hard facts');
     const leech = await seed.card(deck, 'Capital of Burkina Faso', 'Ouagadougou');

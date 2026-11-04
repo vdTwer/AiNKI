@@ -58,11 +58,13 @@ test('studying a multicard: tap what you remembered', async ({ page, seed, accou
   await expect(page.locator('main .session-end, main .study')).toBeVisible();
   expect(await page.evaluate(() => (window as unknown as { __kept?: number }).__kept)).toBe(1);
 
-  const [log] = sql<{ items_asked: number; items_recalled: number }>(
-    'SELECT items_asked, items_recalled FROM review_log WHERE card_id = ?',
-    card,
-  );
-  expect(log).toEqual({ items_asked: 4, items_recalled: 2 });
+  // The study page was already showing, so wait for the answer itself.
+  await expect
+    .poll(() => sql<{ items_asked: number; items_recalled: number }>(
+      'SELECT items_asked, items_recalled FROM review_log WHERE card_id = ?',
+      card,
+    )[0])
+    .toEqual({ items_asked: 4, items_recalled: 2 });
   const items = sql<{ position: number; rating: number }>(
     'SELECT ci.position, r.rating FROM item_review_log r JOIN card_items ci ON ci.id = r.item_id WHERE ci.card_id = ? ORDER BY ci.position',
     card,

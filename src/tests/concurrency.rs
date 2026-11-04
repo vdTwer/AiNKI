@@ -8,7 +8,6 @@ use crate::multi::Split;
 const BACK: &str = "- one\n- two\n- three";
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 8)]
-#[ignore = "bug: a deferred transaction that reads before it writes fails with \"database is locked\" when another connection wrote in between; BEGIN IMMEDIATE fixes it"]
 async fn writers_at_the_same_time_never_fail() {
     let dir = std::env::temp_dir().join(format!("ainki-busy-{}", uuid::Uuid::new_v4().simple()));
     let config = Config {
