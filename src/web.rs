@@ -4605,6 +4605,11 @@ struct DeskStats<'a> {
     notes: &'a [Advice],
 }
 
+// What the three big numbers count, on hover.
+const WHY_DUE: &str = "Learned cards whose review falls today or earlier. New cards come on top. The time is your average per review.";
+const WHY_WEEK: &str = "Of the learned cards that came due in the last 7 days, the share you remembered.";
+const WHY_STREAK: &str = "Days in a row with at least one review. Today counts once you study, and doesn't break the streak before then.";
+
 /// The desktop stats: three numbers to act on, then charts, each with a
 /// note beside it. desk.js draws the charts from the data attributes.
 fn desk_stats(d: &DeskStats) -> Markup {
@@ -4634,16 +4639,16 @@ fn desk_stats(d: &DeskStats) -> Markup {
         div.desk-stats.calm-only {
             section.big3 {
                 div {
-                    p.kicker { "Due today" }
-                    p.n.due { (format::number(s.due_now)) }
+                    p.kicker data-why=(WHY_DUE) { "Due today" }
+                    p.n.due data-why=(WHY_DUE) { (format::number(s.due_now)) }
                     p.small.muted {
                         @if let Some(m) = minutes.filter(|_| s.due_now > 0) { (capitalize(&format::minutes(m))) "." } @else if s.due_now == 0 { "Nothing waiting." }
                     }
                     @if s.due_now > 0 { a.small href=(study) { "Start studying" } }
                 }
                 div {
-                    p.kicker { "This week" }
-                    p.n { (format::percent(this_week)) }
+                    p.kicker data-why=(WHY_WEEK) { "This week" }
+                    p.n data-why=(WHY_WEEK) { (format::percent(this_week)) }
                     p.small.muted {
                         @if this_week.is_none() { "No reviews of learned cards this week. " }
                         @if let Some(a) = aim { "You aim for " (format::percent(Some(a))) "." }
@@ -4652,8 +4657,8 @@ fn desk_stats(d: &DeskStats) -> Markup {
                     @if let Some(w) = worst { a.small href=(format!("/decks/{}", w.deck_id)) { "Look at that deck" } }
                 }
                 div {
-                    p.kicker { "Days in a row" }
-                    p.n.it { (s.streak_days) }
+                    p.kicker data-why=(WHY_STREAK) { "Days in a row" }
+                    p.n.it data-why=(WHY_STREAK) { (s.streak_days) }
                     p.small.muted { "You studied on " (last7) " of the last 7 days." }
                 }
             }
@@ -4671,24 +4676,24 @@ fn desk_stats(d: &DeskStats) -> Markup {
             }
             section.chart-sec {
                 div.chart-main {
-                    h2 { "Are you remembering what you aim for?" }
+                    h2 data-why="Each point is one week: of the learned cards that came due, the share you remembered. The dashed line is your aim. Hover a week for its numbers." { "Are you remembering what you aim for?" }
                     p.small.muted { "Share of due cards you remembered, week by week." }
                     div.chart data-chart="retention" data-weeks=(weeks.join(";")) data-aim=[aim] data-first=(first_day) data-sample=(insight::MIN_SAMPLE) role="img" aria-label="Recall by week, last twelve weeks" {}
                 }
                 aside.chart-side {
-                    p.kicker { "Study days" }
+                    p.kicker data-why="Each square is a day and each column a week, oldest on the left; today is the last square. Darker means more reviews." { "Study days" }
                     div.chart data-chart="days" data-days=(days.join(",")) data-first=(first_day) role="img" aria-label="Reviews per day, last twelve weeks" {}
                     p.small.muted { "Darker means more reviews. " (last7) " of the last 7 days." }
                 }
             }
             section.chart-sec {
                 div.chart-main {
-                    h2 { "Next two weeks" }
+                    h2 data-why="How many learned cards come due on each day, as they are scheduled now. Every review you do schedules its card again, so later days fill up as you study." { "Next two weeks" }
                     p.small.muted { "Cards due each day." }
                     div.chart data-chart="forecast" data-values=(fc.join(",")) data-labels=(fc_labels.join(",")) role="img" aria-label="Cards due on each of the next fourteen days" {}
                 }
                 aside.chart-side {
-                    p.kicker { "Cards" }
+                    p.kicker data-why="New cards were never studied. Learning cards are in their first short steps. Review cards are learned, and FSRS spaces them out. Suspended cards are paused and never shown." { "Cards" }
                     p.serif-note { (count(s.total, "card")) ". " (format::number(s.review)) " in review, " (format::number(s.new)) " still new." }
                     p.small.muted { (format::number(s.learning)) " learning, " (format::number(s.suspended)) " suspended." }
                 }
@@ -4696,7 +4701,7 @@ fn desk_stats(d: &DeskStats) -> Markup {
             @if !decks.is_empty() {
                 section.chart-sec {
                     div.chart-main {
-                        h2 { "By deck" }
+                        h2 data-why="One row per deck: the tick is its aim, the dot what you remembered in the last 30 days, the line between them the gap. Hover a deck for its numbers." { "By deck" }
                         p.legend.small {
                             span.aim data-why="What the deck's preset aims for: the share of due cards you should remember." { "aim" }
                             span.ok data-why="What you did remember of the deck's learned cards in the last 30 days." { "remembered" }
@@ -4720,7 +4725,7 @@ fn desk_stats(d: &DeskStats) -> Markup {
                     div.chart-main.calib {
                         div.chart data-chart="calibration" data-bins=(bins.join(";")) role="img" aria-label="Expected against remembered, last year" {}
                         div {
-                            h2 { "How well FSRS knows you" }
+                            h2 data-why="Before every review, FSRS predicts how likely you are to remember. Each dot groups a year of reviews by that prediction and shows how often you did remember. On the dashed line, FSRS knows you well." { "How well FSRS knows you" }
                             p.serif-note {
                                 "FSRS expected you to remember " (format::percent(Some(d.cal.predicted))) " of your reviews last year. You remembered " (format::percent(Some(d.cal.actual))) "."
                                 @if (d.cal.predicted - d.cal.actual).abs() <= 0.03 { " That's a close fit." }
@@ -4730,10 +4735,14 @@ fn desk_stats(d: &DeskStats) -> Markup {
                     }
                     @if let (Some(a), Some(b)) = (d.sure.sure_pct(), d.sure.unsure_pct()) {
                         aside.chart-side {
-                            p.kicker { "When you felt sure" }
+                            p.kicker data-why="Before seeing the answer, you said whether you knew it. These bars show how often you then remembered, over the last year." { "When you felt sure" }
                             div.sure-bars {
-                                span { "Sure" } span.track { span.fill style=(format!("width:{a:.0}%")) {} } span.num { (format!("{a:.0}%")) }
-                                span { "Not sure" } span.track { span.fill.grey style=(format!("width:{b:.0}%")) {} } span.num { (format!("{b:.0}%")) }
+                                div data-why=(format!("You remembered {} of the {} answers where you felt sure.", d.sure.sure_recalled, d.sure.sure)) {
+                                    span { "Sure" } span.track { span.fill style=(format!("width:{a:.0}%")) {} } span.num { (format!("{a:.0}%")) }
+                                }
+                                div data-why=(format!("You remembered {} of the {} answers where you weren't sure.", d.sure.unsure_recalled, d.sure.unsure)) {
+                                    span { "Not sure" } span.track { span.fill.grey style=(format!("width:{b:.0}%")) {} } span.num { (format!("{b:.0}%")) }
+                                }
                             }
                             p.small.muted {
                                 @if a - b >= 15.0 { "Your sense of what you know is a good guide." }
