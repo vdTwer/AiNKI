@@ -1,32 +1,18 @@
 // Invitations: a week after joining, one link a week; the page behind a
 // link makes an account once; the admin sees only the admin panel.
 import { test, expect, sql, makeAccount, logIn } from '../support/fixtures.ts';
-import type { Browser, Request } from '@playwright/test';
+import type { Browser } from '@playwright/test';
 import { flash } from '../support/ui.ts';
 
 let ipCounter = 1;
-// Requests of visitor pages that have not finished yet. In desktop Firefox
-// a visit sometimes never reaches its load event; if a test fails, these
-// name what it was still waiting for.
-const pending = new Map<Request, string>();
 /** A visitor from an address of their own (signups are limited per address). */
 async function visitor(browser: Browser) {
   const n = ipCounter++ + Math.floor(Math.random() * 200) * 250;
   const context = await browser.newContext({
     extraHTTPHeaders: { 'X-Forwarded-For': `10.${(n >> 16) & 255}.${(n >> 8) & 255}.${n & 255}` },
   });
-  context.on('request', (r) => pending.set(r, `${r.method()} ${r.url()} (${r.resourceType()})`));
-  context.on('requestfinished', (r) => pending.delete(r));
-  context.on('requestfailed', (r) => pending.set(r, `${pending.get(r) ?? r.url()} failed: ${r.failure()?.errorText}`));
   return { context, page: await context.newPage() };
 }
-
-test.beforeEach(() => pending.clear());
-test.afterEach(({}, info) => {
-  if (info.status !== info.expectedStatus && pending.size) {
-    console.log(`Unfinished requests in "${info.title}":\n  ${[...pending.values()].join('\n  ')}`);
-  }
-});
 
 test('a new account waits a week before inviting', async ({ page }) => {
   await page.goto('/invites');
