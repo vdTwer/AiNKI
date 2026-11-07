@@ -216,6 +216,16 @@ Agents can never change your password or settings, or create tokens. Reviews don
 
 During quiet hours `get_next_card` returns no card, so agents don't quiz you then.
 
+## Acknowledgements
+
+AiNKI stands on other people's work:
+
+- The [open-spaced-repetition](https://github.com/open-spaced-repetition) project created FSRS, and its [fsrs-rs](https://github.com/open-spaced-repetition/fsrs-rs) crate does all of AiNKI's scheduling and optimization. Its default parameters were fitted on about 10,000 Anki collections.
+- [Anki](https://apps.ankiweb.net/)'s file format lets you bring your decks and review history along.
+- The lessons draw on memory research by Hermann Ebbinghaus, Piotr Wozniak, Robert and Elizabeth Bjork, Henry Roediger, Harold Pashler, Nicholas Cepeda, Nate Kornell and others, cited in each lesson.
+- [EB Garamond](https://github.com/octaviopardo/EBGaramond12), by the EB Garamond Project Authors, sets the desktop look's titles.
+- The Rust crates listed under [Tech stack](#tech-stack), the [Model Context Protocol](https://modelcontextprotocol.io/) and [Playwright](https://playwright.dev/) make the rest possible.
+
 ## License
 
 MIT. FSRS scheduling comes from [fsrs-rs](https://github.com/open-spaced-repetition/fsrs-rs) (BSD-3-Clause), and EB Garamond is under the SIL Open Font License. AiNKI contains no code from Anki itself (AGPL); it is compatible with Anki's file format only.
