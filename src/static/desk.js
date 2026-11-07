@@ -287,7 +287,7 @@
     retention: function (box) {
       var weeks = box.getAttribute('data-weeks').split(';').map(function (w) {
         var p = w.split(',');
-        return { n: +p[0], v: +p[0] > 0 ? +p[1] / +p[0] : null };
+        return { n: +p[0], p: +p[1], v: +p[0] > 0 ? +p[1] / +p[0] : null };
       });
       var aim = parseFloat(box.getAttribute('data-aim'));
       var vals = weeks.filter(function (w) { return w.v !== null; }).map(function (w) { return w.v; });
@@ -319,9 +319,28 @@
       text(svg, X(last) - 8, Y(weeks[last].v) - 10, pct(weeks[last].v), 'axis-text value', 'end');
       text(svg, X(0), H - 6, '12 weeks ago');
       text(svg, X(weeks.length - 1), H - 6, 'this week', 'axis-text', 'end');
-      // The crosshair finds the week nearest the pointer.
+      // The crosshair and a dot find the week nearest the pointer.
       var cross = el('line', { y1: T, y2: H - B, 'class': 'cross', visibility: 'hidden' }, svg);
+      var spot = el('circle', { r: 4.5, 'class': 'dot spot', visibility: 'hidden' }, svg);
       var hit = el('rect', { x: L, y: 0, width: W - L - R, height: H - B, 'class': 'hit' }, svg);
+      var first = new Date(box.getAttribute('data-first') + 'T12:00:00');
+      var sample = +box.getAttribute('data-sample') || 20;
+      var span = function (i) {
+        if (isNaN(first)) return '';
+        var f = { day: 'numeric', month: 'short' };
+        var a = new Date(first.getTime() + i * 7 * 86400000), b = new Date(a.getTime() + 6 * 86400000);
+        return a.toLocaleDateString(undefined, f) + ' to ' + b.toLocaleDateString(undefined, f);
+      };
+      var why = function (w) {
+        if (w.v === null) return 'No learned card came due, or you took the week off. New cards don\'t count here.';
+        var s = 'You remembered ' + w.p + ' of the ' + w.n + ' learned ' + (w.n === 1 ? 'card' : 'cards') + ' that came due';
+        if (!isNaN(aim)) {
+          var gap = Math.round((w.v - aim) * 100);
+          s += Math.abs(gap) <= 1 ? ', right at your aim.' : ', ' + Math.abs(gap) + ' points ' + (gap > 0 ? 'above' : 'below') + ' your aim.';
+        } else s += '.';
+        if (w.n < sample) s += ' With so few reviews, one slip moves this a lot.';
+        return s;
+      };
       hit.addEventListener('pointermove', function (e) {
         var r = svg.getBoundingClientRect();
         var x = (e.clientX - r.left) / r.width * W;
@@ -330,9 +349,18 @@
         cross.setAttribute('x2', X(i));
         cross.setAttribute('visibility', 'visible');
         var w = weeks[i];
-        showTip(e, w.v === null ? 'No reviews' : pct(w.v), weeksAgo(i, weeks.length) + (w.n ? ', ' + w.n + ' reviews' : ''));
+        if (w.v === null) spot.setAttribute('visibility', 'hidden');
+        else { spot.setAttribute('cx', X(i)); spot.setAttribute('cy', Y(w.v)); spot.setAttribute('visibility', 'visible'); }
+        var when = weeksAgo(i, weeks.length);
+        showTip(e, w.v === null ? 'No reviews' : pct(w.v) + ' remembered', when.charAt(0).toUpperCase() + when.slice(1) + (span(i) ? ', ' + span(i) : ''), why(w));
       });
-      hit.addEventListener('pointerleave', function () { cross.setAttribute('visibility', 'hidden'); hideTip(); });
+      hit.addEventListener('pointerleave', function () { cross.setAttribute('visibility', 'hidden'); spot.setAttribute('visibility', 'hidden'); hideTip(); });
+      // The aim explains itself; it sits above the hit area to be found.
+      if (!isNaN(aim)) {
+        var aimHit = el('rect', { x: W - R - 70, y: Y(aim) - 20, width: 70, height: 26, 'class': 'hit' }, svg);
+        hover(aimHit, 'Aim ' + pct(aim), 'the dashed line',
+          'The share of due cards your presets aim for you to remember, averaged over your decks. FSRS spaces reviews so you land near it.');
+      }
     },
 
     // Twelve weeks of days, darker for more reviews.

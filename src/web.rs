@@ -4628,6 +4628,7 @@ fn desk_stats(d: &DeskStats) -> Markup {
         .iter()
         .filter_map(|r| r.actual.map(|a| format!("{}|{}|{}|{}", deck_plain(&r.deck_name).replace(['|', ';'], " "), r.target, a, r.deck_id)))
         .collect();
+    let first_day = d.history.days.first().map_or("", |(day, _)| day.as_str());
     let bins: Vec<String> = d.cal.bins.iter().map(|b| format!("{},{},{}", b.predicted, b.actual, b.reviews)).collect();
     html! {
         div.desk-stats.calm-only {
@@ -4672,11 +4673,11 @@ fn desk_stats(d: &DeskStats) -> Markup {
                 div.chart-main {
                     h2 { "Are you remembering what you aim for?" }
                     p.small.muted { "Share of due cards you remembered, week by week." }
-                    div.chart data-chart="retention" data-weeks=(weeks.join(";")) data-aim=[aim] role="img" aria-label="Recall by week, last twelve weeks" {}
+                    div.chart data-chart="retention" data-weeks=(weeks.join(";")) data-aim=[aim] data-first=(first_day) data-sample=(insight::MIN_SAMPLE) role="img" aria-label="Recall by week, last twelve weeks" {}
                 }
                 aside.chart-side {
                     p.kicker { "Study days" }
-                    div.chart data-chart="days" data-days=(days.join(",")) data-first=(d.history.days.first().map(|(day, _)| day.as_str()).unwrap_or("")) role="img" aria-label="Reviews per day, last twelve weeks" {}
+                    div.chart data-chart="days" data-days=(days.join(",")) data-first=(first_day) role="img" aria-label="Reviews per day, last twelve weeks" {}
                     p.small.muted { "Darker means more reviews. " (last7) " of the last 7 days." }
                 }
             }
