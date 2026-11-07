@@ -4606,7 +4606,7 @@ struct DeskStats<'a> {
 }
 
 // What the three big numbers count, on hover.
-const WHY_DUE: &str = "Learned cards whose review falls today or earlier. New cards come on top. The time is your average per review.";
+const WHY_DUE: &str = "Learned cards whose review falls today or earlier. New cards come on top. The time below uses your average time per review.";
 const WHY_WEEK: &str = "Of the learned cards that came due in the last 7 days, the share you remembered.";
 const WHY_STREAK: &str = "Days in a row with at least one review. Today counts once you study, and doesn't break the streak before then.";
 
@@ -4737,10 +4737,10 @@ fn desk_stats(d: &DeskStats) -> Markup {
                         aside.chart-side {
                             p.kicker data-why="Before seeing the answer, you said whether you knew it. These bars show how often you then remembered, over the last year." { "When you felt sure" }
                             div.sure-bars {
-                                div data-why=(format!("You remembered {} of the {} answers where you felt sure.", d.sure.sure_recalled, d.sure.sure)) {
+                                div data-tip=(format!("{a:.0}% remembered")) data-tip-label="when you felt sure" data-why=(format!("You remembered {} of the {} answers where you felt sure.", d.sure.sure_recalled, d.sure.sure)) {
                                     span { "Sure" } span.track { span.fill style=(format!("width:{a:.0}%")) {} } span.num { (format!("{a:.0}%")) }
                                 }
-                                div data-why=(format!("You remembered {} of the {} answers where you weren't sure.", d.sure.unsure_recalled, d.sure.unsure)) {
+                                div data-tip=(format!("{b:.0}% remembered")) data-tip-label="when you weren't sure" data-why=(format!("You remembered {} of the {} answers where you weren't sure.", d.sure.unsure_recalled, d.sure.unsure)) {
                                     span { "Not sure" } span.track { span.fill.grey style=(format!("width:{b:.0}%")) {} } span.num { (format!("{b:.0}%")) }
                                 }
                             }
