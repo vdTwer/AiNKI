@@ -1918,6 +1918,13 @@ html.calm .sure-bars .num { text-align: right; font-weight: 500; font-variant-nu
 /* One tooltip for every chart: the value first, then what it is. */
 .chart-tip { position: fixed; z-index: 20; display: flex; flex-direction: column; gap: 2px; padding: 8px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--paper); box-shadow: 0 8px 24px rgba(var(--shadow), .12); font-family: var(--sans); font-size: .8125rem; color: var(--muted); pointer-events: none; transform: translate(-50%, calc(-100% - 12px)); white-space: nowrap; }
 .chart-tip[hidden] { display: none; }
+.chart-tip strong { color: var(--ink); font-weight: 500; }
+.chart-tip.below { transform: translate(-50%, 22px); }
+/* What the value means: a sentence or two, wrapped. */
+.chart-tip .why { max-width: 17rem; margin-top: 4px; white-space: normal; line-height: 1.45; color: var(--ink-2); }
+/* Words that explain themselves on hover say so only when touched. */
+html.calm .desk-stats [data-why] { cursor: help; text-decoration: underline dotted transparent; text-underline-offset: .25em; text-decoration-thickness: 1px; transition: text-decoration-color 160ms var(--ease); }
+html.calm .desk-stats [data-why]:hover, html.calm .desk-stats [data-why]:focus-visible { text-decoration-color: var(--faint); outline: none; }
 .chart-tip strong { font-size: .9375rem; color: var(--ink); }
 
 /* ----- settings ---------------------------------------------------------------

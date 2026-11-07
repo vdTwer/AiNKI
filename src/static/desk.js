@@ -214,35 +214,71 @@
   }
   function pct(v) { return Math.round(v * 100) + '%'; }
 
-  var tip = null;
-  function showTip(e, value, label) {
+  // One tooltip for every chart: the value, what it is, and in a sentence
+  // what it means. It stays inside the window and flips below its mark
+  // when there is no room above. Its size is measured only when its words
+  // change, so following the pointer costs no layout.
+  var tip = null, tipKey = '', tipW = 0, tipH = 0;
+  function line(tag, cls, s) {
+    var e = document.createElement(tag);
+    if (cls) e.className = cls;
+    e.textContent = s;
+    return e;
+  }
+  function showTip(e, value, label, why) {
     if (!tip) {
       tip = document.createElement('div');
       tip.className = 'chart-tip';
       tip.setAttribute('role', 'status');
       document.body.appendChild(tip);
     }
-    tip.textContent = '';
-    var v = document.createElement('strong');
-    v.textContent = value;
-    var l = document.createElement('span');
-    l.textContent = label;
-    tip.appendChild(v);
-    tip.appendChild(l);
+    var key = [value, label, why].join('\n');
+    tip.hidden = false;
+    if (key !== tipKey) {
+      tipKey = key;
+      tip.textContent = '';
+      if (value) tip.appendChild(line('strong', '', value));
+      if (label) tip.appendChild(line('span', '', label));
+      if (why) tip.appendChild(line('span', 'why', why));
+      tipW = tip.offsetWidth;
+      tipH = tip.offsetHeight;
+    }
     var r = e.target.getBoundingClientRect ? e.target.getBoundingClientRect() : null;
-    var x = e.clientX !== undefined && e.type !== 'focus' ? e.clientX : r.left + r.width / 2;
-    var y = e.clientY !== undefined && e.type !== 'focus' ? e.clientY : r.top;
+    var pointer = e.clientX !== undefined && e.type !== 'focus';
+    var x = pointer ? e.clientX : r.left + r.width / 2;
+    var y = pointer ? e.clientY : r.top;
+    var below = y - tipH - 12 < 8;
+    if (below && !pointer) y = r.bottom;
+    x = Math.max(8 + tipW / 2, Math.min(window.innerWidth - 8 - tipW / 2, x));
+    tip.classList.toggle('below', below);
     tip.style.left = x + 'px';
     tip.style.top = y + 'px';
-    tip.hidden = false;
   }
   function hideTip() { if (tip) tip.hidden = true; }
-  // A mark answers the pointer and the keyboard alike.
-  function hover(mark, value, label) {
+  // A mark answers the pointer and the keyboard alike. `on` hears when it
+  // is shown and hidden, to light the mark up.
+  function hover(mark, value, label, why, on) {
     mark.setAttribute('tabindex', '0');
-    mark.setAttribute('aria-label', value + ', ' + label);
-    ['pointermove', 'focus'].forEach(function (t) { mark.addEventListener(t, function (e) { showTip(e, value, label); }); });
-    ['pointerleave', 'blur'].forEach(function (t) { mark.addEventListener(t, hideTip); });
+    mark.setAttribute('aria-label', value + ', ' + label + (why ? '. ' + why : ''));
+    ['pointermove', 'focus'].forEach(function (t) {
+      mark.addEventListener(t, function (e) { showTip(e, value, label, why); if (on) on(true); });
+    });
+    ['pointerleave', 'blur'].forEach(function (t) {
+      mark.addEventListener(t, function () { hideTip(); if (on) on(false); });
+    });
+  }
+  // Words on the page that explain themselves on hover (data-why from the
+  // server). Their own text stays what a screen reader reads first.
+  function explainers(scope) {
+    Array.prototype.forEach.call(scope.querySelectorAll('.desk-stats [data-why]'), function (x) {
+      var why = x.getAttribute('data-why');
+      var value = x.getAttribute('data-tip') || '';
+      var label = x.getAttribute('data-tip-label') || '';
+      if (!x.matches('a, button, [tabindex]')) x.setAttribute('tabindex', '0');
+      x.setAttribute('aria-description', [value, label, why].filter(Boolean).join('. '));
+      ['pointermove', 'focus'].forEach(function (t) { x.addEventListener(t, function (e) { showTip(e, value, label, why); }); });
+      ['pointerleave', 'blur'].forEach(function (t) { x.addEventListener(t, hideTip); });
+    });
   }
   function weeksAgo(i, n) { var k = n - 1 - i; return k === 0 ? 'this week' : k === 1 ? 'last week' : k + ' weeks ago'; }
 
@@ -971,6 +1007,7 @@
   breakTimer(document);
   settings(document);
   drawCharts(document);
+  explainers(document);
   numbersSwitch(document);
   Array.prototype.forEach.call(document.querySelectorAll('form[action="/decks/new"] input[name=name], form[action$="/edit"] input[name=name], input[name=new_deck]'), pathField);
   // Studying swaps in the next page without a reload.
