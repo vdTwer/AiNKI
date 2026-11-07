@@ -255,6 +255,11 @@ pub struct MergeDecksParams {
     /// then come due in both decks). Default false: the copies are new cards.
     #[serde(default)]
     pub keep_progress: bool,
+    /// Delete the old decks: their cards move into the new deck (with their
+    /// history) instead of being copied. Irreversible; confirm with the user
+    /// first. Default false.
+    #[serde(default)]
+    pub delete_old_decks: bool,
 }
 
 #[derive(Deserialize, JsonSchema)]
@@ -530,7 +535,7 @@ impl AinkiMcp {
             .map_err(err)?)
     }
 
-    #[tool(description = "Create a new deck from copies of the cards of two or more decks. The decks it is made from are not changed. Identical cards are copied once; review history stays with the originals.")]
+    #[tool(description = "Create a new deck from copies of the cards of two or more decks. The decks it is made from are not changed, unless delete_old_decks is set. Identical cards are copied once; review history stays with the originals.")]
     async fn merge_decks(&self, Parameters(p): Parameters<MergeDecksParams>, Extension(parts): Extension<Parts>) -> ToolResult {
         let a = access(&parts)?;
         let input = crate::merge::MergeInput {
@@ -539,6 +544,7 @@ impl AinkiMcp {
             description: p.description.unwrap_or_default(),
             preset_id: p.preset_id,
             keep_progress: p.keep_progress,
+            delete_sources: p.delete_old_decks,
         };
         out(self.app.merge_decks(&a, input).await.map_err(err)?)
     }

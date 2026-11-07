@@ -26,6 +26,7 @@ fn input(sources: Vec<i64>, keep_progress: bool) -> MergeInput {
         description: "All of them".into(),
         preset_id: None,
         keep_progress,
+        delete_sources: false,
     }
 }
 
@@ -221,4 +222,63 @@ async fn copies_are_not_flagged_as_duplicates_of_their_originals() {
     // A card written by hand with the same front is still noticed.
     let mine = app.create_card(&a, french, "hablar", "to talk", None, None, None).await.unwrap();
     assert_eq!(app.card_flags(&a, &mine).await.unwrap().len(), 1);
+}
+
+#[tokio::test]
+async fn deleting_the_old_decks_moves_their_cards_with_their_history() {
+    let app = app().await;
+    let a = user(&app, "kolja").await;
+    let (spanish, french) = two_decks(&app, &a).await;
+    let other = app.create_deck(&a, "Other", "", None).await.unwrap();
+    let hablar = cards_of(&app, &a, spanish).await;
+    assert_eq!(hablar[0], ("hablar".to_string(), 1, false));
+    let filter = CardFilter { deck_id: Some(spanish), limit: Some(500), ..Default::default() };
+    let (old, _) = app.list_cards(&a, &filter).await.unwrap();
+    let hablar_id = old.iter().find(|c| c.front == "hablar").unwrap().id;
+    // A duplicate with a review of its own.
+    let dup = app.create_card(&a, french, "hablar", "to speak", None, None, None).await.unwrap();
+    app.answer_card(&a, dup.id, Rating::Good, None, Some(0)).await.unwrap();
+    let reviews = app.stats(&a, None).await.unwrap().reviews_today;
+
+    let mut i = input(vec![spanish, french], true);
+    i.delete_sources = true;
+    let merged = app.merge_decks(&a, i).await.unwrap();
+    assert_eq!((merged.cards, merged.duplicates, merged.deleted_decks), (4, 1, 2));
+
+    // Only the new deck and the untouched one are left.
+    let names: Vec<String> = app.decks(&a).await.unwrap().into_iter().map(|d| d.name).collect();
+    assert_eq!(names, ["Languages", "Other"]);
+    let _ = other;
+    // The same cards, not copies, with their progress and history.
+    let moved = app.card(&a, hablar_id).await.unwrap();
+    assert_eq!((moved.deck_id, moved.reps), (merged.deck.id, 1));
+    assert_eq!(app.card_history(&a, hablar_id).await.unwrap().len(), 2, "its own review and the duplicate's");
+    assert_eq!(app.stats(&a, None).await.unwrap().reviews_today, reviews, "no review is lost");
+    assert!(app.card(&a, dup.id).await.is_err());
+}
+
+#[tokio::test]
+async fn deleting_the_old_decks_without_progress_starts_the_cards_over() {
+    let app = app().await;
+    let a = user(&app, "kolja").await;
+    let (spanish, french) = two_decks(&app, &a).await;
+    let mut i = input(vec![spanish, french], false);
+    i.delete_sources = true;
+    let merged = app.merge_decks(&a, i).await.unwrap();
+    assert_eq!(app.decks(&a).await.unwrap().len(), 1);
+    let cards = cards_of(&app, &a, merged.deck.id).await;
+    assert_eq!(cards.len(), 4);
+    assert!(cards.iter().all(|c| c.1 == 0));
+}
+
+#[tokio::test]
+async fn a_refused_merge_deletes_nothing() {
+    let app = app().await;
+    let a = user(&app, "kolja").await;
+    let (spanish, french) = two_decks(&app, &a).await;
+    let mut i = input(vec![spanish, french], false);
+    i.delete_sources = true;
+    i.name = "Spanish".into();
+    assert!(app.merge_decks(&a, i).await.is_err());
+    assert_eq!(app.decks(&a).await.unwrap().len(), 2);
 }

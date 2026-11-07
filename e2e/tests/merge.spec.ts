@@ -59,6 +59,36 @@ test('keeping progress copies the schedule', async ({ page, seed, account }) => 
   ]);
 });
 
+test('deleting the old decks moves their cards', async ({ page, seed, account }) => {
+  const a = await seed.deck('A');
+  const b = await seed.deck('B');
+  const [one] = await seed.cards(a, [['one', '1']]);
+  await seed.cards(b, [['two', '2']]);
+
+  await page.goto('/decks/merge');
+  const form = page.locator('form[action="/decks/merge"]');
+  await expect(form.locator('input[name=delete_sources]')).not.toBeChecked();
+  await form.locator(`input[name=decks][value="${a}"]`).check();
+  await form.locator(`input[name=decks][value="${b}"]`).check();
+  await form.locator('input[name=name]').fill('AB');
+  await form.locator('input[name=delete_sources]').check();
+  await form.getByRole('button', { name: 'Merge decks' }).click();
+  await expect(flash(page)).toHaveText('Decks merged: 2 cards moved. 2 old decks deleted.');
+  expect(sql('SELECT name FROM decks WHERE user_id = ?', account.id)).toEqual([{ name: 'AB' }]);
+  const [merged] = sql<{ id: number }>("SELECT id FROM decks WHERE user_id = ? AND name = 'AB'", account.id);
+  expect(sql<{ deck_id: number }>('SELECT deck_id FROM cards WHERE id = ?', one)).toEqual([{ deck_id: merged.id }]);
+});
+
+test('the deck list lines up', async ({ page, seed }) => {
+  await seed.deck('Biology');
+  await seed.deck('French');
+  await page.goto('/decks/merge');
+  // Every deck row is one line high, the deck name on one line.
+  for (const row of await page.locator('fieldset.merge-decks label').all()) {
+    expect((await row.boundingBox())!.height).toBeLessThan(80);
+  }
+});
+
 test('one deck is not enough, and what was typed stays', async ({ page, seed, allowErrors }) => {
   allowErrors.push(REFUSED);
   const a = await seed.deck('Only');

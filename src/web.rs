@@ -2459,7 +2459,6 @@ fn deck_merge_view(
                                 }
                             }
                         }
-                        p.hint.muted.small { "The new deck gets copies of their cards. These decks stay exactly as they are." }
                         hr.divider;
                         label.title { span.face-label { "Name of the new deck" }
                             input type="text" name="name" required placeholder="e.g. All languages" value=(draft.name);
@@ -2470,7 +2469,9 @@ fn deck_merge_view(
                         hr.divider;
                         (goal_picker(presets, selected))
                         label.check { input type="checkbox" name="keep_progress" value="1" checked[draft.keep_progress.is_some()]; " Keep review progress" }
-                        p.hint.muted.small { "On: cards you know stay known, but a card may come due here and in its old deck. Off: the copies start as new cards." }
+                        p.hint.muted.small { "On: cards you know stay known. Off: they start as new cards." }
+                        label.check { input type="checkbox" name="delete_sources" value="1" checked[draft.delete_sources.is_some()]; " Delete the old decks" }
+                        p.hint.muted.small { "On: their cards move into the new deck with their history, and the old decks are gone for good. Off: the new deck gets copies, and the old decks stay as they are." }
                     }
                     div.form-foot.end { button.btn.primary type="submit" { "Merge decks" } }
                 }
@@ -2489,6 +2490,7 @@ struct DeckMergeForm {
     description: String,
     preset_id: Option<i64>,
     keep_progress: Option<String>,
+    delete_sources: Option<String>,
 }
 
 #[derive(Deserialize, Default)]
@@ -2513,12 +2515,17 @@ async fn deck_merge(State(app): State<AppState>, user: WebUser, Form(f): Form<De
         description: f.description.clone(),
         preset_id: f.preset_id,
         keep_progress: f.keep_progress.is_some(),
+        delete_sources: f.delete_sources.is_some(),
     };
     match app.merge_decks(&access, input).await {
         Ok(m) => {
-            let mut msg = format!("Decks merged: {} copied.", count(m.cards, "card"));
+            let verb = if m.deleted_decks > 0 { "moved" } else { "copied" };
+            let mut msg = format!("Decks merged: {} {verb}.", count(m.cards, "card"));
             if m.duplicates > 0 {
                 msg.push_str(&format!(" {} left out, already in it once.", count(m.duplicates, "identical card")));
+            }
+            if m.deleted_decks > 0 {
+                msg.push_str(&format!(" {} deleted.", count(m.deleted_decks, "old deck")));
             }
             Ok(redirect_msg(format!("/decks/{}", m.deck.id), &msg))
         }
