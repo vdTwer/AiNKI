@@ -363,19 +363,41 @@
       }
     },
 
-    // Twelve weeks of days, darker for more reviews.
+    // Twelve weeks of days, darker for more reviews, and the scale below
+    // them, each step with the counts it stands for.
     days: function (box) {
       var days = box.getAttribute('data-days').split(',').map(Number);
       var first = new Date(box.getAttribute('data-first') + 'T12:00:00');
       var max = Math.max.apply(null, days.concat([1]));
+      var busiest = Math.max.apply(null, days);
       var cols = Math.ceil(days.length / 7);
-      var svg = el('svg', { viewBox: '0 0 ' + (cols * 18 - 4) + ' 122' }, box);
+      var w = cols * 18 - 4;
+      var svg = el('svg', { viewBox: '0 0 ' + w + ' 150' }, box);
+      var stepOf = function (n) { return n === 0 ? 0 : Math.min(4, 1 + Math.floor(n / max * 3.999)); };
+      var reviews = function (n) { return n + (n === 1 ? ' review' : ' reviews'); };
       days.forEach(function (n, i) {
-        var step = n === 0 ? 0 : Math.min(4, 1 + Math.floor(n / max * 3.999));
-        var c = el('rect', { x: Math.floor(i / 7) * 18, y: (i % 7) * 18, width: 14, height: 14, rx: 3, 'class': 'cell h' + step }, svg);
+        var c = el('rect', { x: Math.floor(i / 7) * 18, y: (i % 7) * 18, width: 14, height: 14, rx: 3, 'class': 'cell h' + stepOf(n) }, svg);
         var day = new Date(first.getTime() + i * 86400000);
-        hover(c, n + (n === 1 ? ' review' : ' reviews'), day.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' }));
+        var today = i === days.length - 1;
+        var why = n === 0
+          ? (today ? 'Nothing yet today. Your streak holds until the day ends.' : 'No reviews this day.')
+          : n === busiest ? 'Your busiest day in these twelve weeks.'
+          : 'Your busiest day had ' + busiest + '.';
+        hover(c, reviews(n), (today ? 'Today, ' : '') + day.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' }), why);
       });
+      // The scale: which counts each shade holds.
+      var lo = [0, 0, 0, 0, 0], hi = [0, 0, 0, 0, 0];
+      for (var n = max; n >= 1; n--) { var k = stepOf(n); lo[k] = n; if (!hi[k]) hi[k] = n; }
+      var y = 7 * 18 + 10;
+      var x0 = w - 5 * 18 - 30;
+      text(svg, x0 - 6, y + 11, 'Less', 'axis-text', 'end');
+      for (var k = 0; k <= 4; k++) {
+        if (k > 0 && !lo[k]) continue;
+        var s = el('rect', { x: x0 + k * 18, y: y, width: 14, height: 14, rx: 3, 'class': 'cell scale h' + k }, svg);
+        hover(s, k === 0 ? 'No reviews' : lo[k] === hi[k] ? reviews(lo[k]) : lo[k] + ' to ' + reviews(hi[k]), 'in a day',
+          'Each square is one day; the darker it is, the more you reviewed.');
+      }
+      text(svg, x0 + 5 * 18 + 2, y + 11, 'More');
     },
 
     // The next fourteen days; today in Orchid, the rest quiet.
