@@ -199,3 +199,26 @@ async fn merging_needs_two_own_decks_and_a_free_name() {
     // A failed merge leaves no deck behind.
     assert_eq!(app.decks(&a).await.unwrap().len(), 2);
 }
+
+#[tokio::test]
+async fn copies_are_not_flagged_as_duplicates_of_their_originals() {
+    let app = app().await;
+    let a = user(&app, "kolja").await;
+    let (spanish, french) = two_decks(&app, &a).await;
+    let merged = app.merge_decks(&a, input(vec![spanish, french], false)).await.unwrap();
+    // And a copy of the copy, by merging the merged deck again.
+    let mut again = input(vec![merged.deck.id, french], false);
+    again.name = "Again".into();
+    let again = app.merge_decks(&a, again).await.unwrap();
+    assert_eq!(again.duplicates, 2);
+
+    let flagged = app.attention(&a, None).await.unwrap();
+    assert!(flagged.is_empty(), "{:?}", flagged.iter().map(|f| f.card.front.clone()).collect::<Vec<_>>());
+    let filter = CardFilter { deck_id: Some(again.deck.id), limit: Some(500), ..Default::default() };
+    let (copies, _) = app.list_cards(&a, &filter).await.unwrap();
+    assert!(app.card_flags(&a, &copies[0]).await.unwrap().is_empty());
+
+    // A card written by hand with the same front is still noticed.
+    let mine = app.create_card(&a, french, "hablar", "to talk", None, None, None).await.unwrap();
+    assert_eq!(app.card_flags(&a, &mine).await.unwrap().len(), 1);
+}
