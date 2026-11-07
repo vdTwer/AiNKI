@@ -54,6 +54,8 @@ struct Source {
     back_image: Option<String>,
     multi: Option<Split>,
     suspended: bool,
+    /// Suspended only because its deck is paused or archived.
+    held: bool,
     copy_of: Option<i64>,
     state: i64,
 }
@@ -116,7 +118,7 @@ impl App {
         };
         for source in sources {
             let originals: Vec<Source> = sqlx::query_as(
-                "SELECT id, front, back, front_image, back_image, multi, suspended, copy_of, state
+                "SELECT id, front, back, front_image, back_image, multi, suspended, held, copy_of, state
                  FROM cards WHERE deck_id = ? AND user_id = ? ORDER BY position, id",
             )
             .bind(source)
@@ -181,7 +183,8 @@ impl App {
              RETURNING id"
         ))
         .bind(deck.id)
-        .bind(card.suspended)
+        // The new deck is active: what only rested with its old deck wakes.
+        .bind(card.suspended && !card.held)
         .bind(card.copy_of.unwrap_or(card.id))
         .bind(access.user_id())
         .bind(t)
@@ -217,7 +220,8 @@ impl App {
     ) -> Result<i64> {
         sqlx::query(
             "UPDATE cards SET deck_id = ?,
-                position = (SELECT COALESCE(MAX(position), 0) + 1 FROM cards WHERE user_id = ?)
+                position = (SELECT COALESCE(MAX(position), 0) + 1 FROM cards WHERE user_id = ?),
+                suspended = suspended AND NOT held, held = 0
              WHERE id = ? AND user_id = ?",
         )
         .bind(deck.id)

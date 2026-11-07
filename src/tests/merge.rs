@@ -282,3 +282,27 @@ async fn a_refused_merge_deletes_nothing() {
     assert!(app.merge_decks(&a, i).await.is_err());
     assert_eq!(app.decks(&a).await.unwrap().len(), 2);
 }
+
+#[tokio::test]
+async fn cards_of_a_paused_deck_wake_up_in_the_merged_deck() {
+    use crate::service::DeckStatus;
+    let app = app().await;
+    let a = user(&app, "kolja").await;
+    let (spanish, french) = two_decks(&app, &a).await;
+    let filter = CardFilter { deck_id: Some(french), limit: Some(500), ..Default::default() };
+    let (french_cards, _) = app.list_cards(&a, &filter).await.unwrap();
+    let parler = french_cards.iter().find(|c| c.front == "parler").unwrap();
+    app.set_suspended(&a, parler.id, true).await.unwrap();
+    app.set_deck_status(&a, french, DeckStatus::Paused).await.unwrap();
+
+    for delete_sources in [false, true] {
+        let mut i = input(vec![spanish, french], false);
+        i.name = format!("Merged {delete_sources}");
+        i.delete_sources = delete_sources;
+        let merged = app.merge_decks(&a, i).await.unwrap();
+        let suspended: Vec<String> =
+            cards_of(&app, &a, merged.deck.id).await.into_iter().filter(|c| c.2).map(|c| c.0).collect();
+        // Rested by the deck: awake again. Suspended by hand: still suspended.
+        assert_eq!(suspended, ["parler"]);
+    }
+}
