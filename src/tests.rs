@@ -16,6 +16,7 @@ use crate::{
 
 mod anki;
 mod concurrency;
+mod merge;
 mod upgrade;
 
 async fn app() -> Arc<App> {

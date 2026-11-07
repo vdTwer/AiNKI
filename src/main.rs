@@ -22,6 +22,7 @@ mod markdown;
 mod mcp;
 mod oauth;
 mod media;
+mod merge;
 mod presets;
 mod scheduler;
 mod security;
