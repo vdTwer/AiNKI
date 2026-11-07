@@ -1370,7 +1370,7 @@ html.calm .study .answers .btn.primary { background: var(--ink); color: var(--pa
 html.calm .study .answers .btn.primary:is(:hover, :focus-visible, .held) { background: var(--ink); color: var(--paper); box-shadow: 0 10px 28px -10px rgba(var(--shadow), .55), 0 0 44px -10px rgba(168, 51, 109, .45), 0 0 64px -18px rgba(200, 110, 160, .4); }
 html.calm .study .answers .label { display: inline-flex; align-items: center; gap: 8px; font-size: 1.25rem; font-weight: 400; }
 html.calm .study .answers .ivl { font-family: var(--italic); font-style: italic; font-size: .95rem; font-weight: 400; color: var(--faint); }
-html.calm .study .answers .btn.primary .ivl { color: rgba(255, 255, 255, .68); }
+html.calm .study .answers .btn.primary .ivl { color: color-mix(in srgb, var(--paper) 68%, transparent); }
 html.calm .study-foot { margin: auto 0 0; padding: 28px 0 28px; }
 html.calm .study-foot .progress { height: 2px; border-radius: 2px; background: var(--track); }
 html.calm .study-foot .bar { height: 2px; border-radius: 2px; background: var(--accent); transition: width 320ms var(--ease), background-color 900ms var(--ease); }
