@@ -304,7 +304,6 @@
       }
       if (!isNaN(aim)) {
         el('line', { x1: L, x2: W - R, y1: Y(aim), y2: Y(aim), 'class': 'aim' }, svg);
-        text(svg, W - R, Y(aim) - 7, 'aim ' + pct(aim), 'axis-text strong', 'end');
       }
       var d = '', pen = false;
       weeks.forEach(function (w, i) {
@@ -316,7 +315,12 @@
       var last = null;
       weeks.forEach(function (w, i) { if (w.v !== null) last = i; });
       el('circle', { cx: X(last), cy: Y(weeks[last].v), r: 4.5, 'class': 'dot' }, svg);
-      text(svg, X(last) - 8, Y(weeks[last].v) - 10, pct(weeks[last].v), 'axis-text value', 'end');
+      // The latest value sits above its dot, or below when the aim's label
+      // is there already.
+      var crowded = !isNaN(aim) && Math.abs(Y(weeks[last].v) - Y(aim)) < 16 && last === weeks.length - 1;
+      var under = crowded && weeks[last].v <= aim;
+      text(svg, X(last) - 8, Y(weeks[last].v) + (under ? 18 : -10), pct(weeks[last].v), 'axis-text value', 'end');
+      if (!isNaN(aim)) text(svg, W - R, Y(aim) + (crowded && !under ? 15 : -7), 'aim ' + pct(aim), 'axis-text strong', 'end');
       text(svg, X(0), H - 6, '12 weeks ago');
       text(svg, X(weeks.length - 1), H - 6, 'this week', 'axis-text', 'end');
       // The crosshair and a dot find the week nearest the pointer.
@@ -357,7 +361,7 @@
       hit.addEventListener('pointerleave', function () { cross.setAttribute('visibility', 'hidden'); spot.setAttribute('visibility', 'hidden'); hideTip(); });
       // The aim explains itself; it sits above the hit area to be found.
       if (!isNaN(aim)) {
-        var aimHit = el('rect', { x: W - R - 70, y: Y(aim) - 20, width: 70, height: 26, 'class': 'hit' }, svg);
+        var aimHit = el('rect', { x: W - R - 70, y: Y(aim) - (crowded && !under ? 4 : 20), width: 70, height: 26, 'class': 'hit' }, svg);
         hover(aimHit, 'Aim ' + pct(aim), 'the dashed line',
           'The share of due cards your presets aim for you to remember, averaged over your decks. FSRS spaces reviews so you land near it.');
       }
