@@ -260,7 +260,7 @@ html.calm .notice::before { content: ''; flex: none; width: 6px; height: 6px; bo
 /* ----- navigation ---------------------------------------------------------- */
 /* One Orchid dot in the top right corner, on the wash. Over it (or with
    keyboard focus inside) it opens to the left into a row of icon tiles:
-   find first, then the places. A hovered tile shows its name beneath it;
+   find first, then the places, Home last under the dot. A hovered tile shows its name beneath it;
    the page you are on is the Orchid tile. Moving away closes the row
    after a short grace, so a slightly wide mouse path doesn't snap it shut. */
 html.calm nav.top {
