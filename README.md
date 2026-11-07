@@ -1,18 +1,129 @@
 # AiNKI
 
-An AI-native flashcard service. Like Anki, but:
+You want to remember things for years: vocabulary, the material for an exam, the facts your work depends on. Spaced repetition is the method for that. You write cards, and a scheduler shows each one again just before you would forget it. Today, an AI assistant can also write those cards with you and quiz you on them, if the flashcard service lets it in.
 
-- **AI-native.** Agents get a full MCP API. Anything you can do on the website, an agent can do too, within the permissions you give it. Connecting Claude takes a URL and one click.
-- **FSRS by default.** Scheduling uses FSRS-6 with researched defaults and presets for common situations. One button fits the parameters to your own memory.
-- **Simple cards.** A front and a back. Each is Markdown text plus an optional image. No note types, no templates.
-- **Multicards, item by item.** A card whose back holds several things to recall can be learned item by item: the items of its lists (numbered or not), its sections under headings, or its parts between `---` lines. After the reveal you tap what you remembered, every item gets its own schedule, and the next round asks only for the ones you missed. Everything else on the back, like a line above a group or a closing remark, stays and is shown with the answer. Agents grade these per item too.
-- **Learning to learn.** A rule-based coach flags cards that keep slipping, ask too much at once, or look like another card, and offers to split them. You decide; AiNKI calls no AI model itself. Short lessons explain FSRS, what memory research says (with how strong the evidence is) and how to write good cards, and each can be added as a deck. Stats show your week, retention per deck against its aim, and how well FSRS predicts your memory.
-- **Web first, mobile first.** One website that works well on a phone and on e-ink readers: grayscale, high contrast, no animations, large tap targets, no JavaScript required. Images are dithered to 16 gray levels on upload. With JavaScript, studying never reloads the page.
-- **A warmer look on desktop.** On computers, AiNKI switches to a calm look: a quiet warm page, a serif for your cards, a side rail of dots that grow into small icons as the cursor comes near, instead of a header, Terra Cotta and Wild Orchid accents, and buttons that tilt a little toward the cursor. Phones, e-readers and browsers without JavaScript always get the simple look, and anyone can choose it in settings.
+AiNKI is a self-hosted flashcard service for that situation. A card is a front and a back in Markdown, FSRS-6 decides when you see it again, and everything you can do on the website an AI agent such as Claude can do too, within the permissions you give it. It runs on a phone, an e-ink reader or a desktop, and it is small enough to host for yourself and a few friends on one server.
 
-Accounts are a username and password. Usernames get a Discord-style tag (`kolja#4821`), so two people can pick the same name.
+Ready to try it? Jump to the [installation instructions](#installation).
 
-## Run it
+## Features
+
+### Cards and decks
+
+- Cards are a front and a back. Each side is Markdown plus one optional image, with no note types, templates or cloze syntax to learn.
+- Multicards turn a back with several things to recall into separate items: the items of its lists, its sections under headings, or its parts between `---` lines. After the reveal you tap what you remembered, every item gets its own schedule, and the next round asks only for what you missed.
+- Decks can be paused, which rests all their cards until you resume, or archived, which also takes them off Home, Stats and the coach. Cards you suspended by hand stay suspended when a deck comes back.
+- Two or more decks merge into a new one. You choose whether the cards keep their review progress and whether the old decks go.
+- Decks can be shared by handle (`name#1234`). The other person gets their own copy with fresh progress.
+- Anki `.apkg` and `.colpkg` files import with their review history, so FSRS starts from your real memory. CSV import and export work too.
+
+### Scheduling and studying
+
+- FSRS-6 schedules every card, starting from parameters fitted on about 10,000 Anki collections. Once you have a few hundred reviews, AiNKI refits them to your own history about once a month and keeps the new ones only if they predict your past reviews better.
+- Five presets cover common situations, from Exam prep at 95% retention to Maintenance at 80%. Each preset's page simulates the next 30, 90 or 365 days at several retentions with your own memory and speed.
+- Two answer buttons by default, Again and Good. Hard and Easy can be turned on.
+- Optional timed cards, typed answers, a "sure or not?" check, quiet hours, suggested breaks and a catch-up mode after time away. During quiet hours agents don't quiz you either.
+- With JavaScript, studying never reloads the page. Without it, every page still works.
+
+### Learning to learn
+
+- A rule-based coach flags cards that keep slipping, ask too much at once or look like another card, and offers to split them. On Home and Stats it gives one piece of advice at a time. AiNKI calls no AI model itself; you decide.
+- 18 short lessons explain FSRS, what memory research says, with how strong the evidence is, and how to write good cards. Each can be added as a deck.
+- Stats show the week, retention per deck against its aim, how well FSRS predicts your memory and how often you were right when you felt sure. On a desktop they are charts with a hover for every value, and an "I love numbers" switch shows the exact tables.
+
+### Two looks
+
+- The simple look serves phones, e-ink readers and browsers without JavaScript: grayscale, high contrast, no animations, large tap targets. Images are dithered to 16 gray levels on upload.
+- On a desktop, AiNKI switches to a watercolor look: hard white pages, EB Garamond titles, soft washes of Wild Orchid and Terra Cotta, and a dark mode. A single dot in the corner opens into the places of the app, and a fuzzy quick find (any letter, `/` or Ctrl+K) reaches every deck, card and lesson. Home shows the cards due over the next 7 days, and `?` lists the keyboard shortcuts.
+- Anyone can choose the simple look in settings.
+
+### Agents
+
+- A full MCP server with 40 tools: decks, cards, images, studying, presets, imports, sharing, the coach, stats and lessons.
+- Connecting Claude takes the server's URL and one click, through the standard OAuth 2.1 flow. Clients without OAuth use a hand-made token.
+- Access is scoped: read-only, studying, or editing, and all decks or only some. Agents can never change your password or settings, and their reviews are labelled so you can leave them out of FSRS optimization.
+
+### Accounts and invitations
+
+- Accounts are a username and password. Usernames get a tag (`kolja#4821`), so two people can pick the same name.
+- AiNKI grows by invitation. Every account can send one single-use link a week, starting a week after it joined.
+- A separate admin account sees who invited whom and an overview of all accounts. It has no decks of its own.
+
+### Security and tests
+
+- Passwords are hashed with Argon2id, logins are throttled per IP and per account, and session tokens are stored hashed in `HttpOnly`, `SameSite=Lax` cookies (`Secure` and `__Host-` over HTTPS).
+- A strict Content Security Policy with no inline scripts, `frame-ancestors 'none'` and an Origin check on every form post. Card Markdown is rendered with raw HTML disabled and sanitized again.
+- OAuth uses PKCE (S256 only), exact redirect URIs, 1-hour access tokens and rotating refresh tokens; reusing an old refresh token revokes the connection. The one outgoing request, fetching OAuth client metadata, goes only to public HTTPS addresses, pinned against DNS rebinding.
+- Uploads are size-limited before decoding and re-encoded. Anki packages are read with limits against zip and zstd bombs, and opened read-only with SQLite's `trusted_schema` off.
+- The container runs as an unprivileged user with a read-only root filesystem, all capabilities dropped and `no-new-privileges`. `cargo audit` is clean apart from one advisory for code that is never compiled (see `.cargo/audit.toml`).
+- About 160 Rust tests and 88 Playwright tests, run in Chromium and Firefox on desktop, simple look and phone. A separate job seeds data with the last v1 release and checks that it survives the upgrade.
+
+## Tech stack
+
+```mermaid
+flowchart LR
+    browser["Browser<br/>phone, e-ink or desktop"]
+    agent["AI agent<br/>Claude or any MCP client"]
+    proxy["Reverse proxy<br/>HTTPS"]
+    subgraph server["AiNKI server (one Rust binary)"]
+        web["Website<br/>Axum + maud"]
+        mcp["MCP server<br/>rmcp"]
+        oauth["OAuth 2.1<br/>authorization server"]
+        service["Service layer<br/>decks, cards, study, stats"]
+        fsrs["FSRS-6<br/>scheduler and optimizer"]
+        coach["Coach and lessons"]
+        importer["Anki and CSV import"]
+    end
+    db[("SQLite<br/>ainki.db")]
+    media[("Images<br/>media/")]
+    browser --> proxy
+    agent --> proxy
+    proxy --> web
+    proxy --> mcp
+    proxy --> oauth
+    web --> service
+    mcp --> service
+    service --> fsrs
+    service --> coach
+    service --> importer
+    service --> db
+    service --> media
+```
+
+The website and the MCP server are thin layers over the same service, so agents and people get the same capabilities and the same rules. All state lives in one SQLite file and a folder of images, which makes a backup a single copy of a Docker volume.
+
+AiNKI is written in Rust, with plain CSS and a little JavaScript for the desktop look. The main libraries:
+
+- [Axum](https://github.com/tokio-rs/axum) for HTTP and [maud](https://maud.lambda.xyz/) for server-rendered HTML
+- [rmcp](https://github.com/modelcontextprotocol/rust-sdk) for the MCP server (Streamable HTTP, stateless)
+- [fsrs-rs](https://github.com/open-spaced-repetition/fsrs-rs) for scheduling and optimization
+- [SQLx](https://github.com/launchbadge/sqlx) with SQLite, migrations in `migrations/`
+- [pulldown-cmark](https://github.com/pulldown-cmark/pulldown-cmark) and [ammonia](https://github.com/rust-ammonia/ammonia) for safe Markdown
+- [image](https://github.com/image-rs/image) for resizing and dithering, [zip](https://github.com/zip-rs/zip2) and [zstd](https://github.com/gyscos/zstd-rs) for Anki packages
+- [Playwright](https://playwright.dev/) for the browser tests
+
+[docs/code.md](docs/code.md) maps the source files, and [docs/scheduling.md](docs/scheduling.md) explains the presets and study options in detail.
+
+To run the server and the tests locally:
+
+```sh
+AINKI_DATA_DIR=./data cargo run
+cargo test
+
+cargo build
+cd e2e
+npm ci
+npx playwright install chromium firefox
+npm test                  # or npm run test:chromium
+```
+
+The Playwright tests use the debug binary from `cargo build` and start it on a temporary data directory by themselves. CI (`.github/workflows/test.yml`) runs all three suites on every pull request.
+
+## Roadmap
+
+- Export to `.apkg`.
+
+## Installation
 
 ```sh
 git clone https://github.com/vdTwer/AiNKI.git
@@ -83,7 +194,7 @@ Everything is in the volume: `ainki.db` (SQLite) and `media/`. To make a consist
 docker compose stop && docker run --rm -v ainki_ainki-data:/data -v "$PWD":/backup debian:trixie-slim tar czf /backup/ainki-backup.tgz -C /data . && docker compose start
 ```
 
-## Connect Claude (or any MCP client)
+### Connect Claude (or any MCP client)
 
 AiNKI must be reachable on a public HTTPS address (set `AINKI_PUBLIC_URL`). Then:
 
@@ -103,95 +214,8 @@ For agents without OAuth support, create a token by hand under **Settings → Ag
 
 Agents can never change your password or settings, or create tokens. Reviews done through an agent are labelled, and you can leave them out of FSRS optimization.
 
-Tools: `get_overview`, `list_decks`, `create_deck`, `update_deck`, `delete_deck`, `list_cards`, `get_card`, `create_cards`, `update_card`, `delete_cards`, `set_cards_suspended`, `reset_cards`, `upload_image`, `get_image`, `get_next_card`, `answer_card`, `undo_last_answer`, `get_stats`, `list_presets`, `create_preset`, `update_preset`, `delete_preset`, `optimize_fsrs`, `import_csv`, `import_apkg`, `export_deck_csv`, `share_deck`, `list_shares`, `accept_share`, `decline_share`, `cancel_share`, `list_cards_needing_attention`, `dismiss_card_flag`, `split_card`, `get_insights`, `get_workload`, `list_lessons`, `get_lesson`.
-
 During quiet hours `get_next_card` returns no card, so agents don't quiz you then.
-
-## Sharing decks
-
-On a deck's **Share** section, enter someone's `name#1234`. The deck shows up on their home page, and when they accept they get their own copy: same cards and images, fresh progress. Later edits on either side don't carry over.
-
-## Scheduling
-
-AiNKI uses the [FSRS](https://github.com/open-spaced-repetition/fsrs4anki/wiki/The-Algorithm) model through the [`fsrs`](https://crates.io/crates/fsrs) crate (FSRS-6). FSRS tracks each card's *stability* (how long until recall drops to 90%) and *difficulty*. It schedules the next review for when your chance of recalling the card drops to your *desired retention*.
-
-By default there are two answer buttons, **Again** (forgot) and **Good** (remembered). FSRS works well with two buttons. You can turn on **Hard** and **Easy** in settings.
-
-### Presets
-
-New accounts get these presets:
-
-| Preset | Retention | New/day | Reviews/day | Learning steps | Use for |
-| --- | --- | --- | --- | --- | --- |
-| Standard | 90% | 20 | 200 | 10m | Most material. |
-| Exam prep | 95% | 50 | 9999 | 1m 10m | An upcoming test. Set an exam date on the deck so no card is scheduled after it. |
-| Language vocabulary | 90% | 30 | 300 | 10m | Many small cards every day. |
-| Relaxed | 85% | 10 | 100 | 10m | Long-term learning on a small time budget. |
-| Maintenance | 80% | 0 | 100 | 10m | Keeping old knowledge with minimal effort. |
-
-How these were chosen, following the FSRS project's guidance:
-
-- **Default parameters.** The FSRS-6 defaults are fitted on about 10,000 Anki collections. Once you have a few hundred reviews, AiNKI fits FSRS to your own history about once a month by itself (or press **Optimize now** in settings). New parameters are kept only when they predict your past reviews better than the old ones. A preset with about 400 reviews of its own gets its own parameters.
-- **Desired retention.** 0.80 to 0.95 is the useful range. Below about 0.80 you relearn so much that total work goes up. Above 0.95, work climbs steeply: 0.95 costs about twice the reviews of 0.90. Where the least work lies differs from person to person, so each preset's page simulates the next 30, 90 or 365 days at several retentions with your own memory and speed.
-- **Learning steps.** Keep them short (minutes, under a day). Spacing across days is FSRS's job; long learning steps work against the model.
-- **Daily limits.** Each new card leads to about 10 reviews in its first month, so the review limit should be at least 10 times the new card limit.
-- **Fuzz.** Intervals get a small random spread so cards added together don't stay due together.
-
-### Studying
-
-- **Timed cards.** A preset can set a time limit for cards you have seen before. When time runs out the card counts as forgotten; **+10 s** adds time once. Answer times are never used to grade otherwise.
-- **Typed answers.** A preset can ask you to type the answer first. What you wrote is shown above the answer; you still decide whether you remembered.
-- **Sure check.** Optionally say whether you are sure before the answer is shown. It doesn't change the schedule; stats show how often you were right when you felt sure.
-- **Quiet hours.** No cards during the hours you choose, on the website (a rest screen, with "Study anyway") or through agents.
-- **Breaks.** Optionally suggest a break after a set number of minutes.
-- **Catch-up mode.** After time away: no new cards, a daily cap on reviews, and the cards you most likely still remember first. AiNKI offers it when many cards are overdue.
-- **Mixed study.** Study all decks at once, or one at a time. Mixing is offered for convenience; there is no good evidence it helps with unrelated material.
-
-### Import from Anki
-
-Upload an `.apkg` or `.colpkg` under **Import**. Each card keeps the first two fields of its note (HTML stripped, Markdown-ish formatting) and the first image on each side. Reversed cards swap the fields, and cloze notes become one card per gap. Review history is imported, so FSRS memory states are computed from your real history and the optimizer can use it. Suspended cards stay suspended.
-
-CSV import takes one card per line (`front,back`). Commas, semicolons or tabs all work.
-
-## Security
-
-- **Accounts.** Passwords are hashed with Argon2id. Failed logins are throttled per client IP and per account; unknown and known usernames take the same time to reject. Sessions are random 256-bit tokens, stored hashed, in `HttpOnly`, `SameSite=Lax` cookies (`Secure` and `__Host-` over HTTPS).
-- **Browser protections.** A strict Content Security Policy (no inline scripts), `frame-ancestors 'none'`, `nosniff`, and an Origin check on every form post on top of SameSite cookies. Card Markdown is rendered with raw HTML disabled and sanitized again.
-- **Agents.** Tokens and OAuth connections are scoped (read-only, review, specific decks) and revocable. OAuth uses PKCE (S256 only), exact redirect URIs, 1-hour access tokens and rotating refresh tokens; reusing an old refresh token revokes the connection. The consent page shows where the app will send you. Agents are told to treat card content as data, never as instructions.
-- **Uploads and imports.** Request sizes are limited per route. Images are size-limited before decoding and re-encoded. Anki packages are read with limits against zip/zstd bombs and opened read-only with SQLite's `trusted_schema` off.
-- **Outgoing requests.** The only one is fetching OAuth client metadata documents: HTTPS only, public IP addresses only (pinned against DNS rebinding), small responses, short timeouts, rate-limited.
-- **Container.** Runs as an unprivileged user with a read-only root filesystem, all capabilities dropped and `no-new-privileges`.
-- **Dependencies.** `cargo audit` is clean; see `.cargo/audit.toml` for the one ignored advisory and why.
-
-## Development
-
-```sh
-cargo test
-AINKI_DATA_DIR=./data cargo run
-```
-
-The code:
-
-- `src/service.rs`: everything a user can do (decks, cards, studying, stats). The website and MCP server are thin layers over it.
-- `src/coach.rs`: the card coach (leeches, split hints, near duplicates, splitting).
-- `src/tuning.rs`: the optimizer, per-preset parameters, the monthly run, workload simulation and calibration.
-- `src/study.rs`: quiet hours, breaks, catch-up mode and the sure check. `src/insight.rs`: the week and retention per deck.
-- `src/lessons.rs` and `src/lessons/*.md`: the built-in lessons, one Markdown file each.
-- `src/scheduler.rs`: card lifecycle around FSRS (learning steps, day boundaries, fuzz, exam caps).
-- `src/web.rs`: the website (server-rendered with maud).
-- `src/mcp.rs`: the MCP server (rmcp, Streamable HTTP, stateless).
-- `src/oauth.rs`: OAuth 2.1 authorization server for MCP clients.
-- `src/share.rs`: deck sharing.
-- `src/static/app.js`: the browser script: studying without page reloads, small touches. Everything works without it.
-- `src/security.rs`: rate limiting, security headers, Origin checks, flash messages.
-- `src/style.css`: the simple look (the base everywhere). `src/static/calm.css` and `theme.js`: the calm desktop look, switched on only by script on wide screens with a mouse that aren't e-ink. Fonts (Schibsted Grotesk, Source Serif 4, Fraunces; SIL Open Font License) are served by AiNKI itself.
-- `src/import.rs`: Anki and CSV import, CSV export.
-- `src/media.rs`: image processing (resize, grayscale, Floyd–Steinberg dithering).
-
-## Roadmap
-
-- Export to `.apkg`.
 
 ## License
 
-MIT. FSRS scheduling comes from [fsrs-rs](https://github.com/open-spaced-repetition/fsrs-rs) (BSD-3-Clause). AiNKI contains no code from Anki itself (AGPL); it is compatible with Anki's file format only.
+MIT. FSRS scheduling comes from [fsrs-rs](https://github.com/open-spaced-repetition/fsrs-rs) (BSD-3-Clause), and EB Garamond is under the SIL Open Font License. AiNKI contains no code from Anki itself (AGPL); it is compatible with Anki's file format only.
