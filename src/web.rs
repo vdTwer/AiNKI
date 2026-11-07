@@ -28,7 +28,7 @@ use crate::{
     security::{self, ClientIp, Flash},
     scheduler::{self, CardState, Rating},
     study,
-    service::{Card, CardFilter, CardInput, Deck, PresetInput},
+    service::{Card, CardFilter, CardInput, Deck, DeckStatus, PresetInput},
     format::{self, count},
 };
 
@@ -125,6 +125,8 @@ pub fn router(app: AppState) -> Router {
         .route("/decks/{id}/delete", post(deck_delete))
         .route("/decks/{id}/export.csv", get(deck_export))
         .route("/decks/{id}/share", post(deck_share))
+        .route("/decks/{id}/{action}", post(deck_action))
+        .route("/decks/archived", get(archived_page))
         .route("/shares/{id}/{action}", post(share_action))
         .route("/cards/{id}/split", get(split_page).post(split_submit))
         .route("/cards/{id}/{action}", post(card_action))
@@ -1143,7 +1145,11 @@ async fn admin_page(State(app): State<AppState>, user: WebUser, headers: HeaderM
 
 async fn home(State(app): State<AppState>, user: WebUser, Flash(msg): Flash) -> WebResult {
     let access = user.access();
-    let decks = app.deck_summaries(&access).await?;
+    let (archived, decks): (Vec<_>, Vec<_>) = app
+        .deck_summaries(&access)
+        .await?
+        .into_iter()
+        .partition(|d| d.deck.status == DeckStatus::Archived);
     let shares = app.incoming_shares(&access).await?;
     let stats = app.stats(&access, None).await?;
     let total_due: i64 = decks.iter().map(|d| d.due_total()).sum();
@@ -1229,7 +1235,9 @@ async fn home(State(app): State<AppState>, user: WebUser, Flash(msg): Flash) -> 
                 }
                 p.muted.small { "Accepting gives you your own copy. Your progress is yours; later changes by the sender don't carry over." }
             }
-            @if decks.is_empty() {
+            @if decks.is_empty() && !archived.is_empty() {
+                p.muted { "Every deck is archived. Restore one to study it again." }
+            } @else if decks.is_empty() {
                 p.simple-only { "No decks yet. Create one, or bring your Anki decks along." }
                 // The desktop look: someone new gets three quiet ways in.
                 div.calm-only.first-steps {
@@ -1258,7 +1266,9 @@ async fn home(State(app): State<AppState>, user: WebUser, Flash(msg): Flash) -> 
                             a.row href=(format!("/decks/{}", d.deck.id)) {
                                 span.grow {
                                     span.deck-name { (deck_title(&d.deck.name)) }
-                                    @if let Some(exam) = &d.deck.exam_date {
+                                    @if d.deck.status == DeckStatus::Paused {
+                                        span.sub { "Paused" }
+                                    } @else if let Some(exam) = &d.deck.exam_date {
                                         span.sub { "Exam " (exam_words(&user.0, exam)) }
                                     }
                                 }
@@ -1273,6 +1283,9 @@ async fn home(State(app): State<AppState>, user: WebUser, Flash(msg): Flash) -> 
                         }
                     }
                 }
+            }
+            @if !archived.is_empty() {
+                p.small.archived-link { a href="/decks/archived" { (count(archived.len() as i64, "archived deck")) } }
             }
             @if attention > 0 {
                 p.small.attention-link { a href="/attention" { (count(attention, "card")) " " (if attention == 1 { "needs" } else { "need" }) " a look" } }
@@ -1843,6 +1856,15 @@ fn find_line(text: &str, max: usize) -> String {
     format!("{cut}…")
 }
 
+/// A deck's label in quick find.
+fn deck_kind(status: DeckStatus) -> &'static str {
+    match status {
+        DeckStatus::Active => "Deck",
+        DeckStatus::Paused => "Paused deck",
+        DeckStatus::Archived => "Archived deck",
+    }
+}
+
 async fn find_json(State(app): State<AppState>, user: WebUser, Query(f): Query<FindQuery>) -> WebResult {
     let access = user.access();
     let q = f.q.trim();
@@ -1856,7 +1878,7 @@ async fn find_json(State(app): State<AppState>, user: WebUser, Query(f): Query<F
             found.push(Found { kind: "place", title: name.to_string(), sub: String::new(), href: href.to_string(), score: 0 });
         }
         for d in &decks {
-            found.push(Found { kind: "deck", title: deck_plain(&d.name), sub: "Deck".into(), href: format!("/decks/{}", d.id), score: 0 });
+            found.push(Found { kind: "deck", title: deck_plain(&d.name), sub: deck_kind(d.status).into(), href: format!("/decks/{}", d.id), score: 0 });
         }
         found.truncate(FIND_MAX);
         return Ok(([(header::CONTENT_TYPE, "application/json")], serde_json::json!({ "q": q, "results": found }).to_string()).into_response());
@@ -1871,7 +1893,7 @@ async fn find_json(State(app): State<AppState>, user: WebUser, Query(f): Query<F
     for d in &decks {
         let title = deck_plain(&d.name);
         if let Some(s) = find_score(q, &title, &d.description) {
-            found.push(Found { kind: "deck", title: title.clone(), sub: "Deck".into(), href: format!("/decks/{}", d.id), score: s + 3 });
+            found.push(Found { kind: "deck", title: title.clone(), sub: deck_kind(d.status).into(), href: format!("/decks/{}", d.id), score: s + 3 });
         }
         names.insert(d.id, title);
     }
@@ -2463,7 +2485,13 @@ async fn deck_page(
                 div { dt { "Cards" } dd { (format::number(summary.total)) } }
             }
             @if let Some(exam) = &d.exam_date { p.muted { "Exam " (exam_words(&user.0, exam)) } }
-            @if summary.due_total() > 0 {
+            @if !d.status.is_active() {
+                // At rest, waking the deck is what this page is for.
+                p.rest-note.muted { (rest_words(d.status)) }
+                form method="post" action=(format!("/decks/{id}/resume")) {
+                    button.btn.primary type="submit" { (if d.status == DeckStatus::Archived { "Restore deck" } else { "Resume deck" }) }
+                }
+            } @else if summary.due_total() > 0 {
                 p { a.btn.primary.start href=(format!("/study?deck={id}")) { "Start studying " span.arrow aria-hidden="true" { "→" } } }
             }
             p.actions.icon-links.deck-menu id="deck-menu" {
@@ -2600,6 +2628,25 @@ async fn deck_edit_view(
                     }
                 }
             }
+            h2 id="rest" { "Pause" }
+            p { (rest_words(deck.status)) }
+            form.actions.rest-actions method="post" action=(format!("/decks/{id}/pause")) {
+                @match deck.status {
+                    DeckStatus::Active => {
+                        button.btn type="submit" { "Pause deck" }
+                        " "
+                        button.btn type="submit" formaction=(format!("/decks/{id}/archive")) { "Archive deck" }
+                    }
+                    DeckStatus::Paused => {
+                        button.btn type="submit" formaction=(format!("/decks/{id}/resume")) { "Resume deck" }
+                        " "
+                        button.btn type="submit" formaction=(format!("/decks/{id}/archive")) { "Archive deck" }
+                    }
+                    DeckStatus::Archived => {
+                        button.btn type="submit" formaction=(format!("/decks/{id}/resume")) { "Restore deck" }
+                    }
+                }
+            }
             details.danger {
                 summary { "Delete this deck…" }
                 form method="post" action=(format!("/decks/{id}/delete")) {
@@ -2652,6 +2699,78 @@ async fn deck_delete(State(app): State<AppState>, user: WebUser, Path(id): Path<
         Ok(redirect_msg("/", &format!("Deck deleted, with its {}.", count(n, "card"))))
     }
     .await)
+}
+
+/// The decks to pick from for a card: archived ones are put away, except
+/// `keep`, the one the card is in or was asked for.
+fn open_decks(decks: Vec<Deck>, keep: Option<i64>) -> Vec<Deck> {
+    decks.into_iter().filter(|d| d.status != DeckStatus::Archived || Some(d.id) == keep).collect()
+}
+
+/// What resting means for a deck, said on its pages.
+fn rest_words(status: DeckStatus) -> &'static str {
+    match status {
+        DeckStatus::Active => "Pausing stops a deck's cards until you resume it; the deck stays on your list. Archiving also puts it away. Progress is kept either way.",
+        DeckStatus::Paused => "Paused. Its cards wait, with their progress, until you resume the deck.",
+        DeckStatus::Archived => "Archived. The deck is put away and its cards wait, with their progress, until you restore it.",
+    }
+}
+
+async fn deck_action(
+    State(app): State<AppState>,
+    user: WebUser,
+    Path((id, action)): Path<(i64, String)>,
+) -> WebResult {
+    or_back(format!("/decks/{id}"), async {
+        let (status, msg) = match action.as_str() {
+            "pause" => (DeckStatus::Paused, "Deck paused."),
+            "archive" => (DeckStatus::Archived, "Deck archived. Find it under archived decks below."),
+            "resume" => (DeckStatus::Active, "Deck back in study."),
+            _ => return Err(AppError::bad("unknown action")),
+        };
+        app.set_deck_status(&user.access(), id, status).await?;
+        // An archived deck leaves the list: home is where it went from.
+        let to = if status == DeckStatus::Archived { "/".to_string() } else { format!("/decks/{id}") };
+        Ok(redirect_msg(to, msg))
+    }
+    .await)
+}
+
+async fn archived_page(State(app): State<AppState>, user: WebUser, Flash(msg): Flash) -> WebResult {
+    let access = user.access();
+    let decks: Vec<_> = app
+        .deck_summaries(&access)
+        .await?
+        .into_iter()
+        .filter(|d| d.deck.status == DeckStatus::Archived)
+        .collect();
+    Ok(layout_in(
+        Nav::Decks,
+        "Archived decks",
+        Some(&user.0),
+        html! {
+            (flash(&msg))
+            (parent("/", "Decks"))
+            h1 { "Archived decks" }
+            @if decks.is_empty() {
+                p.empty.muted { "Nothing archived. Archive a deck from its settings to put it away." }
+            } @else {
+                p.muted { "Put away, with their progress. Open one to restore it." }
+                ul.list.decks.archived {
+                    @for d in &decks {
+                        li {
+                            a.row href=(format!("/decks/{}", d.deck.id)) {
+                                span.grow { span.deck-name { (deck_title(&d.deck.name)) } }
+                                span.num.small.muted { (count(d.total, "card")) }
+                                span.chev aria-hidden="true" { "›" }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+    )
+    .into_response())
 }
 
 async fn deck_export(State(app): State<AppState>, user: WebUser, Path(id): Path<i64>) -> WebResult {
@@ -2923,7 +3042,7 @@ fn card_new_view(user: &User, decks: &[Deck], c: &CardDraft, msg: &Option<String
 
 async fn card_new_page(State(app): State<AppState>, user: WebUser, Flash(msg): Flash, Query(q): Query<NewCardQuery>) -> WebResult {
     let access = user.access();
-    let decks = app.decks(&access).await?;
+    let decks = open_decks(app.decks(&access).await?, q.deck);
     // The deck from the link, else the one last added to, else the first.
     let deck = match q.deck {
         Some(id) => Some(id),
@@ -2979,7 +3098,7 @@ async fn card_create(State(app): State<AppState>, user: WebUser, mp: Multipart) 
         Ok((deck, msg)) => Ok(redirect_msg(format!("/cards/new?deck={deck}"), &msg)),
         Err(e) => {
             let msg = with_image_hint(fixable(&e).ok_or(e)?, &f);
-            let decks = app.decks(&access).await?;
+            let decks = open_decks(app.decks(&access).await?, f.deck);
             let draft = CardDraft {
                 id: None,
                 deck: if f.new_deck.is_some() { None } else { f.deck },
@@ -3033,7 +3152,7 @@ async fn card_view(
 ) -> Result<Markup, AppError> {
     let access = Access::web(user.clone());
     let card = app.card(&access, id).await?;
-    let decks = app.decks(&access).await?;
+    let decks = open_decks(app.decks(&access).await?, Some(card.deck_id));
     let history = app.card_history(&access, id).await?;
     let items = app.card_items(&card).await?;
     let flags = app.card_flags(&access, &card).await?;
