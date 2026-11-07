@@ -485,7 +485,7 @@
     calibration: function (box) {
       var bins = box.getAttribute('data-bins').split(';').map(function (b) {
         var p = b.split(',');
-        return { e: +p[0], a: +p[1], n: +p[2] };
+        return { e: +p[0], a: +p[1], n: +p[2], from: p[3], to: p[4] };
       });
       var lo = Math.min.apply(null, bins.map(function (b) { return Math.min(b.e, b.a); }).concat([0.8]));
       lo = Math.max(0, Math.floor((lo - 0.03) * 10) / 10);
@@ -494,10 +494,21 @@
       var svg = el('svg', { viewBox: '0 0 ' + S + ' ' + S, 'class': 'square' }, box);
       el('rect', { x: M, y: M, width: S - 2 * M, height: S - 2 * M, rx: 8, 'class': 'frame' }, svg);
       el('line', { x1: Q(lo), y1: S - Q(lo), x2: Q(1), y2: S - Q(1), 'class': 'aim' }, svg);
+      // The dashed line is wide to the pointer, under the dots.
+      var fit = el('line', { x1: Q(lo), y1: S - Q(lo), x2: Q(1), y2: S - Q(1), 'class': 'hit-line' }, svg);
+      hover(fit, 'A perfect fit', 'the dashed line',
+        'Here FSRS would predict your memory exactly. Dots above it: you remembered more than it expected. Below: less.');
       var most = Math.max.apply(null, bins.map(function (b) { return b.n; }).concat([1]));
       bins.forEach(function (b) {
         var c = el('circle', { cx: Q(b.e), cy: S - Q(b.a), r: (4 + Math.sqrt(b.n / most) * 8).toFixed(1), 'class': 'dot' }, svg);
-        hover(c, pct(b.a) + ' remembered', 'expected ' + pct(b.e) + ', ' + b.n + ' reviews');
+        var gap = Math.round((b.a - b.e) * 100);
+        var band = b.from !== undefined ? b.from + ' to ' + b.to + '%' : pct(b.e);
+        var why = 'Of ' + b.n + (b.n === 1 ? ' review' : ' reviews') + ' where FSRS gave you ' + band + ', you remembered ' + pct(b.a) + '. '
+          + (Math.abs(gap) <= 2 ? 'Close to what it expected.'
+            : gap < 0 ? Math.abs(gap) + ' points less than it expected; optimizing FSRS on your reviews narrows that.'
+            : gap + ' points more than it expected.')
+          + ' Bigger dots stand for more reviews.';
+        hover(c, pct(b.a) + ' remembered', 'FSRS expected ' + band, why);
       });
       text(svg, S / 2, S - 4, 'expected', 'axis-text', 'middle');
       var t = text(svg, 10, S / 2, 'remembered', 'axis-text', 'middle');

@@ -4629,7 +4629,7 @@ fn desk_stats(d: &DeskStats) -> Markup {
         .filter_map(|r| r.actual.map(|a| format!("{}|{}|{}|{}|{}", deck_plain(&r.deck_name).replace(['|', ';'], " "), r.target, a, r.deck_id, r.reviews)))
         .collect();
     let first_day = d.history.days.first().map_or("", |(day, _)| day.as_str());
-    let bins: Vec<String> = d.cal.bins.iter().map(|b| format!("{},{},{}", b.predicted, b.actual, b.reviews)).collect();
+    let bins: Vec<String> = d.cal.bins.iter().map(|b| format!("{},{},{},{},{}", b.predicted, b.actual, b.reviews, b.from, b.to)).collect();
     html! {
         div.desk-stats.calm-only {
             section.big3 {

@@ -1874,6 +1874,8 @@ html.calm .chart .line { fill: none; stroke: var(--accent); stroke-width: 2; str
 html.calm .chart .dot { fill: var(--accent); stroke: var(--paper); stroke-width: 2; }
 html.calm .chart .cross { stroke: var(--line-strong); stroke-width: 1; }
 html.calm .chart .hit { fill: transparent; }
+html.calm .chart .hit-line { stroke: transparent; stroke-width: 14; stroke-linecap: round; }
+html.calm .chart .hit-line:hover { stroke: color-mix(in srgb, var(--ink) 6%, transparent); }
 html.calm .chart .bar { fill: var(--line-strong); }
 html.calm .chart .bar.now { fill: var(--accent); }
 html.calm .chart .bar.hot { fill: var(--faint); }
