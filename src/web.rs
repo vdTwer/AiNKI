@@ -2374,6 +2374,7 @@ impl DeckCreateForm {
             preset_id: self.preset_id.unwrap_or(0),
             exam_date: self.exam_date.clone().filter(|e| !e.trim().is_empty()),
             created_at: 0,
+            status: crate::service::DeckStatus::Active,
         }
     }
 }
