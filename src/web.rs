@@ -1154,7 +1154,6 @@ async fn home(State(app): State<AppState>, user: WebUser, Flash(msg): Flash) -> 
     let week = app.week(&access).await?;
     let known = advice::Known { decks: &decks, stats: &stats, attention: &flagged, overdue };
     let notes = app.advice_from(&access, &known).await?;
-    let history = app.history(&access, None).await?;
     // A rough guide; real thinking time once there's enough history.
     let minutes = ((total_due as f64 * stats.seconds_per_review.unwrap_or(12.0)) / 60.0).ceil().max(1.0) as i64;
     let mut facts = Vec::new();
@@ -1288,7 +1287,7 @@ async fn home(State(app): State<AppState>, user: WebUser, Flash(msg): Flash) -> 
                 a href="/import" { "Import deck" }
             }
             @if !decks.is_empty() {
-                (week_home(&week, &history.days))
+                (week_home(&user.0, total_due, &stats.forecast, stats.seconds_per_review))
             }
         },
     )
@@ -3998,24 +3997,58 @@ async fn password_update(
         .into_response())
 }
 
-/// The last seven days in a sentence or two, and one thing worth doing.
-/// The desktop home's week: the note, and a bar for each of the last seven
-/// days with today's letter in bold.
-fn week_home(w: &insight::Week, days: &[(String, i64)]) -> Markup {
-    let last = &days[days.len().saturating_sub(7)..];
-    let most_seen = last.iter().map(|(_, n)| *n).max().unwrap_or(0);
-    let most = most_seen.max(1);
-    let label = last.iter().map(|(d, n)| format!("{d}: {n}")).collect::<Vec<_>>().join(", ");
+/// The desktop home's week looks ahead: a sentence on what comes due over
+/// the next seven days, then a bar for each, today first and in bold.
+/// Today holds what the page says to study now (new cards and limits
+/// included); the days after it, the learned cards that fall due on them.
+fn week_home(user: &User, today_due: i64, forecast: &[(String, i64)], seconds_per_review: Option<f64>) -> Markup {
+    let clock = user.clock();
+    let days: Vec<(chrono::NaiveDate, i64)> = (0..7)
+        .map(|i| {
+            let date = clock.today() + chrono::Duration::days(i);
+            let n = if i == 0 {
+                today_due
+            } else {
+                let key = date.format("%Y-%m-%d").to_string();
+                forecast.iter().find(|(d, _)| *d == key).map_or(0, |(_, n)| *n)
+            };
+            (date, n.max(0))
+        })
+        .collect();
+    let total: i64 = days.iter().map(|(_, n)| n).sum();
+    // The first of the busiest days, so a tie names the sooner one.
+    let busiest = days.iter().fold(days[0], |best, &d| if d.1 > best.1 { d } else { best });
+    let most = busiest.1.max(1);
+    let when = |date: chrono::NaiveDate| match (date - clock.today()).num_days() {
+        0 => "today".to_string(),
+        1 => "tomorrow".to_string(),
+        _ => format!("on {}", date.format("%A")),
+    };
+    let tip = |date: chrono::NaiveDate, n: i64| {
+        let n = if n == 0 { "nothing due".to_string() } else { count(n, "card") };
+        format!("{}: {n}", format::short_day(&clock, date))
+    };
     html! {
         div.week-home.calm-only {
-            (week_note(w))
-            @if most_seen > 0 {
-            div.week-bars role="img" aria-label=(format!("Reviews per day, last seven days. {label}")) {
-                @for (i, (date, n)) in last.iter().enumerate() {
-                    @let letter = chrono::NaiveDate::parse_from_str(date, "%Y-%m-%d").map(|d| d.format("%a").to_string()).unwrap_or_default();
-                    div.day.today[i + 1 == last.len()] {
-                        span.bar.empty[*n == 0] style=(format!("height: {}%", (*n * 100 / most).max(3))) {}
-                        span.letter { (letter.chars().next().unwrap_or(' ')) }
+            section.week aria-label="Next seven days" {
+                h2 { "Next seven days" }
+                @if total == 0 {
+                    p { "Nothing comes due in the next seven days." }
+                } @else {
+                    p {
+                        (count(total, "card")) (if total == 1 { " comes" } else { " come" }) " due in the next seven days"
+                        @if let Some(sec) = seconds_per_review { ", " (format::minutes(sec * total as f64 / 60.0)) " of study" }
+                        "."
+                        @if total > busiest.1 { " The most " (when(busiest.0)) ", " (format::number(busiest.1)) "." }
+                    }
+                }
+            }
+            @if total > 0 {
+            div.week-bars role="img" aria-label=(format!("Cards due on each of the next seven days. {}", days.iter().map(|&(d, n)| tip(d, n)).collect::<Vec<_>>().join(", "))) {
+                @for (i, &(date, n)) in days.iter().enumerate() {
+                    div.day.today[i == 0] title=(tip(date, n)) {
+                        span.bar.empty[n == 0] style=(format!("height: {}%", (n * 100 / most).max(3))) {}
+                        span.letter { (date.format("%a").to_string().chars().next().unwrap_or(' ')) }
                     }
                 }
             }
@@ -4024,6 +4057,7 @@ fn week_home(w: &insight::Week, days: &[(String, i64)]) -> Markup {
     }
 }
 
+/// The last seven days in a sentence or two, and one thing worth doing.
 fn week_note(w: &insight::Week) -> Markup {
     let tip = match w.tip {
         insight::Tip::Attention => Some(html! { p.tip { span { (count(w.attention, "card")) " keep slipping or ask too much at once. Fixing them saves more time than reviewing them. " a href="/attention" { "Have a look" } } } }),
