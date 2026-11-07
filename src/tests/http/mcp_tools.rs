@@ -78,7 +78,7 @@ async fn every_tool_is_listed_with_a_description_and_schema() {
         "create_preset", "update_preset", "delete_preset", "get_coach_advice", "list_cards_needing_attention",
         "dismiss_card_flag", "split_card", "get_insights", "get_workload", "list_lessons", "get_lesson",
         "optimize_fsrs", "import_csv", "import_apkg", "share_deck", "list_shares", "accept_share",
-        "decline_share", "cancel_share", "export_deck_csv",
+        "decline_share", "cancel_share", "export_deck_csv", "merge_decks",
     ] {
         assert!(names.contains(&expected), "{expected} is missing from tools/list");
     }
@@ -261,6 +261,7 @@ async fn tokens_only_do_what_they_were_given() {
     ok(&app, ro, "list_cards", json!({})).await;
     for (tool, args) in [
         ("create_deck", json!({ "name": "x" })),
+        ("merge_decks", json!({ "deck_ids": [mine.id, other.id], "name": "x" })),
         ("create_cards", json!({ "deck_id": mine.id, "cards": [{ "front": "a", "back": "b" }] })),
         ("update_card", json!({ "card_id": card.id, "back": "cat" })),
         ("delete_cards", json!({ "card_ids": [card.id] })),
@@ -287,6 +288,7 @@ async fn tokens_only_do_what_they_were_given() {
     assert_eq!(ok(&app, narrow, "list_cards", json!({ "query": "secret" })).await["total"], 0);
     assert!(call(&app, narrow, "update_card", json!({ "card_id": card.id, "deck_id": other.id })).await.is_err(), "can't move cards out");
     assert!(call(&app, narrow, "create_deck", json!({ "name": "new" })).await.is_err());
+    assert!(call(&app, narrow, "merge_decks", json!({ "deck_ids": [mine.id, other.id], "name": "new" })).await.is_err());
     let next = ok(&app, narrow, "get_next_card", json!({})).await;
     assert_eq!(next["card"]["id"], card.id);
 
@@ -303,4 +305,45 @@ async fn tokens_only_do_what_they_were_given() {
     )
     .await;
     assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn an_agent_can_pause_and_resume_a_deck() {
+    let app = app().await;
+    let a = user(&app, "kolja").await;
+    let (_, t) = app.create_token(a.user_id(), "claude", true, true, None).await.unwrap();
+    let t = t.as_str();
+    let deck = ok(&app, t, "create_deck", json!({ "name": "Spanish" })).await;
+    let deck_id = deck["id"].as_i64().unwrap();
+    assert_eq!(deck["status"], "active");
+    ok(&app, t, "create_cards", json!({ "deck_id": deck_id, "cards": [{ "front": "hablar", "back": "to speak" }] })).await;
+
+    let paused = ok(&app, t, "update_deck", json!({ "deck_id": deck_id, "status": "paused" })).await;
+    assert_eq!(paused["status"], "paused");
+    let next = ok(&app, t, "get_next_card", json!({})).await;
+    assert!(next.get("card").is_none_or(Value::is_null), "a paused deck is not studied: {next}");
+    let listed = ok(&app, t, "list_decks", json!({})).await;
+    assert_eq!(listed[0]["status"], "paused");
+
+    let back = ok(&app, t, "update_deck", json!({ "deck_id": deck_id, "status": "active" })).await;
+    assert_eq!(back["status"], "active");
+    let next = ok(&app, t, "get_next_card", json!({})).await;
+    assert_eq!(next["card"]["front"], "hablar");
+    assert!(call(&app, t, "update_deck", json!({ "deck_id": deck_id, "status": "asleep" })).await.is_err());
+}
+
+#[tokio::test]
+async fn an_agent_can_merge_decks() {
+    let app = app().await;
+    let a = user(&app, "kolja").await;
+    let (_, t) = app.create_token(a.user_id(), "claude", true, true, None).await.unwrap();
+    let one = app.create_deck(&a, "One", "", None).await.unwrap();
+    let two = app.create_deck(&a, "Two", "", None).await.unwrap();
+    app.create_card(&a, one.id, "a", "1", None, None, None).await.unwrap();
+    app.create_card(&a, two.id, "b", "2", None, None, None).await.unwrap();
+    app.create_card(&a, two.id, "a", "1", None, None, None).await.unwrap();
+    let merged = ok(&app, &t, "merge_decks", json!({ "deck_ids": [one.id, two.id], "name": "Both" })).await;
+    assert_eq!(merged["deck"]["name"], "Both");
+    assert_eq!((merged["cards"].as_i64(), merged["duplicates"].as_i64()), (Some(2), Some(1)));
+    assert!(call(&app, &t, "merge_decks", json!({ "deck_ids": [one.id], "name": "Alone" })).await.is_err());
 }

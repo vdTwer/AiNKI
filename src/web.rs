@@ -28,7 +28,7 @@ use crate::{
     security::{self, ClientIp, Flash},
     scheduler::{self, CardState, Rating},
     study,
-    service::{Card, CardFilter, CardInput, Deck, PresetInput},
+    service::{Card, CardFilter, CardInput, Deck, DeckStatus, PresetInput},
     format::{self, count},
 };
 
@@ -120,11 +120,14 @@ pub fn router(app: AppState) -> Router {
         .route("/study/anyway", post(study_anyway))
         .route("/study/keep-going", post(study_keep_going))
         .route("/decks/new", get(deck_new_page).post(deck_create))
+        .route("/decks/merge", get(deck_merge_page).post(deck_merge))
         .route("/decks/{id}", get(deck_page))
         .route("/decks/{id}/edit", get(deck_edit_page).post(deck_update))
         .route("/decks/{id}/delete", post(deck_delete))
         .route("/decks/{id}/export.csv", get(deck_export))
         .route("/decks/{id}/share", post(deck_share))
+        .route("/decks/{id}/{action}", post(deck_action))
+        .route("/decks/archived", get(archived_page))
         .route("/shares/{id}/{action}", post(share_action))
         .route("/cards/{id}/split", get(split_page).post(split_submit))
         .route("/cards/{id}/{action}", post(card_action))
@@ -465,13 +468,14 @@ fn page(nav: Option<Nav>, title: &str, user: Option<&User>, page_kind: Option<&s
                         // The desktop look: the first icon finds anything (desk.js).
                         button.find-dot.calm-only type="button" data-label="Find" aria-label="Find" aria-haspopup="dialog" { (nav_icon(ICON_FIND)) }
                         a.brand href="/" data-label="AiNKI" aria-current=[current(Nav::Decks)] { "AiNKI" }
-                        a.rail-only href="/" data-label="Decks" aria-current=[current(Nav::Decks)] { (nav_icon(ICON_DECKS)) "Decks" }
                         a href="/study" data-label="Study" aria-current=[current(Nav::Study)] { (nav_icon(ICON_STUDY)) "Study" }
                         a href="/cards/new" data-label="Add" aria-current=[current(Nav::Add)] { (nav_icon(ICON_ADD)) "Add" }
                         a href="/stats" data-label="Stats" aria-current=[current(Nav::Stats)] { (nav_icon(ICON_STATS)) "Stats" }
                         // Phones reach the lessons through settings; the bar stays as it was.
                         a.rail-only href="/learn" data-label="Learn" aria-current=[current(Nav::Learn)] { (nav_icon(ICON_LEARN)) "Learn" }
                         a href="/settings" data-label="Settings" aria-current=[current(Nav::Settings)] { (nav_icon(ICON_SETTINGS)) "Settings" }
+                        // Last, so it opens right under the dot: hovering the dot offers Home.
+                        a.rail-only href="/" data-label="Home" aria-current=[current(Nav::Decks)] { (nav_icon(ICON_DECKS)) "Home" }
                     }
                 }
                 // The desktop look in quiet hours: one dark screen over
@@ -1143,7 +1147,11 @@ async fn admin_page(State(app): State<AppState>, user: WebUser, headers: HeaderM
 
 async fn home(State(app): State<AppState>, user: WebUser, Flash(msg): Flash) -> WebResult {
     let access = user.access();
-    let decks = app.deck_summaries(&access).await?;
+    let (archived, decks): (Vec<_>, Vec<_>) = app
+        .deck_summaries(&access)
+        .await?
+        .into_iter()
+        .partition(|d| d.deck.status == DeckStatus::Archived);
     let shares = app.incoming_shares(&access).await?;
     let stats = app.stats(&access, None).await?;
     let total_due: i64 = decks.iter().map(|d| d.due_total()).sum();
@@ -1154,7 +1162,6 @@ async fn home(State(app): State<AppState>, user: WebUser, Flash(msg): Flash) -> 
     let week = app.week(&access).await?;
     let known = advice::Known { decks: &decks, stats: &stats, attention: &flagged, overdue };
     let notes = app.advice_from(&access, &known).await?;
-    let history = app.history(&access, None).await?;
     // A rough guide; real thinking time once there's enough history.
     let minutes = ((total_due as f64 * stats.seconds_per_review.unwrap_or(12.0)) / 60.0).ceil().max(1.0) as i64;
     let mut facts = Vec::new();
@@ -1229,7 +1236,9 @@ async fn home(State(app): State<AppState>, user: WebUser, Flash(msg): Flash) -> 
                 }
                 p.muted.small { "Accepting gives you your own copy. Your progress is yours; later changes by the sender don't carry over." }
             }
-            @if decks.is_empty() {
+            @if decks.is_empty() && !archived.is_empty() {
+                p.muted { "Every deck is archived. Restore one to study it again." }
+            } @else if decks.is_empty() {
                 p.simple-only { "No decks yet. Create one, or bring your Anki decks along." }
                 // The desktop look: someone new gets three quiet ways in.
                 div.calm-only.first-steps {
@@ -1258,7 +1267,9 @@ async fn home(State(app): State<AppState>, user: WebUser, Flash(msg): Flash) -> 
                             a.row href=(format!("/decks/{}", d.deck.id)) {
                                 span.grow {
                                     span.deck-name { (deck_title(&d.deck.name)) }
-                                    @if let Some(exam) = &d.deck.exam_date {
+                                    @if d.deck.status == DeckStatus::Paused {
+                                        span.sub { "Paused" }
+                                    } @else if let Some(exam) = &d.deck.exam_date {
                                         span.sub { "Exam " (exam_words(&user.0, exam)) }
                                     }
                                 }
@@ -1274,6 +1285,9 @@ async fn home(State(app): State<AppState>, user: WebUser, Flash(msg): Flash) -> 
                     }
                 }
             }
+            @if !archived.is_empty() {
+                p.small.archived-link { a href="/decks/archived" { (count(archived.len() as i64, "archived deck")) } }
+            }
             @if attention > 0 {
                 p.small.attention-link { a href="/attention" { (count(attention, "card")) " " (if attention == 1 { "needs" } else { "need" }) " a look" } }
             }
@@ -1288,7 +1302,7 @@ async fn home(State(app): State<AppState>, user: WebUser, Flash(msg): Flash) -> 
                 a href="/import" { "Import deck" }
             }
             @if !decks.is_empty() {
-                (week_home(&week, &history.days))
+                (week_home(&user.0, total_due, &stats.forecast, stats.seconds_per_review))
             }
         },
     )
@@ -1843,6 +1857,15 @@ fn find_line(text: &str, max: usize) -> String {
     format!("{cut}…")
 }
 
+/// A deck's label in quick find.
+fn deck_kind(status: DeckStatus) -> &'static str {
+    match status {
+        DeckStatus::Active => "Deck",
+        DeckStatus::Paused => "Paused deck",
+        DeckStatus::Archived => "Archived deck",
+    }
+}
+
 async fn find_json(State(app): State<AppState>, user: WebUser, Query(f): Query<FindQuery>) -> WebResult {
     let access = user.access();
     let q = f.q.trim();
@@ -1856,7 +1879,7 @@ async fn find_json(State(app): State<AppState>, user: WebUser, Query(f): Query<F
             found.push(Found { kind: "place", title: name.to_string(), sub: String::new(), href: href.to_string(), score: 0 });
         }
         for d in &decks {
-            found.push(Found { kind: "deck", title: deck_plain(&d.name), sub: "Deck".into(), href: format!("/decks/{}", d.id), score: 0 });
+            found.push(Found { kind: "deck", title: deck_plain(&d.name), sub: deck_kind(d.status).into(), href: format!("/decks/{}", d.id), score: 0 });
         }
         found.truncate(FIND_MAX);
         return Ok(([(header::CONTENT_TYPE, "application/json")], serde_json::json!({ "q": q, "results": found }).to_string()).into_response());
@@ -1871,7 +1894,7 @@ async fn find_json(State(app): State<AppState>, user: WebUser, Query(f): Query<F
     for d in &decks {
         let title = deck_plain(&d.name);
         if let Some(s) = find_score(q, &title, &d.description) {
-            found.push(Found { kind: "deck", title: title.clone(), sub: "Deck".into(), href: format!("/decks/{}", d.id), score: s + 3 });
+            found.push(Found { kind: "deck", title: title.clone(), sub: deck_kind(d.status).into(), href: format!("/decks/{}", d.id), score: s + 3 });
         }
         names.insert(d.id, title);
     }
@@ -2345,6 +2368,7 @@ fn deck_new_view(user: &User, presets: &[crate::service::Preset], draft: Option<
                 (deck_sheet(draft, presets, selected))
                 div.form-foot.end { button.btn.primary type="submit" { "Create deck" } }
             }
+            p.muted.small.merge-link { "Or " a href="/decks/merge" { "merge decks you have" } " into a new one." }
         },
     )
 }
@@ -2374,6 +2398,7 @@ impl DeckCreateForm {
             preset_id: self.preset_id.unwrap_or(0),
             exam_date: self.exam_date.clone().filter(|e| !e.trim().is_empty()),
             created_at: 0,
+            status: crate::service::DeckStatus::Active,
         }
     }
 }
@@ -2395,6 +2420,120 @@ async fn deck_create(State(app): State<AppState>, user: WebUser, Form(f): Form<D
             let msg = fixable(&e).ok_or(e)?;
             let presets = app.list_presets(&access).await?;
             Ok(form_again(deck_new_view(&user.0, &presets, Some(&f.draft(0, user.0.id)), Some(&msg))))
+        }
+    }
+}
+
+/// The merge page: pick decks, name the new one. `draft` and `error` when
+/// a sent form comes back.
+fn deck_merge_view(
+    user: &User,
+    decks: &[crate::service::DeckSummary],
+    presets: &[crate::service::Preset],
+    draft: &DeckMergeForm,
+    error: Option<&str>,
+) -> Markup {
+    let selected = draft
+        .preset_id
+        .or_else(|| draft.decks.first().and_then(|id| decks.iter().find(|d| d.deck.id == *id)).map(|d| d.deck.preset_id))
+        .or_else(|| presets.iter().find(|p| p.template.as_deref() == Some("standard")).map(|p| p.id))
+        .or_else(|| presets.first().map(|p| p.id));
+    layout_in(
+        Nav::Add,
+        "Merge decks",
+        Some(user),
+        html! {
+            (add_head("merge", "Merge decks", html! {}))
+            (form_error(error))
+            @if decks.len() < 2 {
+                p.empty.muted { "Merging needs at least two decks. " a href="/decks/new" { "Create a deck." } }
+            } @else {
+                form method="post" action="/decks/merge" {
+                    div.sheet.form {
+                        fieldset.merge-decks {
+                            legend { "Decks to merge" }
+                            @for d in decks {
+                                label.check {
+                                    input type="checkbox" name="decks" value=(d.deck.id) checked[draft.decks.contains(&d.deck.id)];
+                                    span.grow { (deck_plain(&d.deck.name)) " " span.muted.small { (count(d.total, "card")) } }
+                                }
+                            }
+                        }
+                        hr.divider;
+                        label.title { span.face-label { "Name of the new deck" }
+                            input type="text" name="name" required placeholder="e.g. All languages" value=(draft.name);
+                        }
+                        label.title { span.face-label { "Description " span.muted.optional { "(optional)" } }
+                            textarea name="description" rows="2" placeholder="What it's for" { (draft.description) }
+                        }
+                        hr.divider;
+                        (goal_picker(presets, selected))
+                        label.check { input type="checkbox" name="keep_progress" value="1" checked[draft.keep_progress.is_some()]; " Keep review progress" }
+                        p.hint.muted.small { "On: cards you know stay known. Off: they start as new cards." }
+                        label.check { input type="checkbox" name="delete_sources" value="1" checked[draft.delete_sources.is_some()]; " Delete the old decks" }
+                        p.hint.muted.small { "On: their cards move into the new deck with their history, and the old decks are gone for good. Off: the new deck gets copies, and the old decks stay as they are." }
+                    }
+                    div.form-foot.end { button.btn.primary type="submit" { "Merge decks" } }
+                }
+            }
+        },
+    )
+}
+
+#[derive(Deserialize, Default)]
+struct DeckMergeForm {
+    #[serde(default)]
+    decks: Vec<i64>,
+    #[serde(default)]
+    name: String,
+    #[serde(default)]
+    description: String,
+    preset_id: Option<i64>,
+    keep_progress: Option<String>,
+    delete_sources: Option<String>,
+}
+
+#[derive(Deserialize, Default)]
+struct DeckMergeQuery {
+    /// A deck to have picked already (from its deck page).
+    with: Option<i64>,
+}
+
+async fn deck_merge_page(State(app): State<AppState>, user: WebUser, Query(q): Query<DeckMergeQuery>) -> WebResult {
+    let access = user.access();
+    let decks = app.deck_summaries(&access).await?;
+    let presets = app.list_presets(&access).await?;
+    let draft = DeckMergeForm { decks: q.with.into_iter().collect(), ..Default::default() };
+    Ok(deck_merge_view(&user.0, &decks, &presets, &draft, None).into_response())
+}
+
+async fn deck_merge(State(app): State<AppState>, user: WebUser, Form(f): Form<DeckMergeForm>) -> WebResult {
+    let access = user.access();
+    let input = crate::merge::MergeInput {
+        sources: f.decks.clone(),
+        name: f.name.clone(),
+        description: f.description.clone(),
+        preset_id: f.preset_id,
+        keep_progress: f.keep_progress.is_some(),
+        delete_sources: f.delete_sources.is_some(),
+    };
+    match app.merge_decks(&access, input).await {
+        Ok(m) => {
+            let verb = if m.deleted_decks > 0 { "moved" } else { "copied" };
+            let mut msg = format!("Decks merged: {} {verb}.", count(m.cards, "card"));
+            if m.duplicates > 0 {
+                msg.push_str(&format!(" {} left out, already in it once.", count(m.duplicates, "identical card")));
+            }
+            if m.deleted_decks > 0 {
+                msg.push_str(&format!(" {} deleted.", count(m.deleted_decks, "old deck")));
+            }
+            Ok(redirect_msg(format!("/decks/{}", m.deck.id), &msg))
+        }
+        Err(e) => {
+            let msg = fixable(&e).ok_or(e)?;
+            let decks = app.deck_summaries(&access).await?;
+            let presets = app.list_presets(&access).await?;
+            Ok(form_again(deck_merge_view(&user.0, &decks, &presets, &f, Some(&msg))))
         }
     }
 }
@@ -2462,7 +2601,13 @@ async fn deck_page(
                 div { dt { "Cards" } dd { (format::number(summary.total)) } }
             }
             @if let Some(exam) = &d.exam_date { p.muted { "Exam " (exam_words(&user.0, exam)) } }
-            @if summary.due_total() > 0 {
+            @if !d.status.is_active() {
+                // At rest, waking the deck is what this page is for.
+                p.rest-note.muted { (rest_words(d.status)) }
+                form method="post" action=(format!("/decks/{id}/resume")) {
+                    button.btn.primary type="submit" { (if d.status == DeckStatus::Archived { "Restore deck" } else { "Resume deck" }) }
+                }
+            } @else if summary.due_total() > 0 {
                 p { a.btn.primary.start href=(format!("/study?deck={id}")) { "Start studying " span.arrow aria-hidden="true" { "→" } } }
             }
             p.actions.icon-links.deck-menu id="deck-menu" {
@@ -2470,6 +2615,7 @@ async fn deck_page(
                 (icon_btn(&format!("/decks/{id}/edit"), ICON_EDIT, "Edit deck"))
                 (icon_btn(&format!("/decks/{id}/edit#share"), ICON_SHARE, "Share"))
                 (icon_btn(&format!("/stats?deck={id}"), ICON_STATS, "Stats"))
+                a.btn.icon-link.calm-only href=(format!("/decks/merge?with={id}")) { span { "Merge with other decks" } }
                 a.btn.icon-link.calm-only href=(format!("/decks/{id}/export.csv")) { span { "Export as CSV" } }
             }
             }
@@ -2599,6 +2745,25 @@ async fn deck_edit_view(
                     }
                 }
             }
+            h2 id="rest" { "Pause" }
+            p { (rest_words(deck.status)) }
+            form.actions.rest-actions method="post" action=(format!("/decks/{id}/pause")) {
+                @match deck.status {
+                    DeckStatus::Active => {
+                        button.btn type="submit" { "Pause deck" }
+                        " "
+                        button.btn type="submit" formaction=(format!("/decks/{id}/archive")) { "Archive deck" }
+                    }
+                    DeckStatus::Paused => {
+                        button.btn type="submit" formaction=(format!("/decks/{id}/resume")) { "Resume deck" }
+                        " "
+                        button.btn type="submit" formaction=(format!("/decks/{id}/archive")) { "Archive deck" }
+                    }
+                    DeckStatus::Archived => {
+                        button.btn type="submit" formaction=(format!("/decks/{id}/resume")) { "Restore deck" }
+                    }
+                }
+            }
             details.danger {
                 summary { "Delete this deck…" }
                 form method="post" action=(format!("/decks/{id}/delete")) {
@@ -2651,6 +2816,78 @@ async fn deck_delete(State(app): State<AppState>, user: WebUser, Path(id): Path<
         Ok(redirect_msg("/", &format!("Deck deleted, with its {}.", count(n, "card"))))
     }
     .await)
+}
+
+/// The decks to pick from for a card: archived ones are put away, except
+/// `keep`, the one the card is in or was asked for.
+fn open_decks(decks: Vec<Deck>, keep: Option<i64>) -> Vec<Deck> {
+    decks.into_iter().filter(|d| d.status != DeckStatus::Archived || Some(d.id) == keep).collect()
+}
+
+/// What resting means for a deck, said on its pages.
+fn rest_words(status: DeckStatus) -> &'static str {
+    match status {
+        DeckStatus::Active => "Pausing stops a deck's cards until you resume it; the deck stays on your list. Archiving also puts it away. Progress is kept either way.",
+        DeckStatus::Paused => "Paused. Its cards wait, with their progress, until you resume the deck.",
+        DeckStatus::Archived => "Archived. The deck is put away and its cards wait, with their progress, until you restore it.",
+    }
+}
+
+async fn deck_action(
+    State(app): State<AppState>,
+    user: WebUser,
+    Path((id, action)): Path<(i64, String)>,
+) -> WebResult {
+    or_back(format!("/decks/{id}"), async {
+        let (status, msg) = match action.as_str() {
+            "pause" => (DeckStatus::Paused, "Deck paused."),
+            "archive" => (DeckStatus::Archived, "Deck archived. Find it under archived decks below."),
+            "resume" => (DeckStatus::Active, "Deck back in study."),
+            _ => return Err(AppError::bad("unknown action")),
+        };
+        app.set_deck_status(&user.access(), id, status).await?;
+        // An archived deck leaves the list: home is where it went from.
+        let to = if status == DeckStatus::Archived { "/".to_string() } else { format!("/decks/{id}") };
+        Ok(redirect_msg(to, msg))
+    }
+    .await)
+}
+
+async fn archived_page(State(app): State<AppState>, user: WebUser, Flash(msg): Flash) -> WebResult {
+    let access = user.access();
+    let decks: Vec<_> = app
+        .deck_summaries(&access)
+        .await?
+        .into_iter()
+        .filter(|d| d.deck.status == DeckStatus::Archived)
+        .collect();
+    Ok(layout_in(
+        Nav::Decks,
+        "Archived decks",
+        Some(&user.0),
+        html! {
+            (flash(&msg))
+            (parent("/", "Decks"))
+            h1 { "Archived decks" }
+            @if decks.is_empty() {
+                p.empty.muted { "Nothing archived. Archive a deck from its settings to put it away." }
+            } @else {
+                p.muted { "Put away, with their progress. Open one to restore it." }
+                ul.list.decks.archived {
+                    @for d in &decks {
+                        li {
+                            a.row href=(format!("/decks/{}", d.deck.id)) {
+                                span.grow { span.deck-name { (deck_title(&d.deck.name)) } }
+                                span.num.small.muted { (count(d.total, "card")) }
+                                span.chev aria-hidden="true" { "›" }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+    )
+    .into_response())
 }
 
 async fn deck_export(State(app): State<AppState>, user: WebUser, Path(id): Path<i64>) -> WebResult {
@@ -2743,11 +2980,20 @@ fn add_head(current: &str, title: &str, notice: Markup) -> Markup {
         ("deck", "/decks/new", "Deck", "deck"),
         ("import", "/import", "Import", "from a file"),
     ];
-    let words = PLACES.iter().find(|p| p.0 == current).map_or("card", |p| p.3);
+    // Merging is a kind of new deck: no tab of its own on phones (it is
+    // linked from the new-deck page), a line in the desktop menu.
+    const MENU: [(&str, &str, &str); 4] = [
+        ("card", "/cards/new", "card"),
+        ("deck", "/decks/new", "deck"),
+        ("merge", "/decks/merge", "merged deck"),
+        ("import", "/import", "from a file"),
+    ];
+    let words = MENU.iter().find(|p| p.0 == current).map_or("card", |p| p.2);
+    let tab = if current == "merge" { "deck" } else { current };
     html! {
         nav.tabs.simple-only aria-label="Add" {
             @for (key, href, label, _) in PLACES {
-                a href=(href) aria-current=[(key == current).then_some("page")] { (label) }
+                a href=(href) aria-current=[(key == tab).then_some("page")] { (label) }
             }
         }
         (notice)
@@ -2761,7 +3007,7 @@ fn add_head(current: &str, title: &str, notice: Markup) -> Markup {
                 }
             }
             nav #add-menu .add-menu aria-label="Add" {
-                @for (key, href, _, words) in PLACES {
+                @for (key, href, words) in MENU {
                     a href=(href) aria-current=[(key == current).then_some("page")] { "Add " (words) }
                 }
             }
@@ -2922,7 +3168,7 @@ fn card_new_view(user: &User, decks: &[Deck], c: &CardDraft, msg: &Option<String
 
 async fn card_new_page(State(app): State<AppState>, user: WebUser, Flash(msg): Flash, Query(q): Query<NewCardQuery>) -> WebResult {
     let access = user.access();
-    let decks = app.decks(&access).await?;
+    let decks = open_decks(app.decks(&access).await?, q.deck);
     // The deck from the link, else the one last added to, else the first.
     let deck = match q.deck {
         Some(id) => Some(id),
@@ -2978,7 +3224,7 @@ async fn card_create(State(app): State<AppState>, user: WebUser, mp: Multipart) 
         Ok((deck, msg)) => Ok(redirect_msg(format!("/cards/new?deck={deck}"), &msg)),
         Err(e) => {
             let msg = with_image_hint(fixable(&e).ok_or(e)?, &f);
-            let decks = app.decks(&access).await?;
+            let decks = open_decks(app.decks(&access).await?, f.deck);
             let draft = CardDraft {
                 id: None,
                 deck: if f.new_deck.is_some() { None } else { f.deck },
@@ -3032,7 +3278,7 @@ async fn card_view(
 ) -> Result<Markup, AppError> {
     let access = Access::web(user.clone());
     let card = app.card(&access, id).await?;
-    let decks = app.decks(&access).await?;
+    let decks = open_decks(app.decks(&access).await?, Some(card.deck_id));
     let history = app.card_history(&access, id).await?;
     let items = app.card_items(&card).await?;
     let flags = app.card_flags(&access, &card).await?;
@@ -3998,24 +4244,58 @@ async fn password_update(
         .into_response())
 }
 
-/// The last seven days in a sentence or two, and one thing worth doing.
-/// The desktop home's week: the note, and a bar for each of the last seven
-/// days with today's letter in bold.
-fn week_home(w: &insight::Week, days: &[(String, i64)]) -> Markup {
-    let last = &days[days.len().saturating_sub(7)..];
-    let most_seen = last.iter().map(|(_, n)| *n).max().unwrap_or(0);
-    let most = most_seen.max(1);
-    let label = last.iter().map(|(d, n)| format!("{d}: {n}")).collect::<Vec<_>>().join(", ");
+/// The desktop home's week looks ahead: a sentence on what comes due over
+/// the next seven days, then a bar for each, today first and in bold.
+/// Today holds what the page says to study now (new cards and limits
+/// included); the days after it, the learned cards that fall due on them.
+fn week_home(user: &User, today_due: i64, forecast: &[(String, i64)], seconds_per_review: Option<f64>) -> Markup {
+    let clock = user.clock();
+    let days: Vec<(chrono::NaiveDate, i64)> = (0..7)
+        .map(|i| {
+            let date = clock.today() + chrono::Duration::days(i);
+            let n = if i == 0 {
+                today_due
+            } else {
+                let key = date.format("%Y-%m-%d").to_string();
+                forecast.iter().find(|(d, _)| *d == key).map_or(0, |(_, n)| *n)
+            };
+            (date, n.max(0))
+        })
+        .collect();
+    let total: i64 = days.iter().map(|(_, n)| n).sum();
+    // The first of the busiest days, so a tie names the sooner one.
+    let busiest = days.iter().fold(days[0], |best, &d| if d.1 > best.1 { d } else { best });
+    let most = busiest.1.max(1);
+    let when = |date: chrono::NaiveDate| match (date - clock.today()).num_days() {
+        0 => "Today".to_string(),
+        1 => "Tomorrow".to_string(),
+        _ => date.format("%A").to_string(),
+    };
+    let tip = |date: chrono::NaiveDate, n: i64| {
+        let n = if n == 0 { "nothing due".to_string() } else { count(n, "card") };
+        format!("{}: {n}", format::short_day(&clock, date))
+    };
     html! {
         div.week-home.calm-only {
-            (week_note(w))
-            @if most_seen > 0 {
-            div.week-bars role="img" aria-label=(format!("Reviews per day, last seven days. {label}")) {
-                @for (i, (date, n)) in last.iter().enumerate() {
-                    @let letter = chrono::NaiveDate::parse_from_str(date, "%Y-%m-%d").map(|d| d.format("%a").to_string()).unwrap_or_default();
-                    div.day.today[i + 1 == last.len()] {
-                        span.bar.empty[*n == 0] style=(format!("height: {}%", (*n * 100 / most).max(3))) {}
-                        span.letter { (letter.chars().next().unwrap_or(' ')) }
+            section.week aria-label="Next seven days" {
+                h2 { "Next seven days" }
+                @if total == 0 {
+                    p { "Nothing comes due in the next seven days." }
+                } @else {
+                    p {
+                        (count(total, "card")) (if total == 1 { " comes" } else { " come" }) " due in the next seven days"
+                        @if let Some(sec) = seconds_per_review { ", " (format::minutes(sec * total as f64 / 60.0)) " of study" }
+                        "."
+                        @if total > busiest.1 { " " (when(busiest.0)) " is the busiest, with " (format::number(busiest.1)) "." }
+                    }
+                }
+            }
+            @if total > 0 {
+            div.week-bars role="img" aria-label=(format!("Cards due on each of the next seven days. {}", days.iter().map(|&(d, n)| tip(d, n)).collect::<Vec<_>>().join(", "))) {
+                @for (i, &(date, n)) in days.iter().enumerate() {
+                    div.day.today[i == 0] title=(tip(date, n)) {
+                        span.bar.empty[n == 0] style=(format!("height: {}%", (n * 100 / most).max(3))) data-n=(format::number(n)) {}
+                        span.letter { (date.format("%a").to_string().chars().next().unwrap_or(' ')) }
                     }
                 }
             }
@@ -4024,6 +4304,7 @@ fn week_home(w: &insight::Week, days: &[(String, i64)]) -> Markup {
     }
 }
 
+/// The last seven days in a sentence or two, and one thing worth doing.
 fn week_note(w: &insight::Week) -> Markup {
     let tip = match w.tip {
         insight::Tip::Attention => Some(html! { p.tip { span { (count(w.attention, "card")) " keep slipping or ask too much at once. Fixing them saves more time than reviewing them. " a href="/attention" { "Have a look" } } } }),
@@ -4605,6 +4886,11 @@ struct DeskStats<'a> {
     notes: &'a [Advice],
 }
 
+// What the three big numbers count, on hover.
+const WHY_DUE: &str = "Learned cards whose review falls today or earlier. New cards come on top. The time below uses your average time per review.";
+const WHY_WEEK: &str = "Of the learned cards that came due in the last 7 days, the share you remembered.";
+const WHY_STREAK: &str = "Days in a row with at least one review. Today counts once you study, and doesn't break the streak before then.";
+
 /// The desktop stats: three numbers to act on, then charts, each with a
 /// note beside it. desk.js draws the charts from the data attributes.
 fn desk_stats(d: &DeskStats) -> Markup {
@@ -4626,23 +4912,24 @@ fn desk_stats(d: &DeskStats) -> Markup {
     let decks: Vec<String> = d
         .retention
         .iter()
-        .filter_map(|r| r.actual.map(|a| format!("{}|{}|{}|{}", deck_plain(&r.deck_name).replace(['|', ';'], " "), r.target, a, r.deck_id)))
+        .filter_map(|r| r.actual.map(|a| format!("{}|{}|{}|{}|{}", deck_plain(&r.deck_name).replace(['|', ';'], " "), r.target, a, r.deck_id, r.reviews)))
         .collect();
-    let bins: Vec<String> = d.cal.bins.iter().map(|b| format!("{},{},{}", b.predicted, b.actual, b.reviews)).collect();
+    let first_day = d.history.days.first().map_or("", |(day, _)| day.as_str());
+    let bins: Vec<String> = d.cal.bins.iter().map(|b| format!("{},{},{},{},{}", b.predicted, b.actual, b.reviews, b.from, b.to)).collect();
     html! {
         div.desk-stats.calm-only {
             section.big3 {
                 div {
-                    p.kicker { "Due today" }
-                    p.n.due { (format::number(s.due_now)) }
+                    p.kicker data-why=(WHY_DUE) { "Due today" }
+                    p.n.due data-why=(WHY_DUE) { (format::number(s.due_now)) }
                     p.small.muted {
                         @if let Some(m) = minutes.filter(|_| s.due_now > 0) { (capitalize(&format::minutes(m))) "." } @else if s.due_now == 0 { "Nothing waiting." }
                     }
                     @if s.due_now > 0 { a.small href=(study) { "Start studying" } }
                 }
                 div {
-                    p.kicker { "This week" }
-                    p.n { (format::percent(this_week)) }
+                    p.kicker data-why=(WHY_WEEK) { "This week" }
+                    p.n data-why=(WHY_WEEK) { (format::percent(this_week)) }
                     p.small.muted {
                         @if this_week.is_none() { "No reviews of learned cards this week. " }
                         @if let Some(a) = aim { "You aim for " (format::percent(Some(a))) "." }
@@ -4651,8 +4938,8 @@ fn desk_stats(d: &DeskStats) -> Markup {
                     @if let Some(w) = worst { a.small href=(format!("/decks/{}", w.deck_id)) { "Look at that deck" } }
                 }
                 div {
-                    p.kicker { "Days in a row" }
-                    p.n.it { (s.streak_days) }
+                    p.kicker data-why=(WHY_STREAK) { "Days in a row" }
+                    p.n.it data-why=(WHY_STREAK) { (s.streak_days) }
                     p.small.muted { "You studied on " (last7) " of the last 7 days." }
                 }
             }
@@ -4670,24 +4957,24 @@ fn desk_stats(d: &DeskStats) -> Markup {
             }
             section.chart-sec {
                 div.chart-main {
-                    h2 { "Are you remembering what you aim for?" }
+                    h2 data-why="Each point is one week: of the learned cards that came due, the share you remembered. The dashed line is your aim. Hover a week for its numbers." { "Are you remembering what you aim for?" }
                     p.small.muted { "Share of due cards you remembered, week by week." }
-                    div.chart data-chart="retention" data-weeks=(weeks.join(";")) data-aim=[aim] role="img" aria-label="Recall by week, last twelve weeks" {}
+                    div.chart data-chart="retention" data-weeks=(weeks.join(";")) data-aim=[aim] data-first=(first_day) data-sample=(insight::MIN_SAMPLE) role="img" aria-label="Recall by week, last twelve weeks" {}
                 }
                 aside.chart-side {
-                    p.kicker { "Study days" }
-                    div.chart data-chart="days" data-days=(days.join(",")) data-first=(d.history.days.first().map(|(day, _)| day.as_str()).unwrap_or("")) role="img" aria-label="Reviews per day, last twelve weeks" {}
-                    p.small.muted { "Darker means more reviews. " (last7) " of the last 7 days." }
+                    p.kicker data-why="Each square is a day and each column a week, oldest on the left; today is the last square. The stronger the color, the more you reviewed." { "Study days" }
+                    div.chart data-chart="days" data-days=(days.join(",")) data-first=(first_day) role="img" aria-label="Reviews per day, last twelve weeks" {}
+                    p.small.muted { "Stronger color means more reviews. " (last7) " of the last 7 days." }
                 }
             }
             section.chart-sec {
                 div.chart-main {
-                    h2 { "Next two weeks" }
+                    h2 data-why="How many learned cards come due on each day, as they are scheduled now. Every review you do schedules its card again, so later days fill up as you study." { "Next two weeks" }
                     p.small.muted { "Cards due each day." }
                     div.chart data-chart="forecast" data-values=(fc.join(",")) data-labels=(fc_labels.join(",")) role="img" aria-label="Cards due on each of the next fourteen days" {}
                 }
                 aside.chart-side {
-                    p.kicker { "Cards" }
+                    p.kicker data-why="New cards were never studied. Learning cards are in their first short steps. Review cards are learned, and FSRS spaces them out. Suspended cards are paused and never shown." { "Cards" }
                     p.serif-note { (count(s.total, "card")) ". " (format::number(s.review)) " in review, " (format::number(s.new)) " still new." }
                     p.small.muted { (format::number(s.learning)) " learning, " (format::number(s.suspended)) " suspended." }
                 }
@@ -4695,9 +4982,13 @@ fn desk_stats(d: &DeskStats) -> Markup {
             @if !decks.is_empty() {
                 section.chart-sec {
                     div.chart-main {
-                        h2 { "By deck" }
-                        p.legend.small { span.aim { "aim" } span.ok { "remembered" } span.low { "below aim" } }
-                        div.chart data-chart="decks" data-decks=(decks.join(";")) role="img" aria-label="Recall by deck against its aim, last 30 days" {}
+                        h2 data-why="One row per deck: the tick is its aim, the dot what you remembered in the last 30 days, the line between them the gap. Hover a deck for its numbers." { "By deck" }
+                        p.legend.small {
+                            span.aim data-why="What the deck's preset aims for: the share of due cards you should remember." { "aim" }
+                            span.ok data-why="What you did remember of the deck's learned cards in the last 30 days." { "remembered" }
+                            span.low data-why="An open ring: more than 2 points below the aim." { "below aim" }
+                        }
+                        div.chart data-chart="decks" data-decks=(decks.join(";")) data-sample=(insight::MIN_SAMPLE) role="img" aria-label="Recall by deck against its aim, last 30 days" {}
                     }
                     aside.chart-side {
                         p.kicker { "What to do" }
@@ -4715,7 +5006,7 @@ fn desk_stats(d: &DeskStats) -> Markup {
                     div.chart-main.calib {
                         div.chart data-chart="calibration" data-bins=(bins.join(";")) role="img" aria-label="Expected against remembered, last year" {}
                         div {
-                            h2 { "How well FSRS knows you" }
+                            h2 data-why="Before every review, FSRS predicts how likely you are to remember. Each dot groups a year of reviews by that prediction and shows how often you did remember. On the dashed line, FSRS knows you well." { "How well FSRS knows you" }
                             p.serif-note {
                                 "FSRS expected you to remember " (format::percent(Some(d.cal.predicted))) " of your reviews last year. You remembered " (format::percent(Some(d.cal.actual))) "."
                                 @if (d.cal.predicted - d.cal.actual).abs() <= 0.03 { " That's a close fit." }
@@ -4725,10 +5016,14 @@ fn desk_stats(d: &DeskStats) -> Markup {
                     }
                     @if let (Some(a), Some(b)) = (d.sure.sure_pct(), d.sure.unsure_pct()) {
                         aside.chart-side {
-                            p.kicker { "When you felt sure" }
+                            p.kicker data-why="Before seeing the answer, you said whether you knew it. These bars show how often you then remembered, over the last year." { "When you felt sure" }
                             div.sure-bars {
-                                span { "Sure" } span.track { span.fill style=(format!("width:{a:.0}%")) {} } span.num { (format!("{a:.0}%")) }
-                                span { "Not sure" } span.track { span.fill.grey style=(format!("width:{b:.0}%")) {} } span.num { (format!("{b:.0}%")) }
+                                div data-tip=(format!("{a:.0}% remembered")) data-tip-label="when you felt sure" data-why=(format!("You remembered {} of the {} answers where you felt sure.", d.sure.sure_recalled, d.sure.sure)) {
+                                    span { "Sure" } span.track { span.fill style=(format!("width:{a:.0}%")) {} } span.num { (format!("{a:.0}%")) }
+                                }
+                                div data-tip=(format!("{b:.0}% remembered")) data-tip-label="when you weren't sure" data-why=(format!("You remembered {} of the {} answers where you weren't sure.", d.sure.unsure_recalled, d.sure.unsure)) {
+                                    span { "Not sure" } span.track { span.fill.grey style=(format!("width:{b:.0}%")) {} } span.num { (format!("{b:.0}%")) }
+                                }
                             }
                             p.small.muted {
                                 @if a - b >= 15.0 { "Your sense of what you know is a good guide." }

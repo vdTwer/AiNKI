@@ -682,7 +682,7 @@ impl App {
             };
             if state == CardState::New {
                 if c.queue == -1 {
-                    sqlx::query("UPDATE cards SET suspended = 1 WHERE id = ?")
+                    sqlx::query("UPDATE cards SET suspended = 1, held = 0 WHERE id = ?")
                         .bind(card_id)
                         .execute(&self.db)
                         .await?;
@@ -709,7 +709,7 @@ impl App {
             });
             sqlx::query(
                 "UPDATE cards SET state = ?, stability = ?, difficulty = ?, due = ?, last_review = ?,
-                    reps = ?, lapses = ?, suspended = ? WHERE id = ?",
+                    reps = ?, lapses = ?, suspended = MAX(?, held) WHERE id = ?",
             )
             .bind(state as i64)
             .bind(memory.map(|m| m.stability as f64))

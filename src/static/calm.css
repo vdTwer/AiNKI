@@ -260,7 +260,7 @@ html.calm .notice::before { content: ''; flex: none; width: 6px; height: 6px; bo
 /* ----- navigation ---------------------------------------------------------- */
 /* One Orchid dot in the top right corner, on the wash. Over it (or with
    keyboard focus inside) it opens to the left into a row of icon tiles:
-   find first, then the places. A hovered tile shows its name beneath it;
+   find first, then the places, Home last under the dot. A hovered tile shows its name beneath it;
    the page you are on is the Orchid tile. Moving away closes the row
    after a short grace, so a slightly wide mouse path doesn't snap it shut. */
 html.calm nav.top {
@@ -320,6 +320,14 @@ html.calm nav.top :is(a, button.find-dot) {
 }
 html.calm nav.top a.rail-only { display: flex; }
 html.calm nav.top a.brand { display: none; }
+/* Right to left from the dot: Home, Add, Study, Stats, Learn, Settings,
+   a gap, then Find. Only here; the phone bar keeps its own order. */
+html.calm nav.top a[href="/settings"] { order: 1; }
+html.calm nav.top a[href="/learn"] { order: 2; }
+html.calm nav.top a[href="/stats"] { order: 3; }
+html.calm nav.top a[href="/study"] { order: 4; }
+html.calm nav.top a[href="/cards/new"] { order: 5; }
+html.calm nav.top a.rail-only[href="/"] { order: 6; }
 html.calm nav.top:is(:hover, :focus-within) :is(a, button.find-dot) { width: 42px; margin-left: 6px; transition-delay: 0ms; }
 html.calm nav.top:is(:hover, :focus-within) .find-dot { margin-right: 10px; }
 
@@ -402,7 +410,7 @@ html.calm body > .wash {
   mix-blend-mode: multiply;
   animation: wash-in 2.4s var(--ease) both;
 }
-html.calm body > :not(.wash, .sleep-wall, svg) { position: relative; z-index: 1; }
+html.calm body > :not(.wash, .sleep-wall, svg, .chart-tip) { position: relative; z-index: 1; }
 html.calm body > .wash.corner { top: -80px; right: -60px; width: 62%; height: 620px; }
 html.calm body > .wash.corner.small { width: 50%; height: 520px; }
 html.calm body > .wash.corner.faint { width: 46%; height: 480px; opacity: .7; }
@@ -1362,7 +1370,7 @@ html.calm .study .answers .btn.primary { background: var(--ink); color: var(--pa
 html.calm .study .answers .btn.primary:is(:hover, :focus-visible, .held) { background: var(--ink); color: var(--paper); box-shadow: 0 10px 28px -10px rgba(var(--shadow), .55), 0 0 44px -10px rgba(168, 51, 109, .45), 0 0 64px -18px rgba(200, 110, 160, .4); }
 html.calm .study .answers .label { display: inline-flex; align-items: center; gap: 8px; font-size: 1.25rem; font-weight: 400; }
 html.calm .study .answers .ivl { font-family: var(--italic); font-style: italic; font-size: .95rem; font-weight: 400; color: var(--faint); }
-html.calm .study .answers .btn.primary .ivl { color: rgba(255, 255, 255, .68); }
+html.calm .study .answers .btn.primary .ivl { color: color-mix(in srgb, var(--paper) 68%, transparent); }
 html.calm .study-foot { margin: auto 0 0; padding: 28px 0 28px; }
 html.calm .study-foot .progress { height: 2px; border-radius: 2px; background: var(--track); }
 html.calm .study-foot .bar { height: 2px; border-radius: 2px; background: var(--accent); transition: width 320ms var(--ease), background-color 900ms var(--ease); }
@@ -1578,8 +1586,9 @@ html.calm ol.list-items .text :is(p, ul, ol) { margin: 0; }
 html.calm ol.list-items .text :is(ul, ol) { padding-left: 1.1rem; }
 html.calm .list-how { margin: 0 0 1rem; font-family: var(--sans); font-size: .875rem; color: var(--muted); text-align: center; }
 html.calm ol.list-items { font-size: 1.2rem; line-height: 1.35; }
-/* Each item is a row with a ring; tap the ones you remembered and the
-   ring fills with a tick. No numbers on the rows: the ? sheet has the keys. */
+/* Each item is a row you tap when you remembered it. No ring or box on
+   the rows, so they never read as a pick-one choice: a remembered row is
+   tinted and says so with a tick. No numbers either: the ? sheet has the keys. */
 html.calm ol.list-items { display: flex; flex-direction: column; gap: 8px; }
 html.calm ol.list-items label.item, html.calm ol.list-items li.known, html.calm ol.list-items li.shown { display: flex; align-items: center; gap: 14px; min-height: 60px; padding: .75rem 1.25rem; margin: 0; font-size: 1.25rem; font-weight: 400; color: var(--ink); }
 html.calm ol.list-items label.item {
@@ -1589,42 +1598,26 @@ html.calm ol.list-items label.item {
   cursor: pointer;
   transition: background-color 140ms ease, border-color 140ms ease, color 140ms ease;
 }
-html.calm ol.list-items label.item::before {
-  content: '';
-  flex: none;
-  width: 22px;
-  height: 22px;
-  box-sizing: border-box;
-  border: 1px solid var(--line-strong);
-  border-radius: 50%;
-  transition: background-color 140ms ease, border-color 140ms ease;
-}
-/* The tick: two straight strokes with square ends, like the numbers. */
-html.calm ol.list-items label.item::after {
-  content: '';
-  position: absolute;
-  left: calc(1.25rem + 7px);
-  top: 50%;
-  width: 6px;
-  height: 11px;
-  margin-top: -7px;
-  border: solid var(--on-accent);
-  border-width: 0 2.4px 2.4px 0;
-  transform: rotate(45deg);
-  opacity: 0;
-  transition: opacity 140ms ease;
-}
 html.calm ol.list-items label.item:is(:hover, .held) { border-color: var(--ink); }
 /* The box itself is only for the form; the row shows the choice. */
 html.calm ol.list-items input { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
 html.calm ol.list-items label.item:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
 html.calm ol.list-items .num { display: none; }
 html.calm ol.list-items .text { flex: 1; font-family: var(--serif); font-optical-sizing: auto; }
-html.calm ol.list-items .mark { font-family: var(--sans); font-size: .875rem; font-weight: 500; letter-spacing: normal; text-transform: none; color: var(--accent); }
+html.calm ol.list-items .mark { align-items: center; gap: 8px; font-family: var(--sans); font-size: .875rem; font-weight: 500; letter-spacing: normal; text-transform: none; color: var(--accent); }
+/* The tick: two straight strokes with square ends, like the numbers. */
+html.calm ol.list-items .mark::before {
+  content: '';
+  flex: none;
+  width: 5px;
+  height: 10px;
+  margin-top: -3px;
+  border: solid currentColor;
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
 html.calm ol.list-items label.item:has(input:checked) { background: var(--accent-tint); border-color: var(--accent); }
-html.calm ol.list-items label.item:has(input:checked)::before { background: var(--accent); border-color: var(--accent); }
-html.calm ol.list-items label.item:has(input:checked)::after { opacity: 1; }
-html.calm ol.list-items label.item:has(input:checked) .mark { display: inline; }
+html.calm ol.list-items label.item:has(input:checked) .mark { display: inline-flex; }
 html.calm ol.list-items li.known { color: var(--faint); }
 html.calm ol.list-items li.known .text { font-family: var(--serif); }
 html.calm .study .answers.cols-1 { grid-template-columns: minmax(0, 1fr); width: min(600px, 100%); margin-top: 2rem; }
@@ -1874,8 +1867,12 @@ html.calm .chart .line { fill: none; stroke: var(--accent); stroke-width: 2; str
 html.calm .chart .dot { fill: var(--accent); stroke: var(--paper); stroke-width: 2; }
 html.calm .chart .cross { stroke: var(--line-strong); stroke-width: 1; }
 html.calm .chart .hit { fill: transparent; }
+html.calm .chart .hit-line { stroke: transparent; stroke-width: 14; stroke-linecap: round; }
+html.calm .chart .hit-line:hover { stroke: color-mix(in srgb, var(--ink) 6%, transparent); }
 html.calm .chart .bar { fill: var(--line-strong); }
 html.calm .chart .bar.now { fill: var(--accent); }
+html.calm .chart .bar.hot { fill: var(--faint); }
+html.calm .chart .bar.now.hot { fill: var(--accent-hover); }
 html.calm .chart .frame { fill: none; stroke: var(--line); }
 html.calm .chart [tabindex]:focus { outline: none; }
 html.calm .chart [tabindex]:focus-visible { outline: 2px solid var(--accent); }
@@ -1911,6 +1908,7 @@ html.calm .dots-track .dot:focus-visible { outline: 2px solid var(--accent); out
 html.calm .dots-val { font-size: .875rem; font-weight: 400; color: var(--muted); text-align: right; font-variant-numeric: tabular-nums; }
 /* When you felt sure: two short bars. */
 html.calm .sure-bars { display: grid; grid-template-columns: 72px minmax(0, 1fr) 40px; gap: 10px; align-items: center; font-size: .875rem; }
+html.calm .sure-bars > div { display: grid; grid-column: 1 / -1; grid-template-columns: subgrid; align-items: center; }
 html.calm .sure-bars .track { position: relative; height: 8px; border-radius: 4px; background: var(--track); overflow: hidden; }
 html.calm .sure-bars .fill { position: absolute; inset: 0 auto 0 0; border-radius: 4px; background: var(--accent); }
 html.calm .sure-bars .fill.grey { background: var(--faint); }
@@ -1918,7 +1916,13 @@ html.calm .sure-bars .num { text-align: right; font-weight: 500; font-variant-nu
 /* One tooltip for every chart: the value first, then what it is. */
 .chart-tip { position: fixed; z-index: 20; display: flex; flex-direction: column; gap: 2px; padding: 8px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--paper); box-shadow: 0 8px 24px rgba(var(--shadow), .12); font-family: var(--sans); font-size: .8125rem; color: var(--muted); pointer-events: none; transform: translate(-50%, calc(-100% - 12px)); white-space: nowrap; }
 .chart-tip[hidden] { display: none; }
-.chart-tip strong { font-size: .9375rem; color: var(--ink); }
+.chart-tip strong { font-size: .9375rem; font-weight: 500; color: var(--ink); }
+.chart-tip.below { transform: translate(-50%, 22px); }
+/* What the value means: a sentence or two, wrapped. */
+.chart-tip .why { max-width: 17rem; margin-top: 4px; white-space: normal; line-height: 1.45; color: var(--ink-2); }
+/* Words that explain themselves on hover say so only when touched. */
+html.calm .desk-stats [data-why] { cursor: help; text-decoration: underline dotted transparent; text-underline-offset: .25em; text-decoration-thickness: 1px; transition: text-decoration-color 160ms var(--ease); }
+html.calm .desk-stats [data-why]:hover, html.calm .desk-stats [data-why]:focus-visible { text-decoration-color: var(--faint); outline: none; }
 
 /* ----- settings ---------------------------------------------------------------
    desk.js turns each part into a section: title and purpose on the left,
@@ -1997,8 +2001,9 @@ html.calm .list-known li { display: inline; }
 html.calm .list-known li + li::before { content: ' · '; color: var(--faint); }
 html.calm .list-known .more { margin-top: .4rem; font-family: var(--sans); font-size: .9375rem; font-style: normal; font-weight: 500; }
 
-/* The week below the decks: what happened, then a bar a day. Today is set
-   apart by its letter in bold, not by a colour. */
+/* The week below the decks: what comes due, then a bar a day, today first.
+   Today is set apart by its letter in bold, not by a colour. A bar names its
+   count on hover, just above it. */
 html.calm .week-home .week h2 + p { margin-top: 0; font-size: 1.25rem; line-height: 1.45; }
 html.calm .week-home .week .tip { display: none; }
 html.calm .week-bars { display: grid; grid-template-columns: repeat(7, 32px); column-gap: 12px; align-items: end; margin: 1.5rem 0 0; }
@@ -2007,6 +2012,10 @@ html.calm .week-bars .bar { display: block; width: 100%; border-radius: 4px 4px 
 html.calm .week-bars .bar.empty { background: var(--line-strong); }
 html.calm .week-bars .letter { font-size: .95rem; line-height: 1; color: var(--muted); }
 html.calm .week-bars .today .letter { font-weight: 700; color: var(--ink); }
+html.calm .week-bars .bar { position: relative; }
+html.calm .week-bars .bar::before { content: attr(data-n); position: absolute; left: 50%; bottom: calc(100% + 4px); font-size: .8125rem; font-variant-numeric: tabular-nums; color: var(--ink); opacity: 0; transform: translateX(-50%); transition: opacity 100ms ease; pointer-events: none; }
+html.calm .week-bars .day:hover .bar::before { opacity: 1; }
+html.calm .week-bars .day:hover .bar:not(.empty) { background: var(--accent-hover); }
 
 /* ----- labels in the margin ------------------------------------------------ */
 /* On wide screens a page gets a narrow label column on the left. Section
@@ -2241,3 +2250,8 @@ html.calm body[data-page=admin] form.logout button.link { padding: 0; color: var
 /* ----- home for someone new ---------------------------------------------------- */
 html.calm .first-steps { margin-top: 1rem; }
 html.calm .first-steps .lede { margin: 0 0 .75rem; font-size: 1.25rem; color: var(--muted); }
+
+/* Merge decks: the decks to pick are switch rows under a plain title. */
+html.calm .sheet fieldset.merge-decks { margin: 0; padding: 8px 0 0; }
+html.calm .sheet fieldset.merge-decks legend { padding: 12px 0 6px; font-weight: 400; color: var(--ink); font-size: 1rem; }
+html.calm .merge-link { margin-top: 1.5rem; }

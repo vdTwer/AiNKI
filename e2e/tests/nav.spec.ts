@@ -8,7 +8,7 @@ const PLACES: [string, RegExp][] = [
   ['Stats', /\/stats$/],
   ['Learn', /\/learn$/],
   ['Settings', /\/settings$/],
-  ['Decks', /\/$/],
+  ['Home', /\/$/],
 ];
 
 test('every place is reachable from the navigation', async ({ page, seed }) => {
@@ -33,6 +33,37 @@ test('every place is reachable from the navigation', async ({ page, seed }) => {
 
 test.describe('desktop', () => {
   desktopOnly();
+
+  test('the dot itself opens into Home', async ({ page }) => {
+    await page.goto('/stats');
+    // The resting dot sits 31px in from the nav's right edge, mid-height.
+    const box = await page.locator('nav.top').boundingBox();
+    if (!box) throw new Error('no nav');
+    const x = box.x + box.width - 31;
+    const y = box.y + box.height / 2;
+    await page.mouse.move(x, y);
+    const home = page.locator('nav.top a[href="/"][data-label="Home"]');
+    await expect(home.locator('.tile')).toHaveCSS('opacity', '1');
+    const under = await page.evaluate(
+      ([px, py]) => document.elementFromPoint(px, py)?.closest('a, button')?.getAttribute('data-label') ?? null,
+      [x, y],
+    );
+    expect(under).toBe('Home');
+  });
+
+  test('the row reads Home, Add, Study, Stats, Learn, Settings, then Find', async ({ page }) => {
+    await page.goto('/stats');
+    const nav = page.locator('nav.top');
+    await nav.hover();
+    await expect(nav.locator('a[href="/"].rail-only .tile')).toHaveCSS('opacity', '1');
+    const order = await nav.locator('a.rail-only, a:not(.brand), button.find-dot').evaluateAll((els) =>
+      els
+        .map((e) => ({ label: e.getAttribute('data-label'), x: e.getBoundingClientRect().left }))
+        .sort((a, b) => b.x - a.x)
+        .map((e) => e.label),
+    );
+    expect([...new Set(order)]).toEqual(['Home', 'Add', 'Study', 'Stats', 'Learn', 'Settings', 'Find']);
+  });
 
   test('quick find forgives typos and goes where you pick', async ({ page, seed }) => {
     const deck = await seed.deck('Languages::Spanish');
