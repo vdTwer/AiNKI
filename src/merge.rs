@@ -16,7 +16,8 @@ use crate::{
 
 #[derive(Debug, Clone)]
 pub struct MergeInput {
-    /// The decks to copy, in the order their cards go into the new deck.
+    /// The decks to copy, in the order their cards go into the new deck
+    /// (on the website: the order of the deck list).
     pub sources: Vec<i64>,
     pub name: String,
     pub description: String,

@@ -120,6 +120,7 @@ pub fn router(app: AppState) -> Router {
         .route("/study/anyway", post(study_anyway))
         .route("/study/keep-going", post(study_keep_going))
         .route("/decks/new", get(deck_new_page).post(deck_create))
+        .route("/decks/merge", get(deck_merge_page).post(deck_merge))
         .route("/decks/{id}", get(deck_page))
         .route("/decks/{id}/edit", get(deck_edit_page).post(deck_update))
         .route("/decks/{id}/delete", post(deck_delete))
@@ -2367,6 +2368,7 @@ fn deck_new_view(user: &User, presets: &[crate::service::Preset], draft: Option<
                 (deck_sheet(draft, presets, selected))
                 div.form-foot.end { button.btn.primary type="submit" { "Create deck" } }
             }
+            p.muted.small.merge-link { "Or " a href="/decks/merge" { "merge decks you have" } " into a new one." }
         },
     )
 }
@@ -2418,6 +2420,113 @@ async fn deck_create(State(app): State<AppState>, user: WebUser, Form(f): Form<D
             let msg = fixable(&e).ok_or(e)?;
             let presets = app.list_presets(&access).await?;
             Ok(form_again(deck_new_view(&user.0, &presets, Some(&f.draft(0, user.0.id)), Some(&msg))))
+        }
+    }
+}
+
+/// The merge page: pick decks, name the new one. `draft` and `error` when
+/// a sent form comes back.
+fn deck_merge_view(
+    user: &User,
+    decks: &[crate::service::DeckSummary],
+    presets: &[crate::service::Preset],
+    draft: &DeckMergeForm,
+    error: Option<&str>,
+) -> Markup {
+    let selected = draft
+        .preset_id
+        .or_else(|| draft.decks.first().and_then(|id| decks.iter().find(|d| d.deck.id == *id)).map(|d| d.deck.preset_id))
+        .or_else(|| presets.iter().find(|p| p.template.as_deref() == Some("standard")).map(|p| p.id))
+        .or_else(|| presets.first().map(|p| p.id));
+    layout_in(
+        Nav::Add,
+        "Merge decks",
+        Some(user),
+        html! {
+            (add_head("merge", "Merge decks", html! {}))
+            (form_error(error))
+            @if decks.len() < 2 {
+                p.empty.muted { "Merging needs at least two decks. " a href="/decks/new" { "Create a deck." } }
+            } @else {
+                form method="post" action="/decks/merge" {
+                    div.sheet.form {
+                        fieldset.merge-decks {
+                            legend { "Decks to merge" }
+                            @for d in decks {
+                                label.check {
+                                    input type="checkbox" name="decks" value=(d.deck.id) checked[draft.decks.contains(&d.deck.id)];
+                                    span.grow { (deck_plain(&d.deck.name)) " " span.muted.small { (count(d.total, "card")) } }
+                                }
+                            }
+                        }
+                        p.hint.muted.small { "The new deck gets copies of their cards. These decks stay exactly as they are." }
+                        hr.divider;
+                        label.title { span.face-label { "Name of the new deck" }
+                            input type="text" name="name" required placeholder="e.g. All languages" value=(draft.name);
+                        }
+                        label.title { span.face-label { "Description " span.muted.optional { "(optional)" } }
+                            textarea name="description" rows="2" placeholder="What it's for" { (draft.description) }
+                        }
+                        hr.divider;
+                        (goal_picker(presets, selected))
+                        label.check { input type="checkbox" name="keep_progress" value="1" checked[draft.keep_progress.is_some()]; " Keep review progress" }
+                        p.hint.muted.small { "On: cards you know stay known, but a card may come due here and in its old deck. Off: the copies start as new cards." }
+                    }
+                    div.form-foot.end { button.btn.primary type="submit" { "Merge decks" } }
+                }
+            }
+        },
+    )
+}
+
+#[derive(Deserialize, Default)]
+struct DeckMergeForm {
+    #[serde(default)]
+    decks: Vec<i64>,
+    #[serde(default)]
+    name: String,
+    #[serde(default)]
+    description: String,
+    preset_id: Option<i64>,
+    keep_progress: Option<String>,
+}
+
+#[derive(Deserialize, Default)]
+struct DeckMergeQuery {
+    /// A deck to have picked already (from its deck page).
+    with: Option<i64>,
+}
+
+async fn deck_merge_page(State(app): State<AppState>, user: WebUser, Query(q): Query<DeckMergeQuery>) -> WebResult {
+    let access = user.access();
+    let decks = app.deck_summaries(&access).await?;
+    let presets = app.list_presets(&access).await?;
+    let draft = DeckMergeForm { decks: q.with.into_iter().collect(), ..Default::default() };
+    Ok(deck_merge_view(&user.0, &decks, &presets, &draft, None).into_response())
+}
+
+async fn deck_merge(State(app): State<AppState>, user: WebUser, Form(f): Form<DeckMergeForm>) -> WebResult {
+    let access = user.access();
+    let input = crate::merge::MergeInput {
+        sources: f.decks.clone(),
+        name: f.name.clone(),
+        description: f.description.clone(),
+        preset_id: f.preset_id,
+        keep_progress: f.keep_progress.is_some(),
+    };
+    match app.merge_decks(&access, input).await {
+        Ok(m) => {
+            let mut msg = format!("Decks merged: {} copied.", count(m.cards, "card"));
+            if m.duplicates > 0 {
+                msg.push_str(&format!(" {} left out, already in it once.", count(m.duplicates, "identical card")));
+            }
+            Ok(redirect_msg(format!("/decks/{}", m.deck.id), &msg))
+        }
+        Err(e) => {
+            let msg = fixable(&e).ok_or(e)?;
+            let decks = app.deck_summaries(&access).await?;
+            let presets = app.list_presets(&access).await?;
+            Ok(form_again(deck_merge_view(&user.0, &decks, &presets, &f, Some(&msg))))
         }
     }
 }
@@ -2499,6 +2608,7 @@ async fn deck_page(
                 (icon_btn(&format!("/decks/{id}/edit"), ICON_EDIT, "Edit deck"))
                 (icon_btn(&format!("/decks/{id}/edit#share"), ICON_SHARE, "Share"))
                 (icon_btn(&format!("/stats?deck={id}"), ICON_STATS, "Stats"))
+                a.btn.icon-link.calm-only href=(format!("/decks/merge?with={id}")) { span { "Merge with other decks" } }
                 a.btn.icon-link.calm-only href=(format!("/decks/{id}/export.csv")) { span { "Export as CSV" } }
             }
             }
@@ -2863,11 +2973,20 @@ fn add_head(current: &str, title: &str, notice: Markup) -> Markup {
         ("deck", "/decks/new", "Deck", "deck"),
         ("import", "/import", "Import", "from a file"),
     ];
-    let words = PLACES.iter().find(|p| p.0 == current).map_or("card", |p| p.3);
+    // Merging is a kind of new deck: no tab of its own on phones (it is
+    // linked from the new-deck page), a line in the desktop menu.
+    const MENU: [(&str, &str, &str); 4] = [
+        ("card", "/cards/new", "card"),
+        ("deck", "/decks/new", "deck"),
+        ("merge", "/decks/merge", "merged deck"),
+        ("import", "/import", "from a file"),
+    ];
+    let words = MENU.iter().find(|p| p.0 == current).map_or("card", |p| p.2);
+    let tab = if current == "merge" { "deck" } else { current };
     html! {
         nav.tabs.simple-only aria-label="Add" {
             @for (key, href, label, _) in PLACES {
-                a href=(href) aria-current=[(key == current).then_some("page")] { (label) }
+                a href=(href) aria-current=[(key == tab).then_some("page")] { (label) }
             }
         }
         (notice)
@@ -2881,7 +3000,7 @@ fn add_head(current: &str, title: &str, notice: Markup) -> Markup {
                 }
             }
             nav #add-menu .add-menu aria-label="Add" {
-                @for (key, href, _, words) in PLACES {
+                @for (key, href, words) in MENU {
                     a href=(href) aria-current=[(key == current).then_some("page")] { "Add " (words) }
                 }
             }
