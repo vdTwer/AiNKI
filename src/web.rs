@@ -4681,9 +4681,9 @@ fn desk_stats(d: &DeskStats) -> Markup {
                     div.chart data-chart="retention" data-weeks=(weeks.join(";")) data-aim=[aim] data-first=(first_day) data-sample=(insight::MIN_SAMPLE) role="img" aria-label="Recall by week, last twelve weeks" {}
                 }
                 aside.chart-side {
-                    p.kicker data-why="Each square is a day and each column a week, oldest on the left; today is the last square. Darker means more reviews." { "Study days" }
+                    p.kicker data-why="Each square is a day and each column a week, oldest on the left; today is the last square. The stronger the color, the more you reviewed." { "Study days" }
                     div.chart data-chart="days" data-days=(days.join(",")) data-first=(first_day) role="img" aria-label="Reviews per day, last twelve weeks" {}
-                    p.small.muted { "Darker means more reviews. " (last7) " of the last 7 days." }
+                    p.small.muted { "Stronger color means more reviews. " (last7) " of the last 7 days." }
                 }
             }
             section.chart-sec {

@@ -395,7 +395,7 @@
         if (k > 0 && !lo[k]) continue;
         var s = el('rect', { x: x0 + k * 18, y: y, width: 14, height: 14, rx: 3, 'class': 'cell scale h' + k }, svg);
         hover(s, k === 0 ? 'No reviews' : lo[k] === hi[k] ? reviews(lo[k]) : lo[k] + ' to ' + reviews(hi[k]), 'in a day',
-          'Each square is one day; the darker it is, the more you reviewed.');
+          'Each square is one day; the stronger its color, the more you reviewed.');
       }
       text(svg, x0 + 5 * 18 + 2, y + 11, 'More');
     },
