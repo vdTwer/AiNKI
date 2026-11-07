@@ -260,7 +260,7 @@ html.calm .notice::before { content: ''; flex: none; width: 6px; height: 6px; bo
 /* ----- navigation ---------------------------------------------------------- */
 /* One Orchid dot in the top right corner, on the wash. Over it (or with
    keyboard focus inside) it opens to the left into a row of icon tiles:
-   find first, then the places. A hovered tile shows its name beneath it;
+   find first, then the places, Home last under the dot. A hovered tile shows its name beneath it;
    the page you are on is the Orchid tile. Moving away closes the row
    after a short grace, so a slightly wide mouse path doesn't snap it shut. */
 html.calm nav.top {
@@ -320,6 +320,14 @@ html.calm nav.top :is(a, button.find-dot) {
 }
 html.calm nav.top a.rail-only { display: flex; }
 html.calm nav.top a.brand { display: none; }
+/* Right to left from the dot: Home, Add, Study, Stats, Learn, Settings,
+   a gap, then Find. Only here; the phone bar keeps its own order. */
+html.calm nav.top a[href="/settings"] { order: 1; }
+html.calm nav.top a[href="/learn"] { order: 2; }
+html.calm nav.top a[href="/stats"] { order: 3; }
+html.calm nav.top a[href="/study"] { order: 4; }
+html.calm nav.top a[href="/cards/new"] { order: 5; }
+html.calm nav.top a.rail-only[href="/"] { order: 6; }
 html.calm nav.top:is(:hover, :focus-within) :is(a, button.find-dot) { width: 42px; margin-left: 6px; transition-delay: 0ms; }
 html.calm nav.top:is(:hover, :focus-within) .find-dot { margin-right: 10px; }
 
