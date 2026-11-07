@@ -121,6 +121,38 @@ test('the coach says nothing to a new learner', async ({ page, seed }) => {
 
 test.describe('desktop', () => {
   desktopOnly();
+  test('stats charts explain themselves on hover and focus', async ({ page, seed, account }) => {
+    await history(seed, account.id);
+    await page.goto('/stats');
+    const tip = page.locator('.chart-tip');
+
+    // A bar of the days ahead: its count, its day, and what it means.
+    await page.locator('.chart[data-chart=forecast] .hit').nth(1).hover();
+    await expect(tip).toBeVisible();
+    await expect(tip.locator('strong')).toHaveText(/^\d+ cards?$/);
+    await expect(tip.locator('.why')).toContainText('come due this day');
+
+    // A week of recall names its reviews and the gap to the aim.
+    const recall = page.locator('.chart[data-chart=retention] .hit').first();
+    await recall.scrollIntoViewIfNeeded();
+    const box = await recall.boundingBox();
+    if (!box) throw new Error('the recall chart has no box');
+    await page.mouse.move(box.x + box.width - 4, box.y + box.height / 2);
+    await expect(tip.locator('.why')).toContainText(/You remembered \d+ of the \d+ learned cards/);
+
+    // Words beside the charts explain themselves too, and leave with the pointer.
+    await page.locator('.desk-stats [data-why]', { hasText: 'Days in a row' }).hover();
+    await expect(tip.locator('.why')).toContainText('at least one review');
+    await page.mouse.move(2, 2);
+    await expect(tip).toBeHidden();
+
+    // The keyboard finds the same words.
+    await page.locator('.chart[data-chart=days] .cell:not(.scale)').last().focus();
+    await expect(tip).toBeVisible();
+    await expect(tip).toContainText('Today');
+    await expect(page.locator('.chart[data-chart=days]')).not.toHaveAttribute('data-failed', '');
+  });
+
   test('Not now on Stats confirms it', async ({ page, seed }) => {
     const deck = await seed.deck('Hard facts');
     const leech = await seed.card(deck, 'Capital of Burkina Faso', 'Ouagadougou');

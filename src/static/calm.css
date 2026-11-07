@@ -402,7 +402,7 @@ html.calm body > .wash {
   mix-blend-mode: multiply;
   animation: wash-in 2.4s var(--ease) both;
 }
-html.calm body > :not(.wash, .sleep-wall, svg) { position: relative; z-index: 1; }
+html.calm body > :not(.wash, .sleep-wall, svg, .chart-tip) { position: relative; z-index: 1; }
 html.calm body > .wash.corner { top: -80px; right: -60px; width: 62%; height: 620px; }
 html.calm body > .wash.corner.small { width: 50%; height: 520px; }
 html.calm body > .wash.corner.faint { width: 46%; height: 480px; opacity: .7; }
@@ -1874,8 +1874,12 @@ html.calm .chart .line { fill: none; stroke: var(--accent); stroke-width: 2; str
 html.calm .chart .dot { fill: var(--accent); stroke: var(--paper); stroke-width: 2; }
 html.calm .chart .cross { stroke: var(--line-strong); stroke-width: 1; }
 html.calm .chart .hit { fill: transparent; }
+html.calm .chart .hit-line { stroke: transparent; stroke-width: 14; stroke-linecap: round; }
+html.calm .chart .hit-line:hover { stroke: color-mix(in srgb, var(--ink) 6%, transparent); }
 html.calm .chart .bar { fill: var(--line-strong); }
 html.calm .chart .bar.now { fill: var(--accent); }
+html.calm .chart .bar.hot { fill: var(--faint); }
+html.calm .chart .bar.now.hot { fill: var(--accent-hover); }
 html.calm .chart .frame { fill: none; stroke: var(--line); }
 html.calm .chart [tabindex]:focus { outline: none; }
 html.calm .chart [tabindex]:focus-visible { outline: 2px solid var(--accent); }
@@ -1911,6 +1915,7 @@ html.calm .dots-track .dot:focus-visible { outline: 2px solid var(--accent); out
 html.calm .dots-val { font-size: .875rem; font-weight: 400; color: var(--muted); text-align: right; font-variant-numeric: tabular-nums; }
 /* When you felt sure: two short bars. */
 html.calm .sure-bars { display: grid; grid-template-columns: 72px minmax(0, 1fr) 40px; gap: 10px; align-items: center; font-size: .875rem; }
+html.calm .sure-bars > div { display: grid; grid-column: 1 / -1; grid-template-columns: subgrid; align-items: center; }
 html.calm .sure-bars .track { position: relative; height: 8px; border-radius: 4px; background: var(--track); overflow: hidden; }
 html.calm .sure-bars .fill { position: absolute; inset: 0 auto 0 0; border-radius: 4px; background: var(--accent); }
 html.calm .sure-bars .fill.grey { background: var(--faint); }
@@ -1918,7 +1923,13 @@ html.calm .sure-bars .num { text-align: right; font-weight: 500; font-variant-nu
 /* One tooltip for every chart: the value first, then what it is. */
 .chart-tip { position: fixed; z-index: 20; display: flex; flex-direction: column; gap: 2px; padding: 8px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--paper); box-shadow: 0 8px 24px rgba(var(--shadow), .12); font-family: var(--sans); font-size: .8125rem; color: var(--muted); pointer-events: none; transform: translate(-50%, calc(-100% - 12px)); white-space: nowrap; }
 .chart-tip[hidden] { display: none; }
-.chart-tip strong { font-size: .9375rem; color: var(--ink); }
+.chart-tip strong { font-size: .9375rem; font-weight: 500; color: var(--ink); }
+.chart-tip.below { transform: translate(-50%, 22px); }
+/* What the value means: a sentence or two, wrapped. */
+.chart-tip .why { max-width: 17rem; margin-top: 4px; white-space: normal; line-height: 1.45; color: var(--ink-2); }
+/* Words that explain themselves on hover say so only when touched. */
+html.calm .desk-stats [data-why] { cursor: help; text-decoration: underline dotted transparent; text-underline-offset: .25em; text-decoration-thickness: 1px; transition: text-decoration-color 160ms var(--ease); }
+html.calm .desk-stats [data-why]:hover, html.calm .desk-stats [data-why]:focus-visible { text-decoration-color: var(--faint); outline: none; }
 
 /* ----- settings ---------------------------------------------------------------
    desk.js turns each part into a section: title and purpose on the left,

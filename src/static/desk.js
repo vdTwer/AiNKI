@@ -214,35 +214,71 @@
   }
   function pct(v) { return Math.round(v * 100) + '%'; }
 
-  var tip = null;
-  function showTip(e, value, label) {
+  // One tooltip for every chart: the value, what it is, and in a sentence
+  // what it means. It stays inside the window and flips below its mark
+  // when there is no room above. Its size is measured only when its words
+  // change, so following the pointer costs no layout.
+  var tip = null, tipKey = '', tipW = 0, tipH = 0;
+  function line(tag, cls, s) {
+    var e = document.createElement(tag);
+    if (cls) e.className = cls;
+    e.textContent = s;
+    return e;
+  }
+  function showTip(e, value, label, why) {
     if (!tip) {
       tip = document.createElement('div');
       tip.className = 'chart-tip';
       tip.setAttribute('role', 'status');
       document.body.appendChild(tip);
     }
-    tip.textContent = '';
-    var v = document.createElement('strong');
-    v.textContent = value;
-    var l = document.createElement('span');
-    l.textContent = label;
-    tip.appendChild(v);
-    tip.appendChild(l);
+    var key = [value, label, why].join('\n');
+    tip.hidden = false;
+    if (key !== tipKey) {
+      tipKey = key;
+      tip.textContent = '';
+      if (value) tip.appendChild(line('strong', '', value));
+      if (label) tip.appendChild(line('span', '', label));
+      if (why) tip.appendChild(line('span', 'why', why));
+      tipW = tip.offsetWidth;
+      tipH = tip.offsetHeight;
+    }
     var r = e.target.getBoundingClientRect ? e.target.getBoundingClientRect() : null;
-    var x = e.clientX !== undefined && e.type !== 'focus' ? e.clientX : r.left + r.width / 2;
-    var y = e.clientY !== undefined && e.type !== 'focus' ? e.clientY : r.top;
+    var pointer = e.clientX !== undefined && e.type !== 'focus';
+    var x = pointer ? e.clientX : r.left + r.width / 2;
+    var y = pointer ? e.clientY : r.top;
+    var below = y - tipH - 12 < 8;
+    if (below && !pointer) y = r.bottom;
+    x = Math.max(8 + tipW / 2, Math.min(window.innerWidth - 8 - tipW / 2, x));
+    tip.classList.toggle('below', below);
     tip.style.left = x + 'px';
     tip.style.top = y + 'px';
-    tip.hidden = false;
   }
   function hideTip() { if (tip) tip.hidden = true; }
-  // A mark answers the pointer and the keyboard alike.
-  function hover(mark, value, label) {
+  // A mark answers the pointer and the keyboard alike. `on` hears when it
+  // is shown and hidden, to light the mark up.
+  function hover(mark, value, label, why, on) {
     mark.setAttribute('tabindex', '0');
-    mark.setAttribute('aria-label', value + ', ' + label);
-    ['pointermove', 'focus'].forEach(function (t) { mark.addEventListener(t, function (e) { showTip(e, value, label); }); });
-    ['pointerleave', 'blur'].forEach(function (t) { mark.addEventListener(t, hideTip); });
+    mark.setAttribute('aria-label', value + ', ' + label + (why ? '. ' + why : ''));
+    ['pointermove', 'focus'].forEach(function (t) {
+      mark.addEventListener(t, function (e) { showTip(e, value, label, why); if (on) on(true); });
+    });
+    ['pointerleave', 'blur'].forEach(function (t) {
+      mark.addEventListener(t, function () { hideTip(); if (on) on(false); });
+    });
+  }
+  // Words on the page that explain themselves on hover (data-why from the
+  // server). Their own text stays what a screen reader reads first.
+  function explainers(scope) {
+    Array.prototype.forEach.call(scope.querySelectorAll('.desk-stats [data-why]'), function (x) {
+      var why = x.getAttribute('data-why');
+      var value = x.getAttribute('data-tip') || '';
+      var label = x.getAttribute('data-tip-label') || '';
+      if (!x.matches('a, button, [tabindex]')) x.setAttribute('tabindex', '0');
+      x.setAttribute('aria-description', [value, label, why].filter(Boolean).join('. '));
+      ['pointermove', 'focus'].forEach(function (t) { x.addEventListener(t, function (e) { showTip(e, value, label, why); }); });
+      ['pointerleave', 'blur'].forEach(function (t) { x.addEventListener(t, hideTip); });
+    });
   }
   function weeksAgo(i, n) { var k = n - 1 - i; return k === 0 ? 'this week' : k === 1 ? 'last week' : k + ' weeks ago'; }
 
@@ -251,7 +287,7 @@
     retention: function (box) {
       var weeks = box.getAttribute('data-weeks').split(';').map(function (w) {
         var p = w.split(',');
-        return { n: +p[0], v: +p[0] > 0 ? +p[1] / +p[0] : null };
+        return { n: +p[0], p: +p[1], v: +p[0] > 0 ? +p[1] / +p[0] : null };
       });
       var aim = parseFloat(box.getAttribute('data-aim'));
       var vals = weeks.filter(function (w) { return w.v !== null; }).map(function (w) { return w.v; });
@@ -268,7 +304,6 @@
       }
       if (!isNaN(aim)) {
         el('line', { x1: L, x2: W - R, y1: Y(aim), y2: Y(aim), 'class': 'aim' }, svg);
-        text(svg, W - R, Y(aim) - 7, 'aim ' + pct(aim), 'axis-text strong', 'end');
       }
       var d = '', pen = false;
       weeks.forEach(function (w, i) {
@@ -280,12 +315,36 @@
       var last = null;
       weeks.forEach(function (w, i) { if (w.v !== null) last = i; });
       el('circle', { cx: X(last), cy: Y(weeks[last].v), r: 4.5, 'class': 'dot' }, svg);
-      text(svg, X(last) - 8, Y(weeks[last].v) - 10, pct(weeks[last].v), 'axis-text value', 'end');
+      // The latest value sits above its dot, or below when the aim's label
+      // is there already.
+      var crowded = !isNaN(aim) && Math.abs(Y(weeks[last].v) - Y(aim)) < 16 && last === weeks.length - 1;
+      var under = crowded && weeks[last].v <= aim;
+      text(svg, X(last) - 8, Y(weeks[last].v) + (under ? 18 : -10), pct(weeks[last].v), 'axis-text value', 'end');
+      if (!isNaN(aim)) text(svg, W - R, Y(aim) + (crowded && !under ? 15 : -7), 'aim ' + pct(aim), 'axis-text strong', 'end');
       text(svg, X(0), H - 6, '12 weeks ago');
       text(svg, X(weeks.length - 1), H - 6, 'this week', 'axis-text', 'end');
-      // The crosshair finds the week nearest the pointer.
+      // The crosshair and a dot find the week nearest the pointer.
       var cross = el('line', { y1: T, y2: H - B, 'class': 'cross', visibility: 'hidden' }, svg);
+      var spot = el('circle', { r: 4.5, 'class': 'dot spot', visibility: 'hidden' }, svg);
       var hit = el('rect', { x: L, y: 0, width: W - L - R, height: H - B, 'class': 'hit' }, svg);
+      var first = new Date(box.getAttribute('data-first') + 'T12:00:00');
+      var sample = +box.getAttribute('data-sample') || 20;
+      var span = function (i) {
+        if (isNaN(first)) return '';
+        var f = { day: 'numeric', month: 'short' };
+        var a = new Date(first.getTime() + i * 7 * 86400000), b = new Date(a.getTime() + 6 * 86400000);
+        return a.toLocaleDateString(undefined, f) + ' to ' + b.toLocaleDateString(undefined, f);
+      };
+      var why = function (w) {
+        if (w.v === null) return 'No learned card came due, or you took the week off. New cards don\'t count here.';
+        var s = 'You remembered ' + w.p + ' of the ' + w.n + ' learned ' + (w.n === 1 ? 'card' : 'cards') + ' that came due';
+        if (!isNaN(aim)) {
+          var gap = Math.round((w.v - aim) * 100);
+          s += Math.abs(gap) <= 1 ? ', right at your aim.' : ', ' + Math.abs(gap) + ' points ' + (gap > 0 ? 'above' : 'below') + ' your aim.';
+        } else s += '.';
+        if (w.n < sample) s += ' With so few reviews, one slip moves this a lot.';
+        return s;
+      };
       hit.addEventListener('pointermove', function (e) {
         var r = svg.getBoundingClientRect();
         var x = (e.clientX - r.left) / r.width * W;
@@ -294,24 +353,55 @@
         cross.setAttribute('x2', X(i));
         cross.setAttribute('visibility', 'visible');
         var w = weeks[i];
-        showTip(e, w.v === null ? 'No reviews' : pct(w.v), weeksAgo(i, weeks.length) + (w.n ? ', ' + w.n + ' reviews' : ''));
+        if (w.v === null) spot.setAttribute('visibility', 'hidden');
+        else { spot.setAttribute('cx', X(i)); spot.setAttribute('cy', Y(w.v)); spot.setAttribute('visibility', 'visible'); }
+        var when = weeksAgo(i, weeks.length);
+        showTip(e, w.v === null ? 'No reviews' : pct(w.v) + ' remembered', when.charAt(0).toUpperCase() + when.slice(1) + (span(i) ? ', ' + span(i) : ''), why(w));
       });
-      hit.addEventListener('pointerleave', function () { cross.setAttribute('visibility', 'hidden'); hideTip(); });
+      hit.addEventListener('pointerleave', function () { cross.setAttribute('visibility', 'hidden'); spot.setAttribute('visibility', 'hidden'); hideTip(); });
+      // The aim explains itself; it sits above the hit area to be found.
+      if (!isNaN(aim)) {
+        var aimHit = el('rect', { x: W - R - 70, y: Y(aim) - (crowded && !under ? 4 : 20), width: 70, height: 26, 'class': 'hit' }, svg);
+        hover(aimHit, 'Aim ' + pct(aim), 'the dashed line',
+          'The share of due cards your presets aim for you to remember, averaged over your decks. FSRS spaces reviews so you land near it.');
+      }
     },
 
-    // Twelve weeks of days, darker for more reviews.
+    // Twelve weeks of days, darker for more reviews, and the scale below
+    // them, each step with the counts it stands for.
     days: function (box) {
       var days = box.getAttribute('data-days').split(',').map(Number);
       var first = new Date(box.getAttribute('data-first') + 'T12:00:00');
       var max = Math.max.apply(null, days.concat([1]));
+      var busiest = Math.max.apply(null, days);
       var cols = Math.ceil(days.length / 7);
-      var svg = el('svg', { viewBox: '0 0 ' + (cols * 18 - 4) + ' 122' }, box);
+      var w = cols * 18 - 4;
+      var svg = el('svg', { viewBox: '0 0 ' + w + ' 150' }, box);
+      var stepOf = function (n) { return n === 0 ? 0 : Math.min(4, 1 + Math.floor(n / max * 3.999)); };
+      var reviews = function (n) { return n + (n === 1 ? ' review' : ' reviews'); };
       days.forEach(function (n, i) {
-        var step = n === 0 ? 0 : Math.min(4, 1 + Math.floor(n / max * 3.999));
-        var c = el('rect', { x: Math.floor(i / 7) * 18, y: (i % 7) * 18, width: 14, height: 14, rx: 3, 'class': 'cell h' + step }, svg);
+        var c = el('rect', { x: Math.floor(i / 7) * 18, y: (i % 7) * 18, width: 14, height: 14, rx: 3, 'class': 'cell h' + stepOf(n) }, svg);
         var day = new Date(first.getTime() + i * 86400000);
-        hover(c, n + (n === 1 ? ' review' : ' reviews'), day.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' }));
+        var today = i === days.length - 1;
+        var why = n === 0
+          ? (today ? 'Nothing yet today. Your streak holds until the day ends.' : 'No reviews this day.')
+          : n === busiest ? 'Your busiest day in these twelve weeks.'
+          : 'Your busiest day had ' + busiest + '.';
+        hover(c, reviews(n), (today ? 'Today, ' : '') + day.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' }), why);
       });
+      // The scale: which counts each shade holds.
+      var lo = [0, 0, 0, 0, 0], hi = [0, 0, 0, 0, 0];
+      for (var n = max; n >= 1; n--) { var k = stepOf(n); lo[k] = n; if (!hi[k]) hi[k] = n; }
+      var y = 7 * 18 + 10;
+      var x0 = w - 5 * 18 - 30;
+      text(svg, x0 - 6, y + 11, 'Less', 'axis-text', 'end');
+      for (var k = 0; k <= 4; k++) {
+        if (k > 0 && !lo[k]) continue;
+        var s = el('rect', { x: x0 + k * 18, y: y, width: 14, height: 14, rx: 3, 'class': 'cell scale h' + k }, svg);
+        hover(s, k === 0 ? 'No reviews' : lo[k] === hi[k] ? reviews(lo[k]) : lo[k] + ' to ' + reviews(hi[k]), 'in a day',
+          'Each square is one day; the stronger its color, the more you reviewed.');
+      }
+      text(svg, x0 + 5 * 18 + 2, y + 11, 'More');
     },
 
     // The next fourteen days; today in Orchid, the rest quiet.
@@ -321,6 +411,7 @@
       var max = Math.max.apply(null, vals.concat([1]));
       var W = 680, H = 200, B = 24, T = 22;
       var bw = W / vals.length;
+      var sum = 0;
       var svg = el('svg', { viewBox: '0 0 ' + W + ' ' + H }, box);
       el('line', { x1: 0, x2: W, y1: H - B + 0.5, y2: H - B + 0.5, 'class': 'grid' }, svg);
       vals.forEach(function (v, i) {
@@ -330,9 +421,14 @@
         var r = Math.min(4, h);
         var y = H - B - h;
         var d = 'M' + x + ' ' + (H - B) + 'V' + (y + r) + 'Q' + x + ' ' + y + ' ' + (x + r) + ' ' + y + 'H' + (x + bw - 8 - r) + 'Q' + (x + bw - 8) + ' ' + y + ' ' + (x + bw - 8) + ' ' + (y + r) + 'V' + (H - B) + 'Z';
-        if (v > 0) el('path', { d: d, 'class': 'bar' + (i === 0 ? ' now' : '') }, svg);
+        var bar = v > 0 ? el('path', { d: d, 'class': 'bar' + (i === 0 ? ' now' : '') }, svg) : null;
         var hit = el('rect', { x: i * bw, y: T - 18, width: bw, height: H - T + 18 - B, 'class': 'hit' }, svg);
-        hover(hit, v + (v === 1 ? ' card' : ' cards'), labels[i]);
+        sum += v;
+        var why = i === 0
+          ? 'Learned cards due today, overdue ones included. New cards come on top.'
+          : 'Learned cards that come due this day; ' + sum + ' from today through then. New cards come on top, and every review you do schedules its card again.';
+        if (i > 0 && v === max && v > 0) why = 'The busiest day ahead. ' + why;
+        hover(hit, v + (v === 1 ? ' card' : ' cards'), labels[i], why, bar && function (on) { bar.classList.toggle('hot', on); });
         if (i === 0) text(svg, x + (bw - 8) / 2, y - 6, String(v), 'axis-text value now', 'middle');
         if (i === 0 || i % 2 === 1) text(svg, i * bw + bw / 2, H - 6, labels[i].replace('Tomorrow', 'Tmrw').replace(/ \d+$/, ''), 'axis-text', 'middle');
       });
@@ -344,11 +440,12 @@
     decks: function (box) {
       var rows = box.getAttribute('data-decks').split(';').map(function (r) {
         var p = r.split('|');
-        return { name: p[0], aim: +p[1], v: +p[2], id: p[3] };
+        return { name: p[0], aim: +p[1], v: +p[2], id: p[3], n: +p[4] || 0 };
       });
       var lo = Math.min.apply(null, rows.map(function (r) { return Math.min(r.aim, r.v); }).concat([0.8]));
       lo = Math.floor((lo - 0.03) * 20) / 20;
       var P = function (v) { return ((v - lo) / (1 - lo) * 100).toFixed(2) + '%'; };
+      var sample = +box.getAttribute('data-sample') || 20;
       rows.forEach(function (r) {
         var low = r.v < r.aim - 0.02;
         var row = document.createElement('div');
@@ -368,7 +465,13 @@
         var dot = document.createElement('i');
         dot.className = 'dot' + (low ? ' low' : '');
         dot.style.left = P(r.v);
-        hover(row, pct(r.v) + ' remembered', r.name + ', aim ' + pct(r.aim));
+        var gap = Math.round((r.v - r.aim) * 100);
+        var from = r.n ? ', from ' + r.n + (r.n === 1 ? ' review' : ' reviews') + ' in the last 30 days.' : ' in the last 30 days.';
+        var why = r.n && r.n < sample ? 'Only ' + r.n + (r.n === 1 ? ' review' : ' reviews') + ' in the last 30 days, too few to say much yet.'
+          : Math.abs(gap) <= 2 ? 'Right at its aim' + from
+          : gap < 0 ? Math.abs(gap) + ' points below its aim' + from + ' Open the deck to see which cards slip.'
+          : gap + ' points above its aim' + from;
+        hover(row, pct(r.v) + ' remembered', r.name + ', aim ' + pct(r.aim), why);
         var val = document.createElement('span');
         val.className = 'dots-val';
         val.textContent = pct(r.aim);
@@ -386,7 +489,7 @@
     calibration: function (box) {
       var bins = box.getAttribute('data-bins').split(';').map(function (b) {
         var p = b.split(',');
-        return { e: +p[0], a: +p[1], n: +p[2] };
+        return { e: +p[0], a: +p[1], n: +p[2], from: p[3], to: p[4] };
       });
       var lo = Math.min.apply(null, bins.map(function (b) { return Math.min(b.e, b.a); }).concat([0.8]));
       lo = Math.max(0, Math.floor((lo - 0.03) * 10) / 10);
@@ -395,10 +498,21 @@
       var svg = el('svg', { viewBox: '0 0 ' + S + ' ' + S, 'class': 'square' }, box);
       el('rect', { x: M, y: M, width: S - 2 * M, height: S - 2 * M, rx: 8, 'class': 'frame' }, svg);
       el('line', { x1: Q(lo), y1: S - Q(lo), x2: Q(1), y2: S - Q(1), 'class': 'aim' }, svg);
+      // The dashed line is wide to the pointer, under the dots.
+      var fit = el('line', { x1: Q(lo), y1: S - Q(lo), x2: Q(1), y2: S - Q(1), 'class': 'hit-line' }, svg);
+      hover(fit, 'A perfect fit', 'the dashed line',
+        'Here FSRS would predict your memory exactly. Dots above it: you remembered more than it expected. Below: less.');
       var most = Math.max.apply(null, bins.map(function (b) { return b.n; }).concat([1]));
       bins.forEach(function (b) {
         var c = el('circle', { cx: Q(b.e), cy: S - Q(b.a), r: (4 + Math.sqrt(b.n / most) * 8).toFixed(1), 'class': 'dot' }, svg);
-        hover(c, pct(b.a) + ' remembered', 'expected ' + pct(b.e) + ', ' + b.n + ' reviews');
+        var gap = Math.round((b.a - b.e) * 100);
+        var band = b.from !== undefined ? b.from + ' to ' + b.to + '%' : pct(b.e);
+        var why = 'Of ' + b.n + (b.n === 1 ? ' review' : ' reviews') + ' where FSRS gave you ' + band + ', you remembered ' + pct(b.a) + '. '
+          + (Math.abs(gap) <= 2 ? 'Close to what it expected.'
+            : gap < 0 ? Math.abs(gap) + ' points less than it expected; optimizing FSRS on your reviews narrows that.'
+            : gap + ' points more than it expected.')
+          + ' Bigger dots stand for more reviews.';
+        hover(c, pct(b.a) + ' remembered', 'FSRS expected ' + band, why);
       });
       text(svg, S / 2, S - 4, 'expected', 'axis-text', 'middle');
       var t = text(svg, 10, S / 2, 'remembered', 'axis-text', 'middle');
@@ -971,6 +1085,7 @@
   breakTimer(document);
   settings(document);
   drawCharts(document);
+  explainers(document);
   numbersSwitch(document);
   Array.prototype.forEach.call(document.querySelectorAll('form[action="/decks/new"] input[name=name], form[action$="/edit"] input[name=name], input[name=new_deck]'), pathField);
   // Studying swaps in the next page without a reload.
