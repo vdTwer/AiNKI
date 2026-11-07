@@ -407,6 +407,7 @@
       var max = Math.max.apply(null, vals.concat([1]));
       var W = 680, H = 200, B = 24, T = 22;
       var bw = W / vals.length;
+      var sum = 0;
       var svg = el('svg', { viewBox: '0 0 ' + W + ' ' + H }, box);
       el('line', { x1: 0, x2: W, y1: H - B + 0.5, y2: H - B + 0.5, 'class': 'grid' }, svg);
       vals.forEach(function (v, i) {
@@ -416,9 +417,14 @@
         var r = Math.min(4, h);
         var y = H - B - h;
         var d = 'M' + x + ' ' + (H - B) + 'V' + (y + r) + 'Q' + x + ' ' + y + ' ' + (x + r) + ' ' + y + 'H' + (x + bw - 8 - r) + 'Q' + (x + bw - 8) + ' ' + y + ' ' + (x + bw - 8) + ' ' + (y + r) + 'V' + (H - B) + 'Z';
-        if (v > 0) el('path', { d: d, 'class': 'bar' + (i === 0 ? ' now' : '') }, svg);
+        var bar = v > 0 ? el('path', { d: d, 'class': 'bar' + (i === 0 ? ' now' : '') }, svg) : null;
         var hit = el('rect', { x: i * bw, y: T - 18, width: bw, height: H - T + 18 - B, 'class': 'hit' }, svg);
-        hover(hit, v + (v === 1 ? ' card' : ' cards'), labels[i]);
+        sum += v;
+        var why = i === 0
+          ? 'Learned cards due today, overdue ones included. New cards come on top.'
+          : 'Learned cards that come due this day; ' + sum + ' from today through then. New cards come on top, and every review you do schedules its card again.';
+        if (i > 0 && v === max && v > 0) why = 'The busiest day ahead. ' + why;
+        hover(hit, v + (v === 1 ? ' card' : ' cards'), labels[i], why, bar && function (on) { bar.classList.toggle('hot', on); });
         if (i === 0) text(svg, x + (bw - 8) / 2, y - 6, String(v), 'axis-text value now', 'middle');
         if (i === 0 || i % 2 === 1) text(svg, i * bw + bw / 2, H - 6, labels[i].replace('Tomorrow', 'Tmrw').replace(/ \d+$/, ''), 'axis-text', 'middle');
       });

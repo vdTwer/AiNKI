@@ -1876,6 +1876,8 @@ html.calm .chart .cross { stroke: var(--line-strong); stroke-width: 1; }
 html.calm .chart .hit { fill: transparent; }
 html.calm .chart .bar { fill: var(--line-strong); }
 html.calm .chart .bar.now { fill: var(--accent); }
+html.calm .chart .bar.hot { fill: var(--faint); }
+html.calm .chart .bar.now.hot { fill: var(--accent-hover); }
 html.calm .chart .frame { fill: none; stroke: var(--line); }
 html.calm .chart [tabindex]:focus { outline: none; }
 html.calm .chart [tabindex]:focus-visible { outline: 2px solid var(--accent); }
