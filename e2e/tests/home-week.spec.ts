@@ -43,6 +43,12 @@ test('home shows the next seven days, starting today', async ({ page, seed }) =>
   await expect(days.nth(3).locator('.bar')).toHaveAttribute('style', 'height: 100%');
   await expect(days.nth(2).locator('.bar')).toHaveClass(/\bempty\b/);
   await expect(week.locator('p').first()).toContainText('4 cards come due in the next seven days');
+  await expect(week.locator('p').first()).toContainText(/ is the busiest, with 2\.$/);
+  // Hovering a bar names its count just above it.
+  const busiest = days.nth(3).locator('.bar');
+  await expect(busiest).toHaveAttribute('data-n', '2');
+  await days.nth(3).hover();
+  await expect.poll(() => busiest.evaluate((el) => getComputedStyle(el, '::before').opacity)).toBe('1');
 });
 
 test('a quiet week says so and draws no bars', async ({ page, seed }) => {

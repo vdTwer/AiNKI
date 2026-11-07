@@ -4020,9 +4020,9 @@ fn week_home(user: &User, today_due: i64, forecast: &[(String, i64)], seconds_pe
     let busiest = days.iter().fold(days[0], |best, &d| if d.1 > best.1 { d } else { best });
     let most = busiest.1.max(1);
     let when = |date: chrono::NaiveDate| match (date - clock.today()).num_days() {
-        0 => "today".to_string(),
-        1 => "tomorrow".to_string(),
-        _ => format!("on {}", date.format("%A")),
+        0 => "Today".to_string(),
+        1 => "Tomorrow".to_string(),
+        _ => date.format("%A").to_string(),
     };
     let tip = |date: chrono::NaiveDate, n: i64| {
         let n = if n == 0 { "nothing due".to_string() } else { count(n, "card") };
@@ -4039,7 +4039,7 @@ fn week_home(user: &User, today_due: i64, forecast: &[(String, i64)], seconds_pe
                         (count(total, "card")) (if total == 1 { " comes" } else { " come" }) " due in the next seven days"
                         @if let Some(sec) = seconds_per_review { ", " (format::minutes(sec * total as f64 / 60.0)) " of study" }
                         "."
-                        @if total > busiest.1 { " The most " (when(busiest.0)) ", " (format::number(busiest.1)) "." }
+                        @if total > busiest.1 { " " (when(busiest.0)) " is the busiest, with " (format::number(busiest.1)) "." }
                     }
                 }
             }
@@ -4047,7 +4047,7 @@ fn week_home(user: &User, today_due: i64, forecast: &[(String, i64)], seconds_pe
             div.week-bars role="img" aria-label=(format!("Cards due on each of the next seven days. {}", days.iter().map(|&(d, n)| tip(d, n)).collect::<Vec<_>>().join(", "))) {
                 @for (i, &(date, n)) in days.iter().enumerate() {
                     div.day.today[i == 0] title=(tip(date, n)) {
-                        span.bar.empty[n == 0] style=(format!("height: {}%", (n * 100 / most).max(3))) {}
+                        span.bar.empty[n == 0] style=(format!("height: {}%", (n * 100 / most).max(3))) data-n=(format::number(n)) {}
                         span.letter { (date.format("%a").to_string().chars().next().unwrap_or(' ')) }
                     }
                 }

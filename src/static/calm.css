@@ -1997,8 +1997,9 @@ html.calm .list-known li { display: inline; }
 html.calm .list-known li + li::before { content: ' · '; color: var(--faint); }
 html.calm .list-known .more { margin-top: .4rem; font-family: var(--sans); font-size: .9375rem; font-style: normal; font-weight: 500; }
 
-/* The week below the decks: what happened, then a bar a day. Today is set
-   apart by its letter in bold, not by a colour. */
+/* The week below the decks: what comes due, then a bar a day, today first.
+   Today is set apart by its letter in bold, not by a colour. A bar names its
+   count on hover, just above it. */
 html.calm .week-home .week h2 + p { margin-top: 0; font-size: 1.25rem; line-height: 1.45; }
 html.calm .week-home .week .tip { display: none; }
 html.calm .week-bars { display: grid; grid-template-columns: repeat(7, 32px); column-gap: 12px; align-items: end; margin: 1.5rem 0 0; }
@@ -2007,6 +2008,10 @@ html.calm .week-bars .bar { display: block; width: 100%; border-radius: 4px 4px 
 html.calm .week-bars .bar.empty { background: var(--line-strong); }
 html.calm .week-bars .letter { font-size: .95rem; line-height: 1; color: var(--muted); }
 html.calm .week-bars .today .letter { font-weight: 700; color: var(--ink); }
+html.calm .week-bars .bar { position: relative; }
+html.calm .week-bars .bar::before { content: attr(data-n); position: absolute; left: 50%; bottom: calc(100% + 4px); font-size: .8125rem; font-variant-numeric: tabular-nums; color: var(--ink); opacity: 0; transform: translateX(-50%); transition: opacity 100ms ease; pointer-events: none; }
+html.calm .week-bars .day:hover .bar::before { opacity: 1; }
+html.calm .week-bars .day:hover .bar:not(.empty) { background: var(--accent-hover); }
 
 /* ----- labels in the margin ------------------------------------------------ */
 /* On wide screens a page gets a narrow label column on the left. Section
