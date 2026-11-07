@@ -51,6 +51,20 @@ test.describe('desktop', () => {
     expect(under).toBe('Home');
   });
 
+  test('the row reads Home, Add, Study, Stats, Learn, Settings, then Find', async ({ page }) => {
+    await page.goto('/stats');
+    const nav = page.locator('nav.top');
+    await nav.hover();
+    await expect(nav.locator('a[href="/"].rail-only .tile')).toHaveCSS('opacity', '1');
+    const order = await nav.locator('a.rail-only, a:not(.brand), button.find-dot').evaluateAll((els) =>
+      els
+        .map((e) => ({ label: e.getAttribute('data-label'), x: e.getBoundingClientRect().left }))
+        .sort((a, b) => b.x - a.x)
+        .map((e) => e.label),
+    );
+    expect([...new Set(order)]).toEqual(['Home', 'Add', 'Study', 'Stats', 'Learn', 'Settings', 'Find']);
+  });
+
   test('quick find forgives typos and goes where you pick', async ({ page, seed }) => {
     const deck = await seed.deck('Languages::Spanish');
     const card = await seed.card(deck, 'el murciélago', 'the bat');
