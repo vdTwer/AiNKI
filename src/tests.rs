@@ -1788,3 +1788,85 @@ async fn the_coach_reads_recall_and_pace_from_the_log() {
     assert!(notes.iter().any(|n| n.rule == Rule::BelowTarget), "{notes:?}");
     assert!(notes.iter().all(|n| n.rule != Rule::DeckLags), "one deck is the whole picture");
 }
+
+#[tokio::test]
+async fn a_paused_deck_rests_and_resuming_wakes_only_its_own_cards() {
+    use crate::service::DeckStatus;
+    let app = app().await;
+    let a = user(&app, "kolja").await;
+    let deck = app.create_deck(&a, "German", "", None).await.unwrap();
+    let other = app.create_deck(&a, "French", "", None).await.unwrap();
+    let hund = app.create_card(&a, deck.id, "Hund", "dog", None, None, None).await.unwrap();
+    let katze = app.create_card(&a, deck.id, "Katze", "cat", None, None, None).await.unwrap();
+    let maus = app.create_card(&a, deck.id, "Maus", "mouse", None, None, None).await.unwrap();
+    app.create_card(&a, other.id, "chat", "cat", None, None, None).await.unwrap();
+    // Suspended by hand before the pause.
+    app.set_suspended(&a, maus.id, true).await.unwrap();
+
+    let paused = app.set_deck_status(&a, deck.id, DeckStatus::Paused).await.unwrap();
+    assert_eq!(paused.status, DeckStatus::Paused);
+    assert!(app.card(&a, hund.id).await.unwrap().suspended);
+    assert!(app.card(&a, katze.id).await.unwrap().suspended);
+    // Nothing from the paused deck is studied, the other deck still is.
+    let next = app.next_card(&a, None).await.unwrap().unwrap();
+    assert_eq!(next.card.front, "chat");
+    assert_eq!(next.remaining, 1);
+    assert!(app.next_card(&a, Some(deck.id)).await.unwrap().is_none());
+    let summary = app.deck_summaries(&a).await.unwrap();
+    let s = summary.iter().find(|s| s.deck.id == deck.id).unwrap();
+    assert_eq!((s.total, s.suspended, s.due_total()), (3, 3, 0));
+
+    // A card added while paused rests too, and so does one moved in.
+    let added = app.create_card(&a, deck.id, "Vogel", "bird", None, None, None).await.unwrap();
+    assert!(added.suspended);
+    let moved_in = app.create_card(&a, other.id, "Pferd", "horse", None, None, None).await.unwrap();
+    assert!(app.move_card(&a, moved_in.id, deck.id).await.unwrap().suspended);
+    // Moved out to a deck being studied, a resting card wakes.
+    assert!(!app.move_card(&a, katze.id, other.id).await.unwrap().suspended);
+    app.move_card(&a, katze.id, deck.id).await.unwrap();
+
+    let resumed = app.set_deck_status(&a, deck.id, DeckStatus::Active).await.unwrap();
+    assert_eq!(resumed.status, DeckStatus::Active);
+    for id in [hund.id, katze.id, added.id, moved_in.id] {
+        assert!(!app.card(&a, id).await.unwrap().suspended, "card {id} should be awake");
+    }
+    // The card suspended by hand stays suspended.
+    assert!(app.card(&a, maus.id).await.unwrap().suspended);
+}
+
+#[tokio::test]
+async fn an_archived_deck_rests_and_comes_back_on_restore() {
+    use crate::service::DeckStatus;
+    let app = app().await;
+    let a = user(&app, "kolja").await;
+    let deck = app.create_deck(&a, "Old exam", "", None).await.unwrap();
+    let c = app.create_card(&a, deck.id, "Q", "A", None, None, None).await.unwrap();
+
+    // Pausing first and archiving after keeps the card the deck's to wake.
+    app.set_deck_status(&a, deck.id, DeckStatus::Paused).await.unwrap();
+    let archived = app.set_deck_status(&a, deck.id, DeckStatus::Archived).await.unwrap();
+    assert_eq!(archived.status, DeckStatus::Archived);
+    assert!(app.card(&a, c.id).await.unwrap().suspended);
+    assert!(app.next_card(&a, None).await.unwrap().is_none());
+
+    // Unsuspended by hand while archived: from then on the card is its own.
+    app.set_suspended(&a, c.id, false).await.unwrap();
+    app.set_suspended(&a, c.id, true).await.unwrap();
+    app.set_deck_status(&a, deck.id, DeckStatus::Active).await.unwrap();
+    assert!(app.card(&a, c.id).await.unwrap().suspended);
+}
+
+#[tokio::test]
+async fn a_read_only_token_cannot_pause_a_deck() {
+    use crate::service::DeckStatus;
+    let app = app().await;
+    let a = user(&app, "kolja").await;
+    let deck = app.create_deck(&a, "German", "", None).await.unwrap();
+    let (_, raw) = app.create_token(a.user_id(), "reader", false, false, None).await.unwrap();
+    let read = app.token_access(&raw).await.unwrap();
+    assert!(matches!(
+        app.set_deck_status(&read, deck.id, DeckStatus::Paused).await,
+        Err(AppError::Forbidden(_))
+    ));
+    assert_eq!(app.deck(&a, deck.id).await.unwrap().status, DeckStatus::Active);
+}

@@ -78,6 +78,8 @@ impl App {
         let by_deck: HashMap<i64, (i64, i64)> = rows.into_iter().map(|(d, n, ok)| (d, (n, ok))).collect();
         Ok(decks
             .into_iter()
+            // Put away, so off the list; paused decks still have a record to show.
+            .filter(|d| d.status != crate::service::DeckStatus::Archived)
             .map(|d| {
                 let (n, ok) = by_deck.get(&d.id).copied().unwrap_or((0, 0));
                 DeckRetention {

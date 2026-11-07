@@ -65,6 +65,26 @@ pub struct Deck {
     pub preset_id: i64,
     pub exam_date: Option<String>,
     pub created_at: i64,
+    pub status: DeckStatus,
+}
+
+/// Whether a deck is studied. Paused and archived decks rest: their cards
+/// are suspended until the deck is resumed. An archived deck is also put
+/// away, out of the deck list.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, sqlx::Type, schemars::JsonSchema)]
+#[serde(rename_all = "lowercase")]
+#[sqlx(type_name = "TEXT", rename_all = "lowercase")]
+pub enum DeckStatus {
+    #[default]
+    Active,
+    Paused,
+    Archived,
+}
+
+impl DeckStatus {
+    pub fn is_active(self) -> bool {
+        self == DeckStatus::Active
+    }
 }
 
 impl Deck {
@@ -800,6 +820,37 @@ impl App {
         Ok(cards)
     }
 
+    /// Pause, archive or resume a deck. A deck at rest has all its cards
+    /// suspended; resuming wakes the ones it suspended and leaves cards that
+    /// were suspended by hand as they are.
+    pub async fn set_deck_status(&self, access: &Access, id: i64, status: DeckStatus) -> Result<Deck> {
+        access.require_write()?;
+        self.deck(access, id).await?;
+        let t = now();
+        let mut tx = self.db.begin_with("BEGIN IMMEDIATE").await?;
+        sqlx::query("UPDATE decks SET status = ? WHERE id = ? AND user_id = ?")
+            .bind(status)
+            .bind(id)
+            .bind(access.user_id())
+            .execute(&mut *tx)
+            .await?;
+        let cards = if status.is_active() {
+            "UPDATE cards SET suspended = 0, held = 0, updated_at = ?
+             WHERE deck_id = ? AND user_id = ? AND held = 1"
+        } else {
+            "UPDATE cards SET suspended = 1, held = 1, updated_at = ?
+             WHERE deck_id = ? AND user_id = ? AND suspended = 0"
+        };
+        sqlx::query(cards)
+            .bind(t)
+            .bind(id)
+            .bind(access.user_id())
+            .execute(&mut *tx)
+            .await?;
+        tx.commit().await?;
+        self.deck(access, id).await
+    }
+
     // ----- cards ---------------------------------------------------------
 
     pub async fn card(&self, access: &Access, id: i64) -> Result<Card> {
@@ -883,9 +934,11 @@ impl App {
         let (front, back) = (cap(front), cap(back));
         Ok(sqlx::query_scalar(
             "INSERT INTO cards (user_id, deck_id, front, back, front_image, back_image, position,
-                created_by, created_at, updated_at)
+                created_by, created_at, updated_at, suspended, held)
              VALUES (?, ?, ?, ?, ?, ?,
-                (SELECT COALESCE(MAX(position), 0) + 1 FROM cards WHERE user_id = ?), ?, ?, ?)
+                (SELECT COALESCE(MAX(position), 0) + 1 FROM cards WHERE user_id = ?), ?, ?, ?,
+                (SELECT status != 'active' FROM decks WHERE id = ?),
+                (SELECT status != 'active' FROM decks WHERE id = ?))
              RETURNING id",
         )
         .bind(user_id)
@@ -898,6 +951,8 @@ impl App {
         .bind(created_by)
         .bind(t)
         .bind(t)
+        .bind(deck_id)
+        .bind(deck_id)
         .fetch_one(&self.db)
         .await?)
     }
@@ -962,21 +1017,32 @@ impl App {
     pub async fn move_card(&self, access: &Access, id: i64, deck_id: i64) -> Result<Card> {
         access.require_write()?;
         self.card(access, id).await?;
-        self.deck(access, deck_id).await?;
-        sqlx::query("UPDATE cards SET deck_id = ?, updated_at = ? WHERE id = ? AND user_id = ?")
-            .bind(deck_id)
-            .bind(now())
-            .bind(id)
-            .bind(access.user_id())
-            .execute(&self.db)
-            .await?;
+        // A card moved into a resting deck rests with it; one the deck held
+        // wakes when it moves to a deck being studied. Suspended by hand
+        // stays suspended.
+        let rests = !self.deck(access, deck_id).await?.status.is_active();
+        sqlx::query(
+            "UPDATE cards SET deck_id = ?, updated_at = ?,
+                suspended = CASE WHEN ? THEN 1 WHEN held = 1 THEN 0 ELSE suspended END,
+                held = CASE WHEN ? THEN (held = 1 OR suspended = 0) ELSE 0 END
+             WHERE id = ? AND user_id = ?",
+        )
+        .bind(deck_id)
+        .bind(now())
+        .bind(rests)
+        .bind(rests)
+        .bind(id)
+        .bind(access.user_id())
+        .execute(&self.db)
+        .await?;
         self.card(access, id).await
     }
 
     pub async fn set_suspended(&self, access: &Access, id: i64, suspended: bool) -> Result<Card> {
         access.require_write()?;
         self.card(access, id).await?;
-        sqlx::query("UPDATE cards SET suspended = ?, updated_at = ? WHERE id = ? AND user_id = ?")
+        // By hand: no longer the deck's to wake.
+        sqlx::query("UPDATE cards SET suspended = ?, held = 0, updated_at = ? WHERE id = ? AND user_id = ?")
             .bind(suspended)
             .bind(now())
             .bind(id)

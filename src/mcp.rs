@@ -31,7 +31,7 @@ use crate::{
     import, presets,
     scheduler::Rating,
     multi::Split,
-    service::{CardFilter, CardInput, PresetInput},
+    service::{CardFilter, CardInput, DeckStatus, PresetInput},
 };
 
 const INSTRUCTIONS: &str = "\
@@ -42,7 +42,8 @@ Concepts:
 - Cards have a front and a back. Each side is Markdown text plus at most one optional image. Nothing else: \
 no templates, no note types, no cloze. Make one card per fact; keep fronts short and unambiguous.
 - Cards live in decks. Each deck uses a preset that sets desired retention (target recall probability), \
-daily new/review limits and short learning steps. Scheduling is FSRS-6.
+daily new/review limits and short learning steps. Scheduling is FSRS-6. \
+A deck can be paused or archived (update_deck status): its cards rest until it is active again.
 - Images: upload with upload_image (base64), then pass the returned image_id when creating or updating a card.
 - Multicards: when the back holds several things to recall (\"the seven theses on monsters\"), make one card \
 and set multi to how its back splits into items: 'list' (the items of its lists, numbered or not), 'sections' \
@@ -248,6 +249,10 @@ pub struct UpdateDeckParams {
     pub preset_id: Option<i64>,
     /// Exam date as YYYY-MM-DD; no card is scheduled past it. Empty string clears it.
     pub exam_date: Option<String>,
+    /// active, paused or archived. A paused deck stays listed but none of its
+    /// cards are studied; archived also puts it away. Back to active wakes
+    /// the cards the pause suspended; cards suspended one by one stay so.
+    pub status: Option<DeckStatus>,
 }
 
 #[derive(Deserialize, JsonSchema)]
@@ -509,14 +514,18 @@ impl AinkiMcp {
             .map_err(err)?)
     }
 
-    #[tool(description = "Rename a deck, change its description or preset, or set/clear an exam date.")]
+    #[tool(description = "Rename a deck, change its description or preset, set/clear an exam date, or pause, archive or resume it.")]
     async fn update_deck(&self, Parameters(p): Parameters<UpdateDeckParams>, Extension(parts): Extension<Parts>) -> ToolResult {
         let a = access(&parts)?;
-        out(self
+        let deck = self
             .app
             .update_deck(&a, p.deck_id, p.name.as_deref(), p.description.as_deref(), p.preset_id, p.exam_date.as_deref())
             .await
-            .map_err(err)?)
+            .map_err(err)?;
+        match p.status {
+            Some(status) if status != deck.status => out(self.app.set_deck_status(&a, p.deck_id, status).await.map_err(err)?),
+            _ => out(deck),
+        }
     }
 
     #[tool(description = "Delete a deck and all of its cards. Irreversible; confirm with the user first.")]
