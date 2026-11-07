@@ -436,11 +436,12 @@
     decks: function (box) {
       var rows = box.getAttribute('data-decks').split(';').map(function (r) {
         var p = r.split('|');
-        return { name: p[0], aim: +p[1], v: +p[2], id: p[3] };
+        return { name: p[0], aim: +p[1], v: +p[2], id: p[3], n: +p[4] || 0 };
       });
       var lo = Math.min.apply(null, rows.map(function (r) { return Math.min(r.aim, r.v); }).concat([0.8]));
       lo = Math.floor((lo - 0.03) * 20) / 20;
       var P = function (v) { return ((v - lo) / (1 - lo) * 100).toFixed(2) + '%'; };
+      var sample = +box.getAttribute('data-sample') || 20;
       rows.forEach(function (r) {
         var low = r.v < r.aim - 0.02;
         var row = document.createElement('div');
@@ -460,7 +461,13 @@
         var dot = document.createElement('i');
         dot.className = 'dot' + (low ? ' low' : '');
         dot.style.left = P(r.v);
-        hover(row, pct(r.v) + ' remembered', r.name + ', aim ' + pct(r.aim));
+        var gap = Math.round((r.v - r.aim) * 100);
+        var from = r.n ? ', from ' + r.n + (r.n === 1 ? ' review' : ' reviews') + ' in the last 30 days.' : ' in the last 30 days.';
+        var why = r.n && r.n < sample ? 'Only ' + r.n + (r.n === 1 ? ' review' : ' reviews') + ' in the last 30 days, too few to say much yet.'
+          : Math.abs(gap) <= 2 ? 'Right at its aim' + from
+          : gap < 0 ? Math.abs(gap) + ' points below its aim' + from + ' Open the deck to see which cards slip.'
+          : gap + ' points above its aim' + from;
+        hover(row, pct(r.v) + ' remembered', r.name + ', aim ' + pct(r.aim), why);
         var val = document.createElement('span');
         val.className = 'dots-val';
         val.textContent = pct(r.aim);

@@ -4626,7 +4626,7 @@ fn desk_stats(d: &DeskStats) -> Markup {
     let decks: Vec<String> = d
         .retention
         .iter()
-        .filter_map(|r| r.actual.map(|a| format!("{}|{}|{}|{}", deck_plain(&r.deck_name).replace(['|', ';'], " "), r.target, a, r.deck_id)))
+        .filter_map(|r| r.actual.map(|a| format!("{}|{}|{}|{}|{}", deck_plain(&r.deck_name).replace(['|', ';'], " "), r.target, a, r.deck_id, r.reviews)))
         .collect();
     let first_day = d.history.days.first().map_or("", |(day, _)| day.as_str());
     let bins: Vec<String> = d.cal.bins.iter().map(|b| format!("{},{},{}", b.predicted, b.actual, b.reviews)).collect();
@@ -4697,8 +4697,12 @@ fn desk_stats(d: &DeskStats) -> Markup {
                 section.chart-sec {
                     div.chart-main {
                         h2 { "By deck" }
-                        p.legend.small { span.aim { "aim" } span.ok { "remembered" } span.low { "below aim" } }
-                        div.chart data-chart="decks" data-decks=(decks.join(";")) role="img" aria-label="Recall by deck against its aim, last 30 days" {}
+                        p.legend.small {
+                            span.aim data-why="What the deck's preset aims for: the share of due cards you should remember." { "aim" }
+                            span.ok data-why="What you did remember of the deck's learned cards in the last 30 days." { "remembered" }
+                            span.low data-why="An open ring: more than 2 points below the aim." { "below aim" }
+                        }
+                        div.chart data-chart="decks" data-decks=(decks.join(";")) data-sample=(insight::MIN_SAMPLE) role="img" aria-label="Recall by deck against its aim, last 30 days" {}
                     }
                     aside.chart-side {
                         p.kicker { "What to do" }
