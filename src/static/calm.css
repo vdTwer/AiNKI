@@ -1578,8 +1578,9 @@ html.calm ol.list-items .text :is(p, ul, ol) { margin: 0; }
 html.calm ol.list-items .text :is(ul, ol) { padding-left: 1.1rem; }
 html.calm .list-how { margin: 0 0 1rem; font-family: var(--sans); font-size: .875rem; color: var(--muted); text-align: center; }
 html.calm ol.list-items { font-size: 1.2rem; line-height: 1.35; }
-/* Each item is a row with a ring; tap the ones you remembered and the
-   ring fills with a tick. No numbers on the rows: the ? sheet has the keys. */
+/* Each item is a row you tap when you remembered it. No ring or box on
+   the rows, so they never read as a pick-one choice: a remembered row is
+   tinted and says so. No numbers either: the ? sheet has the keys. */
 html.calm ol.list-items { display: flex; flex-direction: column; gap: 8px; }
 html.calm ol.list-items label.item, html.calm ol.list-items li.known, html.calm ol.list-items li.shown { display: flex; align-items: center; gap: 14px; min-height: 60px; padding: .75rem 1.25rem; margin: 0; font-size: 1.25rem; font-weight: 400; color: var(--ink); }
 html.calm ol.list-items label.item {
@@ -1589,42 +1590,15 @@ html.calm ol.list-items label.item {
   cursor: pointer;
   transition: background-color 140ms ease, border-color 140ms ease, color 140ms ease;
 }
-html.calm ol.list-items label.item::before {
-  content: '';
-  flex: none;
-  width: 22px;
-  height: 22px;
-  box-sizing: border-box;
-  border: 1px solid var(--line-strong);
-  border-radius: 50%;
-  transition: background-color 140ms ease, border-color 140ms ease;
-}
-/* The tick: two straight strokes with square ends, like the numbers. */
-html.calm ol.list-items label.item::after {
-  content: '';
-  position: absolute;
-  left: calc(1.25rem + 7px);
-  top: 50%;
-  width: 6px;
-  height: 11px;
-  margin-top: -7px;
-  border: solid var(--on-accent);
-  border-width: 0 2.4px 2.4px 0;
-  transform: rotate(45deg);
-  opacity: 0;
-  transition: opacity 140ms ease;
-}
 html.calm ol.list-items label.item:is(:hover, .held) { border-color: var(--ink); }
 /* The box itself is only for the form; the row shows the choice. */
 html.calm ol.list-items input { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
 html.calm ol.list-items label.item:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
 html.calm ol.list-items .num { display: none; }
 html.calm ol.list-items .text { flex: 1; font-family: var(--serif); font-optical-sizing: auto; }
-html.calm ol.list-items .mark { font-family: var(--sans); font-size: .875rem; font-weight: 500; letter-spacing: normal; text-transform: none; color: var(--accent); }
+html.calm ol.list-items .mark { align-items: center; font-family: var(--sans); font-size: .875rem; font-weight: 500; letter-spacing: normal; text-transform: none; color: var(--accent); }
 html.calm ol.list-items label.item:has(input:checked) { background: var(--accent-tint); border-color: var(--accent); }
-html.calm ol.list-items label.item:has(input:checked)::before { background: var(--accent); border-color: var(--accent); }
-html.calm ol.list-items label.item:has(input:checked)::after { opacity: 1; }
-html.calm ol.list-items label.item:has(input:checked) .mark { display: inline; }
+html.calm ol.list-items label.item:has(input:checked) .mark { display: inline-flex; }
 html.calm ol.list-items li.known { color: var(--faint); }
 html.calm ol.list-items li.known .text { font-family: var(--serif); }
 html.calm .study .answers.cols-1 { grid-template-columns: minmax(0, 1fr); width: min(600px, 100%); margin-top: 2rem; }
