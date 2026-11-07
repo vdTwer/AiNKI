@@ -2253,5 +2253,5 @@ html.calm .first-steps .lede { margin: 0 0 .75rem; font-size: 1.25rem; color: va
 
 /* Merge decks: the decks to pick are switch rows under a plain title. */
 html.calm .sheet fieldset.merge-decks { margin: 0; padding: 8px 0 0; }
-html.calm .sheet fieldset.merge-decks legend { float: left; width: 100%; padding: 12px 0 6px; font-weight: 400; color: var(--ink); font-size: 1rem; }
+html.calm .sheet fieldset.merge-decks legend { padding: 12px 0 6px; font-weight: 400; color: var(--ink); font-size: 1rem; }
 html.calm .merge-link { margin-top: 1.5rem; }
