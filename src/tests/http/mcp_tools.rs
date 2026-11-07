@@ -304,3 +304,28 @@ async fn tokens_only_do_what_they_were_given() {
     .await;
     assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
 }
+
+#[tokio::test]
+async fn an_agent_can_pause_and_resume_a_deck() {
+    let app = app().await;
+    let a = user(&app, "kolja").await;
+    let (_, t) = app.create_token(a.user_id(), "claude", true, true, None).await.unwrap();
+    let t = t.as_str();
+    let deck = ok(&app, t, "create_deck", json!({ "name": "Spanish" })).await;
+    let deck_id = deck["id"].as_i64().unwrap();
+    assert_eq!(deck["status"], "active");
+    ok(&app, t, "create_cards", json!({ "deck_id": deck_id, "cards": [{ "front": "hablar", "back": "to speak" }] })).await;
+
+    let paused = ok(&app, t, "update_deck", json!({ "deck_id": deck_id, "status": "paused" })).await;
+    assert_eq!(paused["status"], "paused");
+    let next = ok(&app, t, "get_next_card", json!({})).await;
+    assert!(next.get("card").is_none_or(Value::is_null), "a paused deck is not studied: {next}");
+    let listed = ok(&app, t, "list_decks", json!({})).await;
+    assert_eq!(listed[0]["status"], "paused");
+
+    let back = ok(&app, t, "update_deck", json!({ "deck_id": deck_id, "status": "active" })).await;
+    assert_eq!(back["status"], "active");
+    let next = ok(&app, t, "get_next_card", json!({})).await;
+    assert_eq!(next["card"]["front"], "hablar");
+    assert!(call(&app, t, "update_deck", json!({ "deck_id": deck_id, "status": "asleep" })).await.is_err());
+}
