@@ -4,8 +4,9 @@ import { execFileSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
 import path from 'node:path';
-import { test as base, expect, type Page, type APIRequestContext, type BrowserContext } from '@playwright/test';
+import { test as base, expect, type Browser, type Page, type APIRequestContext, type BrowserContext } from '@playwright/test';
 import { binary, dataDir } from './env.ts';
+import { steadyFirstLoad } from './first-load.ts';
 
 export { expect };
 
@@ -132,7 +133,25 @@ type Fixtures = {
   pageErrors: string[];
 };
 
-export const test = base.extend<Fixtures>({
+export const test = base.extend<Fixtures, { browser: Browser }>({
+  // Every page, including those of contexts a test makes itself, gets its
+  // first load guarded against Firefox losing it (see first-load.ts).
+  browser: [
+    async ({ browser }, use) => {
+      const newContext = browser.newContext.bind(browser);
+      browser.newContext = async (options) => {
+        const context = await newContext(options);
+        context.on('page', steadyFirstLoad);
+        return context;
+      };
+      await use(browser);
+    },
+    { scope: 'worker' },
+  ],
+  context: async ({ context }, use) => {
+    context.on('page', steadyFirstLoad);
+    await use(context);
+  },
   look: ['calm', { option: true }],
   // Every test starts logged in; logged-out pages use a new context.
   account: [

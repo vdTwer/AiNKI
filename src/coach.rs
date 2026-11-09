@@ -234,6 +234,15 @@ fn short(s: &str, n: usize) -> String {
     }
 }
 
+/// A card's front as the duplicate rules compare it.
+struct Front {
+    id: i64,
+    deck: i64,
+    text: String,
+    /// The card this one was copied from, or its own id.
+    family: i64,
+}
+
 /// A card that looks like the one being written.
 #[derive(Debug, Serialize)]
 pub struct Similar {
@@ -288,22 +297,24 @@ impl App {
         Ok(out)
     }
 
-    /// Every visible card's id, deck and normalized front.
-    async fn fronts(&self, access: &Access) -> Result<Vec<(i64, i64, String)>> {
+    /// Every visible card's id, deck and normalized front, with the card
+    /// it was copied from (itself if it is no copy).
+    async fn fronts(&self, access: &Access) -> Result<Vec<Front>> {
         // One row of JSON instead of a row per card: decoding rows one by
         // one is what costs time with tens of thousands of cards.
         let json: String = sqlx::query_scalar(
-            "SELECT COALESCE(json_group_array(json_array(id, deck_id, front)), '[]') FROM cards WHERE user_id = ?",
+            "SELECT COALESCE(json_group_array(json_array(id, deck_id, front, COALESCE(copy_of, id))), '[]')
+             FROM cards WHERE user_id = ?",
         )
         .bind(access.user_id())
         .fetch_one(&self.db)
         .await?;
-        let rows: Vec<(i64, i64, String)> =
+        let rows: Vec<(i64, i64, String, i64)> =
             serde_json::from_str(&json).map_err(|e| AppError::Internal(anyhow::anyhow!("card fronts: {e}")))?;
         Ok(rows
             .into_iter()
-            .filter(|(_, deck, _)| access.can_see_deck(*deck))
-            .map(|(id, deck, front)| (id, deck, normalize(&front)))
+            .filter(|(_, deck, _, _)| access.can_see_deck(*deck))
+            .map(|(id, deck, front, family)| Front { id, deck, text: normalize(&front), family })
             .collect())
     }
 
@@ -317,8 +328,8 @@ impl App {
             .fronts(access)
             .await?
             .into_iter()
-            .filter(|(id, _, f)| Some(*id) != except && near_duplicate(&want, f))
-            .map(|(id, deck, f)| (similarity(&want, &f), id, deck))
+            .filter(|f| Some(f.id) != except && near_duplicate(&want, &f.text))
+            .map(|f| (similarity(&want, &f.text), f.id, f.deck))
             .collect();
         hits.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
         hits.truncate(3);
@@ -343,13 +354,10 @@ impl App {
             .chain(split_flag(card, secs.get(&card.id).copied()))
             .collect();
         let me = normalize(&card.front);
-        if let Some((other, _, _)) = self
-            .fronts(access)
-            .await?
-            .into_iter()
-            .find(|(id, _, f)| *id != card.id && near_duplicate(&me, f))
-        {
-            flags.push(duplicate_flag(other));
+        let fronts = self.fronts(access).await?;
+        let family = fronts.iter().find(|f| f.id == card.id).map_or(card.id, |f| f.family);
+        if let Some(other) = fronts.iter().find(|f| f.family != family && near_duplicate(&me, &f.text)) {
+            flags.push(duplicate_flag(other.id));
         }
         flags.retain(|f| back_again(f.kind, dismissed.get(&(card.id, f.kind)).copied(), lapses_for(card, &items, f)));
         Ok(flags)
@@ -432,18 +440,19 @@ impl App {
         }
 
         // Near-duplicate fronts: the same words.
-        let fronts: Vec<(i64, i64, String)> = self.fronts(access).await?;
-        let mut by_text: HashMap<&str, Vec<i64>> = HashMap::new();
-        for (id, _, f) in &fronts {
-            if !f.is_empty() {
-                by_text.entry(f.as_str()).or_default().push(*id);
+        // Copies of one card (merged decks) are one family, not duplicates.
+        let fronts = self.fronts(access).await?;
+        let mut by_text: HashMap<&str, Vec<&Front>> = HashMap::new();
+        for f in &fronts {
+            if !f.text.is_empty() {
+                by_text.entry(f.text.as_str()).or_default().push(f);
             }
         }
-        let deck_of: HashMap<i64, i64> = fronts.iter().map(|(id, deck, _)| (*id, *deck)).collect();
-        for ids in by_text.values().filter(|ids| ids.len() > 1) {
-            for &id in ids.iter().filter(|id| in_scope(deck_of[id])) {
-                let other = ids.iter().copied().find(|o| *o != id).unwrap_or(id);
-                found.entry(id).or_insert((None, vec![])).1.push((duplicate_flag(other), 0));
+        for same in by_text.values() {
+            for me in same.iter().filter(|f| in_scope(f.deck)) {
+                if let Some(other) = same.iter().find(|o| o.family != me.family) {
+                    found.entry(me.id).or_insert((None, vec![])).1.push((duplicate_flag(other.id), 0));
+                }
             }
         }
 

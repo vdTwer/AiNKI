@@ -28,7 +28,7 @@ use crate::{
 const SPLIT_VERSION: i64 = 1;
 
 /// How a multicard's back is split into items.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, sqlx::Type, schemars::JsonSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, sqlx::Type, schemars::JsonSchema)]
 #[serde(rename_all = "lowercase")]
 #[sqlx(type_name = "TEXT", rename_all = "lowercase")]
 pub enum Split {

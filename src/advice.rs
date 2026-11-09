@@ -1009,7 +1009,8 @@ impl App {
         for a in known.attention {
             *flagged.entry(a.card.deck_id).or_default() += 1;
         }
-        for d in known.decks {
+        // A deck put to rest was set aside on purpose; the coach leaves it be.
+        for d in known.decks.iter().filter(|d| d.deck.status.is_active()) {
             s.due_today += d.due_total();
             if !user.catch_up {
                 s.held_back += (uncapped.get(&d.deck.id).copied().unwrap_or(0) - d.review_due).max(0);
