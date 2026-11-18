@@ -9,6 +9,7 @@ use tracing_subscriber::EnvFilter;
 
 mod auth;
 mod advice;
+mod chess;
 mod coach;
 mod error;
 mod format;
