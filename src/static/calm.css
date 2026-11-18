@@ -2255,3 +2255,37 @@ html.calm .first-steps .lede { margin: 0 0 .75rem; font-size: 1.25rem; color: va
 html.calm .sheet fieldset.merge-decks { margin: 0; padding: 8px 0 0; }
 html.calm .sheet fieldset.merge-decks legend { padding: 12px 0 6px; font-weight: 400; color: var(--ink); font-size: 1rem; }
 html.calm .merge-link { margin-top: 1.5rem; }
+
+/* ----- chess cards --------------------------------------------------------
+   A quiet board in the page's own greys. The right move is Orchid, as the
+   board is something you press; the wrong one is faint ink. */
+html.calm {
+  --sq-light: #f7f4f1;
+  --sq-dark: #ddd5cc;
+  --sq-line: transparent;
+  --arrow-right: var(--accent);
+  --arrow-wrong: var(--faint);
+}
+@media (prefers-color-scheme: dark) {
+  html.calm { --sq-light: #3b3734; --sq-dark: #2a2725; --sq-line: transparent; }
+}
+html.calm .chess-study .card-area { padding-top: 4vh; }
+html.calm .chess-board { max-width: min(26rem, 56vh); }
+html.calm .chess-board .board-box { border-radius: 6px; overflow: hidden; }
+html.calm .chess-front .to-move {
+  font-size: .75rem;
+  letter-spacing: .08em;
+  font-variant-caps: all-small-caps;
+  color: var(--faint);
+}
+html.calm .chess-front .md { font-size: 1.47rem; line-height: 1.3; }
+html.calm .chess-back { text-align: center; }
+html.calm .chess-back .verdict { font-size: 1.6rem; margin: .2rem 0; }
+html.calm .chess-back .verdict b, html.calm .chess-back .also b { font-weight: 500; }
+html.calm .chess-back .also { font-size: 1.13rem; color: var(--muted); margin: .3rem 0 0; }
+html.calm .chess-back .comment { font-size: 1.13rem; margin-top: .9rem; }
+html.calm .chess-back .comment p { margin: 0 0 .5rem; }
+html.calm .cm-chessboard.ainki .marker-square { fill: var(--accent); opacity: .16; }
+html.calm .cm-chessboard.ainki .marker-dot { fill: var(--accent); opacity: .35; }
+html.calm .chess-move { display: flex; flex-direction: column; align-items: center; }
+html.calm .card-form[data-kind=chess] textarea { font-family: var(--mono); font-size: 1rem !important; text-align: left; }

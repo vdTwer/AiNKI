@@ -22,8 +22,10 @@ use crate::{
     App, AppState,
     advice::{self, Advice},
     auth::{Access, User},
+    chess::{self, Chess},
     coach,
     error::AppError,
+    kind::CardKind,
     fuzzy, import, insight, invites, lessons, markdown, mcp, media, multi::{self, Piece, Split}, now, oauth, presets,
     security::{self, ClientIp, Flash},
     scheduler::{self, CardState, Rating},
@@ -37,6 +39,15 @@ const CALM_CSS: &str = include_str!("static/calm.css");
 const THEME_JS: &str = include_str!("static/theme.js");
 const APP_JS: &str = include_str!("static/app.js");
 const DESK_JS: &str = include_str!("static/desk.js");
+// The chess board (vendored, see docs/chess.md), loaded by app.js only on
+// pages with a chess card. Served under /chess/<asset version>/.
+const CHESS_FILES: &[(&str, &str, &str)] = &[
+    ("board.js", "text/javascript; charset=utf-8", include_str!("static/chess/board.js")),
+    ("board.css", "text/css; charset=utf-8", include_str!("static/chess/board.css")),
+    ("pieces/standard.svg", "image/svg+xml", include_str!("static/chess/pieces/standard.svg")),
+    ("extensions/arrows/arrows.svg", "image/svg+xml", include_str!("static/chess/extensions/arrows/arrows.svg")),
+    ("extensions/markers/markers.svg", "image/svg+xml", include_str!("static/chess/extensions/markers/markers.svg")),
+];
 // Two cards, Wild Orchid behind Terra Cotta, with the "done" tick.
 const FAVICON_SVG: &str = include_str!("static/favicon.svg");
 const FAVICON_PNG: &[u8] = include_bytes!("static/favicon-32.png");
@@ -174,6 +185,7 @@ pub fn router(app: AppState) -> Router {
         .route("/app.js", get(|q: RawQuery| asset(q, "text/javascript; charset=utf-8", APP_JS)))
         .route("/desk.js", get(|q: RawQuery| asset(q, "text/javascript; charset=utf-8", DESK_JS)))
         .route("/fonts/{name}", get(font_file))
+        .route("/chess/{version}/{*path}", get(chess_file))
         .route("/favicon.svg", get(|| async { static_file("image/svg+xml", FAVICON_SVG.as_bytes(), false) }))
         // Browsers ask for /favicon.ico on their own; a PNG there works everywhere.
         .route("/favicon.ico", get(|| async { static_file("image/png", FAVICON_PNG, false) }))
@@ -367,7 +379,10 @@ pub fn urlenc(s: &str) -> String {
 fn asset_version() -> &'static str {
     static VERSION: std::sync::OnceLock<String> = std::sync::OnceLock::new();
     VERSION.get_or_init(|| {
-        let all = [CSS, CALM_CSS, THEME_JS, APP_JS, DESK_JS].concat();
+        let mut all = [CSS, CALM_CSS, THEME_JS, APP_JS, DESK_JS].concat();
+        for (_, _, body) in CHESS_FILES {
+            all.push_str(body);
+        }
         crate::auth::sha256_hex(&all)[..10].to_string()
     })
 }
@@ -651,6 +666,19 @@ fn static_file(content_type: &'static str, body: &'static [u8], forever: bool) -
 async fn asset(RawQuery(q): RawQuery, content_type: &'static str, body: &'static str) -> Response {
     let current = q.and_then(|q| q.strip_prefix("v=").map(|v| v == asset_version())).unwrap_or(false);
     static_file(content_type, body.as_bytes(), current)
+}
+
+/// The board's files. Under the current version they never change.
+async fn chess_file(Path((version, path)): Path<(String, String)>) -> Response {
+    match CHESS_FILES.iter().find(|(n, _, _)| *n == path) {
+        Some((_, kind, body)) => static_file(kind, body.as_bytes(), version == asset_version()),
+        None => StatusCode::NOT_FOUND.into_response(),
+    }
+}
+
+/// Where app.js finds the board's files.
+fn chess_assets() -> String {
+    format!("/chess/{}/", asset_version())
 }
 
 async fn font_file(Path(name): Path<String>) -> Response {
@@ -1320,6 +1348,8 @@ struct StudyQuery {
     /// From the reveal form: felt sure (1) or not (0), and what was typed.
     sure: Option<u8>,
     typed: Option<String>,
+    /// A chess card's move, in UCI; "-" when the move was asked for.
+    played: Option<String>,
 }
 
 /// How a card is on the page: since when, whether turned over, and what
@@ -1329,11 +1359,13 @@ struct Shown {
     revealed: bool,
     sure: Option<bool>,
     typed: Option<String>,
+    /// A chess card's move (UCI), or "-" for none.
+    played: Option<String>,
 }
 
 impl Shown {
     fn front(at: i64) -> Self {
-        Shown { at, revealed: false, sure: None, typed: None }
+        Shown { at, revealed: false, sure: None, typed: None, played: None }
     }
 }
 
@@ -1458,6 +1490,13 @@ async fn study_card(
     let timed_out = revealed && limit > 0 && now() - shown.at > limit + 1;
     let (done, total) = app.session_progress(access, q_deck).await?;
     let leech = app.leech_note(card).await?.is_some();
+    if card.kind == CardKind::Chess {
+        let foot = study_foot(&deck.name, deck.id, done, total, q_deck, Some(card.id), leech);
+        return Ok(page(Some(Nav::Study), "Study", Some(user), Some("study"), html! {
+            (flash(msg))
+            (chess_study(card, q_deck, shown, foot))
+        }));
+    }
     let four = user.four_buttons;
     let buttons: Vec<(Rating, &str, &str)> = if four {
         vec![
@@ -1633,6 +1672,153 @@ fn reveal_button(href: &str, revealed: bool) -> Markup {
     }
 }
 
+// ----- chess cards ----------------------------------------------------------
+
+/// The board: app.js puts the real one (cm-chessboard) in place. Until then,
+/// and without JavaScript, the pieces stand on a plain grid. White plays
+/// up the page, unless it is Black's move.
+/// A turned card also names the right moves, the move played and whether it
+/// was right, all in UCI for the board.
+struct Turned {
+    answers: String,
+    played: Option<String>,
+    right: bool,
+}
+
+fn chess_board(c: &Chess, mode: &str, turned: Option<&Turned>) -> Markup {
+    let black = c.board.side_to_move() == cozy_chess::Color::Black;
+    let mut squares = c.squares();
+    if black {
+        squares.reverse();
+    }
+    html! {
+        div.chess-board data-fen=(c.board.to_string()) data-mode=(mode) data-orient=(if black { "b" } else { "w" }) data-assets=(chess_assets())
+            data-answers=[turned.map(|t| &t.answers)] data-played=[turned.and_then(|t| t.played.as_ref())] data-right=[turned.map(|t| u8::from(t.right))] {
+            div.board-box {
+                div.plain-board role="img" aria-label=(format!("Position: {}", c.board)) {
+                    @for (sq, glyph) in &squares {
+                        @let dark = (sq.file() as usize + sq.rank() as usize) % 2 == 0;
+                        span.sq.dark[dark] { @if let Some(g) = glyph { (g.to_string()) } }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// What turning a chess card says: right or not, the moves, the comment.
+fn chess_verdict(c: &Chess, played: Option<&str>) -> Markup {
+    let mv = played.and_then(|p| chess::parse_move(&c.board, p));
+    let right = mv.is_some_and(|m| c.grade(&chess::uci(&c.board, m)).is_some_and(|v| v.right));
+    let several = c.moves.len() > 1;
+    let answer = c.answer_san().replace(", ", " or ");
+    html! {
+        @match mv {
+            Some(m) if right => {
+                p.verdict.right { "Right: " b { (chess::san(&c.board, m)) } "." }
+                @if several { p.also { "Right moves: " (answer) "." } }
+            }
+            Some(m) => {
+                p.verdict.wrong { "Not this time. " "You played " b { (chess::san(&c.board, m)) } "." }
+                p.also { @if several { "Right moves: " } @else { "The move is " } b { (answer) } "." }
+            }
+            None => p.verdict.wrong { @if several { "Right moves: " } @else { "The move is " } b { (answer) } "." },
+        }
+        @if !c.comment.is_empty() { div.md.comment { (PreEscaped(markdown::render(&c.comment))) } }
+    }
+}
+
+/// A chess card on the study page. The first real move on the board is the
+/// answer (arrows, drawn with the right mouse button, never count): it is
+/// sent at once and graded here, Good when right and Again when not. The
+/// turned card shows both moves and the comment, and the board stays free
+/// to explore. Without JavaScript the move is typed.
+fn chess_study(card: &Card, q_deck: Option<i64>, shown: &Shown, foot: Markup) -> Markup {
+    let c = match chess::of_card(card) {
+        Ok(c) => c,
+        // Saved chess cards always read; should one not, it can be fixed.
+        Err(e) => {
+            return html! {
+                section.study {
+                    p.form-error { "This chess card can't be shown: " (e.to_string()) ". " a href=(format!("/cards/{}{}", card.id, CardFrom::study(q_deck).query())) { "Fix it" } }
+                    (foot)
+                }
+            };
+        }
+    };
+    let played = shown.played.as_deref().filter(|p| *p != "-");
+    let revealed = shown.revealed;
+    let turned = revealed.then(|| {
+        let verdict = played.and_then(|p| c.grade(p));
+        Turned {
+            answers: c.uci_moves().join(" "),
+            played: verdict.as_ref().map(|v| chess::uci(&c.board, v.played)),
+            right: verdict.is_some_and(|v| v.right),
+        }
+    });
+    html! {
+        section.study.chess-study.revealed[revealed] {
+            div.card-area {
+                (state_tag(card.card_state()))
+                (chess_board(&c, if revealed { "shown" } else { "ask" }, turned.as_ref()))
+                section.face.front.chess-front {
+                    p.to-move { (chess::to_move(&c.board)) }
+                    @if !c.prompt.is_empty() { div.md { (PreEscaped(markdown::render(&c.prompt))) } }
+                }
+                @if revealed {
+                    hr.divider;
+                    section.face.back.chess-back id="answer" { (chess_verdict(&c, played)) }
+                }
+            }
+            @if revealed {
+                div.answers.cols-1 {
+                    a.btn.primary.next href=(study_url(q_deck)) data-key=" " { span.label { "Continue" " " span.key { "space" } } }
+                }
+                p.board-tools hidden { button.link.board-reset type="button" { "Back to the start" } }
+            } @else {
+                form.chess-move method="post" action="/study/answer" {
+                    input type="hidden" name="card" value=(card.id);
+                    input type="hidden" name="reps" value=(card.reps);
+                    input type="hidden" name="t" value=(shown.at);
+                    @if let Some(d) = q_deck { input type="hidden" name="deck" value=(d); }
+                    label.typed-move {
+                        span.face-label { "Your move" }
+                        input type="text" name="played" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="12" placeholder="Like Nf3";
+                    }
+                    button.btn.primary.play type="submit" { "Play" }
+                    p.give-up { button.link type="submit" name="give_up" value="1" formnovalidate { "Show the move" } }
+                }
+            }
+            (foot)
+        }
+    }
+}
+
+/// A move played on a chess card: graded, answered, and the card turned.
+/// A move that isn't legal (only typed ones can be) changes nothing.
+async fn chess_answer(app: &App, access: &Access, f: AnswerForm, duration: Option<i64>) -> WebResult {
+    let back = study_url(f.deck);
+    let (rating, played) = match f.played.as_deref().filter(|p| !p.trim().is_empty() && f.give_up != Some(1)) {
+        None => {
+            chess::of_card(&app.card(access, f.card).await?)?;
+            (Rating::Again, "-".to_string())
+        }
+        Some(p) => match app.play_move(access, f.card, p).await {
+            Ok((_, c, v)) => (v.rating(), chess::uci(&c.board, v.played)),
+            Err(AppError::BadRequest(m)) => return Ok(redirect_msg(back, &format!("{}.", capitalize(&m)))),
+            Err(e) => return Err(e.into()),
+        },
+    };
+    match app.answer_card(access, f.card, rating, duration, Some(f.reps)).await {
+        Ok(_) => app.note_answer(access, f.card, None, false).await?,
+        // Sent twice: the first one counted.
+        Err(AppError::Conflict(_)) => {}
+        Err(e) => return Err(e.into()),
+    }
+    let deck = f.deck.map(|d| format!("&deck={d}")).unwrap_or_default();
+    Ok(redirect(format!("/study?card={}&show=1&played={played}{deck}", f.card)))
+}
+
 /// One item's Markdown, without the paragraph around it when it is a
 /// single line, so it sits inside a row.
 fn item_md(text: &str) -> Markup {
@@ -1753,7 +1939,21 @@ fn multi_study(card: &Card, how: Split, items: &[multi::CardItem], q_deck: Optio
 }
 
 /// The card being written as it will look when studied.
-fn card_preview(front: &str, back: &str, how: Option<Split>) -> Markup {
+fn card_preview(front: &str, back: &str, how: Option<Split>, kind: CardKind) -> Markup {
+    if kind == CardKind::Chess {
+        return match chess::read(front, back) {
+            Ok(c) => html! {
+                (chess_board(&c, "preview", Some(&Turned { answers: c.uci_moves().join(" "), played: None, right: false })))
+                section.face.front.chess-front {
+                    p.to-move { (chess::to_move(&c.board)) }
+                    @if !c.prompt.is_empty() { div.md { (PreEscaped(markdown::render(&c.prompt))) } }
+                }
+                hr.divider;
+                section.face.back.chess-back { (chess_verdict(&c, None)) }
+            },
+            Err(e) => html! { p.form-error { (capitalize(&e)) "." } },
+        };
+    }
     let pieces = how.and_then(|h| multi::split(back, h));
     html! {
         section.face.front { (face(front, &None)) }
@@ -1775,6 +1975,8 @@ struct PreviewForm {
     back: String,
     #[serde(default)]
     multi: String,
+    #[serde(default)]
+    kind: String,
 }
 
 /// For the card form while you write: how the card will look, and which
@@ -1782,8 +1984,10 @@ struct PreviewForm {
 async fn card_preview_json(State(app): State<AppState>, user: WebUser, Form(f): Form<PreviewForm>) -> WebResult {
     let splits: Vec<&str> = multi::splits(&f.back).into_iter().map(Split::as_str).collect();
     let how = Split::parse(&f.multi);
-    let html = card_preview(&f.front, &f.back, how).into_string();
-    let hints = write_hints(&app, &user.access(), &f.front, &f.back, how, f.card).await?;
+    let kind = CardKind::parse(&f.kind).unwrap_or_default();
+    let html = card_preview(&f.front, &f.back, how, kind).into_string();
+    // The coach's hints are about text cards.
+    let hints = if kind.is_basic() { write_hints(&app, &user.access(), &f.front, &f.back, how, f.card).await? } else { vec![] };
     Ok((
         [(header::CONTENT_TYPE, "application/json")],
         serde_json::json!({ "splits": splits, "html": html, "hints": hint_lines(&hints).into_string() }).to_string(),
@@ -1910,7 +2114,7 @@ async fn find_json(State(app): State<AppState>, user: WebUser, Query(f): Query<F
         let back = fuzzy::score(q, &c.back).map(|s| s - 10);
         let Some(s) = front.max(back) else { continue };
         let deck = names.get(&c.deck_id).cloned().unwrap_or_default();
-        cards.push(Found { kind: "card", title: find_line(&c.front, 80), sub: deck, href: format!("/cards/{}", c.id), score: s });
+        cards.push(Found { kind: "card", title: find_line(&c.kind.title(&c.front), 80), sub: deck, href: format!("/cards/{}", c.id), score: s });
     }
     // Newest first already, so equal scores keep the newer card on top.
     cards.sort_by(|a, b| b.score.cmp(&a.score));
@@ -1933,11 +2137,17 @@ async fn study(State(app): State<AppState>, user: WebUser, Flash(msg): Flash, Qu
     if let (Some(card_id), Some(1)) = (q.card, q.show) {
         let card = app.card(&access, card_id).await?;
         let deck = app.deck(&access, card.deck_id).await?;
-        let shown = Shown {
-            at: q.t.unwrap_or_else(now),
-            revealed: true,
-            sure: q.sure.map(|s| s == 1),
-            typed: q.typed.clone(),
+        // A chess card turns only with a move: after an undo it asks again.
+        let shown = if card.kind == CardKind::Chess && q.played.is_none() {
+            Shown::front(now())
+        } else {
+            Shown {
+                at: q.t.unwrap_or_else(now),
+                revealed: true,
+                sure: q.sure.map(|s| s == 1),
+                typed: q.typed.clone(),
+                played: q.played.clone(),
+            }
         };
         return Ok(study_card(&app, &access, &user.0, &msg, &card, &deck, q.deck, &shown).await?.into_response());
     }
@@ -2099,12 +2309,19 @@ struct AnswerForm {
     sure: Option<String>,
     /// Time ran out on a timed card: it counts as Again.
     timeout: Option<u8>,
+    /// Chess cards: the move played (UCI from the board, or typed SAN).
+    played: Option<String>,
+    /// Chess cards: the move was asked for instead; it counts as Again.
+    give_up: Option<u8>,
 }
 
 async fn study_answer(State(app): State<AppState>, user: WebUser, Form(f): Form<AnswerForm>) -> WebResult {
     // Like Anki, cap the counted thinking time at 60 seconds.
     let duration = f.t.map(|t| ((now() - t).clamp(0, 60)) * 1000);
     let access = user.access();
+    if f.played.is_some() || f.give_up == Some(1) {
+        return chess_answer(&app, &access, f, duration).await;
+    }
     let timed_out = f.timeout == Some(1);
     let sure = match f.sure.as_deref() {
         Some("1") => Some(true),
@@ -2657,7 +2874,7 @@ async fn deck_page(
                     li {
                         a.row href=(format!("/cards/{}", c.id)) {
                             span.grow {
-                                @if c.front.is_empty() { "[image]" } @else { (truncate(&c.front, 80)) }
+                                @if c.front.is_empty() { "[image]" } @else { (truncate(&c.kind.title(&c.front), 80)) }
                                 br;
                                 span.muted.small { (truncate(&c.back, 80)) }
                             }
@@ -2925,6 +3142,7 @@ struct CardFormData {
     remove_back_image: bool,
     /// How to learn it item by item, if at all.
     multi: Option<Split>,
+    kind: CardKind,
     /// An image was picked; it can't be refilled if the form comes back.
     had_upload: bool,
 }
@@ -2960,6 +3178,7 @@ async fn read_card_form(mp: Multipart) -> Result<CardFormData, AppError> {
         remove_back_image: fields.contains_key("remove_back_image"),
         // "list" is what the form sent before multicards.
         multi: Split::parse(&text("multi")).or(fields.contains_key("list").then_some(Split::List)),
+        kind: CardKind::parse(&text("kind")).unwrap_or_default(),
         ..Default::default()
     };
     f.front_upload = fields.remove("front_image").filter(|d| !d.is_empty());
@@ -3020,11 +3239,14 @@ const NEW_DECK: &str = "new";
 
 /// One side of the card being written: its text, and an optional image
 /// that can be picked, dropped or pasted.
-fn face_field(side: &str, title: &str, placeholder: &str, text: &str, image: &Option<String>, autofocus: bool) -> Markup {
+/// `words` are the side's title and placeholder for each card kind, in the
+/// order of `CardKind::ALL`; app.js switches them when the kind changes.
+fn face_field(side: &str, words: [(&str, &str); 2], kind: CardKind, text: &str, image: &Option<String>, autofocus: bool) -> Markup {
+    let (title, placeholder) = words[CardKind::ALL.iter().position(|&k| k == kind).unwrap_or(0)];
     html! {
         div.face-edit data-face=(side) {
-            label.face-label for=(side) { (title) }
-            textarea id=(side) name=(side) rows="3" placeholder=(placeholder) autofocus[autofocus] { (text) }
+            label.face-label for=(side) data-basic=(words[0].0) data-chess=(words[1].0) { (title) }
+            textarea id=(side) name=(side) rows="3" placeholder=(placeholder) data-basic=(words[0].1) data-chess=(words[1].1) autofocus[autofocus] { (text) }
             @if let Some(img) = image {
                 div.face-image.current {
                     img.thumb src=(format!("/media/{img}")) alt=(format!("{title} image"));
@@ -3058,6 +3280,7 @@ struct CardDraft<'a> {
     front_image: &'a Option<String>,
     back_image: &'a Option<String>,
     multi: Option<Split>,
+    kind: CardKind,
 }
 
 /// A hint from the coach while writing, with a link when it points at
@@ -3095,7 +3318,7 @@ fn hint_lines(hints: &[WriteHint]) -> Markup {
 fn card_form(action: &str, decks: &[crate::service::Deck], c: &CardDraft, submit: &str, allow_new_deck: bool, hints: &[WriteHint]) -> Markup {
     let new_selected = allow_new_deck && (decks.is_empty() || c.deck.is_none());
     html! {
-        form.card-form method="post" action=(action) enctype="multipart/form-data" data-card=[c.id] {
+        form.card-form method="post" action=(action) enctype="multipart/form-data" data-card=[c.id] data-kind=(c.kind.as_str()) {
             div.deck-line {
                 label.deck-pick { span.deck-label { "Deck" }
                     span.select {
@@ -3113,11 +3336,24 @@ fn card_form(action: &str, decks: &[crate::service::Deck], c: &CardDraft, submit
                         input type="text" name="new_deck" maxlength="200" placeholder="e.g. Spanish verbs" value=(c.new_deck);
                     }
                 }
+                label.deck-pick.kind-pick { span.deck-label { "Kind" }
+                    span.select {
+                        select name="kind" {
+                            @for k in CardKind::ALL { option value=(k.as_str()) selected[k == c.kind] { (k.label()) } }
+                        }
+                    }
+                }
             }
             div.sheet {
-                (face_field("front", "Front", "Question", c.front, c.front_image, true))
+                (face_field("front", [("Front", "Question"), ("Position", "A FEN. Below it, after a blank line, a question if you like.")], c.kind, c.front, c.front_image, true))
+                // Chess: the position on a board, where playing a move
+                // writes it as the answer (app.js).
+                div.chess-edit hidden[c.kind != CardKind::Chess] {
+                    div.chess-board data-mode="edit" data-assets=(chess_assets()) {}
+                    p.hint-inline { "Play the right move on the board to write it down; play it again to take it back." }
+                }
                 hr.divider;
-                (face_field("back", "Back", "Answer", c.back, c.back_image, false))
+                (face_field("back", [("Back", "Answer"), ("Move", "The right move, like Nf3 or g1f3; several with commas. Below it, after a blank line, a comment if you like.")], c.kind, c.back, c.back_image, false))
                 // The ways the back can be split are offered; app.js keeps
                 // them up to date while you write.
                 @let splits = multi::splits(c.back);
@@ -3151,6 +3387,7 @@ fn card_form(action: &str, decks: &[crate::service::Deck], c: &CardDraft, submit
 #[derive(Deserialize)]
 struct NewCardQuery {
     deck: Option<i64>,
+    kind: Option<String>,
 }
 
 fn card_new_view(user: &User, decks: &[Deck], c: &CardDraft, msg: &Option<String>, error: Option<&str>) -> Markup {
@@ -3174,7 +3411,8 @@ async fn card_new_page(State(app): State<AppState>, user: WebUser, Flash(msg): F
         Some(id) => Some(id),
         None => app.last_used_deck(&access).await?.or_else(|| decks.first().map(|d| d.id)),
     };
-    let draft = CardDraft { id: None, deck, new_deck: "", front: "", back: "", front_image: &None, back_image: &None, multi: None };
+    let kind = q.kind.as_deref().and_then(CardKind::parse).unwrap_or_default();
+    let draft = CardDraft { id: None, deck, new_deck: "", front: "", back: "", front_image: &None, back_image: &None, multi: None, kind };
     Ok(card_new_view(&user.0, &decks, &draft, &msg, None).into_response())
 }
 
@@ -3216,12 +3454,19 @@ async fn card_create(State(app): State<AppState>, user: WebUser, mp: Multipart) 
             Some(d) => Some(app.store_image(&access, d).await?.id),
             None => None,
         };
-        app.create_card(&access, deck, &f.front, &f.back, front_image, back_image, f.multi).await?;
+        app.create_card_of(&access, deck, f.kind, &f.front, &f.back, front_image, back_image, f.multi).await?;
         Ok((deck, msg))
     }
     .await;
     match result {
-        Ok((deck, msg)) => Ok(redirect_msg(format!("/cards/new?deck={deck}"), &msg)),
+        // The next card is likely of the same kind.
+        Ok((deck, msg)) => Ok(redirect_msg(
+            match f.kind {
+                CardKind::Basic => format!("/cards/new?deck={deck}"),
+                k => format!("/cards/new?deck={deck}&kind={}", k.as_str()),
+            },
+            &msg,
+        )),
         Err(e) => {
             let msg = with_image_hint(fixable(&e).ok_or(e)?, &f);
             let decks = open_decks(app.decks(&access).await?, f.deck);
@@ -3234,6 +3479,7 @@ async fn card_create(State(app): State<AppState>, user: WebUser, mp: Multipart) 
                 front_image: &None,
                 back_image: &None,
                 multi: f.multi,
+                kind: f.kind,
             };
             Ok(form_again(card_new_view(&user.0, &decks, &draft, &None, Some(&msg))))
         }
@@ -3302,6 +3548,7 @@ async fn card_view(
             front_image: if f.remove_front_image { &None } else { &card.front_image },
             back_image: if f.remove_back_image { &None } else { &card.back_image },
             multi: f.multi,
+            kind: f.kind,
         },
         None => CardDraft {
             id: Some(card.id),
@@ -3312,6 +3559,7 @@ async fn card_view(
             front_image: &card.front_image,
             back_image: &card.back_image,
             multi: card.multi,
+            kind: card.kind,
         },
     };
     Ok(layout_in(
@@ -3440,6 +3688,7 @@ async fn card_update(
                 front_image,
                 back_image,
                 multi: Some(f.multi),
+                kind: Some(f.kind),
             },
         )
         .await?;
@@ -3586,7 +3835,7 @@ async fn attention_page(State(app): State<AppState>, user: WebUser, Flash(msg): 
                         li {
                             a.row href=(format!("/cards/{}", a.card.id)) {
                                 span.grow {
-                                    @if a.card.front.is_empty() { "[image]" } @else { (truncate(&a.card.front, 80)) }
+                                    @if a.card.front.is_empty() { "[image]" } @else { (truncate(&a.card.kind.title(&a.card.front), 80)) }
                                     br;
                                     span.muted.small { (a.flags.iter().map(|f| f.kind.label()).collect::<Vec<_>>().join(" · ")) }
                                 }
@@ -4675,6 +4924,29 @@ async fn import_page(State(app): State<AppState>, user: WebUser, Flash(msg): Fla
                     div.form-foot.end { button.btn type="submit" { "Import CSV" } }
                 }
             }
+            h2 { "Chess positions" }
+            p { "One position per line, each becomes a chess card: a FEN, then the right move and, after a semicolon, a comment. EPD files (" code { "bm" } " and " code { "c0" } ") and Lichess's puzzle CSV work too." }
+            @if !decks.is_empty() {
+                form method="post" action="/import" enctype="multipart/form-data" {
+                    input type="hidden" name="kind" value="chess";
+                    div.deck-line {
+                        label.deck-pick { span.deck-label { "Into deck" }
+                            span.select { select name="deck" { @for d in &decks { option value=(d.id) { (deck_plain(&d.name)) } } } }
+                        }
+                    }
+                    div.sheet.paste {
+                        label.face-label for="chess-text" { "Paste the positions" }
+                        textarea.csv id="chess-text" name="text" rows="4" placeholder="r1bqkbnr/pppp1ppp/2n5/4p3/2B1P3/5N2/PPPP1PPP/RNBQK2R w KQkq - 4 4 Ng5; Attacks f7" {}
+                        label.file.attach.icon-link {
+                            (icon(ICON_FILE, PAGE_ICON))
+                            span.attach-text { "Or choose a file" }
+                            " " span.muted.optional { "(.epd, .fen, .csv, .txt)" }
+                            input type="file" name="file" accept=".epd,.fen,.csv,.txt";
+                        }
+                    }
+                    div.form-foot.end { button.btn type="submit" { "Import positions" } }
+                }
+            }
         },
     )
     .into_response())
@@ -4703,6 +4975,14 @@ async fn import_upload(State(app): State<AppState>, user: WebUser, mp: Multipart
             }
             app.import_csv(&access, deck, &body).await?
         }
+        "chess" => {
+            let deck: i64 = text("deck").parse().map_err(|_| AppError::bad("pick a deck"))?;
+            let mut body = String::from_utf8_lossy(file.as_deref().unwrap_or_default()).to_string();
+            if body.trim().is_empty() {
+                body = text("text");
+            }
+            app.import_chess(&access, deck, &body).await?
+        }
         _ => return Err(AppError::bad("unknown import type")),
     }) }
     .await;
@@ -4721,7 +5001,13 @@ async fn import_upload(State(app): State<AppState>, user: WebUser, mp: Multipart
         let names: Vec<String> = report.decks_created.iter().map(|n| deck_plain(n)).collect();
         msg += &format!(". New decks: {}", names.join(", "));
     }
-    if report.skipped > 0 {
+    if !report.problems.is_empty() {
+        // The first few, so the file can be fixed.
+        msg += &format!(". Skipped {}: {}", count(report.skipped, "line"), report.problems.iter().take(3).cloned().collect::<Vec<_>>().join("; "));
+        if report.problems.len() > 3 {
+            msg += "; …";
+        }
+    } else if report.skipped > 0 {
         msg += &format!(". Skipped {} empty", report.skipped);
     }
     msg.push('.');
