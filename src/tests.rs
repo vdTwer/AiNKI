@@ -15,6 +15,7 @@ use crate::{
 };
 
 mod anki;
+mod chess;
 mod concurrency;
 mod merge;
 mod upgrade;

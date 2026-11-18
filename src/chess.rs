@@ -13,6 +13,15 @@
 
 use cozy_chess::{Board, Color, GameStatus, Move, Piece, Square, util};
 
+use crate::{
+    App,
+    auth::Access,
+    error::{AppError, Result},
+    kind::CardKind,
+    scheduler::Rating,
+    service::Card,
+};
+
 /// A chess card read from its two sides.
 #[derive(Debug, Clone)]
 pub struct Chess {
@@ -216,6 +225,34 @@ fn glyph(piece: Piece, color: Color) -> char {
     let black = ['♟', '♞', '♝', '♜', '♛', '♚'];
     let i = Piece::ALL.iter().position(|&p| p == piece).unwrap_or(0);
     if color == Color::White { white[i] } else { black[i] }
+}
+
+impl Verdict {
+    /// Chess cards grade themselves: a right move is Good, a wrong one Again.
+    pub fn rating(&self) -> Rating {
+        if self.right { Rating::Good } else { Rating::Again }
+    }
+}
+
+impl App {
+    /// A chess card and what the move played on it is worth. Answering is
+    /// left to the caller, with [`Verdict::rating`].
+    pub async fn play_move(&self, access: &Access, card_id: i64, played: &str) -> Result<(Card, Chess, Verdict)> {
+        let card = self.card(access, card_id).await?;
+        let chess = of_card(&card)?;
+        let verdict = chess
+            .grade(played)
+            .ok_or_else(|| AppError::bad(format!("“{}” isn't a legal move in this position", played.trim())))?;
+        Ok((card, chess, verdict))
+    }
+}
+
+/// A chess card's position and answer.
+pub fn of_card(card: &Card) -> Result<Chess> {
+    if card.kind != CardKind::Chess {
+        return Err(AppError::bad("this isn't a chess card"));
+    }
+    read(&card.front, &card.back).map_err(AppError::bad)
 }
 
 // ----- importing -------------------------------------------------------------

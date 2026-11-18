@@ -12,6 +12,7 @@ use crate::{
     App,
     auth::{Access, Actor},
     error::{AppError, Result},
+    kind::CardKind,
     now, presets,
     markdown,
     multi::{Missed, Split},
@@ -121,6 +122,8 @@ pub struct Card {
     /// How a multicard's back is split into items; `None` for a plain card.
     /// See `multi`.
     pub multi: Option<Split>,
+    /// How the card is written and studied; see `kind`.
+    pub kind: CardKind,
 }
 
 impl Card {
@@ -169,6 +172,7 @@ impl Card {
             "created_by": self.created_by,
             "multi": self.multi.map(Split::as_str),
             "is_list": self.multi.is_some(),
+            "kind": self.kind,
         })
     }
 }
@@ -224,6 +228,8 @@ pub struct CardInput {
     /// Learn the back item by item, split this way; `Some(None)` makes it a
     /// plain card again.
     pub multi: Option<Option<Split>>,
+    /// Make it a card of another kind.
+    pub kind: Option<CardKind>,
 }
 
 /// A card's text, as the quick find reads it.
@@ -233,6 +239,7 @@ pub struct CardText {
     pub deck_id: i64,
     pub front: String,
     pub back: String,
+    pub kind: CardKind,
 }
 
 #[derive(Debug, Default, Clone, Deserialize)]
@@ -304,6 +311,20 @@ pub const MAX_NAME: usize = 200;
 pub const MAX_DESCRIPTION: usize = 2_000;
 
 /// Reject oversized text so one request can't bloat the database or pages.
+/// Images and items are for basic cards only.
+fn check_kind(kind: CardKind, images: bool, multi: Option<Split>) -> Result<()> {
+    if kind.is_basic() {
+        return Ok(());
+    }
+    if images {
+        return Err(AppError::bad(format!("{} cards have no images; remove them first", kind.label().to_lowercase())));
+    }
+    if multi.is_some() {
+        return Err(AppError::bad(format!("{} cards can't be learned item by item", kind.label().to_lowercase())));
+    }
+    Ok(())
+}
+
 fn check_len(what: &str, value: &str, max: usize) -> Result<()> {
     if value.chars().count() > max {
         Err(AppError::bad(format!("{what} is too long (at most {max} characters)")))
@@ -878,6 +899,7 @@ impl App {
         Ok(())
     }
 
+    /// A basic card; see [`App::create_card_of`].
     #[allow(clippy::too_many_arguments)]
     pub async fn create_card(
         &self,
@@ -889,12 +911,28 @@ impl App {
         back_image: Option<String>,
         multi: Option<Split>,
     ) -> Result<Card> {
+        self.create_card_of(access, deck_id, CardKind::Basic, front, back, front_image, back_image, multi).await
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub async fn create_card_of(
+        &self,
+        access: &Access,
+        deck_id: i64,
+        kind: CardKind,
+        front: &str,
+        back: &str,
+        front_image: Option<String>,
+        back_image: Option<String>,
+        multi: Option<Split>,
+    ) -> Result<Card> {
         access.require_write()?;
         self.deck(access, deck_id).await?;
         if front.trim().is_empty() && front_image.is_none() {
             return Err(AppError::bad("the front needs text or an image"));
         }
-        let (front, back) = (&markdown::tidy(front), &markdown::tidy(back));
+        check_kind(kind, front_image.is_some() || back_image.is_some(), multi)?;
+        let (front, back) = &kind.tidy(front, back)?;
         if let Some(how) = multi {
             crate::multi::split(back, how).ok_or_else(|| crate::multi::no_items(how))?;
         }
@@ -907,7 +945,7 @@ impl App {
             Actor::Agent { .. } => "agent",
         };
         let id = self
-            .insert_card(access.user_id(), deck_id, front, back, front_image, back_image, source)
+            .insert_card(access.user_id(), deck_id, kind, front, back, front_image, back_image, source)
             .await?;
         let card = self.card(access, id).await?;
         if multi.is_some() {
@@ -922,6 +960,7 @@ impl App {
         &self,
         user_id: i64,
         deck_id: i64,
+        kind: CardKind,
         front: &str,
         back: &str,
         front_image: Option<String>,
@@ -933,9 +972,9 @@ impl App {
         let cap = |x: &str| -> String { x.trim().chars().take(MAX_CARD_TEXT).collect() };
         let (front, back) = (cap(front), cap(back));
         Ok(sqlx::query_scalar(
-            "INSERT INTO cards (user_id, deck_id, front, back, front_image, back_image, position,
+            "INSERT INTO cards (user_id, deck_id, kind, front, back, front_image, back_image, position,
                 created_by, created_at, updated_at, suspended, held)
-             VALUES (?, ?, ?, ?, ?, ?,
+             VALUES (?, ?, ?, ?, ?, ?, ?,
                 (SELECT COALESCE(MAX(position), 0) + 1 FROM cards WHERE user_id = ?), ?, ?, ?,
                 (SELECT status != 'active' FROM decks WHERE id = ?),
                 (SELECT status != 'active' FROM decks WHERE id = ?))
@@ -943,6 +982,7 @@ impl App {
         )
         .bind(user_id)
         .bind(deck_id)
+        .bind(kind)
         .bind(front)
         .bind(back)
         .bind(front_image)
@@ -962,11 +1002,19 @@ impl App {
         let mut card = self.card(access, id).await?;
         let was = card.multi;
         let multi = input.multi.unwrap_or(was);
-        if let Some(f) = input.front {
-            card.front = markdown::tidy(f.trim());
-        }
-        if let Some(b) = input.back {
-            card.back = markdown::tidy(b.trim());
+        let kind = input.kind.unwrap_or(card.kind);
+        if kind.is_basic() {
+            // Only what changed is tidied, so an untouched side stays as it is.
+            if let Some(f) = input.front {
+                card.front = markdown::tidy(f.trim());
+            }
+            if let Some(b) = input.back {
+                card.back = markdown::tidy(b.trim());
+            }
+        } else {
+            let front = input.front.unwrap_or_else(|| card.front.clone());
+            let back = input.back.unwrap_or_else(|| card.back.clone());
+            (card.front, card.back) = kind.tidy(&front, &back)?;
         }
         if let Some(img) = input.front_image {
             self.check_media(access, &img).await?;
@@ -979,15 +1027,18 @@ impl App {
         if card.front.is_empty() && card.front_image.is_none() {
             return Err(AppError::bad("the front needs text or an image"));
         }
+        check_kind(kind, card.front_image.is_some() || card.back_image.is_some(), multi)?;
+        card.kind = kind;
         check_len("front", &card.front, MAX_CARD_TEXT)?;
         check_len("back", &card.back, MAX_CARD_TEXT)?;
         if let Some(how) = multi {
             crate::multi::split(&card.back, how).ok_or_else(|| crate::multi::no_items(how))?;
         }
         sqlx::query(
-            "UPDATE cards SET front = ?, back = ?, front_image = ?, back_image = ?, updated_at = ?
+            "UPDATE cards SET kind = ?, front = ?, back = ?, front_image = ?, back_image = ?, updated_at = ?
              WHERE id = ? AND user_id = ?",
         )
+        .bind(card.kind)
         .bind(&card.front)
         .bind(&card.back)
         .bind(&card.front_image)
@@ -1094,7 +1145,7 @@ impl App {
     /// find, newest first. Only the text: the find scores it in memory.
     pub async fn card_texts(&self, access: &Access) -> Result<Vec<CardText>> {
         let all: Vec<CardText> = sqlx::query_as(
-            "SELECT id, deck_id, front, substr(back, 1, 300) AS back FROM cards
+            "SELECT id, deck_id, front, substr(back, 1, 300) AS back, kind FROM cards
              WHERE user_id = ? ORDER BY created_at DESC, id DESC",
         )
         .bind(access.user_id())
