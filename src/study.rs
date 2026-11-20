@@ -74,6 +74,7 @@ pub struct Timing {
     pub think_ms: Option<i64>,
     pub answer_ms: Option<i64>,
     pub away_ms: Option<i64>,
+    pub paused_ms: Option<i64>,
     pub input: Option<&'static str>,
 }
 
@@ -81,12 +82,19 @@ pub struct Timing {
 const TIMING_MAX_MS: i64 = 24 * 3600 * 1000;
 
 impl Timing {
-    pub fn checked(think_ms: Option<i64>, answer_ms: Option<i64>, away_ms: Option<i64>, input: Option<&str>) -> Self {
+    pub fn checked(
+        think_ms: Option<i64>,
+        answer_ms: Option<i64>,
+        away_ms: Option<i64>,
+        paused_ms: Option<i64>,
+        input: Option<&str>,
+    ) -> Self {
         let ms = |v: Option<i64>| v.filter(|v| (0..=TIMING_MAX_MS).contains(v));
         Timing {
             think_ms: ms(think_ms),
             answer_ms: ms(answer_ms),
             away_ms: ms(away_ms),
+            paused_ms: ms(paused_ms),
             input: ["key", "mouse", "touch", "pen"].into_iter().find(|k| input == Some(*k)),
         }
     }
@@ -118,7 +126,7 @@ impl App {
             return Ok(());
         }
         sqlx::query(
-            "UPDATE review_log SET confidence = ?, timed_out = ?, think_ms = ?, answer_ms = ?, away_ms = ?, input = ?
+            "UPDATE review_log SET confidence = ?, timed_out = ?, think_ms = ?, answer_ms = ?, away_ms = ?, paused_ms = ?, input = ?
              WHERE id = (SELECT MAX(id) FROM review_log WHERE user_id = ? AND card_id = ?)",
         )
         .bind(sure)
@@ -126,6 +134,7 @@ impl App {
         .bind(timing.think_ms)
         .bind(timing.answer_ms)
         .bind(timing.away_ms)
+        .bind(timing.paused_ms)
         .bind(timing.input)
         .bind(access.user_id())
         .bind(card_id)

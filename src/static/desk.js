@@ -698,7 +698,7 @@
   // ----- the ? sheet -------------------------------------------------------
   // Every key, in one place, instead of key caps on the controls.
   var KEYS = [
-    ['Studying', [['Space', 'Show the answer, or Done on a multicard'], ['1', 'Again'], ['3', 'Good'], ['2  4', 'Hard and Easy, when shown'], ['+', 'Ten more seconds on a timed card']]],
+    ['Studying', [['Space', 'Show the answer, or Done on a multicard'], ['1', 'Again'], ['3', 'Good'], ['2  4', 'Hard and Easy, when shown'], ['+', 'Ten more seconds on a timed card'], ['P', 'Pause: the card waits, and the clock with it']]],
     ['Before the answer', [['S', 'Sure'], ['U', 'Not sure'], ['Enter', 'Check a typed answer']]],
     ['Multicards', [['1 – 9', 'Mark an item as remembered']]],
     ['Anywhere', [['A – Z or /', 'Find anything'], ['?', 'Show or hide this list'], ['Esc', 'Close']]]

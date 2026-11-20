@@ -859,29 +859,29 @@ mod http {
         let deck = app.create_deck(&a, "Spanish", "", None).await.unwrap();
         let cookie = login_cookie(&app, "kolja").await;
         let timing = |id: i64| {
-            sqlx::query_as::<_, (Option<i64>, Option<i64>, Option<i64>, Option<String>)>(
-                "SELECT think_ms, answer_ms, away_ms, input FROM review_log WHERE card_id = ?",
+            sqlx::query_as::<_, (Option<i64>, Option<i64>, Option<i64>, Option<i64>, Option<String>)>(
+                "SELECT think_ms, answer_ms, away_ms, paused_ms, input FROM review_log WHERE card_id = ?",
             )
             .bind(id)
             .fetch_one(&app.db)
         };
 
         let card = app.create_card(&a, deck.id, "el perro", "the dog", None, None, None).await.unwrap();
-        let body = format!("card={}&reps=0&rating=3&think_ms=2345&answer_ms=812&away_ms=0&input=key", card.id);
+        let body = format!("card={}&reps=0&rating=3&think_ms=2345&answer_ms=812&away_ms=0&paused_ms=60000&input=key", card.id);
         assert_eq!(submit(&app, &cookie, "/study/answer", &body).await.status(), StatusCode::SEE_OTHER);
-        assert_eq!(timing(card.id).await.unwrap(), (Some(2345), Some(812), Some(0), Some("key".into())));
+        assert_eq!(timing(card.id).await.unwrap(), (Some(2345), Some(812), Some(0), Some(60000), Some("key".into())));
 
         // Nonsense is dropped, not stored and not an error.
         let card = app.create_card(&a, deck.id, "el gato", "the cat", None, None, None).await.unwrap();
-        let body = format!("card={}&reps=0&rating=3&think_ms=-5&answer_ms=99999999999&input=telepathy", card.id);
+        let body = format!("card={}&reps=0&rating=3&think_ms=-5&answer_ms=99999999999&paused_ms=-1&input=telepathy", card.id);
         assert_eq!(submit(&app, &cookie, "/study/answer", &body).await.status(), StatusCode::SEE_OTHER);
-        assert_eq!(timing(card.id).await.unwrap(), (None, None, None, None));
+        assert_eq!(timing(card.id).await.unwrap(), (None, None, None, None, None));
 
         // Without JavaScript nothing is measured.
         let card = app.create_card(&a, deck.id, "la casa", "the house", None, None, None).await.unwrap();
         let body = format!("card={}&reps=0&rating=1&t={}", card.id, now() - 4);
         assert_eq!(submit(&app, &cookie, "/study/answer", &body).await.status(), StatusCode::SEE_OTHER);
-        assert_eq!(timing(card.id).await.unwrap(), (None, None, None, None));
+        assert_eq!(timing(card.id).await.unwrap(), (None, None, None, None, None));
     }
 
     #[tokio::test]
