@@ -270,7 +270,7 @@
   // Words on the page that explain themselves on hover (data-why from the
   // server). Their own text stays what a screen reader reads first.
   function explainers(scope) {
-    Array.prototype.forEach.call(scope.querySelectorAll('.desk-stats [data-why]'), function (x) {
+    Array.prototype.forEach.call(scope.querySelectorAll('.desk-stats [data-why], .week-home [data-why]'), function (x) {
       var why = x.getAttribute('data-why');
       var value = x.getAttribute('data-tip') || '';
       var label = x.getAttribute('data-tip-label') || '';
