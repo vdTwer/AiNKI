@@ -18,6 +18,7 @@ mod insight;
 mod invites;
 mod lessons;
 mod multi;
+mod outlook;
 mod markdown;
 mod mcp;
 mod oauth;
