@@ -911,7 +911,7 @@ impl App {
             reviews_today: known.stats.reviews_today,
             overdue: known.overdue,
             catch_up: user.catch_up,
-            breaks_on: user.session_minutes > 0,
+            breaks_on: user.session_minutes != 0,
             next_days: known.stats.forecast.iter().skip(1).take(7).map(|(_, n)| *n).collect(),
             leeches: known.attention.iter().filter(|a| a.flags.iter().any(|f| f.kind == Kind::Leech)).count() as i64,
             optimizable_reviews: self.optimizable_reviews(access).await?,

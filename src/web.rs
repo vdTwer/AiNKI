@@ -4142,13 +4142,15 @@ async fn settings_page(State(app): State<AppState>, user: WebUser, Flash(msg): F
                         }
                     }
                     p.hint.muted.small { "No cards then, on the website or through agents. You can still study anyway." }
-                    label.line { "Suggest a break after"
+                    label.line { "Suggest a break"
                         span.select { select name="session_minutes" {
                             @for m in study::SESSION_LENGTHS {
-                                option value=(m) selected[*m == u.session_minutes] { (if *m == 0 { "Never".to_string() } else { study::minutes_words(*m) }) }
+                                option value=(m) selected[*m == u.session_minutes] { (if *m == 0 { "Never".to_string() } else { format!("After {}", study::minutes_words(*m)) }) }
                             }
-                            @if !study::SESSION_LENGTHS.contains(&u.session_minutes) {
-                                option value=(u.session_minutes) selected { (study::minutes_words(u.session_minutes)) }
+                            // Smart breaks: when the answers show tiredness (breaks.rs).
+                            option value=(study::SMART_BREAKS) selected[u.session_minutes == study::SMART_BREAKS] { "When I need one" }
+                            @if !study::SESSION_LENGTHS.contains(&u.session_minutes) && u.session_minutes != study::SMART_BREAKS {
+                                option value=(u.session_minutes) selected { "After " (study::minutes_words(u.session_minutes)) }
                             }
                         } }
                     }

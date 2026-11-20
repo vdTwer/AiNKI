@@ -42,7 +42,8 @@ pub struct User {
     pub quiet_from: Option<i64>,
     pub quiet_to: Option<i64>,
     pub quiet_lifted_until: Option<i64>,
-    /// Suggest a break after this many minutes of studying; 0 for never.
+    /// Suggest a break after this many minutes of studying; 0 for never,
+    /// -1 for smart breaks (`study::SMART_BREAKS`).
     pub session_minutes: i64,
     pub break_skipped_at: Option<i64>,
     /// Catch-up mode: no new cards, at most `catch_up_reviews` a day.
