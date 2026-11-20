@@ -44,7 +44,7 @@ test('home shows the next seven days, starting today', async ({ page, seed }) =>
   // The busiest day gets the full height; an empty day only a sliver.
   await expect(days.nth(3).locator('.bar')).toHaveAttribute('style', 'height: 100%');
   const text = week.locator('p').first();
-  await expect(text).toContainText(/^(About )?\d+ cards? tomorrow\. Probably about \d+ in the next seven days/);
+  await expect(text).toContainText(/^(About )?\d+ cards? tomorrow\. Probably about \d+ in the next week/);
   // The forecast never drops what is already scheduled: four cards.
   const forecast = text.locator('.forecast');
   await expect(forecast).toHaveAttribute('data-tip', /^Forecast: \d+ cards$/);
@@ -67,7 +67,7 @@ test('a quiet week says so and draws no bars', async ({ page, seed }) => {
   due(id, Math.floor(Date.now() / 1000) + 30 * DAY);
   await page.goto('/');
   const week = page.locator('.week-home');
-  await expect(week).toContainText('Nothing comes due in the next seven days.');
+  await expect(week).toContainText('Nothing comes due in the next week.');
   await expect(week.locator('.week-bars')).toHaveCount(0);
 });
 

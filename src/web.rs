@@ -4295,7 +4295,7 @@ fn week_home(user: &User, today_due: i64, outlook: &Outlook, seconds_per_review:
             section.week aria-label="Next seven days" {
                 h2 { "Next seven days" }
                 @if total == 0 {
-                    p { "Nothing comes due in the next seven days." }
+                    p { "Nothing comes due in the next week." }
                 } @else {
                     p {
                         @if tomorrow_n == 0 {
@@ -4311,7 +4311,7 @@ fn week_home(user: &User, today_due: i64, outlook: &Outlook, seconds_per_review:
                             data-why=(WHY_OUTLOOK) {
                             "about " (format::number(about(week)))
                         }
-                        " in the next seven days"
+                        " in the next week"
                         @if let Some(sec) = seconds_per_review { ", " (format::minutes(sec * week / 60.0)) " of study" }
                         "."
                     }
