@@ -20,6 +20,7 @@ mod invites;
 mod kind;
 mod lessons;
 mod multi;
+mod outlook;
 mod markdown;
 mod mcp;
 mod oauth;
