@@ -1921,8 +1921,8 @@ html.calm .sure-bars .num { text-align: right; font-weight: 500; font-variant-nu
 /* What the value means: a sentence or two, wrapped. */
 .chart-tip .why { max-width: 17rem; margin-top: 4px; white-space: normal; line-height: 1.45; color: var(--ink-2); }
 /* Words that explain themselves on hover say so only when touched. */
-html.calm .desk-stats [data-why] { cursor: help; text-decoration: underline dotted transparent; text-underline-offset: .25em; text-decoration-thickness: 1px; transition: text-decoration-color 160ms var(--ease); }
-html.calm .desk-stats [data-why]:hover, html.calm .desk-stats [data-why]:focus-visible { text-decoration-color: var(--faint); outline: none; }
+html.calm .desk-stats [data-why], html.calm .week-home [data-why] { cursor: help; text-decoration: underline dotted transparent; text-underline-offset: .25em; text-decoration-thickness: 1px; transition: text-decoration-color 160ms var(--ease); }
+html.calm .desk-stats [data-why]:hover, html.calm .desk-stats [data-why]:focus-visible, html.calm .week-home [data-why]:hover, html.calm .week-home [data-why]:focus-visible { text-decoration-color: var(--faint); outline: none; }
 
 /* ----- settings ---------------------------------------------------------------
    desk.js turns each part into a section: title and purpose on the left,

@@ -24,7 +24,9 @@ use crate::{
     auth::{Access, User},
     coach,
     error::AppError,
-    fuzzy, import, insight, invites, lessons, markdown, mcp, media, multi::{self, Piece, Split}, now, oauth, presets,
+    fuzzy, import, insight, invites, lessons, markdown, mcp, media, multi::{self, Piece, Split}, now, oauth,
+    outlook::{self, Outlook},
+    presets,
     security::{self, ClientIp, Flash},
     scheduler::{self, CardState, Rating},
     study,
@@ -1160,6 +1162,7 @@ async fn home(State(app): State<AppState>, user: WebUser, Flash(msg): Flash) -> 
     let overdue = app.overdue(&access).await?;
     let quiet = study::quiet_until(&user.0, now());
     let week = app.week(&access).await?;
+    let outlook = app.outlook(&access, &decks).await?;
     let known = advice::Known { decks: &decks, stats: &stats, attention: &flagged, overdue };
     let notes = app.advice_from(&access, &known).await?;
     // A rough guide; real thinking time once there's enough history.
@@ -1302,7 +1305,7 @@ async fn home(State(app): State<AppState>, user: WebUser, Flash(msg): Flash) -> 
                 a href="/import" { "Import deck" }
             }
             @if !decks.is_empty() {
-                (week_home(&user.0, total_due, &stats.forecast, stats.seconds_per_review))
+                (week_home(&user.0, total_due, &outlook, stats.seconds_per_review))
             }
         },
     )
@@ -4244,57 +4247,82 @@ async fn password_update(
         .into_response())
 }
 
-/// The desktop home's week looks ahead: a sentence on what comes due over
-/// the next seven days, then a bar for each, today first and in bold.
-/// Today holds what the page says to study now (new cards and limits
-/// included); the days after it, the learned cards that fall due on them.
-fn week_home(user: &User, today_due: i64, forecast: &[(String, i64)], seconds_per_review: Option<f64>) -> Markup {
+/// Rounds a forecast the way people say it: whole cards below a hundred,
+/// two significant figures above.
+fn about(n: f64) -> i64 {
+    let n = n.max(0.0).round() as i64;
+    if n < 100 {
+        return n;
+    }
+    let step = 10i64.pow(n.ilog10() - 1);
+    (n + step / 2) / step * step
+}
+
+const WHY_OUTLOOK: &str = "Cards come back after you study them: a miss the next day, a young card a few days later. The forecast counts them too, if you study every day and add no more cards.";
+
+/// The desktop home's week looks ahead: what tomorrow asks for, what the
+/// next seven days probably ask for (with the forecast and its range on
+/// hover), then a bar for each day, today first and in bold. Today holds
+/// what the page says to study now (new cards and limits included); later
+/// days hold the forecast, which counts the cards that come back after you
+/// review them (see `outlook`).
+fn week_home(user: &User, today_due: i64, outlook: &Outlook, seconds_per_review: Option<f64>) -> Markup {
     let clock = user.clock();
-    let days: Vec<(chrono::NaiveDate, i64)> = (0..7)
+    let days: Vec<(chrono::NaiveDate, f64)> = (0..outlook::DAYS)
         .map(|i| {
-            let date = clock.today() + chrono::Duration::days(i);
-            let n = if i == 0 {
-                today_due
-            } else {
-                let key = date.format("%Y-%m-%d").to_string();
-                forecast.iter().find(|(d, _)| *d == key).map_or(0, |(_, n)| *n)
-            };
-            (date, n.max(0))
+            let n = if i == 0 { today_due.max(0) as f64 } else { outlook.days[i] };
+            (clock.today() + chrono::Duration::days(i as i64), n)
         })
         .collect();
-    let total: i64 = days.iter().map(|(_, n)| n).sum();
-    // The first of the busiest days, so a tie names the sooner one.
-    let busiest = days.iter().fold(days[0], |best, &d| if d.1 > best.1 { d } else { best });
-    let most = busiest.1.max(1);
-    let when = |date: chrono::NaiveDate| match (date - clock.today()).num_days() {
-        0 => "Today".to_string(),
-        1 => "Tomorrow".to_string(),
-        _ => date.format("%A").to_string(),
-    };
-    let tip = |date: chrono::NaiveDate, n: i64| {
-        let n = if n == 0 { "nothing due".to_string() } else { count(n, "card") };
-        format!("{}: {n}", format::short_day(&clock, date))
+    let tomorrow = outlook.days[1];
+    // Tomorrow is settled once today is: only cards answered today can
+    // still move it, so any fraction left means it is a forecast.
+    let tomorrow_settled = (tomorrow - tomorrow.round()).abs() < 0.05;
+    let tomorrow_n = tomorrow.round() as i64;
+    let week = today_due.max(0) as f64 + outlook.later();
+    let (low, high) = outlook.later_range();
+    let (low, high) = (low + today_due.max(0), high + today_due.max(0));
+    let total = week.round() as i64;
+    let most = days.iter().map(|&(_, n)| n.round() as i64).max().unwrap_or(0).max(1);
+    let tip = |i: usize, date: chrono::NaiveDate, n: f64| {
+        let r = n.round() as i64;
+        let words = if r == 0 { "nothing due".to_string() } else { count(r, "card") };
+        let about = if i >= 2 && r > 0 { "about " } else { "" };
+        format!("{}: {about}{words}", format::short_day(&clock, date))
     };
     html! {
         div.week-home.calm-only {
             section.week aria-label="Next seven days" {
                 h2 { "Next seven days" }
                 @if total == 0 {
-                    p { "Nothing comes due in the next seven days." }
+                    p { "Nothing comes due in the next week." }
                 } @else {
                     p {
-                        (count(total, "card")) (if total == 1 { " comes" } else { " come" }) " due in the next seven days"
-                        @if let Some(sec) = seconds_per_review { ", " (format::minutes(sec * total as f64 / 60.0)) " of study" }
+                        @if tomorrow_n == 0 {
+                            "Nothing due tomorrow."
+                        } @else {
+                            (if tomorrow_settled { "" } else { "About " })
+                            (count(tomorrow_n, "card")) " tomorrow."
+                        }
+                        " Probably "
+                        span.forecast
+                            data-tip=(format!("Forecast: {}", count(total, "card")))
+                            data-tip-label=(format!("Likely {} to {}", format::number(low), format::number(high)))
+                            data-why=(WHY_OUTLOOK) {
+                            "about " (format::number(about(week)))
+                        }
+                        " in the next week"
+                        @if let Some(sec) = seconds_per_review { ", " (format::minutes(sec * week / 60.0)) " of study" }
                         "."
-                        @if total > busiest.1 { " " (when(busiest.0)) " is the busiest, with " (format::number(busiest.1)) "." }
                     }
                 }
             }
             @if total > 0 {
-            div.week-bars role="img" aria-label=(format!("Cards due on each of the next seven days. {}", days.iter().map(|&(d, n)| tip(d, n)).collect::<Vec<_>>().join(", "))) {
+            div.week-bars role="img" aria-label=(format!("Cards due on each of the next seven days. {}", days.iter().enumerate().map(|(i, &(d, n))| tip(i, d, n)).collect::<Vec<_>>().join(", "))) {
                 @for (i, &(date, n)) in days.iter().enumerate() {
-                    div.day.today[i == 0] title=(tip(date, n)) {
-                        span.bar.empty[n == 0] style=(format!("height: {}%", (n * 100 / most).max(3))) data-n=(format::number(n)) {}
+                    @let r = n.round() as i64;
+                    div.day.today[i == 0] title=(tip(i, date, n)) {
+                        span.bar.empty[r == 0] style=(format!("height: {}%", (r * 100 / most).max(3))) data-n=(format::number(r)) {}
                         span.letter { (date.format("%a").to_string().chars().next().unwrap_or(' ')) }
                     }
                 }
@@ -5096,4 +5124,19 @@ async fn share_action(
         }
     }
     .await)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::about;
+
+    #[test]
+    fn forecasts_round_the_way_people_say_them() {
+        assert_eq!(about(0.4), 0);
+        assert_eq!(about(42.5), 43);
+        assert_eq!(about(99.4), 99);
+        assert_eq!(about(312.4), 310);
+        assert_eq!(about(315.0), 320);
+        assert_eq!(about(1_234.0), 1_200);
+    }
 }
