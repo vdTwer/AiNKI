@@ -7,7 +7,11 @@
 use chrono::{Duration, NaiveTime, TimeZone, Timelike};
 use serde::Serialize;
 
+use std::collections::{hash_map::Entry, HashMap};
+
 use crate::auth::{Access, User};
+use crate::breaks;
+use crate::scheduler::{self, CardSched, Clock};
 use crate::error::{AppError, Result};
 use crate::App;
 use crate::now;
@@ -16,6 +20,21 @@ use crate::now;
 pub const SESSION_GAP_SECS: i64 = 10 * 60;
 /// Session lengths offered in settings, in minutes; 0 is off.
 pub const SESSION_LENGTHS: &[i64] = &[0, 10, 15, 20, 25, 30, 45, 60];
+/// The session length that means "when I need one": smart breaks.
+pub const SMART_BREAKS: i64 = -1;
+/// A break on the fixed timer lasts this long.
+const TIMER_BREAK_MINUTES: i64 = 5;
+/// How far back smart breaks look to learn the user's recovery.
+const RECOVERY_DAYS: i64 = 60;
+
+/// A break is due: after how many minutes of study, how long it should be,
+/// and whether the answers asked for it (smart) or the timer did.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BreakDue {
+    pub studied: i64,
+    pub length: i64,
+    pub smart: bool,
+}
 /// Catch-up mode suggests itself above this many overdue cards.
 pub const BACKLOG_HINT: i64 = 100;
 /// A card counts as overdue once it has been due this long.
@@ -158,6 +177,14 @@ impl App {
     /// after the last pause of `SESSION_GAP_SECS`, or the last time a break
     /// hint was waved off. `None` when nothing was answered lately.
     pub async fn session_start(&self, access: &Access) -> Result<Option<i64>> {
+        Ok(self.session_began(access).await?.map(|start| match access.user.break_skipped_at {
+            Some(b) if b > start => b,
+            _ => start,
+        }))
+    }
+
+    /// The first answer after the last pause of `SESSION_GAP_SECS`.
+    async fn session_began(&self, access: &Access) -> Result<Option<i64>> {
         let n = now();
         let times: Vec<i64> = sqlx::query_scalar(
             "SELECT reviewed_at FROM review_log
@@ -179,22 +206,79 @@ impl App {
             }
             start = t;
         }
-        Ok(Some(match access.user.break_skipped_at {
-            Some(b) if b > start => b,
-            _ => start,
-        }))
+        Ok(Some(start))
     }
 
-    /// Minutes studied without a break, when that has reached the user's
-    /// session length.
-    pub async fn break_due(&self, access: &Access) -> Result<Option<i64>> {
+    /// Whether a break is due before the next card: on the fixed timer once
+    /// the session has run the user's length, or with smart breaks once the
+    /// answers show tiredness (see `breaks`).
+    pub async fn break_due(&self, access: &Access) -> Result<Option<BreakDue>> {
         let len = access.user.session_minutes;
+        if len == SMART_BREAKS {
+            return self.smart_break_due(access).await;
+        }
         if len <= 0 {
             return Ok(None);
         }
         let Some(start) = self.session_start(access).await? else { return Ok(None) };
         let minutes = (now() - start) / 60;
-        Ok((minutes >= len).then_some(minutes))
+        Ok((minutes >= len).then_some(BreakDue { studied: minutes, length: TIMER_BREAK_MINUTES, smart: false }))
+    }
+
+    async fn smart_break_due(&self, access: &Access) -> Result<Option<BreakDue>> {
+        let Some(began) = self.session_began(access).await? else { return Ok(None) };
+        let n = now();
+        let history = self.review_answers(access, n - RECOVERY_DAYS * 86_400).await?;
+        let means = breaks::card_means(&history);
+        let split = history.partition_point(|a| a.at < began);
+        let watch_from = access.user.break_skipped_at.unwrap_or(0);
+        let Some(slowdown) = breaks::tired(&history[split..], &means[split..], watch_from, n) else {
+            return Ok(None);
+        };
+        let tau = breaks::recovery_minutes(&history[..split], &means[..split]).unwrap_or(breaks::DEFAULT_TAU_MIN);
+        Ok(Some(BreakDue { studied: (n - began) / 60, length: breaks::break_minutes(slowdown, tau), smart: true }))
+    }
+
+    /// Review answers on the website since `from`, oldest first, with how
+    /// sure FSRS was of each. Multicards and timed-out answers are left out:
+    /// their times and misses mean something else.
+    async fn review_answers(&self, access: &Access, from: i64) -> Result<Vec<breaks::Answer>> {
+        #[derive(sqlx::FromRow)]
+        struct Row {
+            reviewed_at: i64,
+            card_id: i64,
+            deck_id: i64,
+            rating: i64,
+            think_ms: Option<i64>,
+            prev_card: Option<String>,
+        }
+        let rows: Vec<Row> = sqlx::query_as(
+            "SELECT reviewed_at, card_id, deck_id, rating, think_ms, prev_card FROM review_log
+             WHERE user_id = ? AND source = 'web' AND rating > 0 AND state_before = 2
+               AND items_asked IS NULL AND timed_out = 0 AND reviewed_at >= ?
+             ORDER BY reviewed_at, id",
+        )
+        .bind(access.user_id())
+        .bind(from)
+        .fetch_all(&self.db)
+        .await?;
+        let mut params: HashMap<i64, Vec<f32>> = HashMap::new();
+        let mut out = Vec::with_capacity(rows.len());
+        for row in rows {
+            if let Entry::Vacant(slot) = params.entry(row.deck_id) {
+                // A deck deleted since keeps FSRS's defaults.
+                slot.insert(self.deck_params(access, row.deck_id).await.unwrap_or_default());
+            }
+            let clock = Clock { now: row.reviewed_at, ..access.user.clock() };
+            let r = row
+                .prev_card
+                .as_deref()
+                .and_then(|j| serde_json::from_str::<CardSched>(j).ok())
+                .and_then(|c| scheduler::retrievability(&c, &params[&row.deck_id], &clock))
+                .map(f64::from);
+            out.push(breaks::Answer { at: row.reviewed_at, card: row.card_id, think_ms: row.think_ms, recalled: row.rating > 1, r });
+        }
+        Ok(out)
     }
 
     pub async fn skip_break(&self, user_id: i64) -> Result<()> {
@@ -272,8 +356,8 @@ impl App {
                 return Err(AppError::bad("quiet hours must be whole hours from 0 to 23"));
             }
         }
-        if !(0..=240).contains(&session_minutes) {
-            return Err(AppError::bad("session length must be between 0 (off) and 240 minutes"));
+        if !(SMART_BREAKS..=240).contains(&session_minutes) {
+            return Err(AppError::bad("session length must be -1 (smart breaks), 0 (off) or up to 240 minutes"));
         }
         if !(1..=9999).contains(&catch_up_reviews) {
             return Err(AppError::bad("catch-up reviews must be between 1 and 9999 a day"));
