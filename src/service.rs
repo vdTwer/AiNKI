@@ -18,6 +18,17 @@ use crate::{
     scheduler::{self, CardSched, CardState, Clock, Rating, SchedConfig},
 };
 
+/// How a deck with this preset schedules its cards.
+pub(crate) fn sched_config_for(p: &Preset, deck: &Deck) -> SchedConfig {
+    SchedConfig {
+        desired_retention: p.desired_retention as f32,
+        learning_steps: scheduler::parse_steps(&p.learning_steps).unwrap_or_default(),
+        relearning_steps: scheduler::parse_steps(&p.relearning_steps).unwrap_or_default(),
+        max_interval: p.max_interval,
+        exam_date: deck.exam(),
+    }
+}
+
 /// Show learning cards up to this many seconds early when nothing else is due.
 const LEARN_AHEAD_SECS: i64 = 20 * 60;
 
@@ -1165,14 +1176,7 @@ impl App {
     // ----- studying ------------------------------------------------------
 
     pub(crate) async fn sched_config(&self, access: &Access, deck: &Deck) -> Result<SchedConfig> {
-        let p = self.preset(access, deck.preset_id).await?;
-        Ok(SchedConfig {
-            desired_retention: p.desired_retention as f32,
-            learning_steps: scheduler::parse_steps(&p.learning_steps).unwrap_or_default(),
-            relearning_steps: scheduler::parse_steps(&p.relearning_steps).unwrap_or_default(),
-            max_interval: p.max_interval,
-            exam_date: deck.exam(),
-        })
+        Ok(sched_config_for(&self.preset(access, deck.preset_id).await?, deck))
     }
 
     /// Pick the next card to study, from one deck or all visible decks.
