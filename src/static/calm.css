@@ -1382,6 +1382,10 @@ html.calm .study-meta a:hover { color: var(--accent-hover); }
 html.calm .study-foot .study-tools { justify-content: flex-start; gap: 1.2rem; margin-top: .2rem; font-size: .87rem; }
 html.calm .study-foot .study-tools a, html.calm .study-foot .study-tools button.link { color: var(--muted); }
 html.calm .study-foot .study-tools a:hover, html.calm .study-foot .study-tools button.link:hover { color: var(--accent-hover); }
+/* Pause: the card and its controls step away, a quiet note takes the middle. */
+html.calm .study.paused > :not(.study-foot), html.calm .study.paused .study-tools, html.calm .study.paused .leech-note { visibility: hidden; }
+html.calm .study .pause-cover { position: fixed; left: 0; right: 0; top: 34vh; display: flex; flex-direction: column; align-items: center; gap: .9rem; text-align: center; }
+html.calm .study .pause-cover[hidden] { display: none; }
 
 /* The end of a session: the progress line closes up and a tick draws out
    of it, then a single calm line. It plays only when a session has just

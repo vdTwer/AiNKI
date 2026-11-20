@@ -530,6 +530,7 @@ const ICON_EDIT: &str = r#"<path d="M14.5 5.5l4 4L9 19H5v-4z"/><path d="M12.5 7.
 const ICON_SHARE: &str = r#"<path d="M20 4L3.5 10.5l7 3 3 7z"/><path d="M20 4l-9.5 9.5"/>"#;
 const ICON_IMPORT: &str = r#"<path d="M12 4v11M8 11l4 4 4-4"/><path d="M5 16v2.5A1.5 1.5 0 0 0 6.5 20h11a1.5 1.5 0 0 0 1.5-1.5V16"/>"#;
 const ICON_EXPORT: &str = r#"<path d="M12 15V4M8 8l4-4 4 4"/><path d="M5 16v2.5A1.5 1.5 0 0 0 6.5 20h11a1.5 1.5 0 0 0 1.5-1.5V16"/>"#;
+const ICON_PAUSE: &str = r#"<path d="M9 6.5v11M15 6.5v11"/>"#;
 const ICON_UNDO: &str = r#"<path d="M9 7L5 11l4 4"/><path d="M5 11h9a5 5 0 0 1 0 10h-2"/>"#;
 const ICON_IMAGE: &str = r#"<rect x="3.5" y="5" width="17" height="14" rx="2.5"/><circle cx="9" cy="10" r="1.6"/><path d="M4.5 17l4.5-4.2 3.2 3 2.6-2.2 4.7 4"/>"#;
 const ICON_FILE: &str = r#"<path d="M7 3.5h6.5L18 8v11a1.5 1.5 0 0 1-1.5 1.5h-9A1.5 1.5 0 0 1 6 19V5a1.5 1.5 0 0 1 1-1.5z"/><path d="M13 3.5V8h5"/>"#;
@@ -1378,6 +1379,17 @@ fn study_foot(deck_name: &str, deck_id: i64, done: i64, total: i64, q_deck: Opti
                     button.link.icon-link type="submit" { (icon(ICON_UNDO, PAGE_ICON)) span { "Undo last answer" } }
                 }
                 @if let Some(id) = card_id { (icon_link(&format!("/cards/{id}{}", CardFrom::study(q_deck).query()), ICON_EDIT, "Edit card")) }
+                // Desktop only: a break of your own. The card is covered and
+                // its clock stops (app.js).
+                @if card_id.is_some() {
+                    button.link.icon-link.pause-study.calm-only type="button" { (icon(ICON_PAUSE, PAGE_ICON)) span { "Pause" } }
+                }
+            }
+            @if card_id.is_some() {
+                div.pause-cover.calm-only hidden data-stay {
+                    p.kicker { "Paused" }
+                    button.btn.primary type="button" data-resume { "Resume" }
+                }
             }
             @if let (true, Some(id)) = (leech, card_id) {
                 p.leech-note.small { "This card keeps slipping. " a href=(format!("/cards/{id}{}", CardFrom::study(q_deck).query())) { "Have a look after this answer" } }
@@ -2102,6 +2114,12 @@ struct AnswerForm {
     sure: Option<String>,
     /// Time ran out on a timed card: it counts as Again.
     timeout: Option<u8>,
+    /// Measured in the browser, see `study::Timing`.
+    think_ms: Option<i64>,
+    answer_ms: Option<i64>,
+    away_ms: Option<i64>,
+    paused_ms: Option<i64>,
+    input: Option<String>,
 }
 
 async fn study_answer(State(app): State<AppState>, user: WebUser, Form(f): Form<AnswerForm>) -> WebResult {
@@ -2127,7 +2145,8 @@ async fn study_answer(State(app): State<AppState>, user: WebUser, Form(f): Form<
         }
     };
     if answered.is_ok() {
-        app.note_answer(&access, f.card, sure, timed_out).await?;
+        let timing = study::Timing::checked(f.think_ms, f.answer_ms, f.away_ms, f.paused_ms, f.input.as_deref());
+        app.note_answer(&access, f.card, sure, timed_out, &timing).await?;
     }
     match answered {
         Ok(_) | Err(AppError::Conflict(_)) => Ok(redirect(study_url(f.deck))),

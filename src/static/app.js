@@ -267,6 +267,7 @@
     var study = document.querySelector('.study:not(.revealed)');
     if (!study) return false;
     stopTimer();
+    turned();
     study.classList.add('revealed');
     var hidden = study.querySelectorAll('[hidden]:not([data-stay])');
     for (var i = 0; i < hidden.length; i++) {
@@ -310,6 +311,7 @@
       secs.textContent = Math.ceil(left / 1000) + ' s';
       t.frame = requestAnimationFrame(tick);
     };
+    t.tick = tick;
     tick();
   }
 
@@ -332,6 +334,114 @@
       var go = form.querySelector('button');
       if (go) go.focus({ preventScroll: true });
     }
+  }
+
+  // ----- answer timing ------------------------------------------------------
+
+  // How long each card took, to the millisecond, sent along with the
+  // rating: from the front showing to the answer showing (think), and from
+  // there to the rating (answer). Time with the tab hidden is kept apart
+  // (away), so it never passes for slowness. Pages without JavaScript and
+  // cards that arrive already turned over send what they can, or nothing.
+  var clock = null;
+  var lastInput = null;
+  function ms() { return performance.now(); }
+
+  function startClock(scope) {
+    var study = scope.querySelector('.study');
+    if (!study) { clock = null; return; }
+    var c = { front: null, back: null, away: 0, paused: 0, idleAtBack: 0, hiddenSince: null, pausedSince: null };
+    clock = c;
+    var turnedOver = study.classList.contains('revealed');
+    // The first frame drawn is when the card can be seen. A hidden tab draws
+    // nothing, so the clock waits until the card is really on screen.
+    requestAnimationFrame(function () {
+      if (clock !== c) return;
+      if (turnedOver) c.back = ms(); else if (c.back === null) c.front = ms();
+    });
+  }
+
+  function idle(c) { return c.away + c.paused; }
+
+  // The answer side has just come up.
+  function turned() {
+    var c = clock;
+    if (!c || c.front === null || c.back !== null) return;
+    c.back = ms();
+    c.idleAtBack = idle(c);
+  }
+
+  // What goes along with the rating; the card's clock stops for good.
+  function timing() {
+    var c = clock;
+    clock = null;
+    if (!c) return {};
+    var t = ms();
+    var out = { away_ms: c.away, paused_ms: c.paused };
+    if (c.front !== null && c.back !== null) out.think_ms = c.back - c.front - c.idleAtBack;
+    if (c.back !== null) out.answer_ms = t - c.back - (idle(c) - c.idleAtBack);
+    if (lastInput) out.input = lastInput;
+    return out;
+  }
+
+  document.addEventListener('visibilitychange', function () {
+    var c = clock;
+    // Paused time is counted as paused, even with the tab hidden.
+    if (!c || (c.front === null && c.back === null) || c.pausedSince !== null) return;
+    if (document.hidden) c.hiddenSince = ms();
+    else if (c.hiddenSince !== null) { c.away += ms() - c.hiddenSince; c.hiddenSince = null; }
+  });
+  // A page brought back from the browser's history has lost its clock.
+  window.addEventListener('pageshow', function (e) { if (e.persisted) clock = null; });
+  // How the rating was given: by key, mouse, finger or pen.
+  document.addEventListener('keydown', function () { lastInput = 'key'; }, true);
+  document.addEventListener('pointerdown', function (e) { lastInput = e.pointerType || 'mouse'; }, true);
+
+
+  // ----- pausing (desktop) ----------------------------------------------------
+
+  // A break of your own in the middle of a card: the card is covered, so
+  // the pause can't be used to think, and its clock and timer stop.
+  function paused() { return !!document.querySelector('main .study.paused'); }
+
+  function pause() {
+    var study = document.querySelector('main .study');
+    var cover = study && study.querySelector('.pause-cover');
+    if (!calm || !cover || paused() || busy) return;
+    var c = clock;
+    if (c && c.pausedSince === null) {
+      // A hidden tab right now is the pause's from here on.
+      if (c.hiddenSince !== null) { c.away += ms() - c.hiddenSince; c.hiddenSince = null; }
+      c.pausedSince = ms();
+    }
+    if (timer) { timer.left = timer.end - Date.now(); cancelAnimationFrame(timer.frame); }
+    study.classList.add('paused');
+    cover.hidden = false;
+    var go = cover.querySelector('[data-resume]');
+    if (go) go.focus({ preventScroll: true });
+  }
+
+  function resume() {
+    var study = document.querySelector('main .study.paused');
+    if (!study) return;
+    var c = clock;
+    if (c && c.pausedSince !== null) {
+      c.paused += ms() - c.pausedSince;
+      c.pausedSince = null;
+      if (document.hidden) c.hiddenSince = ms();
+    }
+    if (timer && timer.left !== undefined) {
+      timer.end = Date.now() + timer.left;
+      timer.left = undefined;
+      timer.frame = requestAnimationFrame(timer.tick);
+    }
+    var cover = study.querySelector('.pause-cover');
+    // Let go of Resume at once, or the next space would press it again
+    // instead of showing the answer.
+    var held = document.activeElement;
+    if (held && (cover.contains(held) || held.closest('.pause-study'))) held.blur();
+    study.classList.remove('paused');
+    cover.hidden = true;
   }
 
   var busy = false;
@@ -408,6 +518,7 @@
   // A card's front has just come up: the clock starts, the answer box
   // takes the keys.
   function begin(scope) {
+    startClock(scope);
     startTimer(scope);
     var box = scope.querySelector('.study:not(.revealed) .typed-answer input');
     if (box) box.focus({ preventScroll: true });
@@ -419,6 +530,13 @@
     busy = true;
     var data = new URLSearchParams(new FormData(form));
     if (submitter && submitter.name) data.append(submitter.name, submitter.value);
+    if (form.getAttribute('action') === '/study/answer') {
+      var took = timing();
+      Object.keys(took).forEach(function (k) {
+        var v = took[k];
+        data.append(k, typeof v === 'number' ? String(Math.max(0, Math.round(v))) : v);
+      });
+    }
     var area = document.querySelector('.study .card-area');
     if (area) area.classList.add('leaving');
     fetch(form.action, {
@@ -443,6 +561,8 @@
   }
 
   document.addEventListener('click', function (e) {
+    if (e.target.closest && e.target.closest('.study .pause-study')) { pause(); return; }
+    if (e.target.closest && e.target.closest('.study .pause-cover [data-resume]')) { resume(); return; }
     var show = e.target.closest && e.target.closest('.study .reveal a.show');
     if (show && reveal()) e.preventDefault();
     if (e.target.closest && e.target.closest('.timer .extend')) extendTimer();
@@ -495,6 +615,13 @@
     var tag = e.target.tagName;
     if ((tag === 'INPUT' && e.target.type !== 'checkbox') || tag === 'TEXTAREA' || tag === 'SELECT') return;
     if (!document.querySelector('main .study')) return;
+    // Paused, P, Esc, space or Enter carry on and every other key waits.
+    if (paused()) {
+      if (/^(p|P|Escape| |Enter)$/.test(e.key)) resume();
+      e.preventDefault();
+      return;
+    }
+    if (e.key === 'p' || e.key === 'P') { pause(); return; }
     // Enter and space on a focused link or button do what it says.
     if ((e.key === ' ' || e.key === 'Enter') && (tag === 'A' || tag === 'BUTTON') && !e.target.matches('.reveal a.show')) return;
     var k = e.key === ' ' || e.key === 'Enter' ? ' ' : e.key.toLowerCase();
