@@ -1960,8 +1960,8 @@ async fn study(State(app): State<AppState>, user: WebUser, Flash(msg): Flash, Qu
     if let Some(until) = study::quiet_until(&user.0, now()) {
         return Ok(rest_page(&user.0, &msg, q.deck, until).into_response());
     }
-    if let Some(minutes) = app.break_due(&access).await? {
-        return Ok(break_page(&user.0, &msg, q.deck, minutes).into_response());
+    if let Some(due) = app.break_due(&access).await? {
+        return Ok(break_page(&user.0, &msg, q.deck, due).into_response());
     }
 
     let Some(sc) = app.next_card(&access, q.deck).await? else {
@@ -2049,8 +2049,11 @@ fn rest_page(user: &User, msg: &Option<String>, deck: Option<i64>, until: i64) -
     )
 }
 
-/// The session has reached the length set in settings.
-fn break_page(user: &User, msg: &Option<String>, deck: Option<i64>, minutes: i64) -> Markup {
+/// The session has reached the length set in settings, or with smart
+/// breaks the answers show tiredness.
+fn break_page(user: &User, msg: &Option<String>, deck: Option<i64>, due: study::BreakDue) -> Markup {
+    // "a 6-minute break"
+    let length = format!("{}-minute", due.length);
     page(
         Some(Nav::Study),
         "Time for a break",
@@ -2061,7 +2064,11 @@ fn break_page(user: &User, msg: &Option<String>, deck: Option<i64>, minutes: i64
             section.session-end.rest.break {
                 p.kicker.calm-only { "Break" }
                 h1 { "Time for a break" }
-                p.summary { "You have studied for " (study::minutes_words(minutes)) ". Stand up, look out of the window, then carry on if you like." }
+                @if due.smart {
+                    p.summary { "You have studied for " (study::minutes_words(due.studied)) ", and your answers are slowing down. A " (length) " break should bring you back." }
+                } @else {
+                    p.summary { "You have studied for " (study::minutes_words(due.studied)) ". Stand up, look out of the window, then carry on if you like." }
+                }
                 div.end-links {
                     a href="/" { "Stop here" }
                     form id="keep-going" method="post" action="/study/keep-going" {
@@ -2072,12 +2079,13 @@ fn break_page(user: &User, msg: &Option<String>, deck: Option<i64>, minutes: i64
                 // On desktops a break can run here: desk.js counts it down
                 // and sends the form above when it is over.
                 div.break-start.calm-only {
-                    button.btn.primary type="button" data-break="300" { "Start a 5 minute break" }
+                    button.btn.primary type="button" data-break=(due.length * 60) { "Start a " (length) " break" }
                     button.btn type="submit" form="keep-going" { "Skip break" }
                 }
                 div.break-run.calm-only hidden {
-                    p.break-clock role="timer" aria-live="off" { "5:00" }
+                    p.break-clock role="timer" aria-live="off" { (due.length) ":00" }
                     div.break-line aria-hidden="true" { div.break-fill {} }
+                    @if due.smart { p.summary { "Your answers were slowing down." } }
                     p.summary { "The next card comes back by itself when the time is up." }
                     p { button.btn type="submit" form="keep-going" { "End break now" } }
                 }
@@ -4134,13 +4142,15 @@ async fn settings_page(State(app): State<AppState>, user: WebUser, Flash(msg): F
                         }
                     }
                     p.hint.muted.small { "No cards then, on the website or through agents. You can still study anyway." }
-                    label.line { "Suggest a break after"
+                    label.line { "Suggest a break"
                         span.select { select name="session_minutes" {
                             @for m in study::SESSION_LENGTHS {
-                                option value=(m) selected[*m == u.session_minutes] { (if *m == 0 { "Never".to_string() } else { study::minutes_words(*m) }) }
+                                option value=(m) selected[*m == u.session_minutes] { (if *m == 0 { "Never".to_string() } else { format!("After {}", study::minutes_words(*m)) }) }
                             }
-                            @if !study::SESSION_LENGTHS.contains(&u.session_minutes) {
-                                option value=(u.session_minutes) selected { (study::minutes_words(u.session_minutes)) }
+                            // Smart breaks: when the answers show tiredness (breaks.rs).
+                            option value=(study::SMART_BREAKS) selected[u.session_minutes == study::SMART_BREAKS] { "When I need one" }
+                            @if !study::SESSION_LENGTHS.contains(&u.session_minutes) && u.session_minutes != study::SMART_BREAKS {
+                                option value=(u.session_minutes) selected { "After " (study::minutes_words(u.session_minutes)) }
                             }
                         } }
                     }

@@ -1647,8 +1647,76 @@ async fn a_break_is_suggested_after_the_session_length() {
     assert!(app.break_due(&a).await.unwrap().is_none(), "off by default");
     sqlx::query("UPDATE users SET session_minutes = 20 WHERE id = ?").bind(a.user_id()).execute(&app.db).await.unwrap();
     let a = reload(&app, "kolja").await;
-    assert_eq!(app.break_due(&a).await.unwrap(), Some(25));
+    let due = crate::study::BreakDue { studied: 25, length: 5, smart: false };
+    assert_eq!(app.break_due(&a).await.unwrap(), Some(due));
 
+    app.skip_break(a.user_id()).await.unwrap();
+    let a = reload(&app, "kolja").await;
+    assert_eq!(app.break_due(&a).await.unwrap(), None);
+}
+
+#[tokio::test]
+async fn smart_breaks_come_when_answers_slow_down() {
+    let app = app().await;
+    let a = user(&app, "kolja").await;
+    let deck = app.create_deck(&a, "Facts", "", None).await.unwrap();
+    sqlx::query("UPDATE users SET session_minutes = -1 WHERE id = ?").bind(a.user_id()).execute(&app.db).await.unwrap();
+    let a = reload(&app, "kolja").await;
+    // A review card last seen 3 days ago with a stability of 30 days: FSRS
+    // is about 97% sure of it.
+    let before = |at: i64| {
+        serde_json::json!({ "state": "review", "step": 0, "stability": 30.0, "difficulty": 5.0,
+            "due": at, "last_review": at - 3 * 86_400, "reps": 5, "lapses": 0 })
+        .to_string()
+    };
+    // One answer every 12 s for `minutes`, ending now, of 2 s each; from
+    // minute `slow_from` on they take 3.5 s. Without times (`timed` false)
+    // every third answer from then on is a miss instead.
+    let session = |minutes: i64, slow_from: i64, timed: bool| {
+        let (app, deck_id, user_id) = (&app, deck.id, a.user_id());
+        async move {
+            sqlx::query("DELETE FROM review_log").execute(&app.db).await.unwrap();
+            let start = now() - minutes * 60;
+            for i in 0..minutes * 5 {
+                let at = start + i * 12;
+                let c = app.create_card(&reload(app, "kolja").await, deck_id, &format!("q{i}"), "a", None, None, None).await.unwrap();
+                // A little wobble, so the baseline has a spread.
+                let slow = at - start >= slow_from * 60;
+                let ms = timed.then(|| if slow { 3500 } else { 2000 } + (i % 5) * 150);
+                let rating = if slow && !timed && i % 3 == 0 { 1 } else { 3 };
+                sqlx::query(
+                    "INSERT INTO review_log (user_id, card_id, deck_id, rating, reviewed_at, state_before,
+                        elapsed_days, scheduled_secs, source, prev_card, think_ms)
+                     VALUES (?, ?, ?, ?, ?, 2, 3, 0, 'web', ?, ?)",
+                )
+                .bind(user_id)
+                .bind(c.id)
+                .bind(deck_id)
+                .bind(rating)
+                .bind(at)
+                .bind(before(at))
+                .bind(ms)
+                .execute(&app.db)
+                .await
+                .unwrap();
+            }
+        }
+    };
+
+    session(40, 999, true).await;
+    assert_eq!(app.break_due(&a).await.unwrap(), None, "fresh all along");
+
+    session(40, 25, true).await;
+    let due = app.break_due(&a).await.unwrap().expect("slower since minute 25");
+    assert!(due.smart);
+    assert_eq!(due.studied, 40);
+    assert!((2..=20).contains(&due.length), "{due:?}");
+
+    // Misses on cards FSRS was sure of are enough, even without times.
+    session(40, 25, false).await;
+    assert!(app.break_due(&a).await.unwrap().is_some_and(|d| d.smart));
+
+    // Keep going: the watch starts over.
     app.skip_break(a.user_id()).await.unwrap();
     let a = reload(&app, "kolja").await;
     assert_eq!(app.break_due(&a).await.unwrap(), None);
