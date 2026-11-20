@@ -153,3 +153,62 @@ test.describe('without JavaScript', () => {
     await expect(back(page)).toBeVisible();
   });
 });
+
+/** Pretend the tab went to the background, or came back. */
+async function setHidden(page: Page, hidden: boolean) {
+  await page.evaluate((h) => {
+    Object.defineProperty(document, 'hidden', { value: h, configurable: true });
+    document.dispatchEvent(new Event('visibilitychange'));
+  }, hidden);
+}
+
+type Timing = { front: string; think_ms: number | null; answer_ms: number | null; away_ms: number | null; input: string | null };
+const timings = (user: number) =>
+  sql<Timing>(
+    `SELECT c.front, r.think_ms, r.answer_ms, r.away_ms, r.input FROM review_log r
+     JOIN cards c ON c.id = r.card_id WHERE r.user_id = ? ORDER BY r.id`,
+    user,
+  );
+const near = (got: number | null, want: number) => expect(Math.abs((got ?? -1e9) - want)).toBeLessThanOrEqual(50);
+
+test('each answer carries its timing, and time in another tab is kept apart', async ({ page, seed, account }) => {
+  const deck = await seed.deck('One');
+  await seed.cards(deck, [['el perro', 'the dog'], ['el gato', 'the cat']]);
+  // Time stands still and moves only when the test says so.
+  const start = new Date('2026-11-20T10:00:00Z');
+  await page.clock.install({ time: start });
+  await page.clock.pauseAt(start);
+  await page.goto('/study');
+  await expect(front(page)).toBeVisible();
+  const first = (await front(page).innerText()).trim();
+
+  // By keys: 2 s to recall, then 0.5 s on the back, 3 s away, 0.3 s more.
+  await page.clock.runFor(2000);
+  await page.keyboard.press(' ');
+  await expect(back(page)).toBeVisible();
+  await page.clock.runFor(500);
+  await setHidden(page, true);
+  await page.clock.runFor(3000);
+  await setHidden(page, false);
+  await page.clock.runFor(300);
+  await page.keyboard.press('3');
+  await expect(front(page)).not.toHaveText(first);
+
+  // By mouse: 1.2 s, then 0.7 s.
+  await page.clock.runFor(1200);
+  await showAnswer(page).click();
+  await page.clock.runFor(700);
+  await answers(page).getByRole('button', { name: /good/i }).click();
+  // The timing lands just after the review row itself.
+  await expect.poll(() => timings(account.id).filter((t) => t.input !== null).length).toBe(2);
+
+  const [a, b] = timings(account.id);
+  near(a.think_ms, 2000);
+  near(a.answer_ms, 800);
+  near(a.away_ms, 3000);
+  expect(a.input).toBe('key');
+  near(b.think_ms, 1200);
+  near(b.answer_ms, 700);
+  expect(b.away_ms).toBe(0);
+  expect(b.input).toMatch(/^(mouse|touch)$/);
+});
