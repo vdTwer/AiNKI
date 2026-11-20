@@ -1385,7 +1385,6 @@ fn study_foot(deck_name: &str, deck_id: i64, done: i64, total: i64, q_deck: Opti
             @if card_id.is_some() {
                 div.pause-cover.calm-only hidden data-stay {
                     p.kicker { "Paused" }
-                    p.summary { "The card waits, and the clock with it." }
                     button.btn.primary type="button" data-resume { "Resume" }
                 }
             }

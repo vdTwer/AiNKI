@@ -1386,7 +1386,6 @@ html.calm .study-foot .study-tools a:hover, html.calm .study-foot .study-tools b
 html.calm .study.paused > :not(.study-foot), html.calm .study.paused .study-tools, html.calm .study.paused .leech-note { visibility: hidden; }
 html.calm .study .pause-cover { position: fixed; left: 0; right: 0; top: 34vh; display: flex; flex-direction: column; align-items: center; gap: .9rem; text-align: center; }
 html.calm .study .pause-cover[hidden] { display: none; }
-html.calm .study .pause-cover .summary { margin: 0; color: var(--muted); }
 
 /* The end of a session: the progress line closes up and a tick draws out
    of it, then a single calm line. It plays only when a session has just

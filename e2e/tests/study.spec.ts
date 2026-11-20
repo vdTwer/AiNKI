@@ -233,12 +233,12 @@ test('a pause covers the card, and its time is kept apart', async ({ page, seed,
 
   await page.clock.runFor(1000);
   await pauseButton.click();
-  await expect(page.getByText('The card waits')).toBeVisible();
+  await expect(page.locator('main .pause-cover')).toBeVisible();
   await expect(front(page)).toBeHidden();
   // Keys don't reach the card while it waits.
   await page.keyboard.press('3');
   await page.keyboard.press(' ');
-  await expect(page.getByText('The card waits')).toBeHidden();
+  await expect(page.locator('main .pause-cover')).toBeHidden();
   // Space resumed it; the answer is still hidden.
   await expect(back(page)).toBeHidden();
   await expect(front(page)).toBeVisible();
@@ -246,7 +246,7 @@ test('a pause covers the card, and its time is kept apart', async ({ page, seed,
   // The same with the key, a minute long, after 0.5 s more of thinking.
   await page.clock.runFor(500);
   await page.keyboard.press('p');
-  await expect(page.getByText('The card waits')).toBeVisible();
+  await expect(page.locator('main .pause-cover')).toBeVisible();
   await page.clock.runFor(60_000);
   await page.getByRole('button', { name: 'Resume' }).click();
   await page.clock.runFor(300);
