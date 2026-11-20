@@ -349,3 +349,52 @@ table.retention tr.short td { font-weight: 700; }
 table.accounts { width: 100%; border-collapse: collapse; }
 table.accounts :is(th, td) { text-align: left; padding: .45rem .5rem .45rem 0; border-bottom: 1px solid var(--fg); white-space: nowrap; }
 table.accounts .num { text-align: right; font-variant-numeric: tabular-nums; }
+
+/* ----- chess cards ----------------------------------------------------------
+   The board is cm-chessboard (app.js); until it is there, and without
+   JavaScript, the pieces stand on a plain grid of the same size. Grey
+   squares here; the desktop look tints them. */
+:root {
+  --sq-light: #ffffff;
+  --sq-dark: #c4c4c4;
+  --sq-line: #000;
+  --arrow-right: #000;
+  --arrow-wrong: #8a8a8a;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --sq-light: #6b6b6b; --sq-dark: #3d3d3d; --sq-line: #fff; --arrow-right: #fff; --arrow-wrong: #9a9a9a; }
+}
+.chess-board { width: 100%; max-width: 26rem; margin: .5rem auto 0; }
+.chess-board .board-box { position: relative; width: 100%; aspect-ratio: 1; outline: 1px solid var(--sq-line); }
+.chess-board.empty { display: none; }
+.plain-board { display: grid; grid-template-columns: repeat(8, 1fr); width: 100%; height: 100%; }
+.plain-board .sq { display: flex; align-items: center; justify-content: center; background: var(--sq-light); color: #000; font-size: min(7vw, 2.2rem); line-height: 1; }
+.plain-board .sq.dark { background: var(--sq-dark); }
+.cm-chessboard.ainki .board .square.white { fill: var(--sq-light); }
+.cm-chessboard.ainki .board .square.black { fill: var(--sq-dark); }
+.cm-chessboard.ainki .board .border { fill: var(--sq-dark); stroke: none; }
+.cm-chessboard.ainki .coordinates .coordinate { font-size: 6.5px; user-select: none; }
+.cm-chessboard.ainki .coordinates .coordinate.black { fill: var(--sq-light); }
+.cm-chessboard.ainki .coordinates .coordinate.white { fill: var(--sq-dark); }
+.cm-chessboard.ainki .arrow-success .arrow-head { fill: var(--arrow-right); }
+.cm-chessboard.ainki .arrow-success .arrow-line { stroke: var(--arrow-right); opacity: .7; }
+.cm-chessboard.ainki .arrow-danger .arrow-head { fill: var(--arrow-wrong); }
+.cm-chessboard.ainki .arrow-danger .arrow-line { stroke: var(--arrow-wrong); opacity: .8; }
+.chess-front { text-align: center; }
+.chess-front .to-move { margin: .6rem 0 0; color: var(--muted); font-size: .9rem; }
+section.face.chess-back { font-size: 1rem; }
+.chess-back .verdict { font-size: 1.3rem; margin: .4rem 0; }
+.chess-back .also { margin: .2rem 0; color: var(--muted); }
+.chess-back .comment { margin-top: .8rem; }
+.chess-move { margin: 1rem 0 0; }
+.chess-move .typed-move { display: block; }
+.chess-move .typed-move input { width: 100%; font-size: 1.1rem; }
+.chess-move .play { margin-top: .6rem; width: 100%; }
+.chess-move .give-up, .board-tools { text-align: center; margin: .8rem 0 0; }
+.chess-edit { margin: .8rem 0; }
+.chess-edit .hint-inline { margin-top: .6rem; }
+.chess-edit .chess-board { margin-top: 0; }
+.card-form[data-kind=chess] .attach,
+.card-form[data-kind=chess] .face-image,
+.card-form[data-kind=chess] .multi-pick { display: none; }
+.card-form[data-kind=chess] textarea { font-family: ui-monospace, Menlo, Consolas, monospace; }

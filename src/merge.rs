@@ -174,9 +174,9 @@ impl App {
         let id: i64 = sqlx::query_scalar(&format!(
             "INSERT INTO cards (user_id, deck_id, front, back, front_image, back_image,
                 state, step, stability, difficulty, due, last_review, reps, lapses,
-                suspended, multi, copy_of, position, created_by, created_at, updated_at)
+                suspended, multi, kind, copy_of, position, created_by, created_at, updated_at)
              SELECT user_id, ?, front, back, front_image, back_image, {schedule},
-                ?, multi, ?,
+                ?, multi, kind, ?,
                 (SELECT COALESCE(MAX(position), 0) + 1 FROM cards WHERE user_id = ?),
                 'merged', ?, ?
              FROM cards WHERE id = ?

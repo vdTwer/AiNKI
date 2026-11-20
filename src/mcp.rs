@@ -30,6 +30,7 @@ use crate::{
     error::AppError,
     import, presets,
     scheduler::Rating,
+    kind::CardKind,
     multi::Split,
     service::{CardFilter, CardInput, DeckStatus, PresetInput},
 };
@@ -50,12 +51,19 @@ and set multi to how its back splits into items: 'list' (the items of its lists,
 (one item per heading) or 'parts' (split at --- lines). Each item then has its own memory, and partial recall \
 (4 of 7) is tracked item by item. Text on the back that is no item (a line above a group, a closing remark) \
 stays and is shown with the answer. Such cards have a multi field and an items array.
+- Chess cards (kind 'chess'): the front is a position as FEN on its first line, optionally followed by a blank \
+line and a question. The back is the right move on its first line (several right moves separated by commas), \
+optionally followed by a blank line and a comment. Moves can be SAN (Nf3) or UCI (g1f3); they are checked \
+against the position and saved as SAN. On the website the user plays the move on a board and the card grades \
+itself; when a right move mates, any mating move counts.
 
 Quizzing the user (needs a token that can review):
 1. get_next_card returns the next due card, front and back.
 2. Show the user ONLY the front. Wait for their answer.
 3. Compare with the back, tell them the answer, then call answer_card with rating 'good' if they \
 recalled it, 'again' if they did not. ('hard' and 'easy' exist but two buttons is the default.)
+   For a chess card, describe the position from the FEN (or let the user open it), ask for one move, and call \
+answer_card with move set to it: AiNKI grades it (right is Good, wrong is Again) and returns the answer and comment.
    For a multicard, get_next_card marks each item asked or not. Show the front, and if some items are not \
 asked, name those as already known and ask only for the rest. Compare the answer item by item (order does \
 not matter, meaning counts more than wording), tell the user which ones they missed, and call answer_card \
@@ -319,6 +327,8 @@ pub struct NewCard {
     /// Same as multi: 'list' (older name).
     #[serde(default)]
     pub list: bool,
+    /// 'chess' for a chess card (see the instructions); leave out for a usual card.
+    pub kind: Option<CardKind>,
 }
 
 impl NewCard {
@@ -352,6 +362,8 @@ pub struct UpdateCardParams {
     pub multi: Option<String>,
     /// true is multi 'list', false is 'none' (older name).
     pub list: Option<bool>,
+    /// Make it a 'basic' or a 'chess' card; front and back must then fit that kind.
+    pub kind: Option<CardKind>,
 }
 
 #[derive(Deserialize, JsonSchema)]
@@ -394,6 +406,9 @@ pub struct AnswerParams {
     pub rating: Option<RatingParam>,
     /// List cards only: numbers of the asked items the user missed (as in card.items). [] means all recalled.
     pub missed: Option<Vec<i64>>,
+    /// Chess cards only: the move the user played, in SAN (Nf3) or UCI (g1f3). AiNKI grades it itself.
+    #[serde(rename = "move")]
+    pub played: Option<String>,
 }
 
 #[derive(Deserialize, JsonSchema)]
@@ -457,6 +472,14 @@ pub struct ImportCsvParams {
     pub deck_id: i64,
     /// CSV/TSV text, one card per line: front,back.
     pub csv: String,
+}
+
+#[derive(Deserialize, JsonSchema)]
+pub struct ImportChessParams {
+    pub deck_id: i64,
+    /// One position per line: EPD (`<FEN> bm Nf3; c0 "comment";`), a FEN followed by the moves and
+    /// `; comment`, or Lichess's puzzle CSV with its header line.
+    pub text: String,
 }
 
 #[derive(Deserialize, JsonSchema)]
@@ -626,7 +649,7 @@ impl AinkiMcp {
         for (i, c) in p.cards.into_iter().enumerate() {
             match self
                 .app
-                .create_card(&a, deck_id, &c.front, &c.back, c.front_image_id.clone(), c.back_image_id.clone(), c.split())
+                .create_card_of(&a, deck_id, c.kind.unwrap_or_default(), &c.front, &c.back, c.front_image_id.clone(), c.back_image_id.clone(), c.split())
                 .await
             {
                 Ok(card) => ids.push(card.id),
@@ -649,6 +672,7 @@ impl AinkiMcp {
                 (Some(m), _) => Some(Some(Split::parse(m).ok_or("multi is 'list', 'sections', 'parts' or 'none'")?)),
                 (None, l) => l.map(|l| l.then_some(Split::List)),
             },
+            kind: p.kind,
         };
         let mut card = self.app.update_card(&a, p.card_id, input).await.map_err(err)?;
         if let Some(deck) = p.deck_id {
@@ -737,6 +761,19 @@ impl AinkiMcp {
     #[tool(description = "Record the user's answer for a card: 'good' (remembered) or 'again' (forgot). Hard/easy are optional. For a multicard, give missed: the numbers of the asked items the user did not recall.")]
     async fn answer_card(&self, Parameters(p): Parameters<AnswerParams>, Extension(parts): Extension<Parts>) -> ToolResult {
         let a = access(&parts)?;
+        if let Some(played) = p.played {
+            let (_, chess, verdict) = self.app.play_move(&a, p.card_id, &played).await.map_err(err)?;
+            let r = self.app.answer_card(&a, p.card_id, verdict.rating(), None, None).await.map_err(err)?;
+            return out(json!({
+                "card_id": r.card.id,
+                "right": verdict.right,
+                "played": crate::chess::san(&chess.board, verdict.played),
+                "answer": chess.answer_san(),
+                "comment": chess.comment,
+                "next_review_in": r.interval,
+                "card": self.card_json(&a, &r.card, false).await?,
+            }));
+        }
         let r = match (p.missed, p.rating) {
             (Some(missed), _) => {
                 let mut positions = Vec::new();
@@ -925,6 +962,12 @@ impl AinkiMcp {
     async fn import_csv(&self, Parameters(p): Parameters<ImportCsvParams>, Extension(parts): Extension<Parts>) -> ToolResult {
         let a = access(&parts)?;
         out(self.app.import_csv(&a, p.deck_id, &p.csv).await.map_err(err)?)
+    }
+
+    #[tool(description = "Import chess positions as chess cards into a deck. Lines that can't be read are skipped and listed in problems.")]
+    async fn import_chess(&self, Parameters(p): Parameters<ImportChessParams>, Extension(parts): Extension<Parts>) -> ToolResult {
+        let a = access(&parts)?;
+        out(self.app.import_chess(&a, p.deck_id, &p.text).await.map_err(err)?)
     }
 
     #[tool(description = "Import an Anki .apkg package (base64), including review history.")]

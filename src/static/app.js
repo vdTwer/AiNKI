@@ -85,7 +85,8 @@
     };
     var refresh = function () {
       var n = ++asked;
-      var body = new URLSearchParams({ front: frontText.value, back: backText.value, multi: chosen() });
+      var kindPick = multiPick.closest('form').querySelector('select[name=kind]');
+      var body = new URLSearchParams({ front: frontText.value, back: backText.value, multi: chosen(), kind: kindPick ? kindPick.value : '' });
       var editing = multiPick.closest('form').getAttribute('data-card');
       if (editing) body.append('card', editing);
       fetch('/cards/preview', {
@@ -245,9 +246,245 @@
     dropZone(label, input, anyFile);
   });
 
+  // ----- chess cards ------------------------------------------------------------
+
+  // The board is cm-chessboard with chess.js for the rules, vendored as one
+  // file and loaded the first time a page has a chess card. Until it is
+  // there (and without JavaScript) the server's plain board stands in.
+  var chessLib = null;
+  function chessReady(base) {
+    if (!chessLib) {
+      chessLib = new Promise(function (ok, fail) {
+        var css = document.createElement('link');
+        css.rel = 'stylesheet';
+        css.href = base + 'board.css';
+        document.head.appendChild(css);
+        var s = document.createElement('script');
+        s.src = base + 'board.js';
+        s.onload = function () { if (window.AinkiChess) ok(window.AinkiChess); else fail(new Error('board')); };
+        s.onerror = function () { chessLib = null; fail(new Error('board')); };
+        document.head.appendChild(s);
+      });
+    }
+    return chessLib;
+  }
+
+  // A FEN as chess.js wants it: four fields at least.
+  function fullFen(fen) {
+    var f = fen.trim().split(/\s+/);
+    if (f.length < 2) return null;
+    while (f.length < 4) f.push('-');
+    if (f.length < 6) f = f.slice(0, 4).concat(['0', '1']);
+    return f.join(' ');
+  }
+
+  function uciMove(u) {
+    return { from: u.slice(0, 2), to: u.slice(2, 4), promotion: u.charAt(4) || undefined };
+  }
+
+  // Makes a board in `holder`. Arrows are drawn with the right mouse button
+  // and never count as moves. `onMove` hears every legal move played, and
+  // returns true when it puts the board right itself.
+  function makeBoard(C, holder, fen, orient, onMove, still) {
+    holder.innerHTML = '';
+    var game = new C.Chess(fen);
+    var board = new C.Chessboard(holder, {
+      position: fen,
+      orientation: orient === 'b' ? C.COLOR.black : C.COLOR.white,
+      assetsUrl: holder.closest('[data-assets]').getAttribute('data-assets'),
+      style: { cssClass: 'ainki', borderType: C.BORDER_TYPE.none, showCoordinates: true, animationDuration: calm && motion && !still ? 180 : 0 },
+      extensions: [
+        { class: C.Markers, props: { autoMarkers: C.MARKER_TYPE.square } },
+        { class: C.Arrows },
+        { class: C.PromotionDialog },
+        { class: C.RightClickAnnotator }
+      ]
+    });
+    var play = function (m) {
+      var mv;
+      try { mv = game.move(m); } catch (e) { return false; }
+      if (!mv) return false;
+      // Castling, en passant and promotion move more than the dragged piece,
+      // unless the listener sets the board itself.
+      if (!onMove(mv)) board.state.moveInputProcess.then(function () { board.setPosition(game.fen(), true); });
+      return true;
+    };
+    var input = function (e) {
+      var T = C.INPUT_EVENT_TYPE;
+      if (e.type === T.moveInputStarted) {
+        var moves = game.moves({ square: e.squareFrom, verbose: true });
+        board.removeLegalMovesMarkers();
+        board.addLegalMovesMarkers(moves);
+        return moves.length > 0;
+      }
+      if (e.type === T.validateMoveInput) {
+        board.removeLegalMovesMarkers();
+        var promo = game.moves({ square: e.squareFrom, verbose: true }).some(function (m) { return m.to === e.squareTo && m.promotion; });
+        if (!promo) return play({ from: e.squareFrom, to: e.squareTo });
+        board.showPromotionDialog(e.squareTo, game.turn(), function (r) {
+          if (r && r.type === C.PROMOTION_DIALOG_RESULT_TYPE.pieceSelected) {
+            play({ from: e.squareFrom, to: e.squareTo, promotion: r.piece.charAt(1) });
+          } else {
+            board.setPosition(game.fen(), true);
+          }
+        });
+        return true;
+      }
+      if (e.type === T.moveInputCanceled) board.removeLegalMovesMarkers();
+    };
+    board.enableMoveInput(input);
+    return { board: board, game: game, input: input };
+  }
+
+  // On the study page: the first move is the answer and goes off at once
+  // (the server grades it). Turned over, the board shows what happened and
+  // is free to explore; "Back to the start" puts it back.
+  function mountStudyBoard(C, box) {
+    var fen = box.getAttribute('data-fen');
+    var mode = box.getAttribute('data-mode');
+    var holder = box.querySelector('.board-box');
+    var study = box.closest('.study');
+    var tools = study && study.querySelector('.board-tools');
+    var b = makeBoard(C, holder, fen, box.getAttribute('data-orient'), function (mv) {
+      if (mode === 'ask') {
+        b.board.disableMoveInput();
+        var form = study.querySelector('form.chess-move');
+        var field = form.querySelector('input[name=played]');
+        field.value = mv.from + mv.to + (mv.promotion || '');
+        if (form.requestSubmit) form.requestSubmit(); else form.submit();
+      } else if (tools) {
+        tools.hidden = false;
+      }
+    });
+    if (mode === 'ask') {
+      // The board takes the move; the typed one is for when there is none.
+      var typed = study.querySelector('.typed-move');
+      if (typed) typed.hidden = true;
+      var playBtn = study.querySelector('form.chess-move .play');
+      if (playBtn) playBtn.hidden = true;
+      return;
+    }
+    var answers = (box.getAttribute('data-answers') || '').split(' ').filter(Boolean);
+    var played = box.getAttribute('data-played');
+    var right = box.getAttribute('data-right') === '1';
+    var dress = function () {
+      b.game.load(fen);
+      b.board.removeArrows();
+      b.board.removeMarkers();
+      if (played && right) {
+        // Right: the move stands on the board.
+        b.game.move(uciMove(played));
+        b.board.setPosition(b.game.fen(), false);
+        b.board.addMarker(C.MARKER_TYPE.square, played.slice(0, 2));
+        b.board.addMarker(C.MARKER_TYPE.square, played.slice(2, 4));
+      } else {
+        // Not right: the position as it was, your move and the right one.
+        b.board.setPosition(fen, false);
+        if (played) b.board.addArrow(C.ARROW_TYPE.danger, played.slice(0, 2), played.slice(2, 4));
+        answers.forEach(function (a) { b.board.addArrow(C.ARROW_TYPE.success, a.slice(0, 2), a.slice(2, 4)); });
+      }
+      if (tools) tools.hidden = true;
+    };
+    dress();
+    if (mode === 'preview') b.board.disableMoveInput();
+    var reset = study && study.querySelector('.board-reset');
+    if (reset) reset.addEventListener('click', dress);
+  }
+
+  // The card form: the position from the front's first line on a board.
+  // Playing a move writes it as the answer, or takes it back if it is
+  // there already; the answers stand on the board as arrows.
+  function mountEditBoard(C, box) {
+    var form = box.closest('form');
+    var front = form.querySelector('#front');
+    var back = form.querySelector('#back');
+    var holder = box.querySelector('.board-box') || box.appendChild(document.createElement('div'));
+    holder.className = 'board-box';
+    var b = null;
+    var fen = null;
+    var answerLine = function () { return back.value.split('\n')[0]; };
+    // The answer's moves in SAN, as far as they are legal here.
+    var answers = function () {
+      var out = [];
+      answerLine().split(/[,\s/;]+/).forEach(function (w) {
+        if (!w || w === 'or') return;
+        try {
+          var g = new C.Chess(fen);
+          var mv = g.move(/^[a-h][1-8][a-h][1-8][qrbn]?$/.test(w) ? uciMove(w) : w);
+          if (mv && !out.some(function (o) { return o.san === mv.san; })) out.push(mv);
+        } catch (e) { /* not a move here (yet) */ }
+      });
+      return out;
+    };
+    var arrows = function () {
+      if (!b) return;
+      b.board.removeArrows();
+      answers().forEach(function (m) { b.board.addArrow(C.ARROW_TYPE.success, m.from, m.to); });
+    };
+    var draw = function () {
+      var next = fullFen(front.value.split('\n')[0] || '');
+      var ok = false;
+      if (next) { try { new C.Chess(next); ok = true; } catch (e) { ok = false; } }
+      box.classList.toggle('empty', !ok);
+      if (!ok) { fen = null; return; }
+      if (b && next === fen) { arrows(); return; }
+      fen = next;
+      if (b) b.board.destroy();
+      b = makeBoard(C, holder, fen, fen.split(' ')[1], function (mv) {
+        var have = answers();
+        var gone = have.filter(function (m) { return m.san !== mv.san; });
+        var sans = (gone.length < have.length ? gone : have.concat([mv])).map(function (m) { return m.san; });
+        var rest = back.value.indexOf('\n') >= 0 ? back.value.slice(back.value.indexOf('\n')) : '';
+        back.value = sans.join(', ') + rest;
+        back.dispatchEvent(new Event('input', { bubbles: true }));
+        b.game.load(fen);
+        b.board.state.moveInputProcess.then(function () { b.board.setPosition(fen, false); arrows(); });
+        return true;
+      // Moves here only write the answer down: no animation to wait for.
+      }, true);
+      arrows();
+    };
+    var timer = null;
+    var later = function () { clearTimeout(timer); timer = setTimeout(draw, 200); };
+    front.addEventListener('input', later);
+    back.addEventListener('input', function () { if (b) arrows(); });
+    draw();
+  }
+
+  function chessBoards(scope) {
+    var boxes = scope.querySelectorAll('.chess-board:not([data-mounted])');
+    Array.prototype.forEach.call(boxes, function (box) {
+      if (box.closest('[hidden]')) return;
+      box.setAttribute('data-mounted', '');
+      chessReady(box.getAttribute('data-assets')).then(function (C) {
+        if (box.getAttribute('data-mode') === 'edit') mountEditBoard(C, box); else mountStudyBoard(C, box);
+      }).catch(function () { box.removeAttribute('data-mounted'); });
+    });
+  }
+
+  // The card form's kind: a chess card's sides are a position and a move.
+  var kindSelect = document.querySelector('form.card-form select[name=kind]');
+  if (kindSelect) {
+    kindSelect.addEventListener('change', function () {
+      var form = kindSelect.form;
+      var kind = kindSelect.value;
+      form.setAttribute('data-kind', kind);
+      Array.prototype.forEach.call(form.querySelectorAll('.face-label[data-basic], textarea[data-basic]'), function (el) {
+        var words = el.getAttribute('data-' + kind) || el.getAttribute('data-basic');
+        if (el.tagName === 'TEXTAREA') el.placeholder = words; else el.textContent = words;
+      });
+      var edit = form.querySelector('.chess-edit');
+      if (edit) edit.hidden = kind !== 'chess';
+      chessBoards(form);
+      var front = form.querySelector('#front');
+      if (front) front.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+  }
+
   // ----- page details (run again after every swap) --------------------------
 
   function setup(scope) {
+    chessBoards(scope);
     // Long card text is set smaller and left-aligned.
     var faces = scope.querySelectorAll('section.face');
     for (var f = 0; f < faces.length; f++) {
@@ -538,7 +775,8 @@
       });
     }
     var area = document.querySelector('.study .card-area');
-    if (area) area.classList.add('leaving');
+    // A chess move stays on the board while it is on its way.
+    if (area && !form.matches('.chess-move')) area.classList.add('leaving');
     fetch(form.action, {
       method: 'POST',
       credentials: 'same-origin',
@@ -560,7 +798,23 @@
     }).then(function () { busy = false; });
   }
 
+  // A turned chess card's Continue fetches the next card in place.
+  function go(url) {
+    if (busy) return;
+    busy = true;
+    fetch(url, { credentials: 'same-origin' }).then(function (r) {
+      if (!r.ok || new URL(r.url).pathname !== '/study') throw new Error('unexpected page');
+      return r.text().then(function (html) { return swap(html, r.url); });
+    }).catch(function () { location.href = url; }).then(function () { busy = false; });
+  }
+
   document.addEventListener('click', function (e) {
+    var next = e.target.closest && e.target.closest('.study a.next');
+    if (next && !e.ctrlKey && !e.metaKey && !e.shiftKey) {
+      e.preventDefault();
+      go(next.href);
+      return;
+    }
     if (e.target.closest && e.target.closest('.study .pause-study')) { pause(); return; }
     if (e.target.closest && e.target.closest('.study .pause-cover [data-resume]')) { resume(); return; }
     var show = e.target.closest && e.target.closest('.study .reveal a.show');

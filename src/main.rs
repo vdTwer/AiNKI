@@ -9,6 +9,7 @@ use tracing_subscriber::EnvFilter;
 
 mod auth;
 mod advice;
+mod chess;
 mod coach;
 mod error;
 mod format;
@@ -16,6 +17,7 @@ mod fuzzy;
 mod import;
 mod insight;
 mod invites;
+mod kind;
 mod lessons;
 mod multi;
 mod outlook;

@@ -18,6 +18,7 @@ use crate::{
     App,
     auth::Access,
     error::{AppError, Result},
+    kind::CardKind,
     now,
     scheduler::{self, CardState},
 };
@@ -31,6 +32,9 @@ pub struct ImportReport {
     pub reviews_imported: i64,
     pub images_imported: i64,
     pub skipped: i64,
+    /// Lines that could not be read, with why ("line 4: …"); chess only.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub problems: Vec<String>,
 }
 
 // ----- CSV ----------------------------------------------------------------
@@ -415,10 +419,29 @@ impl App {
                 report.skipped += 1;
                 continue;
             }
-            self.insert_card(access.user_id(), deck_id, &front, &back, None, None, "import")
+            self.insert_card(access.user_id(), deck_id, CardKind::Basic, &front, &back, None, None, "import")
                 .await?;
             report.cards_imported += 1;
         }
+        Ok(report)
+    }
+
+    /// Chess positions, one per line (see `chess::parse_positions`). Lines
+    /// that can't be read are skipped and named in the report.
+    pub async fn import_chess(&self, access: &Access, deck_id: i64, text: &str) -> Result<ImportReport> {
+        access.require_write()?;
+        self.deck(access, deck_id).await?;
+        let (cards, problems) = crate::chess::parse_positions(text);
+        if cards.is_empty() && problems.is_empty() {
+            return Err(AppError::bad("no positions found"));
+        }
+        let mut report = ImportReport::default();
+        for (front, back) in cards {
+            self.insert_card(access.user_id(), deck_id, CardKind::Chess, &front, &back, None, None, "import").await?;
+            report.cards_imported += 1;
+        }
+        report.skipped = problems.len() as i64;
+        report.problems = problems.into_iter().map(|(line, why)| format!("line {line}: {why}")).collect();
         Ok(report)
     }
 
@@ -628,7 +651,7 @@ impl App {
             };
 
             let card_id = self
-                .insert_card(access.user_id(), deck_id, &front, &back, front_image, back_image, "import")
+                .insert_card(access.user_id(), deck_id, CardKind::Basic, &front, &back, front_image, back_image, "import")
                 .await?;
             report.cards_imported += 1;
 

@@ -77,7 +77,7 @@ async fn every_tool_is_listed_with_a_description_and_schema() {
         "get_image", "get_next_card", "answer_card", "undo_last_answer", "get_stats", "list_presets",
         "create_preset", "update_preset", "delete_preset", "get_coach_advice", "list_cards_needing_attention",
         "dismiss_card_flag", "split_card", "get_insights", "get_workload", "list_lessons", "get_lesson",
-        "optimize_fsrs", "import_csv", "import_apkg", "share_deck", "list_shares", "accept_share",
+        "optimize_fsrs", "import_csv", "import_chess", "import_apkg", "share_deck", "list_shares", "accept_share",
         "decline_share", "cancel_share", "export_deck_csv", "merge_decks",
     ] {
         assert!(names.contains(&expected), "{expected} is missing from tools/list");
@@ -346,4 +346,38 @@ async fn an_agent_can_merge_decks() {
     assert_eq!(merged["deck"]["name"], "Both");
     assert_eq!((merged["cards"].as_i64(), merged["duplicates"].as_i64()), (Some(2), Some(1)));
     assert!(call(&app, &t, "merge_decks", json!({ "deck_ids": [one.id], "name": "Alone" })).await.is_err());
+}
+
+#[tokio::test]
+async fn an_agent_can_make_and_grade_chess_cards() {
+    let app = app().await;
+    let a = user(&app, "kolja").await;
+    let (_, t) = app.create_token(a.user_id(), "claude", true, true, None).await.unwrap();
+    let t = t.as_str();
+    let scholar = "r1bqkb1r/pppp1ppp/2n2n2/4p2Q/2B1P3/8/PPPP1PPP/RNB1K1NR w KQkq - 4 4";
+    let made = ok(
+        &app,
+        t,
+        "create_cards",
+        json!({ "deck_name": "Tactics", "cards": [
+            { "front": format!("{scholar}\n\nMate in one"), "back": "h5f7\n\nf7 falls.", "kind": "chess" },
+            { "front": scholar, "back": "Qxf8", "kind": "chess" },
+        ] }),
+    )
+    .await;
+    assert_eq!(made["created"], 1);
+    assert!(made["errors"][0]["error"].as_str().unwrap().contains("legal move"), "{made}");
+    let id = made["card_ids"][0].as_i64().unwrap();
+    let card = ok(&app, t, "get_card", json!({ "card_id": id })).await;
+    assert_eq!((card["kind"].as_str(), card["back"].as_str()), (Some("chess"), Some("Qxf7#\n\nf7 falls.")));
+
+    let answered = ok(&app, t, "answer_card", json!({ "card_id": id, "move": "Qxf7" })).await;
+    assert_eq!((answered["right"].as_bool(), answered["played"].as_str()), (Some(true), Some("Qxf7#")));
+    assert_eq!(answered["comment"], "f7 falls.");
+    assert!(call(&app, t, "answer_card", json!({ "card_id": id, "move": "Ke3" })).await.is_err());
+
+    let deck_id = made["deck_id"].as_i64().unwrap();
+    let imported = ok(&app, t, "import_chess", json!({ "deck_id": deck_id, "text": format!("{scholar} bm Qxf7#;\nbroken line here") })).await;
+    assert_eq!(imported["cards_imported"], 1);
+    assert_eq!(imported["problems"].as_array().unwrap().len(), 1);
 }

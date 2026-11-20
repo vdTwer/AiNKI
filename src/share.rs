@@ -165,9 +165,10 @@ impl App {
             front_image: Option<String>,
             back_image: Option<String>,
             multi: Option<crate::multi::Split>,
+            kind: crate::kind::CardKind,
         }
         let cards: Vec<Src> = sqlx::query_as(
-            "SELECT front, back, front_image, back_image, multi FROM cards WHERE deck_id = ? ORDER BY position, id",
+            "SELECT front, back, front_image, back_image, multi, kind FROM cards WHERE deck_id = ? ORDER BY position, id",
         )
         .bind(share.deck_id)
         .fetch_all(&self.db)
@@ -192,7 +193,7 @@ impl App {
             let front_image = self.copy_image(access.user_id(), c.front_image, &mut images).await?;
             let back_image = self.copy_image(access.user_id(), c.back_image, &mut images).await?;
             let id = self
-                .insert_card(access.user_id(), deck.id, &c.front, &c.back, front_image, back_image, "shared")
+                .insert_card(access.user_id(), deck.id, c.kind, &c.front, &c.back, front_image, back_image, "shared")
                 .await?;
             if c.multi.is_some() {
                 let copy = self.card(access, id).await?;
