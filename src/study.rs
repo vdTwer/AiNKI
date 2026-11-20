@@ -67,6 +67,31 @@ pub fn minutes_words(m: i64) -> String {
     if m == 1 { "1 minute".into() } else { format!("{m} minutes") }
 }
 
+/// How long an answer took, as the browser measured it. Anything out of
+/// range is dropped rather than stored.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct Timing {
+    pub think_ms: Option<i64>,
+    pub answer_ms: Option<i64>,
+    pub away_ms: Option<i64>,
+    pub input: Option<&'static str>,
+}
+
+/// Longer than this is no answer time but a page left open.
+const TIMING_MAX_MS: i64 = 24 * 3600 * 1000;
+
+impl Timing {
+    pub fn checked(think_ms: Option<i64>, answer_ms: Option<i64>, away_ms: Option<i64>, input: Option<&str>) -> Self {
+        let ms = |v: Option<i64>| v.filter(|v| (0..=TIMING_MAX_MS).contains(v));
+        Timing {
+            think_ms: ms(think_ms),
+            answer_ms: ms(answer_ms),
+            away_ms: ms(away_ms),
+            input: ["key", "mouse", "touch", "pen"].into_iter().find(|k| input == Some(*k)),
+        }
+    }
+}
+
 #[derive(Debug, Default, Serialize)]
 pub struct Confidence {
     pub sure: i64,
@@ -86,18 +111,22 @@ impl Confidence {
 }
 
 impl App {
-    /// After an answer on the website: whether the user felt sure, and
-    /// whether time ran out. Goes onto the review just logged.
-    pub async fn note_answer(&self, access: &Access, card_id: i64, sure: Option<bool>, timed_out: bool) -> Result<()> {
-        if sure.is_none() && !timed_out {
+    /// After an answer on the website: whether the user felt sure, whether
+    /// time ran out, and how long it took. Goes onto the review just logged.
+    pub async fn note_answer(&self, access: &Access, card_id: i64, sure: Option<bool>, timed_out: bool, timing: &Timing) -> Result<()> {
+        if sure.is_none() && !timed_out && *timing == Timing::default() {
             return Ok(());
         }
         sqlx::query(
-            "UPDATE review_log SET confidence = ?, timed_out = ?
+            "UPDATE review_log SET confidence = ?, timed_out = ?, think_ms = ?, answer_ms = ?, away_ms = ?, input = ?
              WHERE id = (SELECT MAX(id) FROM review_log WHERE user_id = ? AND card_id = ?)",
         )
         .bind(sure)
         .bind(timed_out)
+        .bind(timing.think_ms)
+        .bind(timing.answer_ms)
+        .bind(timing.away_ms)
+        .bind(timing.input)
         .bind(access.user_id())
         .bind(card_id)
         .execute(&self.db)

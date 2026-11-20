@@ -853,6 +853,38 @@ mod http {
     }
 
     #[tokio::test]
+    async fn the_browser_timing_is_kept_with_the_answer() {
+        let app = app().await;
+        let a = user(&app, "kolja").await;
+        let deck = app.create_deck(&a, "Spanish", "", None).await.unwrap();
+        let cookie = login_cookie(&app, "kolja").await;
+        let timing = |id: i64| {
+            sqlx::query_as::<_, (Option<i64>, Option<i64>, Option<i64>, Option<String>)>(
+                "SELECT think_ms, answer_ms, away_ms, input FROM review_log WHERE card_id = ?",
+            )
+            .bind(id)
+            .fetch_one(&app.db)
+        };
+
+        let card = app.create_card(&a, deck.id, "el perro", "the dog", None, None, None).await.unwrap();
+        let body = format!("card={}&reps=0&rating=3&think_ms=2345&answer_ms=812&away_ms=0&input=key", card.id);
+        assert_eq!(submit(&app, &cookie, "/study/answer", &body).await.status(), StatusCode::SEE_OTHER);
+        assert_eq!(timing(card.id).await.unwrap(), (Some(2345), Some(812), Some(0), Some("key".into())));
+
+        // Nonsense is dropped, not stored and not an error.
+        let card = app.create_card(&a, deck.id, "el gato", "the cat", None, None, None).await.unwrap();
+        let body = format!("card={}&reps=0&rating=3&think_ms=-5&answer_ms=99999999999&input=telepathy", card.id);
+        assert_eq!(submit(&app, &cookie, "/study/answer", &body).await.status(), StatusCode::SEE_OTHER);
+        assert_eq!(timing(card.id).await.unwrap(), (None, None, None, None));
+
+        // Without JavaScript nothing is measured.
+        let card = app.create_card(&a, deck.id, "la casa", "the house", None, None, None).await.unwrap();
+        let body = format!("card={}&reps=0&rating=1&t={}", card.id, now() - 4);
+        assert_eq!(submit(&app, &cookie, "/study/answer", &body).await.status(), StatusCode::SEE_OTHER);
+        assert_eq!(timing(card.id).await.unwrap(), (None, None, None, None));
+    }
+
+    #[tokio::test]
     async fn quiet_hours_show_a_rest_screen() {
         let app = app().await;
         let a = user(&app, "kolja").await;
@@ -1630,7 +1662,7 @@ async fn sure_or_not_is_kept_with_the_answer() {
     for (n, sure, rating) in [(0, true, Rating::Good), (1, true, Rating::Again), (2, false, Rating::Good)] {
         let c = app.create_card(&a, deck.id, &format!("q{n}"), "a", None, None, None).await.unwrap();
         app.answer_card(&a, c.id, rating, None, None).await.unwrap();
-        app.note_answer(&a, c.id, Some(sure), false).await.unwrap();
+        app.note_answer(&a, c.id, Some(sure), false, &crate::study::Timing::default()).await.unwrap();
     }
     let c = app.confidence(&a, None).await.unwrap();
     assert_eq!((c.sure, c.sure_recalled, c.unsure, c.unsure_recalled), (2, 1, 1, 1));

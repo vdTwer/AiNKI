@@ -2099,6 +2099,11 @@ struct AnswerForm {
     sure: Option<String>,
     /// Time ran out on a timed card: it counts as Again.
     timeout: Option<u8>,
+    /// Measured in the browser, see `study::Timing`.
+    think_ms: Option<i64>,
+    answer_ms: Option<i64>,
+    away_ms: Option<i64>,
+    input: Option<String>,
 }
 
 async fn study_answer(State(app): State<AppState>, user: WebUser, Form(f): Form<AnswerForm>) -> WebResult {
@@ -2124,7 +2129,8 @@ async fn study_answer(State(app): State<AppState>, user: WebUser, Form(f): Form<
         }
     };
     if answered.is_ok() {
-        app.note_answer(&access, f.card, sure, timed_out).await?;
+        let timing = study::Timing::checked(f.think_ms, f.answer_ms, f.away_ms, f.input.as_deref());
+        app.note_answer(&access, f.card, sure, timed_out, &timing).await?;
     }
     match answered {
         Ok(_) | Err(AppError::Conflict(_)) => Ok(redirect(study_url(f.deck))),
