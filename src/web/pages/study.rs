@@ -171,17 +171,6 @@ pub(crate) async fn study_card(
     let timed_out = revealed && limit > 0 && now() - shown.at > limit + 1;
     let (done, total) = app.session_progress(access, q_deck).await?;
     let leech = app.leech_note(card).await?.is_some();
-    let four = user.four_buttons;
-    let buttons: Vec<(Rating, &str, &str)> = if four {
-        vec![
-            (Rating::Again, "Again", "1"),
-            (Rating::Hard, "Hard", "2"),
-            (Rating::Good, "Good", "3"),
-            (Rating::Easy, "Easy", "4"),
-        ]
-    } else {
-        vec![(Rating::Again, "Again", "1"), (Rating::Good, "Good", "3")]
-    };
     let deck_param = q_deck.map(|d| format!("&deck={d}")).unwrap_or_default();
     let show_href = format!("/study?card={}&show=1&t={}{}#answer", card.id, shown.at, deck_param);
     let reveal_form = typed || ask_sure;
@@ -198,88 +187,101 @@ pub(crate) async fn study_card(
     let sure_field = html! { input.sure-field type="hidden" name="sure" value=(sure_value); };
     let echo = typed_echo(typed, shown.typed.as_deref());
     let timer = timer_box(limit, revealed);
-    let timeout = html! {
-        form.timeout-form method="post" action="/study/answer" hidden[!timed_out] data-stay {
-            input type="hidden" name="card" value=(card.id);
-            input type="hidden" name="reps" value=(card.reps);
-            input type="hidden" name="t" value=(shown.at);
-            input type="hidden" name="timeout" value="1";
-            @if let Some(d) = q_deck { input type="hidden" name="deck" value=(d); }
-            (sure_field)
-            p.timeout-note { "Time's up. This one counts as forgotten." }
-            div.answers.cols-1 {
-                button.btn.again type="submit" data-key=" " { span.label { "Continue" " " span.key { "space" } } }
-            }
-        }
-    };
-    if let Some(how) = card.multi {
-        let items = app.card_items(card).await?;
+    let timeout = timeout_form(card, shown, q_deck, timed_out, &sure_field);
+    let foot = study_foot(&deck.name, deck.id, done, total, q_deck, Some(card.id), leech);
+    // A multicard asks its items in its own body, with the reveal and the
+    // answers inside; a plain card shows its faces and the buttons below.
+    let body = if let Some(how) = card.multi {
         let extras = StudyExtras {
             reveal_inside: if reveal_form {
                 html! {}
             } else {
                 reveal.clone()
             },
-            sure_field: sure_field.clone(),
-            echo: echo.clone(),
+            sure_field,
+            echo,
             timed_out,
         };
-        let body = multi_study(card, how, &items, q_deck, shown, &extras);
-        return Ok(page(
-            Some(Nav::Study),
-            "Study",
-            Some(user),
-            Some("study"),
-            html! {
-                (flash(msg))
-                section.study.revealed[revealed].timed-out[timed_out] {
-                    (body)
-                    (timer)
-                    @if reveal_form { (reveal) }
-                    (timeout)
-                    (study_foot(&deck.name, deck.id, done, total, q_deck, Some(card.id), leech))
-                }
-            },
-        ));
-    }
-    Ok(page(
-        Some(Nav::Study),
-        "Study",
-        Some(user),
-        Some("study"),
-        html! {
-            (flash(msg))
-            section.study.revealed[revealed].timed-out[timed_out] {
-                div.card-area {
-                    (state_tag(card.card_state()))
-                    section.face.front { (face(&card.front, card.front_image.as_deref())) }
-                    hr.divider hidden[!revealed];
-                    section.face.back id="answer" hidden[!revealed] {
-                        (echo)
-                        (face(&card.back, card.back_image.as_deref()))
-                    }
-                }
-                (timer)
-                (reveal)
-                (timeout)
-                form.answers.cols-2[!four].cols-4[four] method="post" action="/study/answer" hidden[!revealed || timed_out] {
-                    input type="hidden" name="card" value=(card.id);
-                    input type="hidden" name="reps" value=(card.reps);
-                    input type="hidden" name="t" value=(shown.at);
-                    @if let Some(d) = q_deck { input type="hidden" name="deck" value=(d); }
-                    (sure_field)
-                    @for (rating, label, key) in &buttons {
-                        @let preview = previews.iter().find(|(r, _)| r == rating).map_or("", |(_, p)| p.as_str());
-                        button.btn.primary[*rating == Rating::Good].again[*rating == Rating::Again] type="submit" name="rating" value=(*rating as i64) data-key=(key) {
-                            span.label { (label) " " span.key { (key) } }
-                            span.ivl { (preview) }
-                        }
-                    }
-                }
-                (study_foot(&deck.name, deck.id, done, total, q_deck, Some(card.id), leech))
+        let multi = multi_study(card, how, &app.card_items(card).await?, q_deck, shown, &extras);
+        html! { (multi) (timer) @if reveal_form { (reveal) } (timeout) (foot) }
+    } else {
+        let answers =
+            answer_form(card, shown, q_deck, user.four_buttons, revealed && !timed_out, &previews, &sure_field);
+        html! { (card_faces(card, revealed, &echo)) (timer) (reveal) (timeout) (answers) (foot) }
+    };
+    let body = html! { (flash(msg)) section.study.revealed[revealed].timed-out[timed_out] { (body) } };
+    Ok(page(Some(Nav::Study), "Study", Some(user), Some("study"), body))
+}
+
+/// A plain card's front, and its back once turned over.
+fn card_faces(card: &Card, revealed: bool, echo: &Markup) -> Markup {
+    html! {
+        div.card-area {
+            (state_tag(card.card_state()))
+            section.face.front { (face(&card.front, card.front_image.as_deref())) }
+            hr.divider hidden[!revealed];
+            section.face.back id="answer" hidden[!revealed] {
+                (echo)
+                (face(&card.back, card.back_image.as_deref()))
             }
-        },
-    ))
+        }
+    }
+}
+
+/// Shown when a timed card runs out: the answer counts as forgotten.
+fn timeout_form(card: &Card, shown: &Shown, q_deck: Option<i64>, timed_out: bool, sure_field: &Markup) -> Markup {
+    html! {
+    form.timeout-form method="post" action="/study/answer" hidden[!timed_out] data-stay {
+        input type="hidden" name="card" value=(card.id);
+        input type="hidden" name="reps" value=(card.reps);
+        input type="hidden" name="t" value=(shown.at);
+        input type="hidden" name="timeout" value="1";
+        @if let Some(d) = q_deck { input type="hidden" name="deck" value=(d); }
+        (sure_field)
+        p.timeout-note { "Time's up. This one counts as forgotten." }
+        div.answers.cols-1 {
+            button.btn.again type="submit" data-key=" " { span.label { "Continue" " " span.key { "space" } } }
+        }
+    }
+    }
+}
+
+/// The rating buttons, each with the interval it would give.
+fn answer_form(
+    card: &Card,
+    shown: &Shown,
+    q_deck: Option<i64>,
+    four: bool,
+    visible: bool,
+    previews: &[(Rating, String)],
+    sure_field: &Markup,
+) -> Markup {
+    let buttons: &[(Rating, &str, &str)] = if four {
+        &[
+            (Rating::Again, "Again", "1"),
+            (Rating::Hard, "Hard", "2"),
+            (Rating::Good, "Good", "3"),
+            (Rating::Easy, "Easy", "4"),
+        ]
+    } else {
+        &[(Rating::Again, "Again", "1"), (Rating::Good, "Good", "3")]
+    };
+    html! {
+        form.answers.cols-2[!four].cols-4[four] method="post" action="/study/answer" hidden[!visible] {
+            input type="hidden" name="card" value=(card.id);
+            input type="hidden" name="reps" value=(card.reps);
+            input type="hidden" name="t" value=(shown.at);
+            @if let Some(d) = q_deck { input type="hidden" name="deck" value=(d); }
+            (sure_field)
+            @for (rating, label, key) in buttons {
+                @let preview = previews.iter().find(|(r, _)| r == rating).map_or("", |(_, p)| p.as_str());
+                button.btn.primary[*rating == Rating::Good].again[*rating == Rating::Again] type="submit" name="rating" value=(*rating as i64) data-key=(key) {
+                    span.label { (label) " " span.key { (key) } }
+                    span.ivl { (preview) }
+                }
+            }
+        }
+    }
 }
 
 /// The countdown for a timed card. Without JavaScript it only names the
@@ -508,55 +510,55 @@ pub(crate) async fn study(
     }
 
     let Some(sc) = app.next_card(&access, q.deck).await? else {
-        let decks = app.deck_summaries(&access).await?;
-        let any_cards = decks.iter().any(|d| d.total > 0);
-        let stats = app.stats(&access, q.deck).await?;
-        let next = app.next_review_at(&access, q.deck).await?;
-        return Ok(page(
-            Some(Nav::Study),
-            "Study",
-            Some(&user.0),
-            Some("study-done"),
-            html! {
-                (flash(msg.as_deref()))
-                section.session-end {
-                    @if any_cards {
-                        div.end-mark aria-hidden="true" { div.line {} (done_check(26, "check")) }
-                        h1 { "All done." }
-                        @if stats.cards_today > 0 {
-                            p.summary {
-                                "Today you studied " (count(stats.cards_today, "card"))
-                                @if stats.minutes_today >= 0.5 { " in " (format::minutes(stats.minutes_today)) }
-                                "."
-                            }
-                        }
-                        p.summary {
-                            @if let Some(t) = next {
-                                "Next cards are due " (format::when(&user.0.clock(), t)) "."
-                            } @else {
-                                "Nothing else is scheduled yet."
-                            }
-                        }
-                    } @else {
-                        h1 { "No cards yet" }
-                        p.summary { "Add a few cards, or import a deck from Anki, and they'll show up here." }
-                        p { a.btn.primary href=(match q.deck { Some(d) => format!("/cards/new?deck={d}"), None => "/cards/new".into() }) { "Add cards" } }
-                    }
-                    div.end-links {
-                        a href="/" { "Back to decks" }
-                        form method="post" action="/study/undo" {
-                            @if let Some(d) = q.deck { input type="hidden" name="deck" value=(d); }
-                            button.link.icon-link type="submit" { (icon(ICON_UNDO, PAGE_ICON)) span { "Undo last answer" } }
-                        }
-                    }
-                }
-            },
-        )
-        .into_response());
+        let end = session_end(&app, &access, q.deck).await?;
+        let body = html! { (flash(msg.as_deref())) (end) };
+        return Ok(page(Some(Nav::Study), "Study", Some(&user.0), Some("study-done"), body).into_response());
     };
     Ok(study_card(&app, &access, &user.0, msg.as_deref(), &sc.card, &sc.deck, q.deck, &Shown::front(now()))
         .await?
         .into_response())
+}
+
+/// When nothing is left: what today held and when cards come next, or how
+/// to get started when there are no cards at all.
+async fn session_end(app: &App, access: &Access, deck: Option<i64>) -> Result<Markup, AppError> {
+    let any_cards = app.deck_summaries(access).await?.iter().any(|d| d.total > 0);
+    let stats = app.stats(access, deck).await?;
+    let next = app.next_review_at(access, deck).await?;
+    let clock = access.user.clock();
+    Ok(html! {
+    section.session-end {
+        @if any_cards {
+            div.end-mark aria-hidden="true" { div.line {} (done_check(26, "check")) }
+            h1 { "All done." }
+            @if stats.cards_today > 0 {
+                p.summary {
+                    "Today you studied " (count(stats.cards_today, "card"))
+                    @if stats.minutes_today >= 0.5 { " in " (format::minutes(stats.minutes_today)) }
+                    "."
+                }
+            }
+            p.summary {
+                @if let Some(t) = next {
+                    "Next cards are due " (format::when(&clock, t)) "."
+                } @else {
+                    "Nothing else is scheduled yet."
+                }
+            }
+        } @else {
+            h1 { "No cards yet" }
+            p.summary { "Add a few cards, or import a deck from Anki, and they'll show up here." }
+            p { a.btn.primary href=(match deck { Some(d) => format!("/cards/new?deck={d}"), None => "/cards/new".into() }) { "Add cards" } }
+        }
+        div.end-links {
+            a href="/" { "Back to decks" }
+            form method="post" action="/study/undo" {
+                @if let Some(d) = deck { input type="hidden" name="deck" value=(d); }
+                button.link.icon-link type="submit" { (icon(ICON_UNDO, PAGE_ICON)) span { "Undo last answer" } }
+            }
+        }
+    }
+    })
 }
 
 /// "7:00": the time of day of a moment, in the user's zone.
