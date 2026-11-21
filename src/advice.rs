@@ -20,6 +20,7 @@ use crate::{
     coach::{Attention, Kind},
     error::Result,
     num,
+    scheduler::CardState,
     service::{DeckSummary, Stats},
 };
 
@@ -876,7 +877,7 @@ impl App {
             deck_id: i64,
             card_id: i64,
             rating: i64,
-            state_before: i64,
+            state_before: CardState,
             reviewed_at: i64,
             duration_ms: Option<i64>,
         }
@@ -928,11 +929,11 @@ impl App {
                 if let Some(ms) = r.duration_ms.filter(|ms| *ms > 0) {
                     times_7d.push(num::i64_f64(ms.min(MAX_ANSWER_MS)) / 1000.0);
                 }
-                if r.state_before == 0 {
+                if r.state_before == CardState::New {
                     new_7d.entry(r.deck_id).or_default().insert(r.card_id);
                 }
             }
-            if r.state_before != 2 {
+            if r.state_before != CardState::Review {
                 continue;
             }
             let ok = i64::from(r.rating > 1);

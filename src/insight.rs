@@ -10,6 +10,7 @@ use crate::App;
 use crate::auth::Access;
 use crate::error::Result;
 use crate::num;
+use crate::scheduler::CardState;
 
 /// Below this many reviews a deck's retention says little.
 pub const MIN_SAMPLE: i64 = 20;
@@ -114,7 +115,7 @@ impl App {
             deck_id: i64,
             card_id: i64,
             rating: i64,
-            state_before: i64,
+            state_before: CardState,
             reviewed_at: i64,
             duration_ms: Option<i64>,
         }
@@ -134,10 +135,10 @@ impl App {
             reviews += 1;
             ms += r.duration_ms.unwrap_or(0);
             days.insert((r.reviewed_at - start).div_euclid(86_400));
-            if r.state_before == 0 {
+            if r.state_before == CardState::New {
                 new_cards.insert(r.card_id);
             }
-            if r.state_before == 2 {
+            if r.state_before == CardState::Review {
                 sample += 1;
                 passed += i64::from(r.rating > 1);
                 target_sum += targets.get(&r.deck_id).copied().unwrap_or(0.9);

@@ -267,7 +267,7 @@ pub struct CardItem {
     pub card_id: i64,
     pub position: i64,
     pub text: String,
-    pub state: i64,
+    pub state: CardState,
     pub step: i64,
     pub stability: Option<f64>,
     pub difficulty: Option<f64>,
@@ -279,7 +279,7 @@ pub struct CardItem {
 
 impl CardItem {
     pub const fn card_state(&self) -> CardState {
-        CardState::from_i64(self.state)
+        self.state
     }
 
     pub fn sched(&self) -> CardSched {
@@ -296,7 +296,7 @@ impl CardItem {
     }
 
     fn set(&mut self, s: &CardSched) {
-        self.state = s.state as i64;
+        self.state = s.state;
         self.step = s.step;
         self.stability = s.stability.map(f64::from);
         self.difficulty = s.difficulty.map(f64::from);

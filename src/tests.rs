@@ -2098,3 +2098,14 @@ async fn a_read_only_token_cannot_pause_a_deck() {
     assert!(matches!(app.set_deck_status(&read, deck.id, DeckStatus::Paused).await, Err(AppError::Forbidden(_))));
     assert_eq!(app.deck(&a, deck.id).await.unwrap().status, DeckStatus::Active);
 }
+
+#[tokio::test]
+async fn a_card_with_an_unknown_state_fails_to_load() {
+    let app = app().await;
+    let a = user(&app, "kolja").await;
+    let deck = app.create_deck(&a, "D", "", None).await.unwrap();
+    let card = app.create_card(&a, deck.id, "Hund", "dog", None, None, None).await.unwrap();
+    sqlx::query("UPDATE cards SET state = 9 WHERE id = ?").bind(card.id).execute(&app.db).await.unwrap();
+    // Before, state 9 quietly read as a new card.
+    assert!(matches!(app.card(&a, card.id).await, Err(crate::error::AppError::Internal(_))));
+}

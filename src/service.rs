@@ -114,7 +114,7 @@ pub struct Card {
     pub back: String,
     pub front_image: Option<String>,
     pub back_image: Option<String>,
-    pub state: i64,
+    pub state: CardState,
     pub step: i64,
     pub stability: Option<f64>,
     pub difficulty: Option<f64>,
@@ -135,7 +135,7 @@ pub struct Card {
 impl Card {
     pub fn sched(&self) -> CardSched {
         CardSched {
-            state: CardState::from_i64(self.state),
+            state: self.state,
             step: self.step,
             stability: self.stability.map(num::f64_f32),
             difficulty: self.difficulty.map(num::f64_f32),
@@ -147,7 +147,7 @@ impl Card {
     }
 
     pub const fn card_state(&self) -> CardState {
-        CardState::from_i64(self.state)
+        self.state
     }
 
     /// JSON shape used by the MCP API.
@@ -572,7 +572,7 @@ impl App {
         #[derive(sqlx::FromRow)]
         struct Row {
             deck_id: i64,
-            state: i64,
+            state: CardState,
             suspended: bool,
             cnt: i64,
             due_now: i64,
@@ -592,7 +592,7 @@ impl App {
         #[derive(sqlx::FromRow)]
         struct Done {
             deck_id: i64,
-            state_before: i64,
+            state_before: CardState,
             cnt: i64,
         }
         let done: Vec<Done> = sqlx::query_as(
@@ -626,7 +626,7 @@ impl App {
                     s.suspended += r.cnt;
                     continue;
                 }
-                match CardState::from_i64(r.state) {
+                match r.state {
                     CardState::New => s.new += r.cnt,
                     // Studying learns ahead, so these count as due too;
                     // otherwise a left session reads "all done" while
@@ -636,7 +636,7 @@ impl App {
                 }
             }
             for d in done.iter().filter(|d| d.deck_id == s.deck.id) {
-                match CardState::from_i64(d.state_before) {
+                match d.state_before {
                     CardState::New => s.new_done_today += d.cnt,
                     CardState::Review => s.review_done_today += d.cnt,
                     _ => {}
@@ -679,7 +679,7 @@ impl App {
         #[derive(sqlx::FromRow)]
         struct Touched {
             deck_id: i64,
-            state: i64,
+            state: CardState,
             due: i64,
             last_rating: i64,
         }
@@ -703,7 +703,7 @@ impl App {
         let (mut done, mut total, mut touched_due_now) = (0, 0, 0);
         for t in touched.iter().filter(|t| summaries.iter().any(|s| s.deck.id == t.deck_id)) {
             total += 1;
-            match CardState::from_i64(t.state) {
+            match t.state {
                 CardState::Learning | CardState::Relearning => {
                     if t.due <= clock.now + LEARN_AHEAD_SECS {
                         touched_due_now += 1;
@@ -1449,7 +1449,7 @@ impl App {
         struct Row {
             rating: i64,
             reviewed_at: i64,
-            state_before: i64,
+            state_before: CardState,
             scheduled_secs: i64,
             stability: Option<f64>,
             source: String,
@@ -1472,7 +1472,7 @@ impl App {
                     "at": crate::format::iso(r.reviewed_at, &clock),
                     "timestamp": r.reviewed_at,
                     "rating": match r.rating { 0 => "reset", 1 => "again", 2 => "hard", 3 => "good", _ => "easy" },
-                    "state_before": CardState::from_i64(r.state_before).as_str(),
+                    "state_before": r.state_before.as_str(),
                     "next_interval": (r.source != "import" && r.rating > 0)
                         .then(|| crate::format::interval(r.scheduled_secs)),
                     "stability_days": r.stability.map(|s| (s * 100.0).round() / 100.0),
@@ -1520,12 +1520,12 @@ impl App {
         // Everything is counted in the database: a long-time Anki user has
         // tens of thousands of cards and hundreds of thousands of reviews,
         // and loading them all made the home page take seconds.
-        let rows: Vec<(i64, i64, i64, i64)> = {
+        let rows: Vec<(CardState, bool, i64, i64)> = {
             let sql = format!(
                 "SELECT state, suspended, COUNT(*), SUM(due <= ?) FROM cards
                  WHERE user_id = ? AND deck_id IN ({ph}) GROUP BY state, suspended"
             );
-            let mut q = sqlx::query_as::<_, (i64, i64, i64, i64)>(&sql).bind(clock.now).bind(access.user_id());
+            let mut q = sqlx::query_as::<_, (CardState, bool, i64, i64)>(&sql).bind(clock.now).bind(access.user_id());
             for id in &deck_ids {
                 q = q.bind(id);
             }
@@ -1533,16 +1533,16 @@ impl App {
         };
         for (state, suspended, n, due_now) in rows {
             stats.total += n;
-            if suspended != 0 {
+            if suspended {
                 stats.suspended += n;
                 continue;
             }
-            match CardState::from_i64(state) {
+            match state {
                 CardState::New => stats.new += n,
                 CardState::Learning | CardState::Relearning => stats.learning += n,
                 CardState::Review => stats.review += n,
             }
-            if CardState::from_i64(state) != CardState::New {
+            if state != CardState::New {
                 stats.due_now += due_now;
             }
         }

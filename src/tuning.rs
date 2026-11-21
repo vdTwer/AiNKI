@@ -57,7 +57,7 @@ struct Row {
     deck_id: i64,
     rating: i64,
     reviewed_at: i64,
-    state_before: i64,
+    state_before: CardState,
 }
 
 /// What the optimizer learns from, per card: the reviews since the card
@@ -227,7 +227,7 @@ impl App {
             // the card being new (otherwise the memory state is unknown).
             let start = logs.iter().rposition(|l| l.rating == 0).map_or(0, |i| i + 1);
             let logs = logs.get(start..).unwrap_or_default();
-            if logs.first().is_none_or(|l| l.state_before != CardState::New as i64) {
+            if logs.first().is_none_or(|l| l.state_before != CardState::New) {
                 continue;
             }
             let mut reviews = Vec::new();
@@ -423,13 +423,13 @@ impl App {
                  WHERE user_id = ? AND suspended = 0 AND deck_id IN ({})",
                 placeholders(deck_ids.len())
             );
-            let mut q = sqlx::query_as::<_, (i64, Option<f64>, Option<f64>, i64, Option<i64>, i64)>(&sql)
+            let mut q = sqlx::query_as::<_, (CardState, Option<f64>, Option<f64>, i64, Option<i64>, i64)>(&sql)
                 .bind(access.user_id());
             for id in &deck_ids {
                 q = q.bind(id);
             }
             for (state, s, d, due, last, lapses) in q.fetch_all(&self.db).await? {
-                match (CardState::from_i64(state), s, d, last) {
+                match (state, s, d, last) {
                     (CardState::New, ..) => new_cards += 1,
                     (_, Some(s), Some(d), Some(last)) => {
                         let since = num::i64_f32(clock.now - last) / 86_400.0;

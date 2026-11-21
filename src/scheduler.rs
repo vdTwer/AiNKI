@@ -11,8 +11,11 @@ use serde::{Deserialize, Serialize};
 
 use crate::num;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+/// Stored as its number; a row with any other number fails to load
+/// instead of passing for a new card.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, sqlx::Type)]
 #[serde(rename_all = "snake_case")]
+#[repr(i64)]
 pub enum CardState {
     New = 0,
     Learning = 1,
@@ -21,15 +24,6 @@ pub enum CardState {
 }
 
 impl CardState {
-    pub const fn from_i64(v: i64) -> Self {
-        match v {
-            1 => Self::Learning,
-            2 => Self::Review,
-            3 => Self::Relearning,
-            _ => Self::New,
-        }
-    }
-
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::New => "new",
