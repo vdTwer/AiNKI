@@ -623,16 +623,11 @@ pub(crate) fn break_page(user: &User, msg: Option<&str>, deck: Option<i64>, due:
                         button.link type="submit" { "Keep going" }
                     }
                 }
-                // On desktops a break can run here: desk.js counts it down
-                // and sends the form above when it is over.
-                div.break-start.calm-only {
-                    button.btn.primary type="button" data-break=(due.length * 60) { "Start a " (length) " break" }
-                    button.btn type="submit" form="keep-going" { "Skip break" }
-                }
-                div.break-run.calm-only hidden {
+                // With JavaScript the break runs here: parts.js counts it
+                // down and sends the form above when it is over.
+                ainki-break seconds=(due.length * 60) {
                     p.break-clock role="timer" aria-live="off" { (due.length) ":00" }
                     div.break-line aria-hidden="true" { div.break-fill {} }
-                    @if due.slowing { p.summary { "Your answers were slowing down." } }
                     p.summary { "The next card comes back by itself when the time is up." }
                     p { button.btn type="submit" form="keep-going" { "End break now" } }
                 }

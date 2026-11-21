@@ -74,8 +74,11 @@
   .grow { flex: 1; min-width: 0; overflow-wrap: anywhere; }
   .fit, .graph-wrap, .table-wrap { overflow-x: auto; }
 
-  /* Pieces of the old desktop look that have no place here yet. */
-  .calm-only, .rail-only, .tile, .key, .end-mark, .done-check, .chev, .table-head .num { display: none !important; }
+  /* Key caps live in the ? sheet, not on the controls; the column heads
+     of a list repeat what each row says. */
+  .key, .chev, .table-head .num, .done .unit, .end-mark .line { display: none; }
+  .kicker { font-size: .8rem; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+  kbd { font: .85em ui-monospace, monospace; padding: 0 .3em; border: 1px solid var(--line); border-radius: .25rem; }
 }
 
 @layer parts {
@@ -340,5 +343,102 @@
     & .bar-cell { width: 100%; }
     & .bar { display: block; height: .9rem; min-width: 2px; background: var(--accent); border-radius: 2px; }
     & :is(th, td) { border: 0; padding-block: .15rem; }
+  }
+
+  /* Done for today: a small tick in the accent. */
+  .done-check, .end-mark .check { color: var(--accent); vertical-align: -.1em; }
+  .end-mark .check { width: 2rem; height: 2rem; }
+
+  /* Stats: three numbers, then charts with their notes. */
+  .big3 {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+    gap: 1.5rem;
+    & .n { font-size: 2rem; font-weight: 650; font-variant-numeric: tabular-nums; line-height: 1.2; }
+    & > * { margin: 0; }
+    & > div > * + * { margin-top: .25rem; }
+  }
+  .chart-sec { margin-top: 2.5rem; }
+  .chart-side { margin-top: 1.25rem; }
+  svg.chart {
+    display: block;
+    width: 100%;
+    height: auto;
+    margin-top: .75rem;
+    font: 11px system-ui, sans-serif;
+    & .grid { stroke: var(--line); }
+    & .aim { stroke: var(--muted); stroke-dasharray: 4 4; }
+    & .line { fill: none; stroke: var(--accent); stroke-width: 2; }
+    & .dot, & .bar { fill: var(--accent); }
+    & .axis { fill: var(--muted); }
+    & .strong { fill: var(--ink); }
+    & :is(.dot, .bar, rect):hover { opacity: .7; }
+    &.days { max-width: 22rem; }
+    &.calibration { max-width: 16rem; }
+    & .l0 { fill: var(--soft); }
+    & .l1 { fill: color-mix(in srgb, var(--accent) 30%, var(--bg)); }
+    & .l2 { fill: color-mix(in srgb, var(--accent) 55%, var(--bg)); }
+    & .l3 { fill: color-mix(in srgb, var(--accent) 80%, var(--bg)); }
+    & .l4 { fill: var(--accent); }
+  }
+  table.by-deck tr.short td { font-weight: 650; }
+  .sure-bars {
+    display: grid;
+    gap: .4rem;
+    & > div { display: grid; grid-template-columns: 5rem 1fr 3rem; gap: .5rem; align-items: center; }
+    & .track { height: .6rem; background: var(--soft); border-radius: 2px; }
+    & .fill { display: block; height: 100%; background: var(--accent); border-radius: 2px; &.grey { background: var(--muted); } }
+  }
+  details.numbers { margin-top: 2.5rem; }
+
+  /* Breaks: a clock that runs by itself (parts.js); without it, the links. */
+  ainki-break {
+    display: block;
+    margin-top: 2rem;
+    &:not(:defined) { display: none; }
+    & .break-clock { font-size: 3rem; font-weight: 300; font-variant-numeric: tabular-nums; }
+    & .break-line { height: 3px; background: var(--line); }
+    & .break-fill { height: 3px; width: 0; background: var(--accent); }
+  }
+
+  /* Sheets over the page: the key list (a popover) and the quick find. */
+  .key-sheet, ainki-find dialog {
+    width: min(36rem, calc(100% - 2rem));
+    max-height: 80vh;
+    margin: 10vh auto auto;
+    padding: 1.25rem;
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    background: var(--bg);
+    color: var(--ink);
+    box-shadow: 0 1rem 3rem rgb(0 0 0 / .15);
+    &::backdrop { background: rgb(0 0 0 / .25); }
+  }
+  .key-sheet {
+    & h2 { margin-top: 0; }
+    & h3 { margin-top: 1rem; font-size: .9rem; }
+    & .kv { grid-template-columns: 6rem 1fr; }
+  }
+  ainki-find {
+    & dialog { margin-top: 15vh; }
+    & .find-form { margin: 0; }
+    & #find-results { margin-top: .75rem; }
+    & a.row.on { background: var(--soft); }
+  }
+  /* Keys only matter where there is a keyboard. */
+  .keys-hint { margin-top: 4rem; font-size: .8rem; color: var(--muted); & button { color: inherit; } }
+  @media (hover: none) { .keys-hint { display: none; } }
+
+  /* Quiet hours: one screen over everything, a way past in two folds. */
+  .sleep-wall {
+    position: fixed;
+    inset: 0;
+    z-index: 10;
+    display: grid;
+    place-content: center;
+    gap: 1rem;
+    padding: 1rem;
+    background: var(--bg);
+    text-align: center;
   }
 }

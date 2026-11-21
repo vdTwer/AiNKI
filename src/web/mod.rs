@@ -1,6 +1,6 @@
 //! The website: HTML rendered on the server with maud. Every page works
-//! without JavaScript. The simple look serves phones and e-ink readers; wide
-//! screens with a mouse get the desktop look on top of it.
+//! without JavaScript, in one plain look for every screen (style.css).
+//! app.js studies without reloads; parts.js adds a few custom elements.
 //!
 //! This file holds the routes and the plumbing every page shares (layout,
 //! the signed-in user, forms, redirects with a message). The pages live in
@@ -21,7 +21,7 @@ use axum_extra::extract::{
     cookie::{Cookie, CookieJar, SameSite},
 };
 use maud::{DOCTYPE, Markup, PreEscaped, html};
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 
 use crate::{
     App, AppState,
@@ -72,7 +72,7 @@ pub(crate) use pages::tokens::permission_fields;
 
 const CSS: &str = include_str!("../style.css");
 const APP_JS: &str = include_str!("../static/app.js");
-const DESK_JS: &str = include_str!("../static/desk.js");
+const PARTS_JS: &str = include_str!("../static/parts.js");
 // Two cards, Wild Orchid behind Terra Cotta, with the "done" tick.
 const FAVICON_SVG: &str = include_str!("../static/favicon.svg");
 const FAVICON_PNG: &[u8] = include_bytes!("../static/favicon-32.png");
@@ -193,7 +193,7 @@ pub fn router(app: AppState) -> Router {
         .route("/media/{id}", get(media_file))
         .layer(small)
         .route("/cards/preview", post(card_preview_json))
-        .route("/find", get(find_json))
+        .route("/find", get(find_page))
         .route("/cards/new", get(card_new_page).post(card_create).layer(card_upload))
         .route("/cards/{id}", get(card_page).post(card_update).layer(card_upload))
         .route(
@@ -205,7 +205,7 @@ pub fn router(app: AppState) -> Router {
     let static_routes = Router::new()
         .route("/style.css", get(|q: RawQuery| async move { asset(q, "text/css; charset=utf-8", CSS) }))
         .route("/app.js", get(|q: RawQuery| async move { asset(q, "text/javascript; charset=utf-8", APP_JS) }))
-        .route("/desk.js", get(|q: RawQuery| async move { asset(q, "text/javascript; charset=utf-8", DESK_JS) }))
+        .route("/parts.js", get(|q: RawQuery| async move { asset(q, "text/javascript; charset=utf-8", PARTS_JS) }))
         .route("/fonts/{name}", get(font_file))
         .route("/favicon.svg", get(|| async { static_file("image/svg+xml", FAVICON_SVG.as_bytes(), false) }))
         // Browsers ask for /favicon.ico on their own; a PNG there works everywhere.
@@ -400,7 +400,7 @@ pub fn urlenc(s: &str) -> String {
 fn asset_version() -> &'static str {
     static VERSION: std::sync::OnceLock<String> = std::sync::OnceLock::new();
     VERSION.get_or_init(|| {
-        let all = [CSS, APP_JS, DESK_JS].concat();
+        let all = [CSS, APP_JS, PARTS_JS].concat();
         crate::auth::sha256_hex(&all)[..10].to_string()
     })
 }
@@ -486,32 +486,64 @@ fn page(nav: Option<Nav>, title: &str, user: Option<&User>, page_kind: Option<&s
                 @if user.is_some_and(|u| !u.is_admin) { (main_nav(nav)) }
                 @if let Some(u) = user { (sleep_wall(u)) }
                 main {
-                    // The desktop look: a ? in the corner that opens the key sheet.
-                    @if user.is_some_and(|u| !u.is_admin) {
-                        button.keys-button.calm-only type="button" aria-label="Keys" data-label="Keys" { "?" }
-                    }
                     (body)
+                    @if user.is_some_and(|u| !u.is_admin) {
+                        p.keys-hint { "Press " button.link type="button" popovertarget="keys" { "?" } " for keys" }
+                    }
+                }
+                @if user.is_some_and(|u| !u.is_admin) {
+                    (key_sheet())
+                    ainki-find { dialog aria-label="Find" { (find_form("")) div #find-results {} } }
                 }
                 script src=(format!("/app.js?v={}", asset_version())) defer {}
+                script type="module" src=(format!("/parts.js?v={}", asset_version())) {}
             }
         }
     }
 }
 
-/// On phones a bar across the top; in the Calm look one dot in the top
-/// right corner that opens into a row of icons on hover.
+/// Every key, in one place, instead of key caps on the controls. A popover:
+/// the ? hint opens it without JavaScript, the ? key with it (parts.js).
+fn key_sheet() -> Markup {
+    const KEYS: [(&str, &[(&str, &str)]); 4] = [
+        (
+            "Studying",
+            &[
+                ("Space", "Show the answer, or Done on a multicard"),
+                ("1", "Again"),
+                ("3", "Good"),
+                ("2  4", "Hard and Easy, when shown"),
+                ("+", "Ten more seconds on a timed card"),
+                ("P", "Pause: the card waits, and the clock with it"),
+            ],
+        ),
+        ("Before the answer", &[("S", "Sure"), ("U", "Not sure"), ("Enter", "Check a typed answer")]),
+        ("Multicards", &[("1 – 9", "Mark an item as remembered")]),
+        ("Anywhere", &[("/", "Find anything"), ("?", "Show or hide this list"), ("Esc", "Close")]),
+    ];
+    html! {
+        div #keys .key-sheet popover {
+            h2 { "Keys" }
+            @for (group, keys) in KEYS {
+                h3 { (group) }
+                dl.kv { @for (k, what) in keys { dt { kbd { (k) } } dd { (what) } } }
+            }
+        }
+    }
+}
+
+/// The menu: the name, then the pages, on one line.
 fn main_nav(nav: Option<Nav>) -> Markup {
     let current = |n: Nav| (nav == Some(n)).then_some("page");
     html! {
         nav.top aria-label="Main" {
-            // The desktop look: the first icon finds anything (desk.js).
-            button.find-dot.calm-only type="button" data-label="Find" aria-label="Find" aria-haspopup="dialog" { "Find" }
             a.brand href="/" data-label="AiNKI" aria-current=[current(Nav::Decks)] { "AiNKI" }
             a href="/study" data-label="Study" aria-current=[current(Nav::Study)] { "Study" }
             a href="/cards/new" data-label="Add" aria-current=[current(Nav::Add)] { "Add" }
             a href="/stats" data-label="Stats" aria-current=[current(Nav::Stats)] { "Stats" }
             a href="/learn" data-label="Learn" aria-current=[current(Nav::Learn)] { "Learn" }
             a href="/settings" data-label="Settings" aria-current=[current(Nav::Settings)] { "Settings" }
+            a href="/find" aria-label="Find" { "Find" }
         }
     }
 }
