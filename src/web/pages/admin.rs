@@ -30,7 +30,7 @@ fn graph_rows(accounts: &[invites::Account]) -> Vec<Node<'_>> {
     }
     let mut nodes: Vec<Node> = Vec::new();
     let mut stack: Vec<(&invites::Account, usize, Option<usize>)> =
-        children.get(&None).map(|r| r.iter().rev().map(|a| (*a, 0, None)).collect()).unwrap_or_default();
+        children.get(&None).map_or_else(Default::default, |r| r.iter().rev().map(|a| (*a, 0, None)).collect());
     let mut seen = std::collections::HashSet::new();
     while let Some((a, depth, parent_row)) = stack.pop() {
         if !seen.insert(a.id) {

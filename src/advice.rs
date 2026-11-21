@@ -1504,7 +1504,7 @@ mod tests {
         assert!((s[0] - 1.5).abs() < 0.01, "{s:?}");
         // A card left open for an hour counts as a minute.
         assert!(session_lengths(&[(t, 3_600_000)])[0] <= 1.0);
-        assert!(session_lengths(&[]).is_empty());
+        assert_eq!(session_lengths(&[]), [] as [f64; 0]);
     }
 
     #[test]

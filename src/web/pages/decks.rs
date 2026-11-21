@@ -81,7 +81,7 @@ pub(crate) fn deck_sheet(
                 p.hint.muted.small { "How much you want to remember and how many cards a day. " a href="/presets" { "About presets" } }
             }
             label.line { span { "Exam date " span.muted.optional { "(optional)" } }
-                input type="date" name="exam_date" value=(deck.and_then(|d| d.exam_date).map(|d| d.to_string()).unwrap_or_default());
+                input type="date" name="exam_date" value=(deck.and_then(|d| d.exam_date).map_or_else(Default::default, |d| d.to_string()));
             }
             p.hint.muted.small { "With an exam date, no card in this deck is scheduled after the exam." }
         }

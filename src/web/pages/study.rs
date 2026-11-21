@@ -171,7 +171,7 @@ pub(crate) async fn study_card(
     let timed_out = revealed && limit > 0 && now() - shown.at > limit + 1;
     let (done, total) = app.session_progress(access, q_deck).await?;
     let leech = app.leech_note(card).await?.is_some();
-    let deck_param = q_deck.map(|d| format!("&deck={d}")).unwrap_or_default();
+    let deck_param = q_deck.map_or_else(Default::default, |d| format!("&deck={d}"));
     let show_href = format!("/study?card={}&show=1&t={}{}#answer", card.id, shown.at, deck_param);
     let reveal_form = typed || ask_sure;
     let reveal = if reveal_form {
@@ -564,8 +564,7 @@ async fn session_end(app: &App, access: &Access, deck: Option<i64>) -> Result<Ma
 /// "7:00": the time of day of a moment, in the user's zone.
 pub(crate) fn clock_time(clock: &crate::scheduler::Clock, ts: i64) -> String {
     chrono::DateTime::from_timestamp(ts, 0)
-        .map(|t| t.with_timezone(&clock.tz).format("%-H:%M").to_string())
-        .unwrap_or_default()
+        .map_or_else(Default::default, |t| t.with_timezone(&clock.tz).format("%-H:%M").to_string())
 }
 
 /// Quiet hours: a rest screen instead of cards.

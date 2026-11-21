@@ -37,7 +37,7 @@ pub(crate) async fn read_multipart(mut mp: Multipart) -> Result<HashMap<String, 
 }
 
 pub(crate) fn field_text(fields: &HashMap<String, Vec<u8>>, k: &str) -> String {
-    fields.get(k).map(|v| String::from_utf8_lossy(v).to_string()).unwrap_or_default()
+    fields.get(k).map_or_else(Default::default, |v| String::from_utf8_lossy(v).to_string())
 }
 
 pub(crate) async fn read_card_form(mp: Multipart) -> Result<CardFormData, AppError> {

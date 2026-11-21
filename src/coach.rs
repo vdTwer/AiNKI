@@ -588,8 +588,8 @@ mod tests {
 
     #[test]
     fn hints_for_long_lists() {
-        assert!(write_hints("- a\n- b", None).is_empty());
+        assert_eq!(write_hints("- a\n- b", None), [] as [String; 0]);
         assert_eq!(write_hints("- a\n- b\n- c", None).len(), 1);
-        assert!(write_hints("- a\n- b\n- c", Some(Split::List)).is_empty());
+        assert_eq!(write_hints("- a\n- b\n- c", Some(Split::List)), [] as [String; 0]);
     }
 }

@@ -78,8 +78,7 @@ pub fn days(d: i64) -> String {
 /// exports; pages use words.
 pub fn iso(ts: i64, clock: &Clock) -> String {
     chrono::DateTime::from_timestamp(ts, 0)
-        .map(|t| t.with_timezone(&clock.tz).format("%Y-%m-%d %H:%M").to_string())
-        .unwrap_or_default()
+        .map_or_else(Default::default, |t| t.with_timezone(&clock.tz).format("%Y-%m-%d %H:%M").to_string())
 }
 
 /// "Tuesday, 20 October".

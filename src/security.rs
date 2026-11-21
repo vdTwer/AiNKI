@@ -105,9 +105,11 @@ pub struct ClientIp(pub String);
 impl<S: Send + Sync> FromRequestParts<S> for ClientIp {
     type Rejection = std::convert::Infallible;
 
-    async fn from_request_parts(parts: &mut Parts, _: &S) -> Result<Self, Self::Rejection> {
+    fn from_request_parts(parts: &mut Parts, _: &S) -> impl Future<Output = Result<Self, Self::Rejection>> + Send {
         let peer = parts.extensions.get::<ConnectInfo<SocketAddr>>().map(|c| c.0.ip());
-        Ok(Self(client_ip(&parts.headers, peer).map_or_else(|| "unknown".into(), |ip| ip.to_string())))
+        std::future::ready(Ok(Self(
+            client_ip(&parts.headers, peer).map_or_else(|| "unknown".into(), |ip| ip.to_string()),
+        )))
     }
 }
 
@@ -200,8 +202,8 @@ pub struct Flash(pub Option<String>);
 impl<S: Send + Sync> FromRequestParts<S> for Flash {
     type Rejection = std::convert::Infallible;
 
-    async fn from_request_parts(parts: &mut Parts, _: &S) -> Result<Self, Self::Rejection> {
-        Ok(parts.extensions.get::<Self>().cloned().unwrap_or_default())
+    fn from_request_parts(parts: &mut Parts, _: &S) -> impl Future<Output = Result<Self, Self::Rejection>> + Send {
+        std::future::ready(Ok(parts.extensions.get::<Self>().cloned().unwrap_or_default()))
     }
 }
 

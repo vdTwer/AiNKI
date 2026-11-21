@@ -87,7 +87,7 @@ impl DeckSummary {
     /// daily limits.
     fn tally(deck: Deck, preset: Option<&Preset>, rows: &[StateCount], done: &[DoneToday]) -> Self {
         let mut s = Self {
-            preset_name: preset.map(|p| p.name.clone()).unwrap_or_default(),
+            preset_name: preset.map_or_else(Default::default, |p| p.name.clone()),
             deck,
             total: 0,
             new: 0,

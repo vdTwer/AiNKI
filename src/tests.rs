@@ -351,7 +351,7 @@ async fn optimizer_fits_parameters() {
     assert!(w[3].remembered > w[0].remembered, "{w:?}");
 
     app.reset_parameters(&Access::web(user)).await.unwrap();
-    assert!(app.user(a.user_id()).await.unwrap().params().is_empty());
+    assert_eq!(app.user(a.user_id()).await.unwrap().params(), [] as [f32; 0]);
 }
 
 #[tokio::test]
@@ -1549,11 +1549,11 @@ mod http {
         assert_eq!(lesson["evidence"], "Not supported by evidence");
 
         let attention = mcp_tool(&app, &token, "list_cards_needing_attention", serde_json::json!({})).await;
-        assert!(attention["cards"].as_array().unwrap().is_empty());
+        assert_eq!(attention["cards"].as_array().unwrap().as_slice(), [] as [serde_json::Value; 0]);
         let insights = mcp_tool(&app, &token, "get_insights", serde_json::json!({})).await;
         assert_eq!(insights["week"]["reviews"], 0);
         let advice = mcp_tool(&app, &token, "get_coach_advice", serde_json::json!({})).await;
-        assert!(advice["advice"].as_array().unwrap().is_empty());
+        assert_eq!(advice["advice"].as_array().unwrap().as_slice(), [] as [serde_json::Value; 0]);
         let work = mcp_tool(&app, &token, "get_workload", serde_json::json!({ "preset_id": deck.preset_id })).await;
         assert!(work["options"].as_array().unwrap().len() >= 4);
     }
@@ -1600,14 +1600,14 @@ async fn the_coach_flags_leeches_lists_and_duplicates() {
     }
 
     let list_of = |v: &[crate::coach::Attention], id: i64| -> Vec<Kind> {
-        v.iter().find(|x| x.card.id == id).map(|x| x.flags.iter().map(|f| f.kind).collect()).unwrap_or_default()
+        v.iter().find(|x| x.card.id == id).map_or_else(Default::default, |x| x.flags.iter().map(|f| f.kind).collect())
     };
     let found = app.attention(&a, Some(deck.id)).await.unwrap();
     assert_eq!(found[0].card.id, leech.id, "leeches come first");
     assert_eq!(list_of(&found, leech.id), vec![Kind::Leech, Kind::Duplicate]);
     assert_eq!(list_of(&found, list.id), vec![Kind::Split]);
     assert_eq!(list_of(&found, twin.id), vec![Kind::Duplicate]);
-    assert!(list_of(&found, fine.id).is_empty());
+    assert_eq!(list_of(&found, fine.id), [] as [Kind; 0]);
 
     // Keep as is: gone until the card slips three more times.
     app.dismiss_flag(&a, leech.id, Kind::Leech).await.unwrap();

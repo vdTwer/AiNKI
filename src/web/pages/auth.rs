@@ -21,7 +21,7 @@ pub(crate) fn safe_next(next: Option<&str>) -> Option<&str> {
 pub(crate) fn auth_form(signup: bool, error: Option<&str>, allow_signup: bool, next: Option<&str>) -> Markup {
     let title = if signup { "Sign up" } else { "Log in" };
     let action = if signup { "/signup" } else { "/login" };
-    let next_q = next.map(|n| format!("?next={}", urlenc(n))).unwrap_or_default();
+    let next_q = next.map_or_else(Default::default, |n| format!("?next={}", urlenc(n)));
     layout(
         title,
         None,

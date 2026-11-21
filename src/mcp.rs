@@ -1164,6 +1164,8 @@ impl AinkiMcp {
 }
 
 #[tool_handler]
+#[allow(unknown_lints, reason = "the lint below is new in clippy 1.100")]
+#[allow(clippy::unused_async_trait_impl, reason = "rmcp's macro writes the async handlers")]
 impl ServerHandler for AinkiMcp {
     fn get_info(&self) -> ServerConfig {
         ServerConfig::new(ServerCapabilities::builder().enable_tools().build())

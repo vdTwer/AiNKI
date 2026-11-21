@@ -158,7 +158,7 @@ async fn an_agent_can_run_a_whole_session() {
     assert_eq!((image["width"].as_i64(), image["height"].as_i64()), (Some(6), Some(4)));
     let got = ok(&app, t, "get_image", json!({ "image_id": image_id })).await;
     assert_eq!(got["mimeType"], "image/png");
-    assert!(!got["data"].as_str().unwrap().is_empty());
+    assert_ne!(got["data"].as_str().unwrap(), "");
     let made = ok(
         &app,
         t,
@@ -259,7 +259,7 @@ async fn an_agent_can_run_a_whole_session() {
     // Lessons.
     let lessons = ok(&app, t, "list_lessons", json!({})).await;
     let slug = lessons["lessons"][0]["slug"].as_str().unwrap().to_string();
-    assert!(!ok(&app, t, "get_lesson", json!({ "slug": slug })).await["body"].as_str().unwrap().is_empty());
+    assert_ne!(ok(&app, t, "get_lesson", json!({ "slug": slug })).await["body"].as_str().unwrap(), "");
     assert!(call(&app, t, "get_lesson", json!({ "slug": "no-such-lesson" })).await.is_err());
 
     // Optimizing with almost no history is refused with the reason.
@@ -304,7 +304,7 @@ async fn an_agent_can_run_a_whole_session() {
     assert!(call(&app, t, "delete_deck", json!({ "deck_id": deck_id, "confirm": false })).await.is_err());
     let gone = ok(&app, t, "delete_deck", json!({ "deck_id": deck_id, "confirm": true })).await;
     assert_eq!(gone["deleted"], true);
-    assert!(ok(&app, t, "list_decks", json!({})).await.as_array().unwrap().is_empty());
+    assert_eq!(ok(&app, t, "list_decks", json!({})).await.as_array().unwrap().as_slice(), [] as [serde_json::Value; 0]);
     // Anna's copy is hers and stays.
     assert_eq!(ok(&app, &anna_token, "list_decks", json!({})).await.as_array().unwrap().len(), 1);
 }

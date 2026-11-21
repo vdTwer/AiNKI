@@ -261,7 +261,7 @@ async fn importing_twice_adds_the_cards_twice() {
     let pkg = package(Format::Legacy, &col, &[]);
     app.import_apkg(&a, pkg.clone()).await.unwrap();
     let again = app.import_apkg(&a, pkg).await.unwrap();
-    assert!(again.decks_created.is_empty());
+    assert_eq!(again.decks_created, [] as [String; 0]);
     assert_eq!(cards_in(&app, &a, "Default").await.len(), 2);
 }
 

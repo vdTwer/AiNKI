@@ -126,7 +126,7 @@ async fn keeping_progress_copies_the_schedule_of_cards_and_items() {
     let hablar = copies.iter().find(|c| c.front == "hablar").unwrap();
     assert_eq!(hablar.reps, 1);
     // Review history stays with the original, so stats don't count it twice.
-    assert!(app.card_history(&a, hablar.id).await.unwrap().is_empty());
+    assert_eq!(app.card_history(&a, hablar.id).await.unwrap(), [] as [serde_json::Value; 0]);
 }
 
 #[tokio::test]

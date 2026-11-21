@@ -401,7 +401,7 @@ impl App {
         let client =
             self.client(client_id).await?.ok_or_else(|| OAuthError::new("invalid_client", "unknown client"))?;
         if let Some(hash) = &client.secret_hash {
-            let given = secret.map(sha256_hex).unwrap_or_default();
+            let given = secret.map_or_else(Default::default, sha256_hex);
             if !ct_eq(given.as_bytes(), hash.as_bytes()) {
                 return Err(OAuthError::new("invalid_client", "wrong client secret"));
             }
@@ -693,28 +693,32 @@ async fn check_authorize(
     p: &AuthorizeParams,
     user: Option<&crate::auth::User>,
     base: &str,
-) -> Result<(Client, String), Response> {
+) -> Result<(Client, String), Box<Response>> {
     let Some(client_id) = p.client_id.as_deref() else {
-        return Err(authorize_error_page(user, "The request is missing client_id."));
+        return Err(Box::new(authorize_error_page(user, "The request is missing client_id.")));
     };
     let client = match app.client(client_id).await {
         Ok(Some(c)) => c,
-        Ok(None) => return Err(authorize_error_page(user, "This app isn't registered with AiNKI.")),
-        Err(e) => return Err(crate::web::WebError::from(e).into_response()),
+        Ok(None) => return Err(Box::new(authorize_error_page(user, "This app isn't registered with AiNKI."))),
+        Err(e) => return Err(Box::new(crate::web::WebError::from(e).into_response())),
     };
     let redirects = client.redirects();
     let redirect_uri = match (p.redirect_uri.as_deref(), redirects) {
         (Some(r), _) if client.allows_redirect(r) => r.to_string(),
         (None, [only]) => only.clone(),
-        _ => return Err(authorize_error_page(user, "The app's redirect address doesn't match its registration.")),
+        _ => {
+            return Err(Box::new(authorize_error_page(
+                user,
+                "The app's redirect address doesn't match its registration.",
+            )));
+        }
     };
-    #[expect(clippy::result_large_err, reason = "the error is the redirect response itself, built once")]
     let fail = |error: &str, desc: &str| {
         let mut params = vec![("error", error), ("error_description", desc)];
         if let Some(s) = p.state.as_deref() {
             params.push(("state", s));
         }
-        Err(redirect_with(&redirect_uri, &params))
+        Err(Box::new(redirect_with(&redirect_uri, &params)))
     };
     if p.response_type.as_deref() != Some("code") {
         return fail("unsupported_response_type", "only response_type=code is supported");
@@ -746,7 +750,7 @@ pub async fn authorize_page(
     };
     let (client, redirect_uri) = match check_authorize(&app, &p, Some(&user), &base_url(&app, &headers)).await {
         Ok(v) => v,
-        Err(r) => return r,
+        Err(r) => return *r,
     };
     let access = crate::auth::Access::web(user.clone());
     let decks = match app.decks(&access).await {
@@ -830,7 +834,7 @@ pub async fn authorize_submit(
 ) -> Response {
     let (client, redirect_uri) = match check_authorize(&app, &f.params, Some(&user), &base_url(&app, &headers)).await {
         Ok(v) => v,
-        Err(r) => return r,
+        Err(r) => return *r,
     };
     let iss = base_url(&app, &headers);
     let mut params: Vec<(&str, &str)> = Vec::new();
