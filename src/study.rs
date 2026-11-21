@@ -7,11 +7,8 @@
 use chrono::{Duration, NaiveTime, TimeZone, Timelike};
 use serde::Serialize;
 
-use std::collections::{hash_map::Entry, HashMap};
-
 use crate::auth::{Access, User};
 use crate::breaks;
-use crate::scheduler::{self, CardSched, Clock};
 use crate::error::{AppError, Result};
 use crate::App;
 use crate::now;
@@ -28,17 +25,25 @@ const TIMER_BREAK_MINUTES: i64 = 5;
 const RECOVERY_DAYS: i64 = 60;
 
 /// A break is due: after how many minutes of study, how long it should be,
-/// and whether the answers asked for it (smart) or the timer did.
+/// and whether smart breaks asked for it (then whether it is a long one and
+/// whether the answers were slowing down) or the timer did.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct BreakDue {
     pub studied: i64,
     pub length: i64,
     pub smart: bool,
+    pub long: bool,
+    pub slowing: bool,
 }
 /// Catch-up mode suggests itself above this many overdue cards.
 pub const BACKLOG_HINT: i64 = 100;
 /// A card counts as overdue once it has been due this long.
 const OVERDUE_SECS: i64 = 24 * 3600;
+
+/// The user's learned break rhythm.
+fn rhythm(user: &User) -> breaks::Rhythm {
+    breaks::Rhythm::new(user.break_work_min, user.break_mult)
+}
 
 /// Is `hour` inside quiet hours from `from` to `to` (to not included)?
 /// The window may cross midnight; equal ends mean no quiet hours.
@@ -222,68 +227,115 @@ impl App {
         }
         let Some(start) = self.session_start(access).await? else { return Ok(None) };
         let minutes = (now() - start) / 60;
-        Ok((minutes >= len).then_some(BreakDue { studied: minutes, length: TIMER_BREAK_MINUTES, smart: false }))
+        Ok((minutes >= len).then_some(BreakDue { studied: minutes, length: TIMER_BREAK_MINUTES, smart: false, long: false, slowing: false }))
     }
 
     async fn smart_break_due(&self, access: &Access) -> Result<Option<BreakDue>> {
-        let Some(began) = self.session_began(access).await? else { return Ok(None) };
-        let n = now();
-        let history = self.review_answers(access, n - RECOVERY_DAYS * 86_400).await?;
-        let means = breaks::card_means(&history);
-        let split = history.partition_point(|a| a.at < began);
-        let watch_from = access.user.break_skipped_at.unwrap_or(0);
-        let Some(slowdown) = breaks::tired(&history[split..], &means[split..], watch_from, n) else {
+        let steps = self.break_steps(access).await?;
+        // Back after a rest: that was the break.
+        if steps.last().is_none_or(|s| now() - s.at >= breaks::REST_SECS) {
             return Ok(None);
-        };
-        let tau = breaks::recovery_minutes(&history[..split], &means[..split]).unwrap_or(breaks::DEFAULT_TAU_MIN);
-        Ok(Some(BreakDue { studied: (n - began) / 60, length: breaks::break_minutes(slowdown, tau), smart: true }))
+        }
+        let st = breaks::replay(&steps, access.user.break_skipped_at.unwrap_or(0));
+        Ok(breaks::suggest(&st, rhythm(&access.user)).map(|s| BreakDue {
+            studied: s.worked,
+            length: s.minutes,
+            smart: true,
+            long: s.long,
+            slowing: s.slowing,
+        }))
     }
 
-    /// Review answers on the website since `from`, oldest first, with how
-    /// sure FSRS was of each. Multicards and timed-out answers are left out:
-    /// their times and misses mean something else.
-    async fn review_answers(&self, access: &Access, from: i64) -> Result<Vec<breaks::Answer>> {
+    /// Today's answers on the website (the last twelve hours), oldest first,
+    /// each with its card's usual front time from the last `RECOVERY_DAYS`.
+    /// Multicards and timed-out answers count as work but measure nothing:
+    /// their times mean something else.
+    async fn break_steps(&self, access: &Access) -> Result<Vec<breaks::Step>> {
         #[derive(sqlx::FromRow)]
         struct Row {
             reviewed_at: i64,
             card_id: i64,
-            deck_id: i64,
-            rating: i64,
             think_ms: Option<i64>,
-            prev_card: Option<String>,
+            answer_ms: Option<i64>,
+            away_ms: Option<i64>,
+            plain: bool,
         }
+        let n = now();
         let rows: Vec<Row> = sqlx::query_as(
-            "SELECT reviewed_at, card_id, deck_id, rating, think_ms, prev_card FROM review_log
-             WHERE user_id = ? AND source = 'web' AND rating > 0 AND state_before = 2
-               AND items_asked IS NULL AND timed_out = 0 AND reviewed_at >= ?
+            "SELECT reviewed_at, card_id, think_ms, answer_ms, away_ms, (items_asked IS NULL AND timed_out = 0) AS plain
+             FROM review_log
+             WHERE user_id = ? AND source = 'web' AND rating > 0 AND reviewed_at >= ?
              ORDER BY reviewed_at, id",
         )
         .bind(access.user_id())
-        .bind(from)
+        .bind(n - RECOVERY_DAYS * 86_400)
         .fetch_all(&self.db)
         .await?;
-        let mut params: HashMap<i64, Vec<f32>> = HashMap::new();
-        let mut out = Vec::with_capacity(rows.len());
-        for row in rows {
-            if let Entry::Vacant(slot) = params.entry(row.deck_id) {
-                // A deck deleted since keeps FSRS's defaults.
-                slot.insert(self.deck_params(access, row.deck_id).await.unwrap_or_default());
-            }
-            let clock = Clock { now: row.reviewed_at, ..access.user.clock() };
-            let r = row
-                .prev_card
-                .as_deref()
-                .and_then(|j| serde_json::from_str::<CardSched>(j).ok())
-                .and_then(|c| scheduler::retrievability(&c, &params[&row.deck_id], &clock))
-                .map(f64::from);
-            out.push(breaks::Answer { at: row.reviewed_at, card: row.card_id, think_ms: row.think_ms, recalled: row.rating > 1, r });
-        }
-        Ok(out)
+        let usuals = breaks::card_usuals(&rows.iter().map(|r| (r.card_id, r.think_ms.filter(|_| r.plain))).collect::<Vec<_>>());
+        Ok(rows
+            .iter()
+            .zip(usuals)
+            .filter(|(r, _)| r.reviewed_at >= n - 12 * 3600)
+            .map(|(r, usual)| breaks::Step {
+                at: r.reviewed_at,
+                think_ms: r.think_ms,
+                answer_ms: r.answer_ms,
+                away_ms: r.away_ms,
+                usual: usual.filter(|_| r.plain),
+            })
+            .collect())
     }
 
-    pub async fn skip_break(&self, user_id: i64) -> Result<()> {
+    /// After an answer with smart breaks on: a pause the user took on their
+    /// own, before any suggestion, shortens their stretches and lengthens
+    /// their breaks.
+    pub async fn note_rest(&self, access: &Access) -> Result<()> {
+        let user = &access.user;
+        if user.session_minutes != SMART_BREAKS {
+            return Ok(());
+        }
+        let steps = self.break_steps(access).await?;
+        if breaks::paused_on_own(&breaks::replay(&steps, user.break_skipped_at.unwrap_or(0)), &steps, user.break_shown_at) {
+            self.set_rhythm(user.id, rhythm(user).paused_early()).await?;
+        }
+        Ok(())
+    }
+
+    /// A break page is on screen: remember when this suggestion first came.
+    pub async fn break_shown(&self, user_id: i64) -> Result<()> {
+        sqlx::query(
+            "UPDATE users SET break_shown_at = ?
+             WHERE id = ? AND (break_shown_at IS NULL OR break_shown_at < (SELECT MAX(reviewed_at) FROM review_log WHERE user_id = ?))",
+        )
+        .bind(now())
+        .bind(user_id)
+        .bind(user_id)
+        .execute(&self.db)
+        .await?;
+        Ok(())
+    }
+
+    /// Keep going, or the break is over: the stretch starts over. With
+    /// smart breaks, Keep going right away means the user felt fresh: longer
+    /// stretches, shorter breaks. After a few minutes it was a break.
+    pub async fn skip_break(&self, user: &User) -> Result<()> {
+        let n = now();
+        let refused = user.session_minutes == SMART_BREAKS && user.break_shown_at.is_some_and(|t| n - t < breaks::REST_SECS);
+        if refused {
+            self.set_rhythm(user.id, rhythm(user).kept_going()).await?;
+        }
         sqlx::query("UPDATE users SET break_skipped_at = ? WHERE id = ?")
-            .bind(now())
+            .bind(n)
+            .bind(user.id)
+            .execute(&self.db)
+            .await?;
+        Ok(())
+    }
+
+    async fn set_rhythm(&self, user_id: i64, r: breaks::Rhythm) -> Result<()> {
+        sqlx::query("UPDATE users SET break_work_min = ?, break_mult = ? WHERE id = ?")
+            .bind(r.work_min)
+            .bind(r.mult)
             .bind(user_id)
             .execute(&self.db)
             .await?;

@@ -1961,6 +1961,7 @@ async fn study(State(app): State<AppState>, user: WebUser, Flash(msg): Flash, Qu
         return Ok(rest_page(&user.0, &msg, q.deck, until).into_response());
     }
     if let Some(due) = app.break_due(&access).await? {
+        app.break_shown(user.0.id).await?;
         return Ok(break_page(&user.0, &msg, q.deck, due).into_response());
     }
 
@@ -2100,7 +2101,7 @@ async fn study_anyway(State(app): State<AppState>, user: WebUser, Form(f): Form<
 }
 
 async fn study_keep_going(State(app): State<AppState>, user: WebUser, Form(f): Form<DeckForm>) -> WebResult {
-    app.skip_break(user.0.id).await?;
+    app.skip_break(&user.0).await?;
     Ok(redirect(study_url(f.deck)))
 }
 
@@ -2155,6 +2156,7 @@ async fn study_answer(State(app): State<AppState>, user: WebUser, Form(f): Form<
     if answered.is_ok() {
         let timing = study::Timing::checked(f.think_ms, f.answer_ms, f.away_ms, f.paused_ms, f.input.as_deref());
         app.note_answer(&access, f.card, sure, timed_out, &timing).await?;
+        app.note_rest(&access).await?;
     }
     match answered {
         Ok(_) | Err(AppError::Conflict(_)) => Ok(redirect(study_url(f.deck))),
