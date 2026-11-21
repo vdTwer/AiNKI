@@ -1961,6 +1961,7 @@ async fn study(State(app): State<AppState>, user: WebUser, Flash(msg): Flash, Qu
         return Ok(rest_page(&user.0, &msg, q.deck, until).into_response());
     }
     if let Some(due) = app.break_due(&access).await? {
+        app.break_shown(user.0.id).await?;
         return Ok(break_page(&user.0, &msg, q.deck, due).into_response());
     }
 
@@ -2064,8 +2065,12 @@ fn break_page(user: &User, msg: &Option<String>, deck: Option<i64>, due: study::
             section.session-end.rest.break {
                 p.kicker.calm-only { "Break" }
                 h1 { "Time for a break" }
-                @if due.smart {
+                @if due.smart && due.slowing {
                     p.summary { "You have studied for " (study::minutes_words(due.studied)) ", and your answers are slowing down. A " (length) " break should bring you back." }
+                } @else if due.long {
+                    p.summary { "You have studied for " (study::minutes_words(due.studied)) " since your last break. Time for a longer one: " (study::minutes_words(due.length)) ". Get up and move about." }
+                } @else if due.smart {
+                    p.summary { "You have studied for " (study::minutes_words(due.studied)) " since your last break. A " (length) " break keeps you fresh for the next stretch." }
                 } @else {
                     p.summary { "You have studied for " (study::minutes_words(due.studied)) ". Stand up, look out of the window, then carry on if you like." }
                 }
@@ -2085,7 +2090,7 @@ fn break_page(user: &User, msg: &Option<String>, deck: Option<i64>, due: study::
                 div.break-run.calm-only hidden {
                     p.break-clock role="timer" aria-live="off" { (due.length) ":00" }
                     div.break-line aria-hidden="true" { div.break-fill {} }
-                    @if due.smart { p.summary { "Your answers were slowing down." } }
+                    @if due.slowing { p.summary { "Your answers were slowing down." } }
                     p.summary { "The next card comes back by itself when the time is up." }
                     p { button.btn type="submit" form="keep-going" { "End break now" } }
                 }
@@ -2100,7 +2105,7 @@ async fn study_anyway(State(app): State<AppState>, user: WebUser, Form(f): Form<
 }
 
 async fn study_keep_going(State(app): State<AppState>, user: WebUser, Form(f): Form<DeckForm>) -> WebResult {
-    app.skip_break(user.0.id).await?;
+    app.skip_break(&user.0).await?;
     Ok(redirect(study_url(f.deck)))
 }
 
@@ -2155,6 +2160,7 @@ async fn study_answer(State(app): State<AppState>, user: WebUser, Form(f): Form<
     if answered.is_ok() {
         let timing = study::Timing::checked(f.think_ms, f.answer_ms, f.away_ms, f.paused_ms, f.input.as_deref());
         app.note_answer(&access, f.card, sure, timed_out, &timing).await?;
+        app.note_rest(&access).await?;
     }
     match answered {
         Ok(_) | Err(AppError::Conflict(_)) => Ok(redirect(study_url(f.deck))),

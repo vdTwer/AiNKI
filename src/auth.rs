@@ -46,6 +46,11 @@ pub struct User {
     /// -1 for smart breaks (`study::SMART_BREAKS`).
     pub session_minutes: i64,
     pub break_skipped_at: Option<i64>,
+    /// Smart breaks' learned rhythm (see `breaks::Rhythm`) and when a
+    /// break was last suggested.
+    pub break_work_min: f64,
+    pub break_mult: f64,
+    pub break_shown_at: Option<i64>,
     /// Catch-up mode: no new cards, at most `catch_up_reviews` a day.
     pub catch_up: bool,
     pub catch_up_reviews: i64,
