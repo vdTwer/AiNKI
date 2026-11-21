@@ -266,7 +266,6 @@ async fn importing_twice_adds_the_cards_twice() {
 }
 
 #[tokio::test]
-#[ignore = "bug: cards in an Anki filtered deck land in that deck with its temporary due date"]
 async fn cards_in_a_filtered_deck_go_home() {
     let app = app().await;
     let a = user(&app, "kolja").await;

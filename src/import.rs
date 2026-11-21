@@ -444,7 +444,11 @@ async fn read_collection(path: &std::path::Path) -> Result<AnkiCollection> {
     }
     let notes: Vec<(i64, String)> = sqlx::query_as("SELECT id, flds FROM notes").fetch_all(&mut conn).await?;
     let cards: Vec<AnkiCard> = sqlx::query_as(
-        "SELECT id, nid, did, ord, type, queue, due, ivl, factor, reps, lapses FROM cards ORDER BY nid, ord",
+        // A card in a filtered deck keeps its home deck in odid and its real
+        // due in odue; it comes home, as it would when Anki empties the deck.
+        "SELECT id, nid, CASE WHEN odid != 0 THEN odid ELSE did END AS did, ord, type, queue,
+                CASE WHEN odid != 0 THEN odue ELSE due END AS due, ivl, factor, reps, lapses
+         FROM cards ORDER BY nid, ord",
     )
     .fetch_all(&mut conn)
     .await?;
