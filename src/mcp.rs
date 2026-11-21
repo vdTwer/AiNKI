@@ -28,10 +28,11 @@ use crate::{
     AppState,
     auth::{Access, Actor},
     error::AppError,
-    import, presets,
-    scheduler::Rating,
+    import,
     multi::Split,
-    service::{CardFilter, CardInput, DeckStatus, PresetInput},
+    num, presets,
+    scheduler::Rating,
+    service::{CardFilter, CardInput, DeckStatus, Patch, PresetInput},
 };
 
 const INSTRUCTIONS: &str = "\
@@ -81,7 +82,7 @@ pub fn service(app: AppState) -> StreamableHttpService<AinkiMcp, NeverSessionMan
         // self-hosters run this behind arbitrary hostnames.
         .disable_allowed_hosts()
         .with_max_request_body_bytes(import::MAX_IMPORT_BYTES * 4 / 3 + 1024 * 1024);
-    StreamableHttpService::new(move || Ok(AinkiMcp::new(app.clone())), Default::default(), config)
+    StreamableHttpService::new(move || Ok(AinkiMcp::new(app.clone())), std::sync::Arc::default(), config)
 }
 
 /// Resolve the Bearer token into an [`Access`] for the tools.
@@ -96,24 +97,19 @@ pub async fn auth(State(app): State<AppState>, mut req: Request, next: Next) -> 
         Some(t) => app.token_access(&t).await.ok(),
         None => None,
     };
-    match access {
-        Some(a) => {
-            req.extensions_mut().insert(a);
-            next.run(req).await
-        }
-        None => {
-            // Tells MCP clients where to start the OAuth flow (RFC 9728).
-            let base = crate::oauth::base_url(&app, req.headers());
-            let challenge = format!(
-                "Bearer resource_metadata=\"{base}/.well-known/oauth-protected-resource/mcp\""
-            );
-            (
-                StatusCode::UNAUTHORIZED,
-                [(header::WWW_AUTHENTICATE, challenge)],
-                "missing or invalid access token: connect through OAuth, or create a token in AiNKI under Settings → Agent access",
-            )
-                .into_response()
-        }
+    if let Some(a) = access {
+        req.extensions_mut().insert(a);
+        next.run(req).await
+    } else {
+        // Tells MCP clients where to start the OAuth flow (RFC 9728).
+        let base = crate::oauth::base_url(&app, req.headers());
+        let challenge = format!("Bearer resource_metadata=\"{base}/.well-known/oauth-protected-resource/mcp\"");
+        (
+            StatusCode::UNAUTHORIZED,
+            [(header::WWW_AUTHENTICATE, challenge)],
+            "missing or invalid access token: connect through OAuth, or create a token in AiNKI under Settings → Agent access",
+        )
+            .into_response()
     }
 }
 
@@ -126,10 +122,7 @@ pub struct AinkiMcp {
 
 impl AinkiMcp {
     fn new(app: AppState) -> Self {
-        Self {
-            app,
-            tool_router: Self::tool_router(),
-        }
+        Self { app, tool_router: Self::tool_router() }
     }
 
     /// A card as JSON; multicards carry their items, and on a study turn
@@ -137,11 +130,14 @@ impl AinkiMcp {
     async fn card_json(&self, a: &Access, card: &crate::service::Card, studying: bool) -> Result<Value, String> {
         let clock = a.user.clock();
         let params = self.app.deck_params(a, card.deck_id).await.map_err(err)?;
-        let mut v = card.to_json(&clock, &params);
+        let decay = crate::scheduler::decay_for(&params).map_err(|e| err(e.into()))?;
+        let mut v = card.to_json(&clock, decay);
         if card.multi.is_some() {
             let items = self.app.card_items(card).await.map_err(err)?;
             let asked = studying.then(|| crate::multi::asked(card, &items, clock.now));
-            v["items"] = json!(crate::multi::items_json(&items, asked.as_deref(), &clock, &params));
+            if let Some(o) = v.as_object_mut() {
+                o.insert("items".into(), json!(crate::multi::items_json(&items, asked.as_deref(), &clock, decay)));
+            }
         }
         Ok(v)
     }
@@ -150,11 +146,7 @@ impl AinkiMcp {
 type ToolResult = Result<String, String>;
 
 fn access(parts: &Parts) -> Result<Access, String> {
-    parts
-        .extensions
-        .get::<Access>()
-        .cloned()
-        .ok_or_else(|| "not authenticated".to_string())
+    parts.extensions.get::<Access>().cloned().ok_or_else(|| "not authenticated".to_string())
 }
 
 fn err(e: AppError) -> String {
@@ -173,22 +165,21 @@ fn out(v: impl Serialize) -> ToolResult {
 
 fn decode_b64(data: &str) -> Result<Vec<u8>, String> {
     // Accept data URLs too.
-    let data = data.split_once("base64,").map(|(_, d)| d).unwrap_or(data);
+    let data = data.split_once("base64,").map_or(data, |(_, d)| d);
     let cleaned: String = data.chars().filter(|c| !c.is_whitespace()).collect();
-    base64::engine::general_purpose::STANDARD
-        .decode(cleaned)
-        .map_err(|e| format!("invalid base64: {e}"))
+    base64::engine::general_purpose::STANDARD.decode(cleaned).map_err(|e| format!("invalid base64: {e}"))
 }
 
-fn empty_to_none(s: Option<String>) -> Option<Option<String>> {
-    s.map(|v| if v.trim().is_empty() { None } else { Some(v) })
+/// An image id from the agent: absent keeps the image, empty clears it.
+fn image_patch(s: Option<String>) -> Patch<Option<String>> {
+    s.map_or(Patch::Keep, |v| Patch::Set(Some(v).filter(|v| !v.trim().is_empty())))
 }
 
 // ----- parameter types ------------------------------------------------------
 
 #[derive(Deserialize, JsonSchema)]
 pub struct DeckIdParam {
-    /// Deck id (see list_decks).
+    /// Deck id (see `list_decks`).
     pub deck_id: i64,
 }
 
@@ -223,7 +214,7 @@ pub struct WorkloadParams {
 
 #[derive(Deserialize, JsonSchema)]
 pub struct LessonParams {
-    /// From list_lessons, e.g. "spacing".
+    /// From `list_lessons`, e.g. "spacing".
     pub slug: String,
 }
 
@@ -237,19 +228,19 @@ pub struct OptionalDeckParam {
 pub struct CreateDeckParams {
     pub name: String,
     pub description: Option<String>,
-    /// Preset id (see list_presets). Defaults to the user's first preset ("Standard").
+    /// Preset id (see `list_presets`). Defaults to the user's first preset ("Standard").
     pub preset_id: Option<i64>,
 }
 
 #[derive(Deserialize, JsonSchema)]
 pub struct MergeDecksParams {
-    /// Two or more deck ids (see list_decks). Their cards go into the new
+    /// Two or more deck ids (see `list_decks`). Their cards go into the new
     /// deck in this order.
     pub deck_ids: Vec<i64>,
     /// Name of the new deck.
     pub name: String,
     pub description: Option<String>,
-    /// Preset id (see list_presets). Defaults to the first deck's preset.
+    /// Preset id (see `list_presets`). Defaults to the first deck's preset.
     pub preset_id: Option<i64>,
     /// Copy each card's review progress, so known cards stay known (a card may
     /// then come due in both decks). Default false: the copies are new cards.
@@ -310,9 +301,9 @@ pub struct NewCard {
     /// Back (answer) in Markdown.
     #[serde(default)]
     pub back: String,
-    /// Image id from upload_image to show on the front.
+    /// Image id from `upload_image` to show on the front.
     pub front_image_id: Option<String>,
-    /// Image id from upload_image to show on the back.
+    /// Image id from `upload_image` to show on the back.
     pub back_image_id: Option<String>,
     /// Learn the back item by item, split this way (needs at least two items).
     pub multi: Option<Split>,
@@ -323,13 +314,13 @@ pub struct NewCard {
 
 impl NewCard {
     fn split(&self) -> Option<Split> {
-        self.multi.or(self.list.then_some(Split::List))
+        self.multi.or_else(|| self.list.then_some(Split::List))
     }
 }
 
 #[derive(Deserialize, JsonSchema)]
 pub struct CreateCardsParams {
-    /// Target deck id. Give this or deck_name.
+    /// Target deck id. Give this or `deck_name`.
     pub deck_id: Option<i64>,
     /// Target deck name; the deck is created if it doesn't exist (needs an all-decks token).
     pub deck_name: Option<String>,
@@ -417,7 +408,7 @@ pub struct PresetFields {
 
 impl From<PresetFields> for PresetInput {
     fn from(p: PresetFields) -> Self {
-        PresetInput {
+        Self {
             name: p.name,
             description: p.description,
             desired_retention: p.desired_retention,
@@ -474,7 +465,7 @@ pub struct ShareDeckParams {
 
 #[derive(Deserialize, JsonSchema)]
 pub struct ShareIdParam {
-    /// Id from list_shares.
+    /// Id from `list_shares`.
     pub share_id: i64,
 }
 
@@ -482,11 +473,13 @@ pub struct ShareIdParam {
 
 #[tool_router]
 impl AinkiMcp {
-    #[tool(description = "Start here. Who the user is, what this token may do, every visible deck with due counts, and FSRS status.")]
+    #[tool(
+        description = "Start here. Who the user is, what this token may do, every visible deck with due counts, and FSRS status."
+    )]
     async fn get_overview(&self, Extension(parts): Extension<Parts>) -> ToolResult {
         let a = access(&parts)?;
         let decks = self.app.deck_summaries(&a).await.map_err(err)?;
-        let due: i64 = decks.iter().map(|d| d.due_total()).sum();
+        let due: i64 = decks.iter().map(super::service::DeckSummary::due_total).sum();
         let permissions = match &a.actor {
             Actor::Agent { can_write, can_review, decks, .. } => json!({
                 "can_write": can_write,
@@ -519,14 +512,20 @@ impl AinkiMcp {
         }))
     }
 
-    #[tool(description = "List decks with counts: new cards still allowed today, learning/review cards due now, totals.")]
+    #[tool(
+        description = "List decks with counts: new cards still allowed today, learning/review cards due now, totals."
+    )]
     async fn list_decks(&self, Extension(parts): Extension<Parts>) -> ToolResult {
         let a = access(&parts)?;
         out(self.app.deck_summaries(&a).await.map_err(err)?)
     }
 
     #[tool(description = "Create a deck.")]
-    async fn create_deck(&self, Parameters(p): Parameters<CreateDeckParams>, Extension(parts): Extension<Parts>) -> ToolResult {
+    async fn create_deck(
+        &self,
+        Parameters(p): Parameters<CreateDeckParams>,
+        Extension(parts): Extension<Parts>,
+    ) -> ToolResult {
         let a = access(&parts)?;
         out(self
             .app
@@ -535,8 +534,14 @@ impl AinkiMcp {
             .map_err(err)?)
     }
 
-    #[tool(description = "Create a new deck from copies of the cards of two or more decks. The decks it is made from are not changed, unless delete_old_decks is set. Identical cards are copied once; review history stays with the originals.")]
-    async fn merge_decks(&self, Parameters(p): Parameters<MergeDecksParams>, Extension(parts): Extension<Parts>) -> ToolResult {
+    #[tool(
+        description = "Create a new deck from copies of the cards of two or more decks. The decks it is made from are not changed, unless delete_old_decks is set. Identical cards are copied once; review history stays with the originals."
+    )]
+    async fn merge_decks(
+        &self,
+        Parameters(p): Parameters<MergeDecksParams>,
+        Extension(parts): Extension<Parts>,
+    ) -> ToolResult {
         let a = access(&parts)?;
         let input = crate::merge::MergeInput {
             sources: p.deck_ids,
@@ -549,22 +554,41 @@ impl AinkiMcp {
         out(self.app.merge_decks(&a, input).await.map_err(err)?)
     }
 
-    #[tool(description = "Rename a deck, change its description or preset, set/clear an exam date, or pause, archive or resume it.")]
-    async fn update_deck(&self, Parameters(p): Parameters<UpdateDeckParams>, Extension(parts): Extension<Parts>) -> ToolResult {
+    #[tool(
+        description = "Rename a deck, change its description or preset, set/clear an exam date, or pause, archive or resume it."
+    )]
+    async fn update_deck(
+        &self,
+        Parameters(p): Parameters<UpdateDeckParams>,
+        Extension(parts): Extension<Parts>,
+    ) -> ToolResult {
         let a = access(&parts)?;
         let deck = self
             .app
-            .update_deck(&a, p.deck_id, p.name.as_deref(), p.description.as_deref(), p.preset_id, p.exam_date.as_deref())
+            .update_deck(
+                &a,
+                p.deck_id,
+                p.name.as_deref(),
+                p.description.as_deref(),
+                p.preset_id,
+                p.exam_date.as_deref(),
+            )
             .await
             .map_err(err)?;
         match p.status {
-            Some(status) if status != deck.status => out(self.app.set_deck_status(&a, p.deck_id, status).await.map_err(err)?),
+            Some(status) if status != deck.status => {
+                out(self.app.set_deck_status(&a, p.deck_id, status).await.map_err(err)?)
+            }
             _ => out(deck),
         }
     }
 
     #[tool(description = "Delete a deck and all of its cards. Irreversible; confirm with the user first.")]
-    async fn delete_deck(&self, Parameters(p): Parameters<DeleteDeckParams>, Extension(parts): Extension<Parts>) -> ToolResult {
+    async fn delete_deck(
+        &self,
+        Parameters(p): Parameters<DeleteDeckParams>,
+        Extension(parts): Extension<Parts>,
+    ) -> ToolResult {
         let a = access(&parts)?;
         if !p.confirm {
             return Err("set confirm to true to delete the deck".into());
@@ -573,38 +597,58 @@ impl AinkiMcp {
         out(json!({ "deleted": true, "cards_deleted": n }))
     }
 
-    #[tool(description = "List or search cards. Filter by deck, text and state (new, learning, review, due, suspended).")]
-    async fn list_cards(&self, Parameters(p): Parameters<ListCardsParams>, Extension(parts): Extension<Parts>) -> ToolResult {
+    #[tool(
+        description = "List or search cards. Filter by deck, text and state (new, learning, review, due, suspended)."
+    )]
+    async fn list_cards(
+        &self,
+        Parameters(p): Parameters<ListCardsParams>,
+        Extension(parts): Extension<Parts>,
+    ) -> ToolResult {
         let a = access(&parts)?;
-        let filter = CardFilter {
-            deck_id: p.deck_id,
-            query: p.query,
-            state: p.state,
-            limit: p.limit,
-            offset: p.offset,
-        };
+        let filter =
+            CardFilter { deck_id: p.deck_id, query: p.query, state: p.state, limit: p.limit, offset: p.offset };
         let (cards, total) = self.app.list_cards(&a, &filter).await.map_err(err)?;
         let clock = a.user.clock();
         let book = self.app.param_book(&a).await.map_err(err)?;
         out(json!({
             "total": total,
-            "cards": cards.iter().map(|c| c.to_json(&clock, book.for_deck(c.deck_id))).collect::<Vec<Value>>(),
+            "cards": cards
+                .iter()
+                .map(|c| crate::scheduler::decay_for(book.for_deck(c.deck_id)).map(|decay| c.to_json(&clock, decay)))
+                .collect::<Result<Vec<Value>, _>>()
+                .map_err(|e| err(e.into()))?,
         }))
     }
 
-    #[tool(description = "Get one card with its scheduling state (stability, difficulty, recall probability) and optionally its review history.")]
-    async fn get_card(&self, Parameters(p): Parameters<GetCardParams>, Extension(parts): Extension<Parts>) -> ToolResult {
+    #[tool(
+        description = "Get one card with its scheduling state (stability, difficulty, recall probability) and optionally its review history."
+    )]
+    async fn get_card(
+        &self,
+        Parameters(p): Parameters<GetCardParams>,
+        Extension(parts): Extension<Parts>,
+    ) -> ToolResult {
         let a = access(&parts)?;
         let card = self.app.card(&a, p.card_id).await.map_err(err)?;
         let mut v = self.card_json(&a, &card, false).await?;
         if p.include_history {
-            v["history"] = json!(self.app.card_history(&a, p.card_id).await.map_err(err)?);
+            let history = self.app.card_history(&a, p.card_id).await.map_err(err)?;
+            if let Some(o) = v.as_object_mut() {
+                o.insert("history".into(), json!(history));
+            }
         }
         out(v)
     }
 
-    #[tool(description = "Add one or more cards to a deck. Front and back are Markdown; images are optional ids from upload_image.")]
-    async fn create_cards(&self, Parameters(p): Parameters<CreateCardsParams>, Extension(parts): Extension<Parts>) -> ToolResult {
+    #[tool(
+        description = "Add one or more cards to a deck. Front and back are Markdown; images are optional ids from upload_image."
+    )]
+    async fn create_cards(
+        &self,
+        Parameters(p): Parameters<CreateCardsParams>,
+        Extension(parts): Extension<Parts>,
+    ) -> ToolResult {
         let a = access(&parts)?;
         a.require_write().map_err(err)?;
         if p.cards.is_empty() {
@@ -626,7 +670,16 @@ impl AinkiMcp {
         for (i, c) in p.cards.into_iter().enumerate() {
             match self
                 .app
-                .create_card(&a, deck_id, &c.front, &c.back, c.front_image_id.clone(), c.back_image_id.clone(), c.split())
+                .create_card(
+                    &a,
+                    deck_id,
+                    crate::service::NewCard {
+                        front_image: c.front_image_id.clone(),
+                        back_image: c.back_image_id.clone(),
+                        multi: c.split(),
+                        ..crate::service::NewCard::new(&c.front, &c.back)
+                    },
+                )
                 .await
             {
                 Ok(card) => ids.push(card.id),
@@ -637,30 +690,40 @@ impl AinkiMcp {
     }
 
     #[tool(description = "Edit a card's text or images, or move it to another deck. Scheduling is kept.")]
-    async fn update_card(&self, Parameters(p): Parameters<UpdateCardParams>, Extension(parts): Extension<Parts>) -> ToolResult {
+    async fn update_card(
+        &self,
+        Parameters(p): Parameters<UpdateCardParams>,
+        Extension(parts): Extension<Parts>,
+    ) -> ToolResult {
         let a = access(&parts)?;
         let input = CardInput {
             front: p.front,
             back: p.back,
-            front_image: empty_to_none(p.front_image_id),
-            back_image: empty_to_none(p.back_image_id),
+            front_image: image_patch(p.front_image_id),
+            back_image: image_patch(p.back_image_id),
             multi: match (p.multi.as_deref(), p.list) {
-                (Some("none"), _) => Some(None),
-                (Some(m), _) => Some(Some(Split::parse(m).ok_or("multi is 'list', 'sections', 'parts' or 'none'")?)),
-                (None, l) => l.map(|l| l.then_some(Split::List)),
+                (Some("none"), _) => Patch::Set(None),
+                (Some(m), _) => {
+                    Patch::Set(Some(Split::parse(m).ok_or("multi is 'list', 'sections', 'parts' or 'none'")?))
+                }
+                (None, l) => l.map_or(Patch::Keep, |l| Patch::Set(l.then_some(Split::List))),
             },
         };
         let mut card = self.app.update_card(&a, p.card_id, input).await.map_err(err)?;
-        if let Some(deck) = p.deck_id {
-            if deck != card.deck_id {
-                card = self.app.move_card(&a, p.card_id, deck).await.map_err(err)?;
-            }
+        if let Some(deck) = p.deck_id
+            && deck != card.deck_id
+        {
+            card = self.app.move_card(&a, p.card_id, deck).await.map_err(err)?;
         }
         out(self.card_json(&a, &card, false).await?)
     }
 
     #[tool(description = "Delete cards permanently, including their review history. Confirm with the user first.")]
-    async fn delete_cards(&self, Parameters(p): Parameters<CardIdsParams>, Extension(parts): Extension<Parts>) -> ToolResult {
+    async fn delete_cards(
+        &self,
+        Parameters(p): Parameters<CardIdsParams>,
+        Extension(parts): Extension<Parts>,
+    ) -> ToolResult {
         let a = access(&parts)?;
         let mut deleted = 0;
         for id in p.card_ids {
@@ -671,7 +734,11 @@ impl AinkiMcp {
     }
 
     #[tool(description = "Suspend cards (hide them from study) or unsuspend them.")]
-    async fn set_cards_suspended(&self, Parameters(p): Parameters<SuspendParams>, Extension(parts): Extension<Parts>) -> ToolResult {
+    async fn set_cards_suspended(
+        &self,
+        Parameters(p): Parameters<SuspendParams>,
+        Extension(parts): Extension<Parts>,
+    ) -> ToolResult {
         let a = access(&parts)?;
         for id in &p.card_ids {
             self.app.set_suspended(&a, *id, p.suspended).await.map_err(err)?;
@@ -679,8 +746,14 @@ impl AinkiMcp {
         out(json!({ "updated": p.card_ids.len(), "suspended": p.suspended }))
     }
 
-    #[tool(description = "Forget cards: reset them to new, as if never studied. History is kept but ignored by the optimizer.")]
-    async fn reset_cards(&self, Parameters(p): Parameters<CardIdsParams>, Extension(parts): Extension<Parts>) -> ToolResult {
+    #[tool(
+        description = "Forget cards: reset them to new, as if never studied. History is kept but ignored by the optimizer."
+    )]
+    async fn reset_cards(
+        &self,
+        Parameters(p): Parameters<CardIdsParams>,
+        Extension(parts): Extension<Parts>,
+    ) -> ToolResult {
         let a = access(&parts)?;
         for id in &p.card_ids {
             self.app.reset_card(&a, *id).await.map_err(err)?;
@@ -688,8 +761,14 @@ impl AinkiMcp {
         out(json!({ "reset": p.card_ids.len() }))
     }
 
-    #[tool(description = "Upload an image (base64). Returns an image_id to use as front_image_id/back_image_id. Images are converted to dithered grayscale.")]
-    async fn upload_image(&self, Parameters(p): Parameters<UploadImageParams>, Extension(parts): Extension<Parts>) -> ToolResult {
+    #[tool(
+        description = "Upload an image (base64). Returns an image_id to use as front_image_id/back_image_id. Images are converted to dithered grayscale."
+    )]
+    async fn upload_image(
+        &self,
+        Parameters(p): Parameters<UploadImageParams>,
+        Extension(parts): Extension<Parts>,
+    ) -> ToolResult {
         let a = access(&parts)?;
         let data = decode_b64(&p.data_base64)?;
         let m = self.app.store_image(&a, data).await.map_err(err)?;
@@ -697,15 +776,25 @@ impl AinkiMcp {
     }
 
     #[tool(description = "Fetch an image by id, to look at a card's picture.")]
-    async fn get_image(&self, Parameters(p): Parameters<ImageIdParam>, Extension(parts): Extension<Parts>) -> Result<CallToolResult, String> {
+    async fn get_image(
+        &self,
+        Parameters(p): Parameters<ImageIdParam>,
+        Extension(parts): Extension<Parts>,
+    ) -> Result<CallToolResult, String> {
         let a = access(&parts)?;
         let (m, bytes) = self.app.media_for(&a, &p.image_id).await.map_err(err)?;
         let b64 = base64::engine::general_purpose::STANDARD.encode(bytes);
         Ok(CallToolResult::success(vec![ContentBlock::image(b64, m.mime)]))
     }
 
-    #[tool(description = "Get the next card to study (respects daily limits). Returns front AND back: show the user only the front until they have answered.")]
-    async fn get_next_card(&self, Parameters(p): Parameters<OptionalDeckParam>, Extension(parts): Extension<Parts>) -> ToolResult {
+    #[tool(
+        description = "Get the next card to study (respects daily limits). Returns front AND back: show the user only the front until they have answered."
+    )]
+    async fn get_next_card(
+        &self,
+        Parameters(p): Parameters<OptionalDeckParam>,
+        Extension(parts): Extension<Parts>,
+    ) -> ToolResult {
         let a = access(&parts)?;
         if let Some(until) = crate::study::quiet_until(&a.user, crate::now()) {
             let when = crate::format::when(&a.user.clock(), until);
@@ -718,11 +807,8 @@ impl AinkiMcp {
         match self.app.next_card(&a, p.deck_id).await.map_err(err)? {
             None => out(json!({ "done": true, "message": "Nothing is due right now." })),
             Some(sc) => {
-                let previews: serde_json::Map<String, Value> = sc
-                    .previews
-                    .iter()
-                    .map(|(r, s)| (format!("{r:?}").to_lowercase(), json!(s)))
-                    .collect();
+                let previews: serde_json::Map<String, Value> =
+                    sc.previews.iter().map(|(r, s)| (format!("{r:?}").to_lowercase(), json!(s))).collect();
                 out(json!({
                     "done": false,
                     "deck": { "id": sc.deck.id, "name": sc.deck.name },
@@ -734,8 +820,14 @@ impl AinkiMcp {
         }
     }
 
-    #[tool(description = "Record the user's answer for a card: 'good' (remembered) or 'again' (forgot). Hard/easy are optional. For a multicard, give missed: the numbers of the asked items the user did not recall.")]
-    async fn answer_card(&self, Parameters(p): Parameters<AnswerParams>, Extension(parts): Extension<Parts>) -> ToolResult {
+    #[tool(
+        description = "Record the user's answer for a card: 'good' (remembered) or 'again' (forgot). Hard/easy are optional. For a multicard, give missed: the numbers of the asked items the user did not recall."
+    )]
+    async fn answer_card(
+        &self,
+        Parameters(p): Parameters<AnswerParams>,
+        Extension(parts): Extension<Parts>,
+    ) -> ToolResult {
         let a = access(&parts)?;
         let r = match (p.missed, p.rating) {
             (Some(missed), _) => {
@@ -744,7 +836,7 @@ impl AinkiMcp {
                     if n < 1 {
                         return Err(format!("item numbers start at 1, got {n}"));
                     }
-                    positions.push((n - 1) as usize);
+                    positions.push(num::i64_usize(n - 1));
                 }
                 self.app.answer_list(&a, p.card_id, positions, None, None).await.map_err(err)?
             }
@@ -775,13 +867,21 @@ impl AinkiMcp {
         }
     }
 
-    #[tool(description = "Study statistics: counts, today's reviews, 30-day true retention, streak, 14-day due forecast.")]
-    async fn get_stats(&self, Parameters(p): Parameters<OptionalDeckParam>, Extension(parts): Extension<Parts>) -> ToolResult {
+    #[tool(
+        description = "Study statistics: counts, today's reviews, 30-day true retention, streak, 14-day due forecast."
+    )]
+    async fn get_stats(
+        &self,
+        Parameters(p): Parameters<OptionalDeckParam>,
+        Extension(parts): Extension<Parts>,
+    ) -> ToolResult {
         let a = access(&parts)?;
         out(self.app.stats(&a, p.deck_id).await.map_err(err)?)
     }
 
-    #[tool(description = "List the user's presets (desired retention, daily limits, steps) and the built-in templates.")]
+    #[tool(
+        description = "List the user's presets (desired retention, daily limits, steps) and the built-in templates."
+    )]
     async fn list_presets(&self, Extension(parts): Extension<Parts>) -> ToolResult {
         let a = access(&parts)?;
         let presets = self.app.list_presets(&a).await.map_err(err)?;
@@ -793,37 +893,53 @@ impl AinkiMcp {
     }
 
     #[tool(description = "Create a preset from a template, optionally overriding fields.")]
-    async fn create_preset(&self, Parameters(p): Parameters<CreatePresetParams>, Extension(parts): Extension<Parts>) -> ToolResult {
+    async fn create_preset(
+        &self,
+        Parameters(p): Parameters<CreatePresetParams>,
+        Extension(parts): Extension<Parts>,
+    ) -> ToolResult {
         let a = access(&parts)?;
-        out(self
-            .app
-            .create_preset(&a, p.template.as_deref(), p.fields.into())
-            .await
-            .map_err(err)?)
+        out(self.app.create_preset(&a, p.template.as_deref(), p.fields.into()).await.map_err(err)?)
     }
 
     #[tool(description = "Change a preset. Affects every deck that uses it.")]
-    async fn update_preset(&self, Parameters(p): Parameters<UpdatePresetParams>, Extension(parts): Extension<Parts>) -> ToolResult {
+    async fn update_preset(
+        &self,
+        Parameters(p): Parameters<UpdatePresetParams>,
+        Extension(parts): Extension<Parts>,
+    ) -> ToolResult {
         let a = access(&parts)?;
         out(self.app.update_preset(&a, p.preset_id, p.fields.into()).await.map_err(err)?)
     }
 
     #[tool(description = "Delete a preset that no deck uses.")]
-    async fn delete_preset(&self, Parameters(p): Parameters<PresetIdParam>, Extension(parts): Extension<Parts>) -> ToolResult {
+    async fn delete_preset(
+        &self,
+        Parameters(p): Parameters<PresetIdParam>,
+        Extension(parts): Extension<Parts>,
+    ) -> ToolResult {
         let a = access(&parts)?;
         self.app.delete_preset(&a, p.preset_id).await.map_err(err)?;
         out(json!({ "deleted": true }))
     }
 
-    #[tool(description = "What the rule-based coach would tell the user about their studying, most important first: an exam close, cards piling up, recall below the aim, too many new cards, the load ahead, habits, settings that work against them. Each note has a rule id, a sentence or two with the real numbers, and a link on the website. Pass the first one or two on in your own words when it fits; it is advice, so never change settings unless the user asks.")]
+    #[tool(
+        description = "What the rule-based coach would tell the user about their studying, most important first: an exam close, cards piling up, recall below the aim, too many new cards, the load ahead, habits, settings that work against them. Each note has a rule id, a sentence or two with the real numbers, and a link on the website. Pass the first one or two on in your own words when it fits; it is advice, so never change settings unless the user asks."
+    )]
     async fn get_coach_advice(&self, Extension(parts): Extension<Parts>) -> ToolResult {
         let a = access(&parts)?;
         let notes = self.app.advice(&a).await.map_err(err)?;
         out(json!({ "advice": notes }))
     }
 
-    #[tool(description = "Cards the rule-based coach flagged: 'leech' (keeps being forgotten), 'split' (asks a lot at once: a long list that keeps failing, or slow, often missed answers) and 'duplicate' (looks like another card). Each flag has a reason. Suggest fixes to the user; change cards only when they agree.")]
-    async fn list_cards_needing_attention(&self, Parameters(p): Parameters<OptionalDeckParam>, Extension(parts): Extension<Parts>) -> ToolResult {
+    #[tool(
+        description = "Cards the rule-based coach flagged: 'leech' (keeps being forgotten), 'split' (asks a lot at once: a long list that keeps failing, or slow, often missed answers) and 'duplicate' (looks like another card). Each flag has a reason. Suggest fixes to the user; change cards only when they agree."
+    )]
+    async fn list_cards_needing_attention(
+        &self,
+        Parameters(p): Parameters<OptionalDeckParam>,
+        Extension(parts): Extension<Parts>,
+    ) -> ToolResult {
         let a = access(&parts)?;
         let list = self.app.attention(&a, p.deck_id).await.map_err(err)?;
         let cards: Vec<Value> = list
@@ -848,24 +964,43 @@ impl AinkiMcp {
         out(json!({ "cards": cards }))
     }
 
-    #[tool(description = "Dismiss a coach flag on a card when the user decides the card is fine as it is. A leech flag comes back if the card keeps slipping.")]
-    async fn dismiss_card_flag(&self, Parameters(p): Parameters<DismissFlagParams>, Extension(parts): Extension<Parts>) -> ToolResult {
+    #[tool(
+        description = "Dismiss a coach flag on a card when the user decides the card is fine as it is. A leech flag comes back if the card keeps slipping."
+    )]
+    async fn dismiss_card_flag(
+        &self,
+        Parameters(p): Parameters<DismissFlagParams>,
+        Extension(parts): Extension<Parts>,
+    ) -> ToolResult {
         let a = access(&parts)?;
-        let kind = crate::coach::Kind::parse(&p.kind).ok_or_else(|| err(AppError::bad("kind must be leech, split or duplicate")))?;
+        let kind = crate::coach::Kind::parse(&p.kind)
+            .ok_or_else(|| err(AppError::bad("kind must be leech, split or duplicate")))?;
         self.app.dismiss_flag(&a, p.card_id, kind).await.map_err(err)?;
         out(json!({ "dismissed": true }))
     }
 
-    #[tool(description = "Split a card into several smaller ones, one fact each, in the same deck. Only when the user agrees. The original is deleted unless keep_original is true.")]
-    async fn split_card(&self, Parameters(p): Parameters<SplitCardParams>, Extension(parts): Extension<Parts>) -> ToolResult {
+    #[tool(
+        description = "Split a card into several smaller ones, one fact each, in the same deck. Only when the user agrees. The original is deleted unless keep_original is true."
+    )]
+    async fn split_card(
+        &self,
+        Parameters(p): Parameters<SplitCardParams>,
+        Extension(parts): Extension<Parts>,
+    ) -> ToolResult {
         let a = access(&parts)?;
         let parts_: Vec<(String, String)> = p.cards.into_iter().map(|c| (c.front, c.back)).collect();
         let made = self.app.split_card(&a, p.card_id, parts_, p.keep_original.unwrap_or(false)).await.map_err(err)?;
         out(json!({ "created_card_ids": made.iter().map(|c| c.id).collect::<Vec<_>>() }))
     }
 
-    #[tool(description = "How the user is doing: the last seven days (reviews, days studied, retention against the aim, one tip), retention per deck over 30 days against each preset's aim, how well FSRS predicts their memory, and how often they were right when they felt sure.")]
-    async fn get_insights(&self, Parameters(p): Parameters<OptionalDeckParam>, Extension(parts): Extension<Parts>) -> ToolResult {
+    #[tool(
+        description = "How the user is doing: the last seven days (reviews, days studied, retention against the aim, one tip), retention per deck over 30 days against each preset's aim, how well FSRS predicts their memory, and how often they were right when they felt sure."
+    )]
+    async fn get_insights(
+        &self,
+        Parameters(p): Parameters<OptionalDeckParam>,
+        Extension(parts): Extension<Parts>,
+    ) -> ToolResult {
         let a = access(&parts)?;
         let retention: Vec<_> = self
             .app
@@ -883,17 +1018,25 @@ impl AinkiMcp {
         }))
     }
 
-    #[tool(description = "What a preset would cost: simulated minutes and reviews per day, and how much is remembered, at several desired retentions over the next 30, 90 or 365 days, using the user's own memory and speed.")]
-    async fn get_workload(&self, Parameters(p): Parameters<WorkloadParams>, Extension(parts): Extension<Parts>) -> ToolResult {
+    #[tool(
+        description = "What a preset would cost: simulated minutes and reviews per day, and how much is remembered, at several desired retentions over the next 30, 90 or 365 days, using the user's own memory and speed."
+    )]
+    async fn get_workload(
+        &self,
+        Parameters(p): Parameters<WorkloadParams>,
+        Extension(parts): Extension<Parts>,
+    ) -> ToolResult {
         let a = access(&parts)?;
         let days = match p.days.unwrap_or(30) {
-            d @ (30 | 90 | 365) => d as usize,
+            d @ (30 | 90 | 365) => num::i64_usize(d),
             _ => return Err(err(AppError::bad("days must be 30, 90 or 365"))),
         };
         out(json!({ "days": days, "options": self.app.workload(&a, p.preset_id, days).await.map_err(err)? }))
     }
 
-    #[tool(description = "List AiNKI's built-in lessons on scheduling, memory research and writing cards, with how strong the evidence is for each.")]
+    #[tool(
+        description = "List AiNKI's built-in lessons on scheduling, memory research and writing cards, with how strong the evidence is for each."
+    )]
     async fn list_lessons(&self) -> ToolResult {
         let list: Vec<Value> = crate::lessons::all()
             .iter()
@@ -902,7 +1045,9 @@ impl AinkiMcp {
         out(json!({ "lessons": list }))
     }
 
-    #[tool(description = "Read one lesson (Markdown) and its suggested cards. Teach from it faithfully, including its evidence strength; don't overstate.")]
+    #[tool(
+        description = "Read one lesson (Markdown) and its suggested cards. Teach from it faithfully, including its evidence strength; don't overstate."
+    )]
     async fn get_lesson(&self, Parameters(p): Parameters<LessonParams>) -> ToolResult {
         let l = crate::lessons::find(&p.slug).ok_or_else(|| err(AppError::NotFound))?;
         out(json!({
@@ -915,33 +1060,55 @@ impl AinkiMcp {
         }))
     }
 
-    #[tool(description = "Fit FSRS parameters to the user's review history. Worth doing after ~1000 reviews and then monthly. Can take a while.")]
+    #[tool(
+        description = "Fit FSRS parameters to the user's review history. Worth doing after ~1000 reviews and then monthly. Can take a while."
+    )]
     async fn optimize_fsrs(&self, Extension(parts): Extension<Parts>) -> ToolResult {
         let a = access(&parts)?;
         out(self.app.optimize_parameters(&a).await.map_err(err)?)
     }
 
     #[tool(description = "Import cards from CSV text (front,back per line) into a deck.")]
-    async fn import_csv(&self, Parameters(p): Parameters<ImportCsvParams>, Extension(parts): Extension<Parts>) -> ToolResult {
+    async fn import_csv(
+        &self,
+        Parameters(p): Parameters<ImportCsvParams>,
+        Extension(parts): Extension<Parts>,
+    ) -> ToolResult {
         let a = access(&parts)?;
         out(self.app.import_csv(&a, p.deck_id, &p.csv).await.map_err(err)?)
     }
 
     #[tool(description = "Import an Anki .apkg package (base64), including review history.")]
-    async fn import_apkg(&self, Parameters(p): Parameters<ImportApkgParams>, Extension(parts): Extension<Parts>) -> ToolResult {
+    async fn import_apkg(
+        &self,
+        Parameters(p): Parameters<ImportApkgParams>,
+        Extension(parts): Extension<Parts>,
+    ) -> ToolResult {
         let a = access(&parts)?;
         let data = decode_b64(&p.data_base64)?;
         out(self.app.import_apkg(&a, data).await.map_err(err)?)
     }
 
-    #[tool(description = "Offer a copy of a deck to another AiNKI user. They get their own copy with fresh progress once they accept. Only do this when the user explicitly asks to share with that person.")]
-    async fn share_deck(&self, Parameters(p): Parameters<ShareDeckParams>, Extension(parts): Extension<Parts>) -> ToolResult {
+    #[tool(
+        description = "Offer a copy of a deck to another AiNKI user. They get their own copy with fresh progress once they accept. Only do this when the user explicitly asks to share with that person."
+    )]
+    async fn share_deck(
+        &self,
+        Parameters(p): Parameters<ShareDeckParams>,
+        Extension(parts): Extension<Parts>,
+    ) -> ToolResult {
         let a = access(&parts)?;
         out(self.app.share_deck(&a, p.deck_id, &p.user).await.map_err(err)?)
     }
 
-    #[tool(description = "Decks other users offered to this user (incoming), and pending offers this user made for a deck (outgoing, needs deck_id).")]
-    async fn list_shares(&self, Parameters(p): Parameters<OptionalDeckParam>, Extension(parts): Extension<Parts>) -> ToolResult {
+    #[tool(
+        description = "Decks other users offered to this user (incoming), and pending offers this user made for a deck (outgoing, needs deck_id)."
+    )]
+    async fn list_shares(
+        &self,
+        Parameters(p): Parameters<OptionalDeckParam>,
+        Extension(parts): Extension<Parts>,
+    ) -> ToolResult {
         let a = access(&parts)?;
         let incoming = self.app.incoming_shares(&a).await.map_err(err)?;
         let outgoing = match p.deck_id {
@@ -952,33 +1119,53 @@ impl AinkiMcp {
     }
 
     #[tool(description = "Accept an incoming shared deck: copies it into the user's decks.")]
-    async fn accept_share(&self, Parameters(p): Parameters<ShareIdParam>, Extension(parts): Extension<Parts>) -> ToolResult {
+    async fn accept_share(
+        &self,
+        Parameters(p): Parameters<ShareIdParam>,
+        Extension(parts): Extension<Parts>,
+    ) -> ToolResult {
         let a = access(&parts)?;
         out(self.app.accept_share(&a, p.share_id).await.map_err(err)?)
     }
 
     #[tool(description = "Decline an incoming shared deck.")]
-    async fn decline_share(&self, Parameters(p): Parameters<ShareIdParam>, Extension(parts): Extension<Parts>) -> ToolResult {
+    async fn decline_share(
+        &self,
+        Parameters(p): Parameters<ShareIdParam>,
+        Extension(parts): Extension<Parts>,
+    ) -> ToolResult {
         let a = access(&parts)?;
         self.app.decline_share(&a, p.share_id).await.map_err(err)?;
         out(json!({ "declined": true }))
     }
 
-    #[tool(description = "Withdraw a deck offer the user sent that hasn't been accepted yet (outgoing in list_shares).")]
-    async fn cancel_share(&self, Parameters(p): Parameters<ShareIdParam>, Extension(parts): Extension<Parts>) -> ToolResult {
+    #[tool(
+        description = "Withdraw a deck offer the user sent that hasn't been accepted yet (outgoing in list_shares)."
+    )]
+    async fn cancel_share(
+        &self,
+        Parameters(p): Parameters<ShareIdParam>,
+        Extension(parts): Extension<Parts>,
+    ) -> ToolResult {
         let a = access(&parts)?;
         let deck_id = self.app.cancel_share(&a, p.share_id).await.map_err(err)?;
         out(json!({ "cancelled": true, "deck_id": deck_id }))
     }
 
     #[tool(description = "Export a deck's cards as CSV text (front,back).")]
-    async fn export_deck_csv(&self, Parameters(p): Parameters<DeckIdParam>, Extension(parts): Extension<Parts>) -> ToolResult {
+    async fn export_deck_csv(
+        &self,
+        Parameters(p): Parameters<DeckIdParam>,
+        Extension(parts): Extension<Parts>,
+    ) -> ToolResult {
         let a = access(&parts)?;
         self.app.export_csv(&a, p.deck_id).await.map_err(err)
     }
 }
 
 #[tool_handler]
+#[allow(unknown_lints, reason = "the lint below is new in clippy 1.100")]
+#[allow(clippy::unused_async_trait_impl, reason = "rmcp's macro writes the async handlers")]
 impl ServerHandler for AinkiMcp {
     fn get_info(&self) -> ServerConfig {
         ServerConfig::new(ServerCapabilities::builder().enable_tools().build())

@@ -1,25 +1,22 @@
-// Browser tests against the real server: the desktop (Calm) look, the
-// simple look on a desktop, and phones, in Chromium and Firefox.
+// Browser tests against the real server: one look, on a desktop and on a
+// phone, in Chromium and Firefox.
 //
 //   cargo build && cd e2e && npm ci && npx playwright test
 //
 // Firefox projects run where Firefox is installed (CI installs it; set
 // E2E_BROWSERS=chromium to leave them out).
 import { defineConfig, devices } from '@playwright/test';
-import type { Look } from './support/fixtures.ts';
 import { baseURL } from './support/env.ts';
 
 const browsers = (process.env.E2E_BROWSERS ?? 'chromium,firefox').split(',');
 const desk = { viewport: { width: 1440, height: 900 } };
 
 const projects = [
-  { name: 'desk-chromium', browser: 'chromium', use: { ...devices['Desktop Chrome'], ...desk, look: 'calm' as Look } },
-  { name: 'simple-chromium', browser: 'chromium', use: { ...devices['Desktop Chrome'], ...desk, look: 'simple' as Look } },
-  { name: 'phone-chromium', browser: 'chromium', use: { ...devices['Pixel 7'], look: 'calm' as Look } },
-  { name: 'desk-firefox', browser: 'firefox', use: { ...devices['Desktop Firefox'], ...desk, look: 'calm' as Look } },
-  // Firefox has no phone emulation; a narrow touch-less window still gets
-  // the simple look, which is what phones see.
-  { name: 'phone-firefox', browser: 'firefox', use: { ...devices['Desktop Firefox'], viewport: { width: 390, height: 844 }, look: 'calm' as Look } },
+  { name: 'desk-chromium', browser: 'chromium', use: { ...devices['Desktop Chrome'], ...desk } },
+  { name: 'phone-chromium', browser: 'chromium', use: { ...devices['Pixel 7'] } },
+  { name: 'desk-firefox', browser: 'firefox', use: { ...devices['Desktop Firefox'], ...desk } },
+  // Firefox has no phone emulation; a narrow window stands in.
+  { name: 'phone-firefox', browser: 'firefox', use: { ...devices['Desktop Firefox'], viewport: { width: 390, height: 844 } } },
 ];
 
 export default defineConfig({

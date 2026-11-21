@@ -11,7 +11,7 @@ use crate::{
     App,
     auth::Access,
     error::{AppError, Result},
-    now,
+    now, num,
 };
 
 pub const MAX_UPLOAD_BYTES: usize = 15 * 1024 * 1024;
@@ -41,11 +41,12 @@ pub struct Media {
 }
 
 /// Floyd–Steinberg error diffusion to `levels` evenly spaced grays.
+#[expect(clippy::indexing_slicing, reason = "error diffusion: each neighbour is bounds-checked against w and h first")]
 fn dither(img: &mut GrayImage, levels: u8) {
     let (w, h) = img.dimensions();
     let (w, h) = (w as usize, h as usize);
-    let step = 255.0 / (levels - 1) as f32;
-    let mut buf: Vec<f32> = img.pixels().map(|p| p.0[0] as f32).collect();
+    let step = 255.0 / f32::from(levels - 1);
+    let mut buf: Vec<f32> = img.pixels().map(|p| f32::from(p.0[0])).collect();
     for y in 0..h {
         for x in 0..w {
             let i = y * w + x;
@@ -68,7 +69,7 @@ fn dither(img: &mut GrayImage, levels: u8) {
         }
     }
     for (p, v) in img.pixels_mut().zip(buf) {
-        *p = Luma([v.clamp(0.0, 255.0) as u8]);
+        *p = Luma([num::f32_u8(v)]);
     }
 }
 
@@ -100,9 +101,9 @@ pub fn process_image(data: &[u8]) -> Result<(Vec<u8>, u32, u32)> {
     let mut gray = GrayImage::new(rgba.width(), rgba.height());
     for (x, y, p) in rgba.enumerate_pixels() {
         let [r, g, b, a] = p.0;
-        let a = a as f32 / 255.0;
-        let l = 0.2126 * r as f32 + 0.7152 * g as f32 + 0.0722 * b as f32;
-        gray.put_pixel(x, y, Luma([(l * a + 255.0 * (1.0 - a)).round() as u8]));
+        let a = f32::from(a) / 255.0;
+        let l: f32 = [0.2126, 0.7152, 0.0722].iter().zip([r, g, b]).map(|(w, c)| w * f32::from(c)).sum();
+        gray.put_pixel(x, y, Luma([num::f32_u8(255.0f32.mul_add(1.0 - a, l * a).round())]));
     }
     dither(&mut gray, GRAY_LEVELS);
     let mut out = Vec::new();
@@ -116,6 +117,11 @@ impl App {
         self.config.data_dir.join("media").join(format!("{id}.png"))
     }
 
+    /// # Errors
+    ///
+    /// - `Forbidden` if the token is read-only.
+    /// - `BadRequest` if the data is too large, no image, or broken.
+    /// - `Internal` if the database or the data folder fails.
     pub async fn store_image(&self, access: &Access, data: Vec<u8>) -> Result<Media> {
         access.require_write()?;
         check_size(&data)?;
@@ -138,20 +144,22 @@ impl App {
         )
         .bind(&id)
         .bind(user_id)
-        .bind(w as i64)
-        .bind(h as i64)
-        .bind(png.len() as i64)
+        .bind(i64::from(w))
+        .bind(i64::from(h))
+        .bind(num::usize_i64(png.len()))
         .bind(now())
         .execute(&self.db)
         .await?;
-        Ok(sqlx::query_as("SELECT * FROM media WHERE id = ?")
-            .bind(&id)
-            .fetch_one(&self.db)
-            .await?)
+        Ok(sqlx::query_as("SELECT * FROM media WHERE id = ?").bind(&id).fetch_one(&self.db).await?)
     }
 
     /// An image as seen through `access`: tokens limited to some decks only
     /// see images on cards in those decks.
+    ///
+    /// # Errors
+    ///
+    /// - `NotFound` if the image isn't the user's, or no visible card uses it for a token limited to some decks.
+    /// - `Internal` if the database or the data folder fails.
     pub async fn media_for(&self, access: &Access, id: &str) -> Result<(Media, Vec<u8>)> {
         if let crate::auth::Actor::Agent { decks: Some(decks), .. } = &access.actor {
             let deck_ids: Vec<i64> = sqlx::query_scalar(
@@ -172,6 +180,10 @@ impl App {
     /// Remove images no card shows any more (replaced, removed, or their
     /// card or deck deleted) that are older than `before`. Newer ones are
     /// kept: an agent uploads first and makes the card after.
+    ///
+    /// # Errors
+    ///
+    /// `Internal` if the database or the data folder fails.
     pub async fn delete_unused_images(&self, before: i64) -> Result<usize> {
         let used: std::collections::HashSet<String> = sqlx::query_as::<_, (Option<String>, Option<String>)>(
             "SELECT front_image, back_image FROM cards WHERE front_image IS NOT NULL OR back_image IS NOT NULL",
@@ -179,13 +191,11 @@ impl App {
         .fetch_all(&self.db)
         .await?
         .into_iter()
-        .flat_map(|(f, b)| [f, b])
+        .flat_map(<[Option<String>; 2]>::from)
         .flatten()
         .collect();
-        let old: Vec<String> = sqlx::query_scalar("SELECT id FROM media WHERE created_at < ?")
-            .bind(before)
-            .fetch_all(&self.db)
-            .await?;
+        let old: Vec<String> =
+            sqlx::query_scalar("SELECT id FROM media WHERE created_at < ?").bind(before).fetch_all(&self.db).await?;
         let mut n = 0;
         for id in old.into_iter().filter(|id| !used.contains(id)) {
             // Checked again in the delete, in case a card took it up just
@@ -207,15 +217,17 @@ impl App {
         Ok(n)
     }
 
+    /// # Errors
+    ///
+    /// - `NotFound` if the image isn't the user's or its file is gone.
+    /// - `Internal` if the database or the data folder fails.
     pub async fn media(&self, user_id: i64, id: &str) -> Result<(Media, Vec<u8>)> {
         let m: Media = sqlx::query_as("SELECT * FROM media WHERE id = ? AND user_id = ?")
             .bind(id)
             .bind(user_id)
             .fetch_one(&self.db)
             .await?;
-        let bytes = tokio::fs::read(self.media_path(&m.id))
-            .await
-            .map_err(|_| AppError::NotFound)?;
+        let bytes = tokio::fs::read(self.media_path(&m.id)).await.map_err(|_| AppError::NotFound)?;
         Ok((m, bytes))
     }
 }
@@ -228,16 +240,15 @@ mod tests {
     fn processes_color_png_to_gray_levels() {
         let mut img = image::RgbaImage::new(2000, 1000);
         for (x, _, p) in img.enumerate_pixels_mut() {
-            *p = image::Rgba([(x % 256) as u8, 80, 200, 255]);
+            *p = image::Rgba([u8::try_from(x % 256).unwrap(), 80, 200, 255]);
         }
         let mut png = Vec::new();
-        img.write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png)
-            .unwrap();
+        img.write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png).unwrap();
         let (out, w, h) = process_image(&png).unwrap();
         assert_eq!((w, h), (1200, 600));
         let decoded = image::load_from_memory(&out).unwrap().to_luma8();
-        let step = 255 / (GRAY_LEVELS as u32 - 1);
-        assert!(decoded.pixels().all(|p| p.0[0] as u32 % step == 0));
+        let step = 255 / (u32::from(GRAY_LEVELS) - 1);
+        assert!(decoded.pixels().all(|p| u32::from(p.0[0]) % step == 0));
     }
 
     #[test]
@@ -258,9 +269,8 @@ mod tests {
         let mut jpg = Vec::new();
         let mut enc = image::codecs::jpeg::JpegEncoder::new(&mut jpg);
         // EXIF: big-endian TIFF, one IFD entry: Orientation (0x0112) = 6.
-        let exif: Vec<u8> = vec![
-            b'M', b'M', 0, 42, 0, 0, 0, 8, 0, 1, 0x01, 0x12, 0, 3, 0, 0, 0, 1, 0, 6, 0, 0, 0, 0, 0, 0, 0, 0,
-        ];
+        let exif: Vec<u8> =
+            vec![b'M', b'M', 0, 42, 0, 0, 0, 8, 0, 1, 0x01, 0x12, 0, 3, 0, 0, 0, 1, 0, 6, 0, 0, 0, 0, 0, 0, 0, 0];
         image::ImageEncoder::set_exif_metadata(&mut enc, exif).unwrap();
         image::ImageEncoder::write_image(enc, &img, 4, 2, image::ExtendedColorType::Rgb8).unwrap();
         let (_, w, h) = process_image(&jpg).unwrap();

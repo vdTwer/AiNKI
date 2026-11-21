@@ -3,7 +3,7 @@
 
 use pulldown_cmark::{Event, Options, Parser, html};
 
-/// The Markdown dialect of cards: CommonMark plus tables, strikethrough and
+/// The Markdown dialect of cards: `CommonMark` plus tables, strikethrough and
 /// task lists. Splitting a multicard parses with the same options.
 pub fn options() -> Options {
     let mut opts = Options::empty();
@@ -23,11 +23,7 @@ pub fn render(src: &str) -> String {
     });
     let mut out = String::new();
     html::push_html(&mut out, parser);
-    ammonia::Builder::default()
-        .rm_tags(&["img"])
-        .link_rel(Some("noopener noreferrer nofollow"))
-        .clean(&out)
-        .to_string()
+    ammonia::Builder::default().rm_tags(&["img"]).link_rel(Some("noopener noreferrer nofollow")).clean(&out).to_string()
 }
 
 /// The words of card text without its Markdown, on one line: for lists
@@ -54,22 +50,19 @@ pub fn tidy(src: &str) -> String {
     let mut out: Vec<String> = Vec::with_capacity(lines.len());
     let mut fence: Option<&str> = None;
     let mut n = 0;
-    while n < lines.len() {
-        let line = lines[n];
+    while let Some(&line) = lines.get(n) {
         let t = line.trim_start();
         if let Some(f) = fence {
             if t.starts_with(f) {
                 fence = None;
             }
         } else if t.starts_with("```") || t.starts_with("~~~") {
-            fence = Some(&t[..3]);
+            fence = t.get(..3);
         } else if indent(line) < 4 && !t.is_empty() && !is_item(t) {
             // A run of indented items (and their own deeper lines) under it.
-            let run = lines[n + 1..]
-                .iter()
-                .take_while(|l| indent(l) >= 4 && !l.trim().is_empty())
-                .count();
-            let block = &lines[n + 1..n + 1 + run];
+            let after = lines.get(n + 1..).unwrap_or_default();
+            let run = after.iter().take_while(|l| indent(l) >= 4 && !l.trim().is_empty()).count();
+            let block = after.get(..run).unwrap_or_default();
             if block.first().is_some_and(|l| is_item(l.trim_start())) {
                 let cut = block.iter().map(|l| indent(l)).min().unwrap_or(0);
                 out.push(line.to_string());
@@ -90,10 +83,7 @@ pub fn tidy(src: &str) -> String {
 
 /// Leading spaces, with a tab as four.
 fn indent(line: &str) -> usize {
-    line.chars()
-        .take_while(|c| *c == ' ' || *c == '\t')
-        .map(|c| if c == '\t' { 4 } else { 1 })
-        .sum()
+    line.chars().take_while(|c| *c == ' ' || *c == '\t').map(|c| if c == '\t' { 4 } else { 1 }).sum()
 }
 
 fn dedent(line: &str, cut: usize) -> String {

@@ -1,5 +1,5 @@
 //! Importing Anki packages (.apkg), end to end: a real collection file is
-//! written with SQLite, zipped with its media and handed to the importer.
+//! written with `SQLite`, zipped with its media and handed to the importer.
 
 use std::{io::Write, str::FromStr};
 
@@ -60,9 +60,17 @@ async fn collection(format: Format, crt: i64, decks: &[(i64, &str)], cards: &[Ca
     let json: serde_json::Map<String, serde_json::Value> =
         decks.iter().map(|(id, name)| (id.to_string(), serde_json::json!({ "name": name }))).collect();
     let blob = if format == Format::Legacy { serde_json::Value::Object(json).to_string() } else { "{}".into() };
-    sqlx::query("INSERT INTO col (id, crt, decks) VALUES (1, ?, ?)").bind(crt).bind(blob).execute(&mut conn).await.unwrap();
+    sqlx::query("INSERT INTO col (id, crt, decks) VALUES (1, ?, ?)")
+        .bind(crt)
+        .bind(blob)
+        .execute(&mut conn)
+        .await
+        .unwrap();
     if format == Format::Modern {
-        sqlx::query("CREATE TABLE decks (id INTEGER PRIMARY KEY, name TEXT NOT NULL)").execute(&mut conn).await.unwrap();
+        sqlx::query("CREATE TABLE decks (id INTEGER PRIMARY KEY, name TEXT NOT NULL)")
+            .execute(&mut conn)
+            .await
+            .unwrap();
         for (id, name) in decks {
             // The modern schema separates nested names with \x1f.
             sqlx::query("INSERT INTO decks (id, name) VALUES (?, ?)")
@@ -81,7 +89,7 @@ async fn collection(format: Format, crt: i64, decks: &[(i64, &str)], cards: &[Ca
             .execute(&mut conn)
             .await
             .unwrap();
-        let id = 1000 + i as i64;
+        let id = 1000 + crate::num::usize_i64(i);
         sqlx::query(
             "INSERT INTO cards (id, nid, did, ord, type, queue, due, ivl, factor, reps, lapses, odue, odid)
              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)",
@@ -95,7 +103,7 @@ async fn collection(format: Format, crt: i64, decks: &[(i64, &str)], cards: &[Ca
         .bind(c.due)
         .bind(c.ivl)
         .bind(c.factor)
-        .bind(c.revlog.len() as i64)
+        .bind(crate::num::usize_i64(c.revlog.len()))
         .bind(c.odue)
         .bind(c.odid)
         .execute(&mut conn)
@@ -103,7 +111,7 @@ async fn collection(format: Format, crt: i64, decks: &[(i64, &str)], cards: &[Ca
         .unwrap();
         for (j, (days_ago, ease, kind)) in c.revlog.iter().enumerate() {
             sqlx::query("INSERT INTO revlog (id, cid, ease, type) VALUES (?, ?, ?, ?)")
-                .bind(now_ms - days_ago * DAY * 1000 + j as i64)
+                .bind(now_ms - days_ago * DAY * 1000 + crate::num::usize_i64(j))
                 .bind(id)
                 .bind(ease)
                 .bind(kind)
@@ -119,23 +127,25 @@ async fn collection(format: Format, crt: i64, decks: &[(i64, &str)], cards: &[Ca
 }
 
 fn png() -> Vec<u8> {
-    let img = image::RgbImage::from_fn(8, 8, |x, y| image::Rgb([(x * 30) as u8, (y * 30) as u8, 90]));
+    let img = image::RgbImage::from_fn(8, 8, |x, y| {
+        image::Rgb([u8::try_from(x * 30).unwrap(), u8::try_from(y * 30).unwrap(), 90])
+    });
     let mut out = std::io::Cursor::new(Vec::new());
     img.write_to(&mut out, image::ImageFormat::Png).unwrap();
     out.into_inner()
 }
 
-fn package(format: Format, collection: Vec<u8>, media: &[(&str, Vec<u8>)]) -> Vec<u8> {
+fn package(format: Format, collection: &[u8], media: &[(&str, Vec<u8>)]) -> Vec<u8> {
     let mut zip = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
     let opts = zip::write::SimpleFileOptions::default();
     match format {
         Format::Legacy => {
             zip.start_file("collection.anki2", opts).unwrap();
-            zip.write_all(&collection).unwrap();
+            zip.write_all(collection).unwrap();
         }
         Format::Modern => {
             zip.start_file("collection.anki21b", opts).unwrap();
-            zip.write_all(&zstd::encode_all(&collection[..], 3).unwrap()).unwrap();
+            zip.write_all(&zstd::encode_all(collection, 3).unwrap()).unwrap();
         }
     }
     let index: serde_json::Map<String, serde_json::Value> =
@@ -190,7 +200,7 @@ async fn a_legacy_package_brings_cards_history_and_images() {
         card(8, "|orphan back", 11),
     ];
     let col = collection(Format::Legacy, crt, &[(10, "Languages::Spanish"), (11, "Geography")], &cards).await;
-    let pkg = package(Format::Legacy, col, &[("bandera.png", png()), ("sound.mp3", vec![1, 2, 3])]);
+    let pkg = package(Format::Legacy, &col, &[("bandera.png", png()), ("sound.mp3", vec![1, 2, 3])]);
 
     let report = app.import_apkg(&a, pkg).await.unwrap();
     assert_eq!(report.decks_created, vec!["Geography".to_string()]);
@@ -221,10 +231,8 @@ async fn a_legacy_package_brings_cards_history_and_images() {
     assert!(flag.front_image.is_some());
 
     // The imported history counts for the optimizer and the log.
-    let logged: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM review_log WHERE source = 'import'")
-        .fetch_one(&app.db)
-        .await
-        .unwrap();
+    let logged: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM review_log WHERE source = 'import'").fetch_one(&app.db).await.unwrap();
     assert_eq!(logged, 4);
 }
 
@@ -232,8 +240,14 @@ async fn a_legacy_package_brings_cards_history_and_images() {
 async fn a_modern_package_reads_nested_deck_names() {
     let app = app().await;
     let a = user(&app, "kolja").await;
-    let col = collection(Format::Modern, now() - 10 * DAY, &[(5, "Uni::Biology::Cells")], &[card(1, "Mitochondria|powerhouse", 5)]).await;
-    let report = app.import_apkg(&a, package(Format::Modern, col, &[])).await.unwrap();
+    let col = collection(
+        Format::Modern,
+        now() - 10 * DAY,
+        &[(5, "Uni::Biology::Cells")],
+        &[card(1, "Mitochondria|powerhouse", 5)],
+    )
+    .await;
+    let report = app.import_apkg(&a, package(Format::Modern, &col, &[])).await.unwrap();
     assert_eq!(report.decks_created, vec!["Uni::Biology::Cells".to_string()]);
     assert_eq!(cards_in(&app, &a, "Uni::Biology::Cells").await[0].back, "powerhouse");
 }
@@ -244,15 +258,14 @@ async fn importing_twice_adds_the_cards_twice() {
     let app = app().await;
     let a = user(&app, "kolja").await;
     let col = collection(Format::Legacy, now(), &[(1, "Default")], &[card(1, "a|b", 1)]).await;
-    let pkg = package(Format::Legacy, col, &[]);
+    let pkg = package(Format::Legacy, &col, &[]);
     app.import_apkg(&a, pkg.clone()).await.unwrap();
     let again = app.import_apkg(&a, pkg).await.unwrap();
-    assert!(again.decks_created.is_empty());
+    assert_eq!(again.decks_created, [] as [String; 0]);
     assert_eq!(cards_in(&app, &a, "Default").await.len(), 2);
 }
 
 #[tokio::test]
-#[ignore = "bug: cards in an Anki filtered deck land in that deck with its temporary due date"]
 async fn cards_in_a_filtered_deck_go_home() {
     let app = app().await;
     let a = user(&app, "kolja").await;
@@ -271,7 +284,7 @@ async fn cards_in_a_filtered_deck_go_home() {
         ..card(1, "filtered|card", 2)
     };
     let col = collection(Format::Legacy, crt, &[(1, "Spanish"), (2, "Filtered Deck 1")], &[c]).await;
-    let report = app.import_apkg(&a, package(Format::Legacy, col, &[])).await.unwrap();
+    let report = app.import_apkg(&a, package(Format::Legacy, &col, &[])).await.unwrap();
     assert_eq!(report.decks_created, vec!["Spanish".to_string()]);
     let card = &cards_in(&app, &a, "Spanish").await[0];
     assert!(card.due > now(), "due in three days, not long ago");
@@ -281,7 +294,7 @@ async fn cards_in_a_filtered_deck_go_home() {
 async fn broken_packages_and_narrow_tokens_are_refused() {
     let app = app().await;
     let a = user(&app, "kolja").await;
-    for bad in [b"not a zip".to_vec(), package(Format::Legacy, b"not sqlite".to_vec(), &[])] {
+    for bad in [b"not a zip".to_vec(), package(Format::Legacy, b"not sqlite", &[])] {
         assert!(matches!(app.import_apkg(&a, bad).await, Err(AppError::BadRequest(_))));
     }
     let empty = {
@@ -296,8 +309,8 @@ async fn broken_packages_and_narrow_tokens_are_refused() {
     let (_, raw) = app.create_token(a.user_id(), "narrow", true, true, Some(vec![deck.id])).await.unwrap();
     let narrow = app.token_access(&raw).await.unwrap();
     let col = collection(Format::Legacy, now(), &[(1, "X")], &[card(1, "a|b", 1)]).await;
-    assert!(app.import_apkg(&narrow, package(Format::Legacy, col, &[])).await.is_err());
+    assert!(app.import_apkg(&narrow, package(Format::Legacy, &col, &[])).await.is_err());
     // Nothing was left behind in the data folder's tmp directory.
-    let left = std::fs::read_dir(app.config.data_dir.join("tmp")).map(|d| d.count()).unwrap_or(0);
+    let left = std::fs::read_dir(app.config.data_dir.join("tmp")).map_or(0, std::iter::Iterator::count);
     assert_eq!(left, 0);
 }

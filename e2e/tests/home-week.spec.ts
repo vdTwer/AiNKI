@@ -47,18 +47,9 @@ test('home shows the next seven days, starting today', async ({ page, seed }) =>
   await expect(text).toContainText(/^(About )?\d+ cards? tomorrow\. Probably about \d+ in the next week/);
   // The forecast never drops what is already scheduled: four cards.
   const forecast = text.locator('.forecast');
-  await expect(forecast).toHaveAttribute('data-tip', /^Forecast: \d+ cards$/);
-  expect(Number((await forecast.getAttribute('data-tip'))!.match(/\d+/)![0])).toBeGreaterThanOrEqual(4);
-  await expect(forecast).toHaveAttribute('data-tip-label', /^Likely \d+ to \d+$/);
-  // Hovering the forecast explains it.
-  await forecast.hover();
-  await expect(page.locator('.chart-tip')).toContainText('Likely');
-  await expect(page.locator('.chart-tip')).toContainText('come back');
-  // Hovering a bar names its count just above it.
-  const busiest = days.nth(3).locator('.bar');
-  await expect(busiest).toHaveAttribute('data-n', /^[2-9]$/);
-  await days.nth(3).hover();
-  await expect.poll(() => busiest.evaluate((el) => getComputedStyle(el, '::before').opacity)).toBe('1');
+  // Its tooltip gives the forecast, its bounds and why.
+  await expect(forecast).toHaveAttribute('title', /^Forecast: \d+ cards\. Likely \d+ to \d+\. .*come back/);
+  expect(Number((await forecast.getAttribute('title'))!.match(/\d+/)![0])).toBeGreaterThanOrEqual(4);
 });
 
 test('a quiet week says so and draws no bars', async ({ page, seed }) => {
@@ -81,6 +72,6 @@ test('cards that come back within the week count too', async ({ page, seed }) =>
   await page.goto('/');
   const forecast = page.locator('.week-home .forecast');
   await expect(page.locator('.week-home p').first()).toContainText(/^1 card tomorrow\./);
-  const n = Number((await forecast.getAttribute('data-tip'))!.match(/\d+/)![0]);
+  const n = Number((await forecast.getAttribute('title'))!.match(/\d+/)![0]);
   expect(n).toBeGreaterThanOrEqual(2);
 });

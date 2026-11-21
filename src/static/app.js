@@ -19,11 +19,9 @@
   } catch (e) { /* storage blocked */ }
 
   var root = document.documentElement;
-  var calm = root.classList.contains('calm');
   // Card text longer than this is set smaller and left-aligned, when
   // writing and when studying alike.
   var LONG_TEXT = 90;
-  var motion = !(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
 
   // Signup: send the browser's timezone along.
   var tz = document.getElementById('tz');
@@ -179,7 +177,7 @@
       var preview = face.querySelector('.face-image.preview');
       var fit = function () {
         text.classList.toggle('long', text.value.trim().length > LONG_TEXT);
-        if (calm && !CSS.supports('field-sizing', 'content')) {
+        if (!CSS.supports('field-sizing', 'content')) {
           text.style.height = 'auto';
           text.style.height = text.scrollHeight + 'px';
         }
@@ -211,7 +209,7 @@
       dropZone(face, file, isImage);
     });
     var key = cardForm.querySelector('.submit-key');
-    if (key && calm) {
+    if (key) {
       if (/Mac|iPhone|iPad/.test(navigator.platform || '')) key.textContent = '⌘ ⏎';
       key.hidden = false;
     }
@@ -407,7 +405,7 @@
   function pause() {
     var study = document.querySelector('main .study');
     var cover = study && study.querySelector('.pause-cover');
-    if (!calm || !cover || paused() || busy) return;
+    if (!cover || paused() || busy) return;
     var c = clock;
     if (c && c.pausedSince === null) {
       // A hidden tab right now is the pause's from here on.
@@ -454,33 +452,10 @@
     if (!next) throw new Error('no page');
     var oldBar = document.querySelector('.study-foot .bar');
     var from = oldBar ? oldBar.getAttribute('data-progress') : null;
-    var wasStudying = !!document.querySelector('main .study');
-    var ending = wasStudying && !!next.querySelector('.session-end .end-mark');
-    if (ending && oldBar && calm && motion) {
-      // The line fills up, then rises and closes up; the tick draws out of it.
-      oldBar.closest('.study').classList.add('closing');
-      oldBar.style.width = '100%';
-      return new Promise(function (done) { setTimeout(done, 380); }).then(function () {
-        var line = oldBar.parentNode.getBoundingClientRect();
-        place(doc, next, url);
-        var end = next.querySelector('.session-end');
-        end.classList.add('finishing', 'from-line');
-        var bit = end.querySelector('.end-mark .line');
-        var d = bit.getBoundingClientRect();
-        var dx = line.left + line.width / 2 - (d.left + d.width / 2);
-        var dy = line.top + line.height / 2 - (d.top + d.height / 2);
-        if (!bit.animate) return;
-        bit.animate([
-          { width: line.width + 'px', marginLeft: -line.width / 2 + 'px', opacity: 1, transform: 'translate(' + dx + 'px,' + dy + 'px)' },
-          { width: '8px', marginLeft: '-4px', opacity: 1, transform: 'translate(0,0)', offset: 0.65 },
-          { width: '4px', marginLeft: '-2px', opacity: 0, transform: 'translate(0,0)' }
-        ], { duration: 620, easing: 'cubic-bezier(.6, 0, .2, 1)' });
-      });
-    }
     place(doc, next, url);
     // The progress line glides on from where it was; a miss slips back.
     var bar = next.querySelector('.study-foot .bar');
-    if (bar && from !== null && calm) {
+    if (bar && from !== null) {
       var to = bar.getAttribute('data-progress');
       bar.style.transition = 'none';
       bar.style.width = from + '%';
@@ -492,10 +467,6 @@
         bar.classList.remove('slip');
       });
     }
-    if (next.querySelector('.study')) next.querySelector('.study').classList.add('entering');
-    // The closing animation is for the answer that ended the session, not
-    // for opening the page again later.
-    if (ending) next.querySelector('.session-end').classList.add('finishing');
     return Promise.resolve();
   }
 
@@ -511,8 +482,6 @@
     window.scrollTo(0, 0);
     setup(next);
     begin(next);
-    // The desktop extras (desk.js) dress the new page too.
-    document.dispatchEvent(new CustomEvent('ainki:page', { detail: next }));
   }
 
   // A card's front has just come up: the clock starts, the answer box

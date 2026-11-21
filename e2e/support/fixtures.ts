@@ -1,5 +1,5 @@
-// Test fixtures: a fresh account per test, logged in, in the look the
-// project asks for, plus helpers that set up data the quick way.
+// Test fixtures: a fresh account per test, logged in, plus helpers that
+// set up data the quick way.
 import { execFileSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
@@ -9,8 +9,6 @@ import { binary, dataDir } from './env.ts';
 import { steadyFirstLoad } from './first-load.ts';
 
 export { expect };
-
-export type Look = 'calm' | 'simple';
 
 export interface Account {
   id: number;
@@ -43,14 +41,13 @@ export function sql<T = Record<string, unknown>>(query: string, ...params: (stri
   }
 }
 
-export function makeAccount(prefix = 'user', options: { admin?: boolean; look?: Look; ageDays?: number } = {}): Account {
+export function makeAccount(prefix = 'user', options: { admin?: boolean; ageDays?: number } = {}): Account {
   const name = `${prefix}${randomBytes(4).toString('hex')}`;
   const password = 'correct horse battery';
   const out = cli(options.admin ? 'create-admin' : 'create-user', name, password);
   const handle = /created (?:admin )?(\S+)/.exec(out)?.[1]?.replace(/;$/, '');
   if (!handle) throw new Error(`create-user said: ${out}`);
   const [{ id }] = sql<{ id: number }>('SELECT id FROM users WHERE username = ?', name);
-  if (options.look) sql('UPDATE users SET desktop_look = ? WHERE id = ?', options.look, id);
   if (options.ageDays) sql('UPDATE users SET created_at = created_at - ? WHERE id = ?', options.ageDays * 86_400, id);
   return { id, name, handle, password };
 }
@@ -111,11 +108,6 @@ export class Seed {
   }
 }
 
-/** Whether the page is drawn in the desktop (Calm) look. */
-export async function isCalm(page: Page): Promise<boolean> {
-  return page.evaluate(() => document.documentElement.classList.contains('calm'));
-}
-
 /** Errors the page threw or logged: every test fails on any of them. */
 function watchErrors(page: Page, errors: string[]) {
   page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
@@ -125,7 +117,6 @@ function watchErrors(page: Page, errors: string[]) {
 }
 
 type Fixtures = {
-  look: Look;
   account: Account;
   seed: Seed;
   /** Push a pattern here when a test provokes an error on purpose. */
@@ -152,11 +143,10 @@ export const test = base.extend<Fixtures, { browser: Browser }>({
     context.on('page', steadyFirstLoad);
     await use(context);
   },
-  look: ['calm', { option: true }],
   // Every test starts logged in; logged-out pages use a new context.
   account: [
-    async ({ look, page }, use) => {
-      const account = makeAccount('user', { look });
+    async ({ page }, use) => {
+      const account = makeAccount('user');
       await logIn(page.request, account);
       await use(account);
     },
@@ -183,7 +173,7 @@ export const test = base.extend<Fixtures, { browser: Browser }>({
 /** A form the server refused shows up in the console as a 4xx. */
 export const REFUSED = /Failed to load resource: the server responded with a status of 4\d\d/;
 
-/** Skip unless the browser draws the desktop look (desktop projects with look=calm). */
+/** Skip on phones: for keys, hovering and other things of a desktop. */
 export function desktopOnly() {
-  test.skip(({ look, isMobile, viewport }) => look !== 'calm' || isMobile || (viewport?.width ?? 0) < 960, 'the desktop look only');
+  test.skip(({ isMobile, viewport }) => isMobile || (viewport?.width ?? 0) < 960, 'desktops only');
 }

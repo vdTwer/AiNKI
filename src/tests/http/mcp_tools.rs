@@ -6,7 +6,8 @@ use serde_json::{Value, json};
 
 /// Call a tool. `Err` holds the message an agent would see.
 async fn call(app: &Arc<App>, token: &str, name: &str, args: Value) -> Result<Value, String> {
-    let body = json!({ "jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": { "name": name, "arguments": args } });
+    let body =
+        json!({ "jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": { "name": name, "arguments": args } });
     let res = send(
         app,
         Request::post("/mcp")
@@ -58,7 +59,7 @@ async fn list_tools(app: &Arc<App>, token: &str) -> Vec<Value> {
 
 fn png_base64() -> String {
     use base64::Engine;
-    let img = image::RgbImage::from_fn(6, 4, |x, _| image::Rgb([(x * 40) as u8, 120, 200]));
+    let img = image::RgbImage::from_fn(6, 4, |x, _| image::Rgb([u8::try_from(x * 40).unwrap(), 120, 200]));
     let mut out = std::io::Cursor::new(Vec::new());
     img.write_to(&mut out, image::ImageFormat::Png).unwrap();
     base64::engine::general_purpose::STANDARD.encode(out.into_inner())
@@ -72,13 +73,46 @@ async fn every_tool_is_listed_with_a_description_and_schema() {
     let tools = list_tools(&app, &token).await;
     let names: Vec<&str> = tools.iter().map(|t| t["name"].as_str().unwrap()).collect();
     for expected in [
-        "get_overview", "list_decks", "create_deck", "update_deck", "delete_deck", "list_cards", "get_card",
-        "create_cards", "update_card", "delete_cards", "set_cards_suspended", "reset_cards", "upload_image",
-        "get_image", "get_next_card", "answer_card", "undo_last_answer", "get_stats", "list_presets",
-        "create_preset", "update_preset", "delete_preset", "get_coach_advice", "list_cards_needing_attention",
-        "dismiss_card_flag", "split_card", "get_insights", "get_workload", "list_lessons", "get_lesson",
-        "optimize_fsrs", "import_csv", "import_apkg", "share_deck", "list_shares", "accept_share",
-        "decline_share", "cancel_share", "export_deck_csv", "merge_decks",
+        "get_overview",
+        "list_decks",
+        "create_deck",
+        "update_deck",
+        "delete_deck",
+        "list_cards",
+        "get_card",
+        "create_cards",
+        "update_card",
+        "delete_cards",
+        "set_cards_suspended",
+        "reset_cards",
+        "upload_image",
+        "get_image",
+        "get_next_card",
+        "answer_card",
+        "undo_last_answer",
+        "get_stats",
+        "list_presets",
+        "create_preset",
+        "update_preset",
+        "delete_preset",
+        "get_coach_advice",
+        "list_cards_needing_attention",
+        "dismiss_card_flag",
+        "split_card",
+        "get_insights",
+        "get_workload",
+        "list_lessons",
+        "get_lesson",
+        "optimize_fsrs",
+        "import_csv",
+        "import_apkg",
+        "share_deck",
+        "list_shares",
+        "accept_share",
+        "decline_share",
+        "cancel_share",
+        "export_deck_csv",
+        "merge_decks",
     ] {
         assert!(names.contains(&expected), "{expected} is missing from tools/list");
     }
@@ -104,7 +138,13 @@ async fn an_agent_can_run_a_whole_session() {
     // Decks.
     let deck = ok(&app, t, "create_deck", json!({ "name": "Spanish", "description": "verbs" })).await;
     let deck_id = deck["id"].as_i64().unwrap();
-    let renamed = ok(&app, t, "update_deck", json!({ "deck_id": deck_id, "name": "Languages::Spanish", "exam_date": "2099-01-31" })).await;
+    let renamed = ok(
+        &app,
+        t,
+        "update_deck",
+        json!({ "deck_id": deck_id, "name": "Languages::Spanish", "exam_date": "2099-01-31" }),
+    )
+    .await;
     assert_eq!(renamed["name"], "Languages::Spanish");
     assert_eq!(renamed["exam_date"], "2099-01-31");
     let cleared = ok(&app, t, "update_deck", json!({ "deck_id": deck_id, "exam_date": "" })).await;
@@ -112,12 +152,13 @@ async fn an_agent_can_run_a_whole_session() {
     assert_eq!(ok(&app, t, "list_decks", json!({})).await.as_array().unwrap().len(), 1);
 
     // Cards, an image and a multicard; a bad card is reported, not fatal.
-    let image = ok(&app, t, "upload_image", json!({ "data_base64": format!("data:image/png;base64,{}", png_base64()) })).await;
+    let image =
+        ok(&app, t, "upload_image", json!({ "data_base64": format!("data:image/png;base64,{}", png_base64()) })).await;
     let image_id = image["image_id"].as_str().unwrap();
     assert_eq!((image["width"].as_i64(), image["height"].as_i64()), (Some(6), Some(4)));
     let got = ok(&app, t, "get_image", json!({ "image_id": image_id })).await;
     assert_eq!(got["mimeType"], "image/png");
-    assert!(!got["data"].as_str().unwrap().is_empty());
+    assert_ne!(got["data"].as_str().unwrap(), "");
     let made = ok(
         &app,
         t,
@@ -133,7 +174,13 @@ async fn an_agent_can_run_a_whole_session() {
     assert_eq!(made["created"], 3);
     assert_eq!(made["errors"].as_array().unwrap().len(), 1);
     let ids: Vec<i64> = made["card_ids"].as_array().unwrap().iter().map(|v| v.as_i64().unwrap()).collect();
-    let by_name = ok(&app, t, "create_cards", json!({ "deck_name": "Languages::Spanish", "cards": [{ "front": "vivir", "back": "to live" }] })).await;
+    let by_name = ok(
+        &app,
+        t,
+        "create_cards",
+        json!({ "deck_name": "Languages::Spanish", "cards": [{ "front": "vivir", "back": "to live" }] }),
+    )
+    .await;
     assert_eq!(by_name["deck_id"], deck_id, "a deck can be named instead of numbered");
 
     let listed = ok(&app, t, "list_cards", json!({ "deck_id": deck_id, "query": "comer" })).await;
@@ -155,7 +202,10 @@ async fn an_agent_can_run_a_whole_session() {
     assert_eq!(missed["card_id"], ids[2]);
     let history = ok(&app, t, "get_card", json!({ "card_id": ids[2], "include_history": true })).await;
     assert_eq!(history["history"].as_array().unwrap().len(), 1);
-    assert!(call(&app, t, "answer_card", json!({ "card_id": ids[0] })).await.is_err(), "a rating or missed items is needed");
+    assert!(
+        call(&app, t, "answer_card", json!({ "card_id": ids[0] })).await.is_err(),
+        "a rating or missed items is needed"
+    );
 
     let stats = ok(&app, t, "get_stats", json!({ "deck_id": deck_id })).await;
     assert_eq!(stats["reviews_today"], 1);
@@ -177,7 +227,10 @@ async fn an_agent_can_run_a_whole_session() {
     assert!(call(&app, t, "get_card", json!({ "card_id": by_name["card_ids"][0] })).await.is_err());
 
     // Suspend, reset, delete.
-    assert_eq!(ok(&app, t, "set_cards_suspended", json!({ "card_ids": [ids[1]], "suspended": true })).await["suspended"], true);
+    assert_eq!(
+        ok(&app, t, "set_cards_suspended", json!({ "card_ids": [ids[1]], "suspended": true })).await["suspended"],
+        true
+    );
     assert_eq!(ok(&app, t, "list_cards", json!({ "state": "suspended" })).await["total"], 1);
     assert_eq!(ok(&app, t, "reset_cards", json!({ "card_ids": [ids[2]] })).await["reset"], 1);
     assert_eq!(ok(&app, t, "delete_cards", json!({ "card_ids": [ids[1]] })).await["deleted"], 1);
@@ -186,7 +239,13 @@ async fn an_agent_can_run_a_whole_session() {
     let presets = ok(&app, t, "list_presets", json!({})).await;
     assert_eq!(presets["presets"].as_array().unwrap().len(), 5);
     assert_eq!(presets["templates"].as_array().unwrap().len(), 5);
-    let preset = ok(&app, t, "create_preset", json!({ "template": "exam", "name": "Finals", "time_limit": 20, "typed_answers": true })).await;
+    let preset = ok(
+        &app,
+        t,
+        "create_preset",
+        json!({ "template": "exam", "name": "Finals", "time_limit": 20, "typed_answers": true }),
+    )
+    .await;
     let preset_id = preset["id"].as_i64().unwrap();
     assert_eq!(preset["time_limit"], 20);
     let preset = ok(&app, t, "update_preset", json!({ "preset_id": preset_id, "desired_retention": 0.93 })).await;
@@ -200,7 +259,7 @@ async fn an_agent_can_run_a_whole_session() {
     // Lessons.
     let lessons = ok(&app, t, "list_lessons", json!({})).await;
     let slug = lessons["lessons"][0]["slug"].as_str().unwrap().to_string();
-    assert!(!ok(&app, t, "get_lesson", json!({ "slug": slug })).await["body"].as_str().unwrap().is_empty());
+    assert_ne!(ok(&app, t, "get_lesson", json!({ "slug": slug })).await["body"].as_str().unwrap(), "");
     assert!(call(&app, t, "get_lesson", json!({ "slug": "no-such-lesson" })).await.is_err());
 
     // Optimizing with almost no history is refused with the reason.
@@ -215,7 +274,10 @@ async fn an_agent_can_run_a_whole_session() {
     assert!(csv.starts_with("front,back\n") && csv.contains("uno,one"), "{csv}");
     // Exported text that looks like a spreadsheet formula is defused and
     // comes back unchanged on import.
-    assert_eq!(crate::import::parse_csv(csv).unwrap().iter().find(|r| r.0 == "Three verbs").unwrap().1, "- ser\n- estar\n- ir");
+    assert_eq!(
+        crate::import::parse_csv(csv).unwrap().iter().find(|r| r.0 == "Three verbs").unwrap().1,
+        "- ser\n- estar\n- ir"
+    );
     assert!(call(&app, t, "import_apkg", json!({ "data_base64": "bm90IGEgemlw" })).await.is_err());
     assert!(call(&app, t, "import_apkg", json!({ "data_base64": "%%%" })).await.is_err(), "bad base64");
 
@@ -223,7 +285,10 @@ async fn an_agent_can_run_a_whole_session() {
     // let the other account decline, then accept.
     let share = ok(&app, t, "share_deck", json!({ "deck_id": deck_id, "user": anna.handle() })).await;
     let share_id = share["id"].as_i64().unwrap();
-    assert_eq!(ok(&app, t, "list_shares", json!({ "deck_id": deck_id })).await["outgoing"].as_array().unwrap().len(), 1);
+    assert_eq!(
+        ok(&app, t, "list_shares", json!({ "deck_id": deck_id })).await["outgoing"].as_array().unwrap().len(),
+        1
+    );
     assert_eq!(ok(&app, t, "cancel_share", json!({ "share_id": share_id })).await["cancelled"], true);
     let share = ok(&app, t, "share_deck", json!({ "deck_id": deck_id, "user": anna.handle() })).await;
     let (_, anna_token) = app.create_token(anna.id, "claude", true, true, None).await.unwrap();
@@ -239,7 +304,7 @@ async fn an_agent_can_run_a_whole_session() {
     assert!(call(&app, t, "delete_deck", json!({ "deck_id": deck_id, "confirm": false })).await.is_err());
     let gone = ok(&app, t, "delete_deck", json!({ "deck_id": deck_id, "confirm": true })).await;
     assert_eq!(gone["deleted"], true);
-    assert!(ok(&app, t, "list_decks", json!({})).await.as_array().unwrap().is_empty());
+    assert_eq!(ok(&app, t, "list_decks", json!({})).await.as_array().unwrap().as_slice(), [] as [serde_json::Value; 0]);
     // Anna's copy is hers and stays.
     assert_eq!(ok(&app, &anna_token, "list_decks", json!({})).await.as_array().unwrap().len(), 1);
 }
@@ -250,14 +315,17 @@ async fn tokens_only_do_what_they_were_given() {
     let a = user(&app, "kolja").await;
     let mine = app.create_deck(&a, "Mine", "", None).await.unwrap();
     let other = app.create_deck(&a, "Private", "", None).await.unwrap();
-    let card = app.create_card(&a, mine.id, "Hund", "dog", None, None, None).await.unwrap();
-    let secret = app.create_card(&a, other.id, "secret", "diary", None, None, None).await.unwrap();
+    let card = app.create_card(&a, mine.id, NewCard::new("Hund", "dog")).await.unwrap();
+    let secret = app.create_card(&a, other.id, NewCard::new("secret", "diary")).await.unwrap();
 
     // Read only: may look (even at the next card), may not write or answer.
     let (_, ro) = app.create_token(a.user_id(), "reader", false, false, None).await.unwrap();
     let ro = ro.as_str();
     let o = ok(&app, ro, "get_overview", json!({})).await;
-    assert_eq!((o["permissions"]["can_write"].clone(), o["permissions"]["can_review"].clone()), (json!(false), json!(false)));
+    assert_eq!(
+        (o["permissions"]["can_write"].clone(), o["permissions"]["can_review"].clone()),
+        (json!(false), json!(false))
+    );
     ok(&app, ro, "list_cards", json!({})).await;
     for (tool, args) in [
         ("create_deck", json!({ "name": "x" })),
@@ -271,7 +339,9 @@ async fn tokens_only_do_what_they_were_given() {
     ] {
         let r = call(&app, ro, tool, args).await;
         let r = match r {
-            Ok(Value::Object(m)) if tool == "create_cards" => Err(m["errors"].to_string()).and_then(|e: String| if e == "[]" { Ok(()) } else { Err(e) }),
+            Ok(Value::Object(m)) if tool == "create_cards" => {
+                Err(m["errors"].to_string()).and_then(|e: String| if e == "[]" { Ok(()) } else { Err(e) })
+            }
             Ok(_) => Ok(()),
             Err(e) => Err(e),
         };
@@ -286,9 +356,14 @@ async fn tokens_only_do_what_they_were_given() {
     assert_eq!(decks.as_array().unwrap().len(), 1);
     assert!(call(&app, narrow, "get_card", json!({ "card_id": secret.id })).await.is_err());
     assert_eq!(ok(&app, narrow, "list_cards", json!({ "query": "secret" })).await["total"], 0);
-    assert!(call(&app, narrow, "update_card", json!({ "card_id": card.id, "deck_id": other.id })).await.is_err(), "can't move cards out");
+    assert!(
+        call(&app, narrow, "update_card", json!({ "card_id": card.id, "deck_id": other.id })).await.is_err(),
+        "can't move cards out"
+    );
     assert!(call(&app, narrow, "create_deck", json!({ "name": "new" })).await.is_err());
-    assert!(call(&app, narrow, "merge_decks", json!({ "deck_ids": [mine.id, other.id], "name": "new" })).await.is_err());
+    assert!(
+        call(&app, narrow, "merge_decks", json!({ "deck_ids": [mine.id, other.id], "name": "new" })).await.is_err()
+    );
     let next = ok(&app, narrow, "get_next_card", json!({})).await;
     assert_eq!(next["card"]["id"], card.id);
 
@@ -316,7 +391,8 @@ async fn an_agent_can_pause_and_resume_a_deck() {
     let deck = ok(&app, t, "create_deck", json!({ "name": "Spanish" })).await;
     let deck_id = deck["id"].as_i64().unwrap();
     assert_eq!(deck["status"], "active");
-    ok(&app, t, "create_cards", json!({ "deck_id": deck_id, "cards": [{ "front": "hablar", "back": "to speak" }] })).await;
+    ok(&app, t, "create_cards", json!({ "deck_id": deck_id, "cards": [{ "front": "hablar", "back": "to speak" }] }))
+        .await;
 
     let paused = ok(&app, t, "update_deck", json!({ "deck_id": deck_id, "status": "paused" })).await;
     assert_eq!(paused["status"], "paused");
@@ -339,9 +415,9 @@ async fn an_agent_can_merge_decks() {
     let (_, t) = app.create_token(a.user_id(), "claude", true, true, None).await.unwrap();
     let one = app.create_deck(&a, "One", "", None).await.unwrap();
     let two = app.create_deck(&a, "Two", "", None).await.unwrap();
-    app.create_card(&a, one.id, "a", "1", None, None, None).await.unwrap();
-    app.create_card(&a, two.id, "b", "2", None, None, None).await.unwrap();
-    app.create_card(&a, two.id, "a", "1", None, None, None).await.unwrap();
+    app.create_card(&a, one.id, NewCard::new("a", "1")).await.unwrap();
+    app.create_card(&a, two.id, NewCard::new("b", "2")).await.unwrap();
+    app.create_card(&a, two.id, NewCard::new("a", "1")).await.unwrap();
     let merged = ok(&app, &t, "merge_decks", json!({ "deck_ids": [one.id, two.id], "name": "Both" })).await;
     assert_eq!(merged["deck"]["name"], "Both");
     assert_eq!((merged["cards"].as_i64(), merged["duplicates"].as_i64()), (Some(2), Some(1)));

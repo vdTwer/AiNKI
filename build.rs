@@ -1,4 +1,4 @@
-//! Names the build for the settings page: AINKI_BUILD when the deploy sets
+//! Names the build for the settings page: `AINKI_BUILD` when the deploy sets
 //! it, else the git commit when built from a checkout.
 
 use std::process::Command;

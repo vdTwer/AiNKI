@@ -1,5 +1,6 @@
 //! Tests against an in-memory database: the service first, then the
 //! website and MCP over HTTP (the `http` module).
+#![allow(clippy::too_many_lines, reason = "a scenario test reads best as one story, top to bottom")]
 
 use std::{str::FromStr, sync::Arc};
 
@@ -11,7 +12,7 @@ use crate::{
     error::AppError,
     now,
     scheduler::{CardState, Rating},
-    service::{CardFilter, CardInput, PresetInput},
+    service::{CardFilter, CardInput, NewCard, PresetInput},
 };
 
 mod anki;
@@ -24,15 +25,9 @@ async fn app() -> Arc<App> {
 }
 
 async fn app_with(configure: impl FnOnce(&mut Config)) -> Arc<App> {
-    let opts = SqliteConnectOptions::from_str("sqlite::memory:")
-        .unwrap()
-        .foreign_keys(true);
+    let opts = SqliteConnectOptions::from_str("sqlite::memory:").unwrap().foreign_keys(true);
     // One connection: every in-memory connection is its own database.
-    let db = SqlitePoolOptions::new()
-        .max_connections(1)
-        .connect_with(opts)
-        .await
-        .unwrap();
+    let db = SqlitePoolOptions::new().max_connections(1).connect_with(opts).await.unwrap();
     sqlx::migrate!("./migrations").run(&db).await.unwrap();
     let dir = std::env::temp_dir().join(format!("ainki-test-{}", uuid::Uuid::new_v4().simple()));
     let mut config = Config {
@@ -58,7 +53,7 @@ async fn study_flow_and_undo() {
     assert_eq!(app.list_presets(&a).await.unwrap().len(), 5);
     let deck = app.create_deck(&a, "German", "", None).await.unwrap();
     for (f, b) in [("Hund", "dog"), ("Katze", "cat"), ("Maus", "mouse")] {
-        app.create_card(&a, deck.id, f, b, None, None, None).await.unwrap();
+        app.create_card(&a, deck.id, NewCard::new(f, b)).await.unwrap();
     }
 
     let first = app.next_card(&a, None).await.unwrap().unwrap();
@@ -66,10 +61,7 @@ async fn study_flow_and_undo() {
     assert_eq!(first.remaining, 3);
     assert_eq!(first.previews.len(), 4);
 
-    let r = app
-        .answer_card(&a, first.card.id, Rating::Good, Some(1500), Some(0))
-        .await
-        .unwrap();
+    let r = app.answer_card(&a, first.card.id, Rating::Good, Some(1500), Some(0)).await.unwrap();
     assert_eq!(r.card.card_state(), CardState::Review);
     assert!(r.card.stability.is_some());
 
@@ -97,7 +89,7 @@ async fn a_learning_card_studied_ahead_still_counts_as_due() {
     let app = app().await;
     let a = user(&app, "kolja").await;
     let deck = app.create_deck(&a, "German", "", None).await.unwrap();
-    let card = app.create_card(&a, deck.id, "Hund", "dog", None, None, None).await.unwrap();
+    let card = app.create_card(&a, deck.id, NewCard::new("Hund", "dog")).await.unwrap();
     app.answer_card(&a, card.id, Rating::Again, None, None).await.unwrap();
 
     // Due in ten minutes, so studying shows it already; the home page and
@@ -113,13 +105,31 @@ async fn list_cards_remember_each_item() {
     let a = user(&app, "kolja").await;
     let deck = app.create_deck(&a, "Literary Studies", "", None).await.unwrap();
     // Item by item needs a numbered list.
-    assert!(app.create_card(&a, deck.id, "q", "just text", None, None, Some(crate::multi::Split::List)).await.is_err());
+    assert!(
+        app.create_card(
+            &a,
+            deck.id,
+            NewCard { multi: Some(crate::multi::Split::List), ..NewCard::new("q", "just text") }
+        )
+        .await
+        .is_err()
+    );
     let back = "Cohen:\n1. Cultural body\n2. Always escapes\n3. Category crisis";
-    let card = app.create_card(&a, deck.id, "Theses on monsters?", back, None, None, Some(crate::multi::Split::List)).await.unwrap();
+    let card = app
+        .create_card(
+            &a,
+            deck.id,
+            NewCard { multi: Some(crate::multi::Split::List), ..NewCard::new("Theses on monsters?", back) },
+        )
+        .await
+        .unwrap();
     assert_eq!(card.multi, Some(crate::multi::Split::List));
     assert_eq!(card.card_state(), CardState::New);
     let items = app.card_items(&card).await.unwrap();
-    assert_eq!(items.iter().map(|i| i.text.as_str()).collect::<Vec<_>>(), ["Cultural body", "Always escapes", "Category crisis"]);
+    assert_eq!(
+        items.iter().map(|i| i.text.as_str()).collect::<Vec<_>>(),
+        ["Cultural body", "Always escapes", "Category crisis"]
+    );
     assert_eq!(crate::multi::asked(&card, &items, now()), [true, true, true]);
 
     // 1 of 3: the second and third were missed.
@@ -152,10 +162,7 @@ async fn list_cards_remember_each_item() {
 
     // Editing keeps the memory of items that stay; a new one starts fresh.
     let edited = format!("{back}\n4. Gates of difference");
-    let card = app
-        .update_card(&a, card.id, CardInput { back: Some(edited), ..Default::default() })
-        .await
-        .unwrap();
+    let card = app.update_card(&a, card.id, CardInput { back: Some(edited), ..Default::default() }).await.unwrap();
     let items = app.card_items(&card).await.unwrap();
     assert_eq!(items.iter().map(|i| i.reps).collect::<Vec<_>>(), [1, 1, 1, 0]);
     // A plain rating counts for every asked item.
@@ -163,7 +170,7 @@ async fn list_cards_remember_each_item() {
 
     // Switching it off makes a plain card that keeps its schedule.
     let card = app
-        .update_card(&a, card.id, CardInput { multi: Some(None), ..Default::default() })
+        .update_card(&a, card.id, CardInput { multi: crate::service::Patch::Set(None), ..Default::default() })
         .await
         .unwrap();
     assert!(card.multi.is_none());
@@ -176,10 +183,17 @@ async fn a_studied_card_turned_into_a_list_keeps_its_memory() {
     let app = app().await;
     let a = user(&app, "kolja").await;
     let deck = app.create_deck(&a, "Math", "", None).await.unwrap();
-    let card = app.create_card(&a, deck.id, "Operations on F^n?", "1. Scalar multiplication\n2. Addition", None, None, None).await.unwrap();
+    let card = app
+        .create_card(&a, deck.id, NewCard::new("Operations on F^n?", "1. Scalar multiplication\n2. Addition"))
+        .await
+        .unwrap();
     let card = app.answer_card(&a, card.id, Rating::Good, None, None).await.unwrap().card;
     let list = app
-        .update_card(&a, card.id, CardInput { multi: Some(Some(crate::multi::Split::List)), ..Default::default() })
+        .update_card(
+            &a,
+            card.id,
+            CardInput { multi: crate::service::Patch::Set(Some(crate::multi::Split::List)), ..Default::default() },
+        )
         .await
         .unwrap();
     assert_eq!(list.due, card.due);
@@ -196,7 +210,10 @@ async fn old_list_cards_are_split_again_and_keep_their_memory() {
     let a = user(&app, "kolja").await;
     let deck = app.create_deck(&a, "Lit", "", None).await.unwrap();
     let back = "1. Cultural body\n2. Always escapes\n\nRemark: Cohen, 1996";
-    let card = app.create_card(&a, deck.id, "Theses?", back, None, None, Some(crate::multi::Split::List)).await.unwrap();
+    let card = app
+        .create_card(&a, deck.id, NewCard { multi: Some(crate::multi::Split::List), ..NewCard::new("Theses?", back) })
+        .await
+        .unwrap();
     let card = app.answer_list(&a, card.id, vec![], None, Some(0)).await.unwrap().card;
     // Before multicards the remark was part of the last item.
     sqlx::query("UPDATE card_items SET text = 'Always escapes\nRemark: Cohen, 1996' WHERE position = 1")
@@ -220,7 +237,7 @@ async fn daily_new_limit_is_respected() {
         .unwrap();
     let deck = app.create_deck(&a, "Small", "", Some(preset.id)).await.unwrap();
     for f in ["a", "b", "c"] {
-        app.create_card(&a, deck.id, f, "x", None, None, None).await.unwrap();
+        app.create_card(&a, deck.id, NewCard::new(f, "x")).await.unwrap();
     }
     let sc = app.next_card(&a, Some(deck.id)).await.unwrap().unwrap();
     app.answer_card(&a, sc.card.id, Rating::Good, None, None).await.unwrap();
@@ -237,20 +254,14 @@ async fn token_permissions() {
     let other = user(&app, "eve").await;
     let d1 = app.create_deck(&a, "One", "", None).await.unwrap();
     let d2 = app.create_deck(&a, "Two", "", None).await.unwrap();
-    let c2 = app.create_card(&a, d2.id, "secret", "x", None, None, None).await.unwrap();
+    let c2 = app.create_card(&a, d2.id, NewCard::new("secret", "x")).await.unwrap();
 
-    let (_, raw) = app
-        .create_token(a.user_id(), "reader", false, false, Some(vec![d1.id]))
-        .await
-        .unwrap();
+    let (_, raw) = app.create_token(a.user_id(), "reader", false, false, Some(vec![d1.id])).await.unwrap();
     let t = app.token_access(&raw).await.unwrap();
     assert_eq!(t.source(), "agent");
     assert_eq!(app.decks(&t).await.unwrap().len(), 1);
     assert!(matches!(app.card(&t, c2.id).await, Err(AppError::NotFound)));
-    assert!(matches!(
-        app.create_card(&t, d1.id, "q", "a", None, None, None).await,
-        Err(AppError::Forbidden(_))
-    ));
+    assert!(matches!(app.create_card(&t, d1.id, NewCard::new("q", "a")).await, Err(AppError::Forbidden(_))));
     assert!(matches!(app.create_deck(&t, "New", "", None).await, Err(AppError::Forbidden(_))));
 
     // Other users never see each other's data.
@@ -262,7 +273,7 @@ async fn token_permissions() {
     // A writer agent's cards are labelled.
     let (tok, raw) = app.create_token(a.user_id(), "writer", true, true, None).await.unwrap();
     let w = app.token_access(&raw).await.unwrap();
-    let c = app.create_card(&w, d1.id, "from agent", "", None, None, None).await.unwrap();
+    let c = app.create_card(&w, d1.id, NewCard::new("from agent", "")).await.unwrap();
     assert_eq!(c.created_by, "agent");
 
     app.revoke_token(a.user_id(), tok.id).await.unwrap();
@@ -290,10 +301,7 @@ async fn optimizer_fits_parameters() {
     let start = now() - 200 * 86_400;
     // Synthetic history: 300 cards, reviews at growing intervals with some lapses.
     for i in 0..300i64 {
-        let card = app
-            .create_card(&a, deck.id, &format!("q{i}"), "a", None, None, None)
-            .await
-            .unwrap();
+        let card = app.create_card(&a, deck.id, NewCard::new(&format!("q{i}"), "a")).await.unwrap();
         let mut t = start + i * 600;
         let mut ivl = 1;
         for n in 0..6 {
@@ -338,12 +346,12 @@ async fn optimizer_fits_parameters() {
     // What the preset costs at each retention: more remembered costs more time.
     let w = app.workload(&Access::web(user.clone()), deck.preset_id, 30).await.unwrap();
     assert_eq!(w.iter().map(|w| w.retention).collect::<Vec<_>>(), vec![0.80, 0.85, 0.90, 0.95]);
-    assert!(w.iter().filter(|w| w.current).count() == 1);
+    assert_eq!(w.iter().filter(|w| w.current).count(), 1);
     assert!(w[3].reviews_per_day > w[0].reviews_per_day, "{w:?}");
     assert!(w[3].remembered > w[0].remembered, "{w:?}");
 
     app.reset_parameters(&Access::web(user)).await.unwrap();
-    assert!(app.user(a.user_id()).await.unwrap().params().is_empty());
+    assert_eq!(app.user(a.user_id()).await.unwrap().params(), [] as [f32; 0]);
 }
 
 #[tokio::test]
@@ -357,11 +365,8 @@ async fn csv_round_trip_and_exam_date() {
     assert_eq!(csv, "front,back\nuno,one\ndos,two\n");
 
     assert!(app.update_deck(&a, deck.id, None, None, None, Some("not a date")).await.is_err());
-    let d = app
-        .update_deck(&a, deck.id, None, None, None, Some("2030-01-31"))
-        .await
-        .unwrap();
-    assert_eq!(d.exam_date.as_deref(), Some("2030-01-31"));
+    let d = app.update_deck(&a, deck.id, None, None, None, Some("2030-01-31")).await.unwrap();
+    assert_eq!(d.exam_date.map(|e| e.to_string()).as_deref(), Some("2030-01-31"));
     let d = app.update_deck(&a, deck.id, None, None, None, Some("")).await.unwrap();
     assert!(d.exam_date.is_none());
 }
@@ -374,7 +379,11 @@ async fn sharing_gives_an_independent_copy() {
     let deck = app.create_deck(&kolja, "Spanish", "verbs", None).await.unwrap();
     let img = app.store_image(&kolja, tiny_png()).await.unwrap();
     let c = app
-        .create_card(&kolja, deck.id, "hablar", "to speak", Some(img.id.clone()), None, None)
+        .create_card(
+            &kolja,
+            deck.id,
+            NewCard { front_image: Some(img.id.clone()), ..NewCard::new("hablar", "to speak") },
+        )
         .await
         .unwrap();
     app.answer_card(&kolja, c.id, Rating::Good, None, None).await.unwrap();
@@ -394,10 +403,7 @@ async fn sharing_gives_an_independent_copy() {
     app.create_deck(&anna, "Spanish", "", None).await.unwrap();
     let copy = app.accept_share(&anna, incoming[0].id).await.unwrap();
     assert!(copy.name.starts_with("Spanish (from kolja#"));
-    let (cards, _) = app
-        .list_cards(&anna, &CardFilter { deck_id: Some(copy.id), ..Default::default() })
-        .await
-        .unwrap();
+    let (cards, _) = app.list_cards(&anna, &CardFilter { deck_id: Some(copy.id), ..Default::default() }).await.unwrap();
     assert_eq!(cards.len(), 1);
     assert_eq!(cards[0].card_state(), CardState::New);
     assert_eq!(cards[0].created_by, "shared");
@@ -437,7 +443,9 @@ async fn unused_images_are_removed_after_a_day() {
     let kept = app.store_image(&a, tiny_png()).await.unwrap();
     let dropped = app.store_image(&a, tiny_png()).await.unwrap();
     let fresh = app.store_image(&a, tiny_png()).await.unwrap();
-    app.create_card(&a, deck.id, "gato", "cat", Some(kept.id.clone()), None, None).await.unwrap();
+    app.create_card(&a, deck.id, NewCard { front_image: Some(kept.id.clone()), ..NewCard::new("gato", "cat") })
+        .await
+        .unwrap();
     sqlx::query("UPDATE media SET created_at = created_at - 2 * 86400 WHERE id != ?")
         .bind(&fresh.id)
         .execute(&app.db)
@@ -456,10 +464,10 @@ async fn accepting_a_share_twice_makes_one_copy() {
     let kolja = user(&app, "kolja").await;
     let anna = user(&app, "anna").await;
     let deck = app.create_deck(&kolja, "Spanish", "", None).await.unwrap();
-    app.create_card(&kolja, deck.id, "hablar", "to speak", None, None, None).await.unwrap();
+    app.create_card(&kolja, deck.id, NewCard::new("hablar", "to speak")).await.unwrap();
     let share = app.share_deck(&kolja, deck.id, &anna.user.handle()).await.unwrap();
     let (first, second) = tokio::join!(app.accept_share(&anna, share.id), app.accept_share(&anna, share.id));
-    assert!(first.is_ok() != second.is_ok());
+    assert_ne!(first.is_ok(), second.is_ok());
     assert_eq!(app.decks(&anna).await.unwrap().len(), 1);
 }
 
@@ -471,7 +479,7 @@ async fn oauth_flow() {
     let app = app().await;
     let a = user(&app, "kolja").await;
     let deck = app.create_deck(&a, "D", "", None).await.unwrap();
-    app.create_card(&a, deck.id, "q", "a", None, None, None).await.unwrap();
+    app.create_card(&a, deck.id, NewCard::new("q", "a")).await.unwrap();
 
     let reg = app
         .register_client(crate::oauth::RegistrationRequest {
@@ -488,19 +496,13 @@ async fn oauth_flow() {
     let verifier = "a".repeat(50);
     let challenge = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(sha2::Sha256::digest(verifier.as_bytes()));
     let redirect = "https://claude.ai/api/mcp/auth_callback";
-    let code = app
-        .create_auth_code(a.user_id(), &client, redirect, &challenge, true, false, None)
-        .await
-        .unwrap();
+    let code = app.create_auth_code(a.user_id(), &client, redirect, &challenge, true, false, None).await.unwrap();
 
     // Wrong verifier fails and burns the code.
     assert!(app.exchange_code(&client_id, None, &code, Some(redirect), &"b".repeat(50)).await.is_err());
     assert!(app.exchange_code(&client_id, None, &code, Some(redirect), &verifier).await.is_err());
 
-    let code = app
-        .create_auth_code(a.user_id(), &client, redirect, &challenge, true, false, None)
-        .await
-        .unwrap();
+    let code = app.create_auth_code(a.user_id(), &client, redirect, &challenge, true, false, None).await.unwrap();
     let tokens = app.exchange_code(&client_id, None, &code, Some(redirect), &verifier).await.unwrap();
     assert_eq!(tokens.scope, "read write");
     let agent = app.token_access(&tokens.access_token).await.unwrap();
@@ -524,10 +526,7 @@ async fn oauth_flow() {
     assert!(app.token_access(&fresh.access_token).await.is_err());
     assert!(app.refresh_tokens(&client_id, None, &fresh.refresh_token).await.is_err());
     // Connect again for the rest of the test.
-    let code = app
-        .create_auth_code(a.user_id(), &client, redirect, &challenge, true, false, None)
-        .await
-        .unwrap();
+    let code = app.create_auth_code(a.user_id(), &client, redirect, &challenge, true, false, None).await.unwrap();
     let tokens = app.exchange_code(&client_id, None, &code, Some(redirect), &verifier).await.unwrap();
     let fresh = app.refresh_tokens(&client_id, None, &tokens.refresh_token).await.unwrap();
     assert!(app.token_access(&fresh.access_token).await.is_ok());
@@ -570,21 +569,32 @@ async fn oauth_flow() {
     assert!(agent.require_all_decks().is_err());
 
     // Bad registrations.
-    assert!(app
-        .register_client(crate::oauth::RegistrationRequest {
+    assert!(
+        app.register_client(crate::oauth::RegistrationRequest {
             redirect_uris: vec!["http://evil.example/cb".into()],
             client_name: None,
             token_endpoint_auth_method: None,
         })
         .await
-        .is_err());
+        .is_err()
+    );
 }
 
 /// Moves an account (and its invites) `days` into the past.
 async fn age(app: &App, user_id: i64, days: i64) {
     let secs = days * 86_400;
-    sqlx::query("UPDATE users SET created_at = created_at - ? WHERE id = ?").bind(secs).bind(user_id).execute(&app.db).await.unwrap();
-    sqlx::query("UPDATE invites SET created_at = created_at - ? WHERE user_id = ?").bind(secs).bind(user_id).execute(&app.db).await.unwrap();
+    sqlx::query("UPDATE users SET created_at = created_at - ? WHERE id = ?")
+        .bind(secs)
+        .bind(user_id)
+        .execute(&app.db)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE invites SET created_at = created_at - ? WHERE user_id = ?")
+        .bind(secs)
+        .bind(user_id)
+        .execute(&app.db)
+        .await
+        .unwrap();
 }
 
 #[tokio::test]
@@ -637,7 +647,12 @@ async fn invites_expire_and_admins_have_no_limit() {
     let admin = app.create_account("admin", "password123", "UTC", None, true).await.unwrap();
     let a = app.create_invite(&admin).await.unwrap();
     let b = app.create_invite(&admin).await.unwrap();
-    sqlx::query("UPDATE invites SET expires_at = ? WHERE id = ?").bind(now() - 1).bind(a.id).execute(&app.db).await.unwrap();
+    sqlx::query("UPDATE invites SET expires_at = ? WHERE id = ?")
+        .bind(now() - 1)
+        .bind(a.id)
+        .execute(&app.db)
+        .await
+        .unwrap();
     assert!(app.open_invite(&a.token).await.unwrap().is_none());
     assert!(app.create_account("late", "password123", "UTC", Some(&a.token), false).await.is_err());
     assert!(app.open_invite(&b.token).await.unwrap().is_some());
@@ -657,6 +672,7 @@ async fn invites_expire_and_admins_have_no_limit() {
 mod http {
     mod accounts;
     mod mcp_tools;
+    mod perf;
 
     use super::*;
     use axum::{
@@ -702,7 +718,12 @@ mod http {
     }
 
     /// The same for a multipart form (the card form), text fields only.
-    async fn submit_multipart(app: &Arc<App>, cookie: &str, path: &str, fields: &[(&str, &str)]) -> axum::response::Response {
+    async fn submit_multipart(
+        app: &Arc<App>,
+        cookie: &str,
+        path: &str,
+        fields: &[(&str, &str)],
+    ) -> axum::response::Response {
         let mut body = String::new();
         for (k, v) in fields {
             body += &format!("--XX\r\nContent-Disposition: form-data; name=\"{k}\"\r\n\r\n{v}\r\n");
@@ -744,39 +765,62 @@ mod http {
         let app = app().await;
         let a = user(&app, "kolja").await;
         let deck = app.create_deck(&a, "Languages::Spanish verbs", "", None).await.unwrap();
-        app.create_card(&a, deck.id, "**hablar**", "to speak", None, None, None).await.unwrap();
+        app.create_card(&a, deck.id, NewCard::new("**hablar**", "to speak")).await.unwrap();
         let b = user(&app, "anna").await;
         let theirs = app.create_deck(&b, "Anna's secrets", "", None).await.unwrap();
-        app.create_card(&b, theirs.id, "hablar en secreto", "whisper", None, None, None).await.unwrap();
+        app.create_card(&b, theirs.id, NewCard::new("hablar en secreto", "whisper")).await.unwrap();
         let cookie = login_cookie(&app, "kolja").await;
         let find = |q: &str| {
-            let req = Request::get(format!("/find?q={}", urlencode(q))).header(header::COOKIE, cookie.clone()).body(Body::empty()).unwrap();
+            let req = Request::get(format!("/find?q={}", urlencode(q)))
+                .header(header::COOKIE, cookie.clone())
+                .body(Body::empty())
+                .unwrap();
             let app = app.clone();
             async move {
                 let res = send(&app, req).await;
                 assert_eq!(res.status(), StatusCode::OK);
-                serde_json::from_str::<serde_json::Value>(&text(res).await).unwrap()["results"].as_array().unwrap().clone()
+                found_rows(&text(res).await)
             }
         };
 
         // A typo still finds the deck, shown with its path.
         let r = find("spnish").await;
-        assert_eq!(r[0]["title"], "Languages › Spanish verbs");
-        assert_eq!(r[0]["href"], format!("/decks/{}", deck.id));
+        assert_eq!(
+            (r[0].0.as_str(), r[0].1.as_str()),
+            (format!("/decks/{}", deck.id).as_str(), "Languages › Spanish verbs")
+        );
         // Cards are found by their words, without the Markdown.
         let r = find("hblr").await;
-        let card = r.iter().find(|x| x["kind"] == "card").unwrap();
-        assert_eq!(card["title"], "hablar");
-        assert_eq!(card["sub"], "Languages › Spanish verbs");
+        let card = r.iter().find(|x| x.2 == "card").unwrap();
+        assert_eq!(card.1, "hablar");
         // Only your own cards.
-        assert!(!find("secreto").await.iter().any(|x| x["kind"] == "card"));
+        assert!(!find("secreto").await.iter().any(|x| x.2 == "card"));
         // Places by other words for them, lessons by title.
-        assert_eq!(find("password").await[0]["href"], "/settings");
-        assert!(find("forgetting").await.iter().any(|x| x["kind"] == "lesson"));
+        assert_eq!(find("password").await[0].0, "/settings");
+        assert!(find("forgetting").await.iter().any(|x| x.2 == "lesson"));
         // Nothing typed: the places and the decks.
         let r = find("").await;
-        assert_eq!(r[0]["title"], "Today");
-        assert!(r.iter().any(|x| x["kind"] == "deck"));
+        assert_eq!(r[0].1, "Today");
+        assert!(r.iter().any(|x| x.2 == "deck"));
+    }
+
+    /// The rows of the find page: (href, title, kind), in order. Places
+    /// carry no kind.
+    fn found_rows(html: &str) -> Vec<(String, String, String)> {
+        let results = html.split(r#"id="find-results""#).nth(1).unwrap_or_default();
+        let results = results.split("</ul>").next().unwrap_or_default();
+        results
+            .split(r#"<a class="row" href=""#)
+            .skip(1)
+            .map(|row| {
+                let href = row.split('"').next().unwrap_or_default().to_string();
+                let title = row.split(r#"<span class="grow">"#).nth(1).unwrap_or_default();
+                let title = title.split('<').next().unwrap_or_default().to_string();
+                let kind = row.split(r#"<span class="small muted">"#).nth(1).unwrap_or_default();
+                let kind = kind.split('<').next().unwrap_or_default().to_string();
+                (href, title, kind)
+            })
+            .collect()
     }
 
     #[tokio::test]
@@ -787,27 +831,53 @@ mod http {
         let cookie = login_cookie(&app, "kolja").await;
         let d = deck.id.to_string();
 
-        let res = submit_multipart(&app, &cookie, "/cards/new", &[("deck", &d), ("front", "el gato"), ("back", "the cat")]).await;
+        let res =
+            submit_multipart(&app, &cookie, "/cards/new", &[("deck", &d), ("front", "el gato"), ("back", "the cat")])
+                .await;
         assert_eq!(res.status(), StatusCode::SEE_OTHER);
         assert_eq!(location(&res), format!("/cards/new?deck={d}"));
-        let (cards, _) = app.list_cards(&a, &CardFilter { deck_id: Some(deck.id), ..Default::default() }).await.unwrap();
+        let (cards, _) =
+            app.list_cards(&a, &CardFilter { deck_id: Some(deck.id), ..Default::default() }).await.unwrap();
         assert_eq!(cards.len(), 1);
         let id = cards[0].id;
 
         // A mistake shows the form again with what was typed.
-        let res = submit_multipart(&app, &cookie, "/cards/new", &[("deck", &d), ("front", ""), ("back", "kept back")]).await;
+        let res =
+            submit_multipart(&app, &cookie, "/cards/new", &[("deck", &d), ("front", ""), ("back", "kept back")]).await;
         assert_eq!(res.status(), StatusCode::BAD_REQUEST);
         assert!(text(res).await.contains("kept back"));
 
-        let res = submit_multipart(&app, &cookie, &format!("/cards/{id}"), &[("deck", &d), ("front", "el gato negro"), ("back", "the black cat")]).await;
+        let res = submit_multipart(
+            &app,
+            &cookie,
+            &format!("/cards/{id}"),
+            &[("deck", &d), ("front", "el gato negro"), ("back", "the black cat")],
+        )
+        .await;
         assert_eq!(res.status(), StatusCode::SEE_OTHER);
         assert_eq!(app.card(&a, id).await.unwrap().front, "el gato negro");
 
         // Opened from studying, saving goes back to the session.
-        let res = submit_multipart(&app, &cookie, &format!("/cards/{id}?study=1&deck={d}"), &[("deck", &d), ("front", "el gato"), ("back", "the cat")]).await;
+        let res = submit_multipart(
+            &app,
+            &cookie,
+            &format!("/cards/{id}?study=1&deck={d}"),
+            &[("deck", &d), ("front", "el gato"), ("back", "the cat")],
+        )
+        .await;
         assert_eq!(location(&res), format!("/study?deck={d}"));
         assert_eq!(flash(&res), "Card saved.");
-        let page = text(send(&app, Request::get(format!("/cards/{id}?study=1")).header(header::COOKIE, cookie.clone()).body(Body::empty()).unwrap()).await).await;
+        let page = text(
+            send(
+                &app,
+                Request::get(format!("/cards/{id}?study=1"))
+                    .header(header::COOKIE, cookie.clone())
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await,
+        )
+        .await;
         assert!(page.contains(r#"href="/study""#) && page.contains("Back to studying"));
 
         let res = submit(&app, &cookie, &format!("/cards/{id}/suspend"), "").await;
@@ -824,10 +894,14 @@ mod http {
         let app = app().await;
         let a = user(&app, "kolja").await;
         let deck = app.create_deck(&a, "Spanish", "", None).await.unwrap();
-        app.update_preset(&a, deck.preset_id, PresetInput { time_limit: Some(10), ..Default::default() }).await.unwrap();
-        let card = app.create_card(&a, deck.id, "el perro", "the dog", None, None, None).await.unwrap();
+        app.update_preset(&a, deck.preset_id, PresetInput { time_limit: Some(10), ..Default::default() })
+            .await
+            .unwrap();
+        let card = app.create_card(&a, deck.id, NewCard::new("el perro", "the dog")).await.unwrap();
         let cookie = login_cookie(&app, "kolja").await;
-        let get = |path: &str| send(&app, Request::get(path).header(header::COOKIE, cookie.clone()).body(Body::empty()).unwrap());
+        let get = |path: &str| {
+            send(&app, Request::get(path).header(header::COOKIE, cookie.clone()).body(Body::empty()).unwrap())
+        };
 
         // A new card is never timed.
         assert!(!text(get("/study").await).await.contains("data-limit"));
@@ -866,19 +940,21 @@ mod http {
             .fetch_one(&app.db)
         };
 
-        let card = app.create_card(&a, deck.id, "el perro", "the dog", None, None, None).await.unwrap();
-        let body = format!("card={}&reps=0&rating=3&think_ms=2345&answer_ms=812&away_ms=0&paused_ms=60000&input=key", card.id);
+        let card = app.create_card(&a, deck.id, NewCard::new("el perro", "the dog")).await.unwrap();
+        let body =
+            format!("card={}&reps=0&rating=3&think_ms=2345&answer_ms=812&away_ms=0&paused_ms=60000&input=key", card.id);
         assert_eq!(submit(&app, &cookie, "/study/answer", &body).await.status(), StatusCode::SEE_OTHER);
         assert_eq!(timing(card.id).await.unwrap(), (Some(2345), Some(812), Some(0), Some(60000), Some("key".into())));
 
         // Nonsense is dropped, not stored and not an error.
-        let card = app.create_card(&a, deck.id, "el gato", "the cat", None, None, None).await.unwrap();
-        let body = format!("card={}&reps=0&rating=3&think_ms=-5&answer_ms=99999999999&paused_ms=-1&input=telepathy", card.id);
+        let card = app.create_card(&a, deck.id, NewCard::new("el gato", "the cat")).await.unwrap();
+        let body =
+            format!("card={}&reps=0&rating=3&think_ms=-5&answer_ms=99999999999&paused_ms=-1&input=telepathy", card.id);
         assert_eq!(submit(&app, &cookie, "/study/answer", &body).await.status(), StatusCode::SEE_OTHER);
         assert_eq!(timing(card.id).await.unwrap(), (None, None, None, None, None));
 
         // Without JavaScript nothing is measured.
-        let card = app.create_card(&a, deck.id, "la casa", "the house", None, None, None).await.unwrap();
+        let card = app.create_card(&a, deck.id, NewCard::new("la casa", "the house")).await.unwrap();
         let body = format!("card={}&reps=0&rating=1&t={}", card.id, now() - 4);
         assert_eq!(submit(&app, &cookie, "/study/answer", &body).await.status(), StatusCode::SEE_OTHER);
         assert_eq!(timing(card.id).await.unwrap(), (None, None, None, None, None));
@@ -889,16 +965,19 @@ mod http {
         let app = app().await;
         let a = user(&app, "kolja").await;
         let deck = app.create_deck(&a, "Spanish", "", None).await.unwrap();
-        app.create_card(&a, deck.id, "el perro", "the dog", None, None, None).await.unwrap();
+        app.create_card(&a, deck.id, NewCard::new("el perro", "the dog")).await.unwrap();
         let cookie = login_cookie(&app, "kolja").await;
         // Quiet all day but this hour's end: from the next hour round to this one.
-        let res = submit(&app, &cookie, "/settings/study", "quiet_from=0&quiet_to=0&session_minutes=0&catch_up_reviews=100").await;
+        let res =
+            submit(&app, &cookie, "/settings/study", "quiet_from=0&quiet_to=0&session_minutes=0&catch_up_reviews=100")
+                .await;
         assert_eq!(location(&res), "/settings#studying");
         use chrono::{TimeZone, Timelike};
         let hour = a.user.tz().timestamp_opt(now(), 0).unwrap().hour();
         let body = format!("quiet_from={hour}&quiet_to={}&session_minutes=0&catch_up_reviews=100", (hour + 1) % 24);
         submit(&app, &cookie, "/settings/study", &body).await;
-        let page = |c: String| send(&app, Request::get("/study").header(header::COOKIE, c).body(Body::empty()).unwrap());
+        let page =
+            |c: String| send(&app, Request::get("/study").header(header::COOKIE, c).body(Body::empty()).unwrap());
         let rest = text(page(cookie.clone()).await).await;
         assert!(rest.contains("Quiet hours") && !rest.contains("el perro"));
 
@@ -912,7 +991,9 @@ mod http {
         let app = app().await;
         let a = user(&app, "kolja").await;
         let cookie = login_cookie(&app, "kolja").await;
-        let get = |path: &str| send(&app, Request::get(path).header(header::COOKIE, cookie.clone()).body(Body::empty()).unwrap());
+        let get = |path: &str| {
+            send(&app, Request::get(path).header(header::COOKIE, cookie.clone()).body(Body::empty()).unwrap())
+        };
         assert!(text(get("/learn").await).await.contains("The spacing effect"));
         let page = text(get("/learn/spacing").await).await;
         assert!(page.contains("Strong evidence") && page.contains("Add as a deck"));
@@ -922,7 +1003,8 @@ mod http {
         assert_eq!(flash(&res), "Lesson added as a deck.");
         let deck = app.deck_by_name(&a, "AiNKI lessons::The spacing effect").await.unwrap().unwrap();
         assert_eq!(location(&res), format!("/decks/{}", deck.id));
-        let (cards, _) = app.list_cards(&a, &CardFilter { deck_id: Some(deck.id), ..Default::default() }).await.unwrap();
+        let (cards, _) =
+            app.list_cards(&a, &CardFilter { deck_id: Some(deck.id), ..Default::default() }).await.unwrap();
         assert_eq!(cards.len(), crate::lessons::find("spacing").unwrap().cards.len());
 
         // Twice makes no second copy.
@@ -958,7 +1040,11 @@ mod http {
         let before = app.list_presets(&a).await.unwrap().len();
 
         // Opening the form creates nothing.
-        let res = send(&app, Request::get("/presets/new").header(header::COOKIE, cookie.clone()).body(Body::empty()).unwrap()).await;
+        let res = send(
+            &app,
+            Request::get("/presets/new").header(header::COOKIE, cookie.clone()).body(Body::empty()).unwrap(),
+        )
+        .await;
         assert_eq!(res.status(), StatusCode::OK);
         assert_eq!(app.list_presets(&a).await.unwrap().len(), before);
 
@@ -1005,7 +1091,8 @@ mod http {
         sqlx::query("UPDATE sessions SET expires_at = expires_at - 10 * 86400").execute(&app.db).await.unwrap();
         let res = send(&app, get(&cookie)).await;
         assert!(res.headers()[header::SET_COOKIE].to_str().unwrap().starts_with("ainki_session="));
-        let left: i64 = sqlx::query_scalar("SELECT expires_at - ? FROM sessions").bind(now()).fetch_one(&app.db).await.unwrap();
+        let left: i64 =
+            sqlx::query_scalar("SELECT expires_at - ? FROM sessions").bind(now()).fetch_one(&app.db).await.unwrap();
         assert!(left > (crate::auth::SESSION_DAYS - 1) * 86_400);
     }
 
@@ -1026,7 +1113,10 @@ mod http {
         let a = user(&app, "kolja").await;
         let deck = app.create_deck(&a, "Español", "", None).await.unwrap();
         let cookie = login_cookie(&app, "kolja").await;
-        let req = Request::get(format!("/decks/{}/export.csv", deck.id)).header(header::COOKIE, cookie).body(Body::empty()).unwrap();
+        let req = Request::get(format!("/decks/{}/export.csv", deck.id))
+            .header(header::COOKIE, cookie)
+            .body(Body::empty())
+            .unwrap();
         let res = send(&app, req).await;
         let d = res.headers()[header::CONTENT_DISPOSITION].to_str().unwrap();
         assert_eq!(d, "attachment; filename=\"Espa_ol.csv\"; filename*=UTF-8''Espa%C3%B1ol.csv");
@@ -1041,7 +1131,8 @@ mod http {
         }
         user(&app, "kolja").await;
         let cookie = login_cookie(&app, "kolja").await;
-        let res = send(&app, Request::get("/settings").header(header::COOKIE, cookie).body(Body::empty()).unwrap()).await;
+        let res =
+            send(&app, Request::get("/settings").header(header::COOKIE, cookie).body(Body::empty()).unwrap()).await;
         let page = text(res).await;
         assert!(page.contains(&format!("Build {}", env!("AINKI_BUILD"))));
         assert!(page.contains(r#"rel="icon""#));
@@ -1131,10 +1222,13 @@ mod http {
     #[tokio::test]
     async fn signup_closes_after_first_account() {
         let app = app_with(|c| c.allow_signup = false).await;
-        let signup = |name: &str| form("/signup", "").body(Body::from(format!("username={name}&password=password123"))).unwrap();
+        let signup =
+            |name: &str| form("/signup", "").body(Body::from(format!("username={name}&password=password123"))).unwrap();
         let first = send(&app, signup("owner")).await;
         assert_eq!(first.status(), StatusCode::SEE_OTHER);
-        assert!(first.headers().get_all(header::SET_COOKIE).iter().any(|c| c.to_str().unwrap().contains("ainki_session=")));
+        assert!(
+            first.headers().get_all(header::SET_COOKIE).iter().any(|c| c.to_str().unwrap().contains("ainki_session="))
+        );
         let second = send(&app, signup("stranger")).await;
         assert_eq!(second.headers()[header::LOCATION], "/login");
         assert!(app.find_user("stranger").await.is_err());
@@ -1158,11 +1252,14 @@ mod http {
         assert!(String::from_utf8_lossy(&body).contains("Kolja invited you."));
 
         // A bad password keeps the link working.
-        let join = |name: &str, pw: &str| form(&path, "").body(Body::from(format!("username={name}&password={pw}"))).unwrap();
+        let join =
+            |name: &str, pw: &str| form(&path, "").body(Body::from(format!("username={name}&password={pw}"))).unwrap();
         assert_eq!(send(&app, join("anna", "short")).await.status(), StatusCode::BAD_REQUEST);
         let ok = send(&app, join("anna", "password123")).await;
         assert_eq!(ok.headers()[header::LOCATION], "/");
-        assert!(ok.headers().get_all(header::SET_COOKIE).iter().any(|c| c.to_str().unwrap().contains("ainki_session=")));
+        assert!(
+            ok.headers().get_all(header::SET_COOKIE).iter().any(|c| c.to_str().unwrap().contains("ainki_session="))
+        );
         assert_eq!(app.find_user("anna").await.unwrap().invited_by, Some(kolja.id));
 
         // Used up: a second try gets the "no longer works" page.
@@ -1180,14 +1277,16 @@ mod http {
         app.create_account("admin", "password123", "UTC", None, true).await.unwrap();
         user(&app, "kolja").await;
         let admin = login_cookie(&app, "admin").await;
-        let get = |path: &str, cookie: &str| Request::get(path).header(header::COOKIE, cookie).body(Body::empty()).unwrap();
+        let get =
+            |path: &str, cookie: &str| Request::get(path).header(header::COOKIE, cookie).body(Body::empty()).unwrap();
         for path in ["/", "/settings", "/decks/new", "/study"] {
             let res = send(&app, get(path, &admin)).await;
             assert_eq!(res.headers()[header::LOCATION], "/admin", "{path}");
         }
         let panel = send(&app, get("/admin", &admin)).await;
         assert_eq!(panel.status(), StatusCode::OK);
-        let body = String::from_utf8_lossy(&axum::body::to_bytes(panel.into_body(), usize::MAX).await.unwrap()).to_string();
+        let body =
+            String::from_utf8_lossy(&axum::body::to_bytes(panel.into_body(), usize::MAX).await.unwrap()).to_string();
         assert!(body.contains("invite-graph") && body.contains("kolja#"));
         assert!(!body.contains("nav class=\"top\""));
         // The admin invites without waiting.
@@ -1223,7 +1322,9 @@ mod http {
                 .unwrap(),
         )
         .await;
-        assert!(res.headers().get_all(header::SET_COOKIE).iter().any(|c| c.to_str().unwrap().starts_with("ainki_flash=;")));
+        assert!(
+            res.headers().get_all(header::SET_COOKIE).iter().any(|c| c.to_str().unwrap().starts_with("ainki_flash=;"))
+        );
         let body = axum::body::to_bytes(res.into_body(), usize::MAX).await.unwrap();
         assert!(String::from_utf8_lossy(&body).contains("Saved it."));
     }
@@ -1250,34 +1351,31 @@ mod http {
     }
 
     #[tokio::test]
-    async fn desktop_look_is_opt_in_by_script_and_setting() {
+    async fn one_plain_look_with_its_two_scripts() {
         let app = app().await;
-        let a = user(&app, "kolja").await;
+        user(&app, "kolja").await;
         let cookie = login_cookie(&app, "kolja").await;
-        let page = |c: String| Request::get("/").header(header::COOKIE, c).body(Body::empty()).unwrap();
-        let body = axum::body::to_bytes(send(&app, page(cookie.clone())).await.into_body(), usize::MAX).await.unwrap();
+        let page = Request::get("/").header(header::COOKIE, cookie).body(Body::empty()).unwrap();
+        let body = axum::body::to_bytes(send(&app, page).await.into_body(), usize::MAX).await.unwrap();
         let html = String::from_utf8_lossy(&body);
-        // The base page is the simple look; the hand-drawn one is only a
-        // desktop-only stylesheet that theme.js may switch on.
-        assert!(html.contains(r#"data-look="calm""#));
         assert!(html.contains(r#"<link rel="stylesheet" href="/style.css?v="#));
-        assert!(html.contains(r#"" media="(min-width: 60em) and (hover: hover) and (pointer: fine)""#));
-        assert!(html.contains(r#"href="/calm.css?v="#));
-        assert!(html.contains(r#"<script src="/theme.js?v="#));
-        assert!(!html.contains(r#"class="calm""#));
-
-        app.update_settings(a.user_id(), "UTC", 4, false, 100, true, "simple").await.unwrap();
-        let body = axum::body::to_bytes(send(&app, page(cookie)).await.into_body(), usize::MAX).await.unwrap();
-        assert!(String::from_utf8_lossy(&body).contains(r#"data-look="simple""#));
-        assert!(app.update_settings(a.user_id(), "UTC", 4, false, 100, true, "neon").await.is_err());
-
-        for (path, kind) in [("/calm.css", "text/css"), ("/theme.js", "text/javascript"), ("/fonts/eb-garamond-normal-latin.woff2", "font/woff2")] {
-            let res = send(&app, Request::get(path).body(Body::empty()).unwrap()).await;
-            assert_eq!(res.status(), StatusCode::OK, "{path}");
-            assert!(res.headers()[header::CONTENT_TYPE].to_str().unwrap().starts_with(kind));
+        assert!(html.contains(r#"<script src="/app.js?v="#));
+        assert!(html.contains(r#"<script type="module" src="/parts.js?v="#));
+        for gone in ["calm.css", "theme.js", "desk.js", "data-look", "calm-only", "simple-only"] {
+            assert!(!html.contains(gone), "{gone} is still on the page");
         }
-        let res = send(&app, Request::get("/fonts/../ainki.db").body(Body::empty()).unwrap()).await;
-        assert_eq!(res.status(), StatusCode::NOT_FOUND);
+        for (path, kind, status) in [
+            ("/style.css", "text/css", StatusCode::OK),
+            ("/parts.js", "text/javascript", StatusCode::OK),
+            ("/calm.css", "", StatusCode::NOT_FOUND),
+            ("/fonts/eb-garamond-normal-latin.woff2", "", StatusCode::NOT_FOUND),
+        ] {
+            let res = send(&app, Request::get(path).body(Body::empty()).unwrap()).await;
+            assert_eq!(res.status(), status, "{path}");
+            if status == StatusCode::OK {
+                assert!(res.headers()[header::CONTENT_TYPE].to_str().unwrap().starts_with(kind));
+            }
+        }
     }
 
     #[tokio::test]
@@ -1285,10 +1383,11 @@ mod http {
         let app = app().await;
         let a = user(&app, "kolja").await;
         let deck = app.create_deck(&a, "Languages::Spanish", "", None).await.unwrap();
-        app.create_card(&a, deck.id, "el perro", "the dog", None, None, None).await.unwrap();
+        app.create_card(&a, deck.id, NewCard::new("el perro", "the dog")).await.unwrap();
         let cookie = login_cookie(&app, "kolja").await;
         let res = send(&app, Request::get("/study").header(header::COOKIE, cookie).body(Body::empty()).unwrap()).await;
-        let html = String::from_utf8_lossy(&axum::body::to_bytes(res.into_body(), usize::MAX).await.unwrap()).into_owned();
+        let html =
+            String::from_utf8_lossy(&axum::body::to_bytes(res.into_body(), usize::MAX).await.unwrap()).into_owned();
         // The answer is already on the page, hidden until revealed.
         assert!(html.contains("the dog"));
         assert!(html.contains(r#"<section class="face back" id="answer" hidden>"#));
@@ -1309,14 +1408,26 @@ mod http {
         let back = "1. Cultural body\n2. Always escapes\n3. Category crisis";
 
         // The choice is only on the page once the back can be split.
-        let res = send(&app, Request::get("/cards/new").header(header::COOKIE, &cookie).body(Body::empty()).unwrap()).await;
+        let res =
+            send(&app, Request::get("/cards/new").header(header::COOKIE, &cookie).body(Body::empty()).unwrap()).await;
         assert!(text(res).await.contains(r#"<fieldset class="line multi-pick" hidden>"#));
-        let res = submit_multipart(&app, &cookie, "/cards/new", &[("deck", &d), ("front", "Theses?"), ("back", back), ("multi", "list")]).await;
+        let res = submit_multipart(
+            &app,
+            &cookie,
+            "/cards/new",
+            &[("deck", &d), ("front", "Theses?"), ("back", back), ("multi", "list")],
+        )
+        .await;
         assert_eq!(res.status(), StatusCode::SEE_OTHER);
-        let (cards, _) = app.list_cards(&a, &CardFilter { deck_id: Some(deck.id), ..Default::default() }).await.unwrap();
+        let (cards, _) =
+            app.list_cards(&a, &CardFilter { deck_id: Some(deck.id), ..Default::default() }).await.unwrap();
         let card = &cards[0];
         assert_eq!(card.multi, Some(crate::multi::Split::List));
-        let res = send(&app, Request::get(format!("/cards/{}", card.id)).header(header::COOKIE, &cookie).body(Body::empty()).unwrap()).await;
+        let res = send(
+            &app,
+            Request::get(format!("/cards/{}", card.id)).header(header::COOKIE, &cookie).body(Body::empty()).unwrap(),
+        )
+        .await;
         let html = text(res).await;
         assert!(html.contains(r#"<input type="radio" name="multi" value="list" checked>"#));
         assert!(html.contains("Always escapes"));
@@ -1327,11 +1438,21 @@ mod http {
         assert!(html.contains(r#"<form class="list-answer" method="post" action="/study/answer">"#));
         assert!(html.contains(r#"<input type="checkbox" name="recalled" value="2">"#));
         assert!(html.contains("0 of 3 remembered"));
-        let res = submit(&app, &cookie, "/study/answer", &format!("card={}&reps=0&asked=0&asked=1&asked=2&recalled=1", card.id)).await;
+        let res = submit(
+            &app,
+            &cookie,
+            "/study/answer",
+            &format!("card={}&reps=0&asked=0&asked=1&asked=2&recalled=1", card.id),
+        )
+        .await;
         assert_eq!(location(&res), "/study");
         let history = app.card_history(&a, card.id).await.unwrap();
         assert_eq!(history[0]["items_recalled"], 1);
-        let res = send(&app, Request::get(format!("/cards/{}", card.id)).header(header::COOKIE, &cookie).body(Body::empty()).unwrap()).await;
+        let res = send(
+            &app,
+            Request::get(format!("/cards/{}", card.id)).header(header::COOKIE, &cookie).body(Body::empty()).unwrap(),
+        )
+        .await;
         assert!(text(res).await.contains("1 of 3 remembered"));
     }
 
@@ -1356,13 +1477,27 @@ mod http {
         assert!(!html.contains("name=\"recalled\""));
 
         let d = deck.id.to_string();
-        submit_multipart(&app, &cookie, "/cards/new", &[("deck", &d), ("front", "Future simple?"), ("back", back), ("multi", "list")]).await;
-        let (cards, _) = app.list_cards(&a, &CardFilter { deck_id: Some(deck.id), ..Default::default() }).await.unwrap();
+        submit_multipart(
+            &app,
+            &cookie,
+            "/cards/new",
+            &[("deck", &d), ("front", "Future simple?"), ("back", back), ("multi", "list")],
+        )
+        .await;
+        let (cards, _) =
+            app.list_cards(&a, &CardFilter { deck_id: Some(deck.id), ..Default::default() }).await.unwrap();
         let card = &cards[0];
         // The pasted indent became a real list.
         assert!(card.back.contains("\n- guesses"));
         assert_eq!(app.card_items(card).await.unwrap().len(), 3);
-        let res = send(&app, Request::get(format!("/study?card={}&show=1", card.id)).header(header::COOKIE, &cookie).body(Body::empty()).unwrap()).await;
+        let res = send(
+            &app,
+            Request::get(format!("/study?card={}&show=1", card.id))
+                .header(header::COOKIE, &cookie)
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await;
         let html = text(res).await;
         for kept in ["<p>will</p>", "<p>be going to</p>", "Remark: will is for spontaneous decisions."] {
             assert!(html.contains(kept), "{kept}");
@@ -1396,15 +1531,18 @@ mod http {
         let app = app().await;
         let a = user(&app, "kolja").await;
         let deck = app.create_deck(&a, "Facts", "", None).await.unwrap();
-        app.create_card(&a, deck.id, "Hund", "dog", None, None, None).await.unwrap();
+        app.create_card(&a, deck.id, NewCard::new("Hund", "dog")).await.unwrap();
         let (_, token) = app.create_token(a.user_id(), "test", true, true, None).await.unwrap();
 
         let next = mcp_tool(&app, &token, "get_next_card", serde_json::json!({})).await;
         assert_eq!(next["done"], false);
-        let hour = a.user.tz().timestamp_opt(now(), 0).unwrap().hour() as i64;
+        let hour = i64::from(a.user.tz().timestamp_opt(now(), 0).unwrap().hour());
         app.update_study_settings(a.user_id(), Some((hour, (hour + 1) % 24)), 0, false, 100, false).await.unwrap();
         let next = mcp_tool(&app, &token, "get_next_card", serde_json::json!({})).await;
-        assert_eq!((next["done"].clone(), next["quiet_hours"].clone()), (serde_json::json!(true), serde_json::json!(true)));
+        assert_eq!(
+            (next["done"].clone(), next["quiet_hours"].clone()),
+            (serde_json::json!(true), serde_json::json!(true))
+        );
         let overview = mcp_tool(&app, &token, "get_overview", serde_json::json!({})).await;
         assert_eq!(overview["studying"]["quiet_now"], true);
 
@@ -1414,11 +1552,11 @@ mod http {
         assert_eq!(lesson["evidence"], "Not supported by evidence");
 
         let attention = mcp_tool(&app, &token, "list_cards_needing_attention", serde_json::json!({})).await;
-        assert!(attention["cards"].as_array().unwrap().is_empty());
+        assert_eq!(attention["cards"].as_array().unwrap().as_slice(), [] as [serde_json::Value; 0]);
         let insights = mcp_tool(&app, &token, "get_insights", serde_json::json!({})).await;
         assert_eq!(insights["week"]["reviews"], 0);
         let advice = mcp_tool(&app, &token, "get_coach_advice", serde_json::json!({})).await;
-        assert!(advice["advice"].as_array().unwrap().is_empty());
+        assert_eq!(advice["advice"].as_array().unwrap().as_slice(), [] as [serde_json::Value; 0]);
         let work = mcp_tool(&app, &token, "get_workload", serde_json::json!({ "preset_id": deck.preset_id })).await;
         assert!(work["options"].as_array().unwrap().len() >= 4);
     }
@@ -1446,13 +1584,11 @@ async fn the_coach_flags_leeches_lists_and_duplicates() {
     let app = app().await;
     let a = user(&app, "kolja").await;
     let deck = app.create_deck(&a, "Facts", "", None).await.unwrap();
-    let leech = app.create_card(&a, deck.id, "Capital of Burkina Faso", "Ouagadougou", None, None, None).await.unwrap();
-    let list = app
-        .create_card(&a, deck.id, "Three primary colours", "- red\n- yellow\n- blue", None, None, None)
-        .await
-        .unwrap();
-    let twin = app.create_card(&a, deck.id, "capital of burkina faso?", "Ouagadougou", None, None, None).await.unwrap();
-    let fine = app.create_card(&a, deck.id, "Hund", "dog", None, None, None).await.unwrap();
+    let leech = app.create_card(&a, deck.id, NewCard::new("Capital of Burkina Faso", "Ouagadougou")).await.unwrap();
+    let list =
+        app.create_card(&a, deck.id, NewCard::new("Three primary colours", "- red\n- yellow\n- blue")).await.unwrap();
+    let twin = app.create_card(&a, deck.id, NewCard::new("capital of burkina faso?", "Ouagadougou")).await.unwrap();
+    let fine = app.create_card(&a, deck.id, NewCard::new("Hund", "dog")).await.unwrap();
 
     // Forget the first card five times and the list card three times.
     for (id, lapses) in [(leech.id, 5), (list.id, 3)] {
@@ -1467,14 +1603,14 @@ async fn the_coach_flags_leeches_lists_and_duplicates() {
     }
 
     let list_of = |v: &[crate::coach::Attention], id: i64| -> Vec<Kind> {
-        v.iter().find(|x| x.card.id == id).map(|x| x.flags.iter().map(|f| f.kind).collect()).unwrap_or_default()
+        v.iter().find(|x| x.card.id == id).map_or_else(Default::default, |x| x.flags.iter().map(|f| f.kind).collect())
     };
     let found = app.attention(&a, Some(deck.id)).await.unwrap();
     assert_eq!(found[0].card.id, leech.id, "leeches come first");
     assert_eq!(list_of(&found, leech.id), vec![Kind::Leech, Kind::Duplicate]);
     assert_eq!(list_of(&found, list.id), vec![Kind::Split]);
     assert_eq!(list_of(&found, twin.id), vec![Kind::Duplicate]);
-    assert!(list_of(&found, fine.id).is_empty());
+    assert_eq!(list_of(&found, fine.id), [] as [Kind; 0]);
 
     // Keep as is: gone until the card slips three more times.
     app.dismiss_flag(&a, leech.id, Kind::Leech).await.unwrap();
@@ -1512,12 +1648,15 @@ async fn calibration_compares_predicted_and_actual_recall() {
     let app = app().await;
     let a = user(&app, "kolja").await;
     let deck = app.create_deck(&a, "Facts", "", None).await.unwrap();
-    let card = app.create_card(&a, deck.id, "q", "a", None, None, None).await.unwrap();
+    let card = app.create_card(&a, deck.id, NewCard::new("q", "a")).await.unwrap();
     // 20 reviews nine days after the last, of a card with a ten-day memory
     // (a little over 90% predicted): 15 remembered.
     let t = now() - 86_400;
     for n in 0..20 {
-        let prev = format!(r#"{{"state":"review","step":0,"stability":10.0,"difficulty":5.0,"due":0,"last_review":{},"reps":3,"lapses":0}}"#, t - 9 * 86_400);
+        let prev = format!(
+            r#"{{"state":"review","step":0,"stability":10.0,"difficulty":5.0,"due":0,"last_review":{},"reps":3,"lapses":0}}"#,
+            t - 9 * 86_400
+        );
         sqlx::query(
             "INSERT INTO review_log (user_id, card_id, deck_id, rating, reviewed_at, state_before,
                 elapsed_days, scheduled_secs, source, prev_card)
@@ -1568,7 +1707,7 @@ async fn catch_up_mode_caps_reviews_and_starts_with_the_best_remembered() {
     let deck = app.create_deck(&a, "Facts", "", None).await.unwrap();
     let mut ids = vec![];
     for n in 0..5 {
-        ids.push(app.create_card(&a, deck.id, &format!("q{n}"), "a", None, None, None).await.unwrap().id);
+        ids.push(app.create_card(&a, deck.id, NewCard::new(&format!("q{n}"), "a")).await.unwrap().id);
     }
     // Three overdue reviews: 30 days gone on a 10-day memory, 30 on a
     // 100-day memory, 12 on a 10-day one. Two cards stay new.
@@ -1601,7 +1740,7 @@ async fn quiet_hours_rest_until_they_end_or_are_lifted() {
     use chrono::{TimeZone, Timelike};
     let app = app().await;
     let a = user(&app, "kolja").await;
-    let hour = a.user.tz().timestamp_opt(now(), 0).unwrap().hour() as i64;
+    let hour = i64::from(a.user.tz().timestamp_opt(now(), 0).unwrap().hour());
     sqlx::query("UPDATE users SET quiet_from = ?, quiet_to = ? WHERE id = ?")
         .bind(hour)
         .bind((hour + 2) % 24)
@@ -1627,7 +1766,7 @@ async fn a_break_is_suggested_after_the_session_length() {
     let app = app().await;
     let a = user(&app, "kolja").await;
     let deck = app.create_deck(&a, "Facts", "", None).await.unwrap();
-    let card = app.create_card(&a, deck.id, "q", "a", None, None, None).await.unwrap();
+    let card = app.create_card(&a, deck.id, NewCard::new("q", "a")).await.unwrap();
     let log = |mins_ago: i64| {
         sqlx::query(
             "INSERT INTO review_log (user_id, card_id, deck_id, rating, reviewed_at, state_before,
@@ -1664,7 +1803,7 @@ async fn smart_breaks_keep_a_rhythm_and_learn_it() {
     let a = reload(&app, "kolja").await;
     let mut cards = vec![];
     for i in 0..20 {
-        cards.push(app.create_card(&a, deck.id, &format!("q{i}"), "a", None, None, None).await.unwrap().id);
+        cards.push(app.create_card(&a, deck.id, NewCard::new(&format!("q{i}"), "a")).await.unwrap().id);
     }
     // Twenty cards in turn, one answer every 20 s, the last `ago_secs`
     // before now: 9 s on the front and 2 s on the back, so 11 s of work
@@ -1682,7 +1821,7 @@ async fn smart_breaks_keep_a_rhythm_and_learn_it() {
                      VALUES (?, ?, ?, 3, ?, 2, 3, 0, 'web', ?, 2000, 0)",
                 )
                 .bind(user_id)
-                .bind(cards[(i % 20) as usize])
+                .bind(cards[crate::num::i64_usize(i % 20)])
                 .bind(deck_id)
                 .bind(end - (n - 1 - i) * 20)
                 .bind(think)
@@ -1748,7 +1887,7 @@ async fn sure_or_not_is_kept_with_the_answer() {
     let a = user(&app, "kolja").await;
     let deck = app.create_deck(&a, "Facts", "", None).await.unwrap();
     for (n, sure, rating) in [(0, true, Rating::Good), (1, true, Rating::Again), (2, false, Rating::Good)] {
-        let c = app.create_card(&a, deck.id, &format!("q{n}"), "a", None, None, None).await.unwrap();
+        let c = app.create_card(&a, deck.id, NewCard::new(&format!("q{n}"), "a")).await.unwrap();
         app.answer_card(&a, c.id, rating, None, None).await.unwrap();
         app.note_answer(&a, c.id, Some(sure), false, &crate::study::Timing::default()).await.unwrap();
     }
@@ -1762,7 +1901,7 @@ async fn the_week_compares_retention_with_the_aim() {
     let app = app().await;
     let a = user(&app, "kolja").await;
     let deck = app.create_deck(&a, "Facts", "", None).await.unwrap();
-    let card = app.create_card(&a, deck.id, "q", "a", None, None, None).await.unwrap();
+    let card = app.create_card(&a, deck.id, NewCard::new("q", "a")).await.unwrap();
     // 25 reviews of a learned card over two days, 15 remembered: 60%
     // against the Standard aim of 90%.
     for n in 0..25 {
@@ -1794,42 +1933,6 @@ async fn the_week_compares_retention_with_the_aim() {
     assert!(r[0].short());
 }
 
-/// Run with `cargo test --release big_collection -- --ignored --nocapture`.
-#[tokio::test]
-#[ignore]
-async fn big_collection_stays_fast() {
-    let app = app().await;
-    let a = user(&app, "kolja").await;
-    let deck = app.create_deck(&a, "Big", "", None).await.unwrap();
-    let mut tx = app.db.begin().await.unwrap();
-    for n in 0..20_000i64 {
-        sqlx::query(
-            "INSERT INTO cards (user_id, deck_id, front, back, state, stability, difficulty, due, last_review, reps, lapses, position, created_at, updated_at)
-             VALUES (?, ?, ?, 'back', 2, 20.0, 5.0, ?, ?, 5, ?, ?, 0, 0)",
-        )
-        .bind(a.user_id())
-        .bind(deck.id)
-        .bind(format!("front number {n}"))
-        .bind(now() + 86_400)
-        .bind(now() - 86_400)
-        .bind(if n % 7 == 0 { 2 + n % 5 } else { 0 })
-        .bind(n)
-        .execute(&mut *tx)
-        .await
-        .unwrap();
-    }
-    tx.commit().await.unwrap();
-    let t = std::time::Instant::now();
-    let found = app.attention(&a, None).await.unwrap();
-    println!("attention: {} cards in {:?}", found.len(), t.elapsed());
-    let t = std::time::Instant::now();
-    app.week(&a).await.unwrap();
-    println!("week: {:?}", t.elapsed());
-    let t = std::time::Instant::now();
-    app.overdue(&a).await.unwrap();
-    println!("overdue: {:?}", t.elapsed());
-}
-
 /// Log one answer as if it happened `days_ago` days back, at noon.
 async fn log_answer(app: &App, a: &Access, card: i64, deck: i64, days_ago: i64, state_before: i64, remembered: bool) {
     let clock = a.user.clock();
@@ -1854,7 +1957,7 @@ async fn the_coach_stays_quiet_for_a_new_user() {
     let app = app().await;
     let a = user(&app, "kolja").await;
     let deck = app.create_deck(&a, "German", "", None).await.unwrap();
-    app.create_card(&a, deck.id, "Hund", "dog", None, None, None).await.unwrap();
+    app.create_card(&a, deck.id, NewCard::new("Hund", "dog")).await.unwrap();
     assert!(app.advice(&a).await.unwrap().is_empty());
 }
 
@@ -1865,13 +1968,17 @@ async fn the_coach_warns_before_an_exam() {
     let a = user(&app, "kolja").await;
     let deck = app.create_deck(&a, "Languages::Spanish", "", None).await.unwrap();
     for i in 0..300 {
-        app.create_card(&a, deck.id, &format!("word {i}"), "x", None, None, None).await.unwrap();
+        app.create_card(&a, deck.id, NewCard::new(&format!("word {i}"), "x")).await.unwrap();
     }
     let exam = (a.user.clock().today() + chrono::Duration::days(12)).format("%Y-%m-%d").to_string();
     app.update_deck(&a, deck.id, None, None, None, Some(&exam)).await.unwrap();
     let notes = app.advice(&a).await.unwrap();
     assert_eq!(notes[0].rule, Rule::ExamClose);
-    assert!(notes[0].text.starts_with("Your Spanish exam is in 12 days and 300 cards are still new."), "{}", notes[0].text);
+    assert!(
+        notes[0].text.starts_with("Your Spanish exam is in 12 days and 300 cards are still new."),
+        "{}",
+        notes[0].text
+    );
 
     // "Not now" keeps it quiet for three days, then it is back.
     app.snooze_advice(&a, Rule::ExamClose).await.unwrap();
@@ -1886,7 +1993,7 @@ async fn the_coach_reads_recall_and_pace_from_the_log() {
     let app = app().await;
     let a = user(&app, "kolja").await;
     let deck = app.create_deck(&a, "Facts", "", None).await.unwrap();
-    let card = app.create_card(&a, deck.id, "Capital of Peru", "Lima", None, None, None).await.unwrap();
+    let card = app.create_card(&a, deck.id, NewCard::new("Capital of Peru", "Lima")).await.unwrap();
     // Twenty answers a day for fourteen days, only seven in ten remembered.
     for day in 1..=14 {
         for i in 0..20 {
@@ -1899,7 +2006,7 @@ async fn the_coach_reads_recall_and_pace_from_the_log() {
     let s = app.signals(&a, &known).await.unwrap();
     // The fourteen days end today, so the oldest day falls out.
     assert_eq!(s.study_days_14, 13);
-    assert_eq!(s.usual_per_day, 20.0);
+    assert!((s.usual_per_day - 20.0).abs() < f64::EPSILON);
     assert_eq!(s.recall_30d.reviews, 280);
     assert_eq!(s.recall_30d.remembered, 196);
     assert_eq!(s.days_since_review, Some(1));
@@ -1917,10 +2024,10 @@ async fn a_paused_deck_rests_and_resuming_wakes_only_its_own_cards() {
     let a = user(&app, "kolja").await;
     let deck = app.create_deck(&a, "German", "", None).await.unwrap();
     let other = app.create_deck(&a, "French", "", None).await.unwrap();
-    let hund = app.create_card(&a, deck.id, "Hund", "dog", None, None, None).await.unwrap();
-    let katze = app.create_card(&a, deck.id, "Katze", "cat", None, None, None).await.unwrap();
-    let maus = app.create_card(&a, deck.id, "Maus", "mouse", None, None, None).await.unwrap();
-    app.create_card(&a, other.id, "chat", "cat", None, None, None).await.unwrap();
+    let hund = app.create_card(&a, deck.id, NewCard::new("Hund", "dog")).await.unwrap();
+    let katze = app.create_card(&a, deck.id, NewCard::new("Katze", "cat")).await.unwrap();
+    let maus = app.create_card(&a, deck.id, NewCard::new("Maus", "mouse")).await.unwrap();
+    app.create_card(&a, other.id, NewCard::new("chat", "cat")).await.unwrap();
     // Suspended by hand before the pause.
     app.set_suspended(&a, maus.id, true).await.unwrap();
 
@@ -1938,9 +2045,9 @@ async fn a_paused_deck_rests_and_resuming_wakes_only_its_own_cards() {
     assert_eq!((s.total, s.suspended, s.due_total()), (3, 3, 0));
 
     // A card added while paused rests too, and so does one moved in.
-    let added = app.create_card(&a, deck.id, "Vogel", "bird", None, None, None).await.unwrap();
+    let added = app.create_card(&a, deck.id, NewCard::new("Vogel", "bird")).await.unwrap();
     assert!(added.suspended);
-    let moved_in = app.create_card(&a, other.id, "Pferd", "horse", None, None, None).await.unwrap();
+    let moved_in = app.create_card(&a, other.id, NewCard::new("Pferd", "horse")).await.unwrap();
     assert!(app.move_card(&a, moved_in.id, deck.id).await.unwrap().suspended);
     // Moved out to a deck being studied, a resting card wakes.
     assert!(!app.move_card(&a, katze.id, other.id).await.unwrap().suspended);
@@ -1961,7 +2068,7 @@ async fn an_archived_deck_rests_and_comes_back_on_restore() {
     let app = app().await;
     let a = user(&app, "kolja").await;
     let deck = app.create_deck(&a, "Old exam", "", None).await.unwrap();
-    let c = app.create_card(&a, deck.id, "Q", "A", None, None, None).await.unwrap();
+    let c = app.create_card(&a, deck.id, NewCard::new("Q", "A")).await.unwrap();
 
     // Pausing first and archiving after keeps the card the deck's to wake.
     app.set_deck_status(&a, deck.id, DeckStatus::Paused).await.unwrap();
@@ -1985,9 +2092,88 @@ async fn a_read_only_token_cannot_pause_a_deck() {
     let deck = app.create_deck(&a, "German", "", None).await.unwrap();
     let (_, raw) = app.create_token(a.user_id(), "reader", false, false, None).await.unwrap();
     let read = app.token_access(&raw).await.unwrap();
-    assert!(matches!(
-        app.set_deck_status(&read, deck.id, DeckStatus::Paused).await,
-        Err(AppError::Forbidden(_))
-    ));
+    assert!(matches!(app.set_deck_status(&read, deck.id, DeckStatus::Paused).await, Err(AppError::Forbidden(_))));
     assert_eq!(app.deck(&a, deck.id).await.unwrap().status, DeckStatus::Active);
+}
+
+#[tokio::test]
+async fn a_card_with_an_unknown_state_fails_to_load() {
+    let app = app().await;
+    let a = user(&app, "kolja").await;
+    let deck = app.create_deck(&a, "D", "", None).await.unwrap();
+    let card = app.create_card(&a, deck.id, NewCard::new("Hund", "dog")).await.unwrap();
+    sqlx::query("UPDATE cards SET state = 9 WHERE id = ?").bind(card.id).execute(&app.db).await.unwrap();
+    // Before, state 9 quietly read as a new card.
+    assert!(matches!(app.card(&a, card.id).await, Err(crate::error::AppError::Internal(_))));
+}
+
+#[tokio::test]
+async fn damaged_steps_or_parameters_fail_instead_of_resetting() {
+    let app = app().await;
+    let a = user(&app, "kolja").await;
+    let deck = app.create_deck(&a, "D", "", None).await.unwrap();
+    let card = app.create_card(&a, deck.id, NewCard::new("Hund", "dog")).await.unwrap();
+
+    // Steps that no longer parse used to mean "no steps".
+    sqlx::query("UPDATE presets SET learning_steps = '5x' WHERE id = ?")
+        .bind(deck.preset_id)
+        .execute(&app.db)
+        .await
+        .unwrap();
+    assert!(matches!(app.answer_card(&a, card.id, Rating::Good, None, None).await, Err(AppError::Internal(_))));
+    sqlx::query("UPDATE presets SET learning_steps = '1m 10m' WHERE id = ?")
+        .bind(deck.preset_id)
+        .execute(&app.db)
+        .await
+        .unwrap();
+
+    // Three parameters are no FSRS set; they used to mean the defaults.
+    sqlx::query("UPDATE presets SET fsrs_params = '[1.0, 2.0, 3.0]' WHERE id = ?")
+        .bind(deck.preset_id)
+        .execute(&app.db)
+        .await
+        .unwrap();
+    assert!(matches!(app.answer_card(&a, card.id, Rating::Good, None, None).await, Err(AppError::Internal(_))));
+}
+
+#[tokio::test]
+async fn an_unknown_time_zone_fails_to_load() {
+    let app = app().await;
+    let a = user(&app, "kolja").await;
+    sqlx::query("UPDATE users SET timezone = 'Mars/Olympus' WHERE id = ?")
+        .bind(a.user_id())
+        .execute(&app.db)
+        .await
+        .unwrap();
+    // Before, it quietly became UTC and every day boundary moved.
+    assert!(app.find_user(&a.user.handle()).await.is_err());
+}
+
+#[tokio::test]
+async fn a_damaged_deck_grant_never_widens_to_all_decks() {
+    use base64::Engine;
+    use sha2::Digest;
+    let app = app().await;
+    let a = user(&app, "kolja").await;
+    let deck = app.create_deck(&a, "D", "", None).await.unwrap();
+    let reg = app
+        .register_client(crate::oauth::RegistrationRequest {
+            redirect_uris: vec!["https://claude.ai/api/mcp/auth_callback".into()],
+            client_name: Some("Claude".into()),
+            token_endpoint_auth_method: Some("none".into()),
+        })
+        .await
+        .unwrap();
+    let client_id = reg["client_id"].as_str().unwrap().to_string();
+    let client = app.client(&client_id).await.unwrap().unwrap();
+    let verifier = "a".repeat(50);
+    let challenge = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(sha2::Sha256::digest(verifier.as_bytes()));
+    let redirect = "https://claude.ai/api/mcp/auth_callback";
+    let code = app
+        .create_auth_code(a.user_id(), &client, redirect, &challenge, true, false, Some(vec![deck.id]))
+        .await
+        .unwrap();
+    sqlx::query("UPDATE oauth_codes SET decks = 'not json'").execute(&app.db).await.unwrap();
+    // Before, the grant parsed as None, which means every deck.
+    assert!(app.exchange_code(&client_id, None, &code, Some(redirect), &verifier).await.is_err());
 }

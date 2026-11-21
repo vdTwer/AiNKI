@@ -7,11 +7,12 @@
 use chrono::{Duration, NaiveTime, TimeZone, Timelike};
 use serde::Serialize;
 
+use crate::App;
 use crate::auth::{Access, User};
 use crate::breaks;
 use crate::error::{AppError, Result};
-use crate::App;
 use crate::now;
+use crate::num;
 
 /// A gap this long between answers ends a session.
 pub const SESSION_GAP_SECS: i64 = 10 * 60;
@@ -48,12 +49,10 @@ fn rhythm(user: &User) -> breaks::Rhythm {
 /// Is `hour` inside quiet hours from `from` to `to` (to not included)?
 /// The window may cross midnight; equal ends mean no quiet hours.
 pub fn in_window(from: i64, to: i64, hour: i64) -> bool {
-    if from == to {
-        false
-    } else if from < to {
-        (from..to).contains(&hour)
-    } else {
-        hour >= from || hour < to
+    match from.cmp(&to) {
+        std::cmp::Ordering::Equal => false,
+        std::cmp::Ordering::Less => (from..to).contains(&hour),
+        std::cmp::Ordering::Greater => hour >= from || hour < to,
     }
 }
 
@@ -66,10 +65,10 @@ pub fn quiet_until(user: &User, at: i64) -> Option<i64> {
     }
     let tz = user.tz();
     let local = tz.timestamp_opt(at, 0).single()?;
-    if !in_window(from, to, local.hour() as i64) {
+    if !in_window(from, to, i64::from(local.hour())) {
         return None;
     }
-    let end_time = NaiveTime::from_hms_opt(to.clamp(0, 23) as u32, 0, 0)?;
+    let end_time = NaiveTime::from_hms_opt(num::i64_u32(to.clamp(0, 23)), 0, 0)?;
     let mut day = local.date_naive();
     loop {
         // A local time that doesn't exist (DST) is taken an hour later.
@@ -84,11 +83,6 @@ pub fn quiet_until(user: &User, at: i64) -> Option<i64> {
         }
         day = day.succ_opt()?;
     }
-}
-
-/// How a minute count reads in a break hint.
-pub fn minutes_words(m: i64) -> String {
-    if m == 1 { "1 minute".into() } else { format!("{m} minutes") }
 }
 
 /// How long an answer took, as the browser measured it. Anything out of
@@ -114,7 +108,7 @@ impl Timing {
         input: Option<&str>,
     ) -> Self {
         let ms = |v: Option<i64>| v.filter(|v| (0..=TIMING_MAX_MS).contains(v));
-        Timing {
+        Self {
             think_ms: ms(think_ms),
             answer_ms: ms(answer_ms),
             away_ms: ms(away_ms),
@@ -134,18 +128,29 @@ pub struct Confidence {
 
 impl Confidence {
     pub fn sure_pct(&self) -> Option<f64> {
-        (self.sure > 0).then(|| self.sure_recalled as f64 * 100.0 / self.sure as f64)
+        (self.sure > 0).then(|| num::i64_f64(self.sure_recalled) * 100.0 / num::i64_f64(self.sure))
     }
 
     pub fn unsure_pct(&self) -> Option<f64> {
-        (self.unsure > 0).then(|| self.unsure_recalled as f64 * 100.0 / self.unsure as f64)
+        (self.unsure > 0).then(|| num::i64_f64(self.unsure_recalled) * 100.0 / num::i64_f64(self.unsure))
     }
 }
 
 impl App {
     /// After an answer on the website: whether the user felt sure, whether
     /// time ran out, and how long it took. Goes onto the review just logged.
-    pub async fn note_answer(&self, access: &Access, card_id: i64, sure: Option<bool>, timed_out: bool, timing: &Timing) -> Result<()> {
+    ///
+    /// # Errors
+    ///
+    /// `Internal` if the database fails.
+    pub async fn note_answer(
+        &self,
+        access: &Access,
+        card_id: i64,
+        sure: Option<bool>,
+        timed_out: bool,
+        timing: &Timing,
+    ) -> Result<()> {
         if sure.is_none() && !timed_out && *timing == Timing::default() {
             return Ok(());
         }
@@ -168,6 +173,10 @@ impl App {
     }
 
     /// "Study anyway": quiet hours are off until they end this time.
+    ///
+    /// # Errors
+    ///
+    /// `Internal` if the database fails.
     pub async fn lift_quiet(&self, user: &User) -> Result<()> {
         let until = quiet_until(user, now()).unwrap_or_else(now);
         sqlx::query("UPDATE users SET quiet_lifted_until = ? WHERE id = ?")
@@ -181,6 +190,10 @@ impl App {
     /// When the session going on now began: the first answer on the website
     /// after the last pause of `SESSION_GAP_SECS`, or the last time a break
     /// hint was waved off. `None` when nothing was answered lately.
+    ///
+    /// # Errors
+    ///
+    /// `Internal` if the database fails.
     pub async fn session_start(&self, access: &Access) -> Result<Option<i64>> {
         Ok(self.session_began(access).await?.map(|start| match access.user.break_skipped_at {
             Some(b) if b > start => b,
@@ -205,7 +218,7 @@ impl App {
             return Ok(None);
         }
         let mut start = last;
-        for &t in &times[1..] {
+        for &t in times.iter().skip(1) {
             if start - t >= SESSION_GAP_SECS {
                 break;
             }
@@ -217,6 +230,10 @@ impl App {
     /// Whether a break is due before the next card: on the fixed timer once
     /// the session has run the user's length, or with smart breaks once the
     /// answers show tiredness (see `breaks`).
+    ///
+    /// # Errors
+    ///
+    /// `Internal` if the database fails.
     pub async fn break_due(&self, access: &Access) -> Result<Option<BreakDue>> {
         let len = access.user.session_minutes;
         if len == SMART_BREAKS {
@@ -227,7 +244,13 @@ impl App {
         }
         let Some(start) = self.session_start(access).await? else { return Ok(None) };
         let minutes = (now() - start) / 60;
-        Ok((minutes >= len).then_some(BreakDue { studied: minutes, length: TIMER_BREAK_MINUTES, smart: false, long: false, slowing: false }))
+        Ok((minutes >= len).then_some(BreakDue {
+            studied: minutes,
+            length: TIMER_BREAK_MINUTES,
+            smart: false,
+            long: false,
+            slowing: false,
+        }))
     }
 
     async fn smart_break_due(&self, access: &Access) -> Result<Option<BreakDue>> {
@@ -271,7 +294,8 @@ impl App {
         .bind(n - RECOVERY_DAYS * 86_400)
         .fetch_all(&self.db)
         .await?;
-        let usuals = breaks::card_usuals(&rows.iter().map(|r| (r.card_id, r.think_ms.filter(|_| r.plain))).collect::<Vec<_>>());
+        let usuals =
+            breaks::card_usuals(&rows.iter().map(|r| (r.card_id, r.think_ms.filter(|_| r.plain))).collect::<Vec<_>>());
         Ok(rows
             .iter()
             .zip(usuals)
@@ -289,19 +313,31 @@ impl App {
     /// After an answer with smart breaks on: a pause the user took on their
     /// own, before any suggestion, shortens their stretches and lengthens
     /// their breaks.
+    ///
+    /// # Errors
+    ///
+    /// `Internal` if the database fails.
     pub async fn note_rest(&self, access: &Access) -> Result<()> {
         let user = &access.user;
         if user.session_minutes != SMART_BREAKS {
             return Ok(());
         }
         let steps = self.break_steps(access).await?;
-        if breaks::paused_on_own(&breaks::replay(&steps, user.break_skipped_at.unwrap_or(0)), &steps, user.break_shown_at) {
+        if breaks::paused_on_own(
+            &breaks::replay(&steps, user.break_skipped_at.unwrap_or(0)),
+            &steps,
+            user.break_shown_at,
+        ) {
             self.set_rhythm(user.id, rhythm(user).paused_early()).await?;
         }
         Ok(())
     }
 
     /// A break page is on screen: remember when this suggestion first came.
+    ///
+    /// # Errors
+    ///
+    /// `Internal` if the database fails.
     pub async fn break_shown(&self, user_id: i64) -> Result<()> {
         sqlx::query(
             "UPDATE users SET break_shown_at = ?
@@ -318,9 +354,14 @@ impl App {
     /// Keep going, or the break is over: the stretch starts over. With
     /// smart breaks, Keep going right away means the user felt fresh: longer
     /// stretches, shorter breaks. After a few minutes it was a break.
+    ///
+    /// # Errors
+    ///
+    /// `Internal` if the database fails.
     pub async fn skip_break(&self, user: &User) -> Result<()> {
         let n = now();
-        let refused = user.session_minutes == SMART_BREAKS && user.break_shown_at.is_some_and(|t| n - t < breaks::REST_SECS);
+        let refused =
+            user.session_minutes == SMART_BREAKS && user.break_shown_at.is_some_and(|t| n - t < breaks::REST_SECS);
         if refused {
             self.set_rhythm(user.id, rhythm(user).kept_going()).await?;
         }
@@ -343,25 +384,28 @@ impl App {
     }
 
     /// Review cards due for more than a day: what piled up while away.
+    ///
+    /// # Errors
+    ///
+    /// `Internal` if the database fails.
     pub async fn overdue(&self, access: &Access) -> Result<i64> {
         let ids: Vec<i64> = self.decks(access).await?.into_iter().map(|d| d.id).collect();
         if ids.is_empty() {
             return Ok(0);
         }
-        let sql = format!(
-            "SELECT COUNT(*) FROM cards WHERE user_id = ? AND suspended = 0 AND state = 2 AND due <= ?
-             AND deck_id IN ({})",
-            crate::service::placeholders(ids.len())
-        );
-        let mut q = sqlx::query_scalar(&sql).bind(access.user_id()).bind(now() - OVERDUE_SECS);
-        for id in ids {
-            q = q.bind(id);
-        }
+        let sql = "SELECT COUNT(*) FROM cards WHERE user_id = ? AND suspended = 0 AND state = 2 AND due <= ?
+             AND deck_id IN (SELECT value FROM json_each(?))";
+        let mut q = sqlx::query_scalar(sql).bind(access.user_id()).bind(now() - OVERDUE_SECS);
+        q = q.bind(crate::service::id_list(&ids));
         Ok(q.fetch_one(&self.db).await?)
     }
 
     /// How often you remembered when you felt sure, and when you didn't,
     /// over the last year.
+    ///
+    /// # Errors
+    ///
+    /// `Internal` if the database fails.
     pub async fn confidence(&self, access: &Access, deck_id: Option<i64>) -> Result<Confidence> {
         #[derive(sqlx::FromRow)]
         struct Row {
@@ -392,6 +436,11 @@ impl App {
         Ok(c)
     }
 
+    /// # Errors
+    ///
+    /// - `BadRequest` if quiet hours aren't whole hours 0–23, the session length isn't -1, 0 or up to 240 minutes,
+    ///   or catch-up reviews aren't 1–9999.
+    /// - `Internal` if the database fails.
     #[allow(clippy::too_many_arguments)]
     pub async fn update_study_settings(
         &self,
@@ -403,10 +452,10 @@ impl App {
         confidence_check: bool,
     ) -> Result<()> {
         let quiet = quiet.filter(|(f, t)| f != t);
-        if let Some((f, t)) = quiet {
-            if !(0..24).contains(&f) || !(0..24).contains(&t) {
-                return Err(AppError::bad("quiet hours must be whole hours from 0 to 23"));
-            }
+        if let Some((f, t)) = quiet
+            && (!(0..24).contains(&f) || !(0..24).contains(&t))
+        {
+            return Err(AppError::bad("quiet hours must be whole hours from 0 to 23"));
         }
         if !(SMART_BREAKS..=240).contains(&session_minutes) {
             return Err(AppError::bad("session length must be -1 (smart breaks), 0 (off) or up to 240 minutes"));
@@ -430,12 +479,11 @@ impl App {
         Ok(())
     }
 
+    /// # Errors
+    ///
+    /// `Internal` if the database fails.
     pub async fn set_catch_up(&self, user_id: i64, on: bool) -> Result<()> {
-        sqlx::query("UPDATE users SET catch_up = ? WHERE id = ?")
-            .bind(on)
-            .bind(user_id)
-            .execute(&self.db)
-            .await?;
+        sqlx::query("UPDATE users SET catch_up = ? WHERE id = ?").bind(on).bind(user_id).execute(&self.db).await?;
         Ok(())
     }
 }

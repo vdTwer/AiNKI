@@ -3,6 +3,7 @@
 
 use chrono::Datelike;
 
+use crate::num;
 use crate::scheduler::Clock;
 
 /// "1 card", "3 cards". English plurals by adding "s"; every word we
@@ -16,7 +17,7 @@ pub fn number(n: i64) -> String {
     let digits = n.unsigned_abs().to_string();
     let mut out = String::new();
     for (i, c) in digits.chars().enumerate() {
-        if i > 0 && (digits.len() - i) % 3 == 0 {
+        if i > 0 && (digits.len() - i).is_multiple_of(3) {
             out.push(',');
         }
         out.push(c);
@@ -29,23 +30,29 @@ pub fn plural(n: i64, word: &str) -> String {
     if n == 1 { word.to_string() } else { format!("{word}s") }
 }
 
+/// The word that agrees with `n`: `agree(n, "needs", "need")`. For
+/// verbs and pronouns, which take no plain "s".
+pub const fn agree<'a>(n: i64, one: &'a str, many: &'a str) -> &'a str {
+    if n == 1 { one } else { many }
+}
+
 /// Shown where a number has no value yet.
 pub const NONE: &str = "—";
 
 /// A share as a whole percent, "91%"; the dash when there's none.
 pub fn percent(v: Option<f64>) -> String {
-    v.map(|v| format!("{:.0}%", v * 100.0)).unwrap_or_else(|| NONE.into())
+    v.map_or_else(|| NONE.into(), |v| format!("{:.0}%", v * 100.0))
 }
 
 /// Whole minutes, rounded: "about 3 minutes"; "under a minute" below one.
 pub fn minutes(m: f64) -> String {
-    let n = m.round() as i64;
+    let n = num::f64_i64(m.round());
     if n < 1 { "under a minute".into() } else { format!("about {}", count(n, "minute")) }
 }
 
 /// Short label for a wait, e.g. "10m", "3d", "2.1mo".
 pub fn interval(secs: i64) -> String {
-    let secs = secs.max(0) as f64;
+    let secs = num::i64_f64(secs.max(0));
     if secs < 60.0 {
         "<1m".into()
     } else if secs < 3600.0 {
@@ -71,8 +78,7 @@ pub fn days(d: i64) -> String {
 /// exports; pages use words.
 pub fn iso(ts: i64, clock: &Clock) -> String {
     chrono::DateTime::from_timestamp(ts, 0)
-        .map(|t| t.with_timezone(&clock.tz).format("%Y-%m-%d %H:%M").to_string())
-        .unwrap_or_default()
+        .map_or_else(Default::default, |t| t.with_timezone(&clock.tz).format("%Y-%m-%d %H:%M").to_string())
 }
 
 /// "Tuesday, 20 October".
@@ -130,6 +136,8 @@ mod tests {
         assert_eq!(count(1, "card"), "1 card");
         assert_eq!(count(0, "card"), "0 cards");
         assert_eq!(count(20_000, "card"), "20,000 cards");
+        assert_eq!(agree(1, "is", "are"), "is");
+        assert_eq!(agree(0, "is", "are"), "are");
         assert_eq!(number(999), "999");
         assert_eq!(number(1_000), "1,000");
         assert_eq!(number(-1_234_567), "-1,234,567");

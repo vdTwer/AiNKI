@@ -1,6 +1,6 @@
 // Stats with real history, and the coach: a note on Home and Stats, the
 // cards needing a look, "Keep as is" and "Not now".
-import { test, expect, sql, isCalm, desktopOnly, type Seed } from '../support/fixtures.ts';
+import { test, expect, sql, desktopOnly, type Seed } from '../support/fixtures.ts';
 import { flash } from '../support/ui.ts';
 
 const DAY = 86_400;
@@ -29,29 +29,20 @@ async function history(seed: Seed, userId: number) {
   return deck;
 }
 
-test('stats show charts on the desktop and the exact numbers everywhere', async ({ page, seed, account }) => {
+test('stats show charts and, folded, the exact numbers', async ({ page, seed, account }) => {
   const deck = await history(seed, account.id);
   await page.goto('/stats');
   await expect(page.locator('main h1, main h2').first()).toBeVisible();
-  if (await isCalm(page)) {
-    // Every chart is drawn from its numbers. A chart that throws is
-    // caught by desk.js and only marked data-failed, so look for that.
-    const charts = page.locator('.desk-stats .chart[data-chart]');
-    expect(await charts.count()).toBeGreaterThanOrEqual(4);
-    for (const chart of await charts.all()) {
-      const kind = (await chart.getAttribute('data-chart')) ?? '';
-      await expect(chart, kind).toHaveAttribute('data-drawn', '');
-      await expect(chart, kind).not.toHaveAttribute('data-failed', '');
-      expect(await chart.locator('*').count(), `${kind} has something in it`).toBeGreaterThan(0);
-    }
-    // Exact numbers sit behind "I love numbers".
-    const numbers = page.locator('main .numbers');
-    await expect(numbers).toBeHidden();
-    await page.locator('label.numbers-toggle').click();
-    await expect(numbers).toBeVisible();
-  } else {
-    await expect(page.locator('main .numbers')).toBeVisible();
+  // Every chart is drawn on the server, and every mark has its numbers.
+  const charts = page.locator('.desk-stats svg.chart');
+  expect(await charts.count()).toBeGreaterThanOrEqual(3);
+  for (const chart of await charts.all()) {
+    expect(await chart.locator('title').count(), 'marks carry their numbers').toBeGreaterThan(0);
   }
+  // The exact numbers are folded under the charts.
+  const numbers = page.locator('main details.numbers');
+  await numbers.locator('summary').click();
+  await expect(numbers.locator('h2').first()).toBeVisible();
   await expect(page.locator('main')).toContainText('Capitals');
 
   // One deck's stats.
@@ -73,17 +64,9 @@ test('the coach points at a leech; Keep as is and Not now quiet it', async ({ pa
   sql('UPDATE cards SET state = 2, stability = 3, difficulty = 8, lapses = 6, reps = 12, last_review = ?, due = ? WHERE id = ?', now - DAY, now + 2 * DAY, leech);
 
   await page.goto('/');
-  if (await isCalm(page)) {
-    // On the desktop the note waits behind a ! beside the heading.
-    const mark = page.getByRole('button', { name: 'A note from the coach' });
-    await mark.hover();
-    const note = page.locator('.coach-note');
-    await expect(note).toBeVisible();
-    await expect(note).toContainText('1 card is forgotten again and again');
-    await note.getByRole('link', { name: 'Have a look' }).click();
-  } else {
-    await page.goto('/attention');
-  }
+  const note = page.locator('.tip[data-rule=leeches]').first();
+  await expect(note).toContainText('1 card is forgotten again and again');
+  await note.getByRole('link', { name: 'Have a look' }).click();
   await expect(page).toHaveURL('/attention');
   await expect(page.locator('main a.row')).toHaveCount(1);
   await page.locator(`main a.row[href="/cards/${leech}"]`).click();
@@ -97,16 +80,13 @@ test('the coach points at a leech; Keep as is and Not now quiet it', async ({ pa
   const second = await seed.card(deck, 'Capital of Kyrgyzstan', 'Bishkek');
   sql('UPDATE cards SET state = 2, stability = 3, difficulty = 8, lapses = 7, reps = 12, last_review = ?, due = ? WHERE id = ?', now - DAY, now + 2 * DAY, second);
   await page.goto('/stats');
-  if (await isCalm(page)) {
-    await page.locator('.tip[data-rule=leeches]').first().getByRole('button', { name: 'Not now' }).click();
-    await expect(page).toHaveURL('/stats');
-    await expect(page.locator('.tip[data-rule=leeches]')).toHaveCount(0);
-    const [{ until }] = sql<{ until: number }>('SELECT until FROM coach_snoozes WHERE user_id = ? AND rule = ?', account.id, 'leeches');
-    expect(until - now).toBeGreaterThan(2.9 * DAY);
-    await page.goto('/');
-    await expect(page.locator('.tip[data-rule=leeches]')).toHaveCount(0);
-    await expect(page.getByRole('button', { name: 'A note from the coach' })).toHaveCount(0);
-  }
+  await page.locator('.tip[data-rule=leeches]').first().getByRole('button', { name: 'Not now' }).click();
+  await expect(page).toHaveURL('/stats');
+  await expect(page.locator('.tip[data-rule=leeches]')).toHaveCount(0);
+  const [{ until }] = sql<{ until: number }>('SELECT until FROM coach_snoozes WHERE user_id = ? AND rule = ?', account.id, 'leeches');
+  expect(until - now).toBeGreaterThan(2.9 * DAY);
+  await page.goto('/');
+  await expect(page.locator('.tip[data-rule=leeches]')).toHaveCount(0);
 });
 
 test('the coach says nothing to a new learner', async ({ page, seed }) => {
@@ -115,44 +95,21 @@ test('the coach says nothing to a new learner', async ({ page, seed }) => {
   for (const path of ['/', '/stats']) {
     await page.goto(path);
     await expect(page.locator('.tip')).toHaveCount(0);
-    await expect(page.getByRole('button', { name: 'A note from the coach' })).toHaveCount(0);
   }
+});
+
+test('stats charts and words explain themselves on hover', async ({ page, seed, account }) => {
+  await history(seed, account.id);
+  await page.goto('/stats');
+  // Native tooltips: every mark has a <title>, every explained word a title.
+  await expect(page.locator('svg.chart .bar title').first()).toHaveText(/: \d+ cards?$/);
+  await expect(page.locator('svg.chart .dot title').first()).toHaveText(/\d+ of \d+ remembered/);
+  await expect(page.locator('svg.days rect title').last()).toHaveText(/\d+ reviews?$/);
+  await expect(page.locator('.desk-stats [title]', { hasText: 'Days in a row' })).toHaveAttribute('title', /at least one review/);
 });
 
 test.describe('desktop', () => {
   desktopOnly();
-  test('stats charts explain themselves on hover and focus', async ({ page, seed, account }) => {
-    await history(seed, account.id);
-    await page.goto('/stats');
-    const tip = page.locator('.chart-tip');
-
-    // A bar of the days ahead: its count, its day, and what it means.
-    await page.locator('.chart[data-chart=forecast] .hit').nth(1).hover();
-    await expect(tip).toBeVisible();
-    await expect(tip.locator('strong')).toHaveText(/^\d+ cards?$/);
-    await expect(tip.locator('.why')).toContainText('come due this day');
-
-    // A week of recall names its reviews and the gap to the aim.
-    const recall = page.locator('.chart[data-chart=retention] .hit').first();
-    await recall.scrollIntoViewIfNeeded();
-    const box = await recall.boundingBox();
-    if (!box) throw new Error('the recall chart has no box');
-    await page.mouse.move(box.x + box.width - 4, box.y + box.height / 2);
-    await expect(tip.locator('.why')).toContainText(/You remembered \d+ of the \d+ learned cards/);
-
-    // Words beside the charts explain themselves too, and leave with the pointer.
-    await page.locator('.desk-stats [data-why]', { hasText: 'Days in a row' }).hover();
-    await expect(tip.locator('.why')).toContainText('at least one review');
-    await page.mouse.move(2, 2);
-    await expect(tip).toBeHidden();
-
-    // The keyboard finds the same words.
-    await page.locator('.chart[data-chart=days] .cell:not(.scale)').last().focus();
-    await expect(tip).toBeVisible();
-    await expect(tip).toContainText('Today');
-    await expect(page.locator('.chart[data-chart=days]')).not.toHaveAttribute('data-failed', '');
-  });
-
   test('Not now on Stats confirms it', async ({ page, seed }) => {
     const deck = await seed.deck('Hard facts');
     const leech = await seed.card(deck, 'Capital of Burkina Faso', 'Ouagadougou');
