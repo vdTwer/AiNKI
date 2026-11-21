@@ -631,7 +631,8 @@ impl App {
         card_id: i64,
         prev_items: &str,
     ) -> Result<()> {
-        let Ok(items) = serde_json::from_str::<Vec<CardItem>>(prev_items) else { return Ok(()) };
+        let items: Vec<CardItem> = serde_json::from_str(prev_items)
+            .map_err(|e| AppError::Internal(anyhow::anyhow!("card {card_id} has broken item snapshots: {e}")))?;
         for i in items {
             sqlx::query(
                 "UPDATE card_items SET state = ?, step = ?, stability = ?, difficulty = ?, due = ?,

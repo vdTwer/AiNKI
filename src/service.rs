@@ -1385,9 +1385,11 @@ impl App {
             .bind(card.id)
             .fetch_one(&self.db)
             .await?;
-        let Some(prev) = last.prev_card.as_deref().and_then(|p| serde_json::from_str::<CardSched>(p).ok()) else {
-            return Ok(None);
-        };
+        // Imported history has no snapshot to go back to; a snapshot that
+        // fails to parse is damage, not "nothing to undo".
+        let Some(prev) = last.prev_card.as_deref() else { return Ok(None) };
+        let prev: CardSched = serde_json::from_str(prev)
+            .map_err(|e| AppError::Internal(anyhow::anyhow!("review {} has a broken snapshot: {e}", last.id)))?;
         if newest != last.id {
             return Ok(None);
         }
