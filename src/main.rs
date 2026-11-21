@@ -166,9 +166,16 @@ async fn open_db(config: &Config) -> anyhow::Result<SqlitePool> {
         // the last moment of writes is lost on a power cut.
         .synchronous(SqliteSynchronous::Normal)
         .foreign_keys(true)
+        // Keeps the planner's statistics fresh as decks grow (see below).
+        .optimize_on_close(true, None)
         .busy_timeout(std::time::Duration::from_secs(10));
     let pool = SqlitePoolOptions::new().max_connections(8).connect_with(opts).await?;
     sqlx::migrate!("./migrations").run(&pool).await?;
+    // Table statistics for the query planner. Deck filters bind their ids
+    // as one JSON array, whose size the planner can't guess; without
+    // statistics it walks all of a user's cards instead of the queue index.
+    // Cheap: SQLite only analyzes tables that changed a lot.
+    sqlx::query("PRAGMA optimize=0x10002").execute(&pool).await?;
     Ok(pool)
 }
 
