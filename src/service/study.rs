@@ -71,6 +71,11 @@ impl App {
     }
 
     /// Pick the next card to study, from one deck or all visible decks.
+    ///
+    /// # Errors
+    ///
+    /// - `NotFound` if a deck is given that the access doesn't see.
+    /// - `Internal` if the database fails or a preset is broken.
     pub async fn next_card(&self, access: &Access, deck_id: Option<i64>) -> Result<Option<StudyCard>> {
         let summaries: Vec<DeckSummary> = self
             .deck_summaries(access)
@@ -137,6 +142,9 @@ impl App {
         Ok(Some(StudyCard { card, deck, previews, remaining: remaining.max(1) }))
     }
 
+    /// # Errors
+    ///
+    /// `Internal` if the database fails or the deck's preset or FSRS parameters are broken.
     pub async fn previews(&self, access: &Access, card: &Card, deck: &Deck) -> Result<Vec<(Rating, String)>> {
         let cfg = self.sched_config(access, deck).await?;
         let params = self.deck_params(access, deck.id).await?;
@@ -153,6 +161,13 @@ impl App {
     }
 
     /// Record an answer. `expected_reps` guards against double submissions.
+    ///
+    /// # Errors
+    ///
+    /// - `Forbidden` if the token may not submit reviews.
+    /// - `NotFound` if the card isn't the user's or lies outside the token's decks.
+    /// - `Conflict` if the card was answered since it was shown (`expected_reps` differs).
+    /// - `Internal` if the database fails or the FSRS parameters are broken.
     pub async fn answer_card(
         &self,
         access: &Access,
@@ -216,6 +231,14 @@ impl App {
 
     /// Answer a list card by naming the items that were missed (positions
     /// from 0); every other asked item was remembered.
+    ///
+    /// # Errors
+    ///
+    /// - `Forbidden` if the token may not submit reviews.
+    /// - `NotFound` if the card isn't the user's or lies outside the token's decks.
+    /// - `BadRequest` if the card is no multicard.
+    /// - `Conflict` if the card was answered since it was shown.
+    /// - `Internal` if the database fails or the FSRS parameters are broken.
     pub async fn answer_list(
         &self,
         access: &Access,
@@ -239,6 +262,11 @@ impl App {
 
     /// Undo the most recent answer made through the same channel (web or
     /// this agent). Returns the restored card.
+    ///
+    /// # Errors
+    ///
+    /// - `Forbidden` if the token may not submit reviews.
+    /// - `Internal` if the database fails. Nothing to undo is `Ok(None)`.
     pub async fn undo_last(&self, access: &Access) -> Result<Option<Card>> {
         access.require_review()?;
         #[derive(sqlx::FromRow)]
@@ -305,6 +333,11 @@ impl App {
 
     /// When the next already-learned card falls due (after now), in the
     /// given deck or all visible decks.
+    ///
+    /// # Errors
+    ///
+    /// - `NotFound` if a deck is given that the access doesn't see.
+    /// - `Internal` if the database fails.
     pub async fn next_review_at(&self, access: &Access, deck_id: Option<i64>) -> Result<Option<i64>> {
         let deck_ids: Vec<i64> = match deck_id {
             Some(id) => vec![self.deck(access, id).await?.id],
@@ -319,6 +352,10 @@ impl App {
         Ok(q.fetch_one(&self.db).await?)
     }
 
+    /// # Errors
+    ///
+    /// - `NotFound` if the card isn't the user's or lies outside the token's decks.
+    /// - `Internal` if the database fails.
     pub async fn card_history(&self, access: &Access, card_id: i64) -> Result<Vec<Value>> {
         self.card(access, card_id).await?;
         #[derive(sqlx::FromRow)]

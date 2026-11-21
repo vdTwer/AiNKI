@@ -259,12 +259,23 @@ pub fn parse_handle(handle: &str) -> (String, Option<i64>) {
 }
 
 impl App {
+    /// # Errors
+    ///
+    /// - `BadRequest` if the username or password breaks the rules (2–32 of a-z, 0-9, `_ - .`; a password of at
+    ///   least 8 characters), or every tag of the username is taken.
+    /// - `Internal` if the database fails.
     pub async fn create_user(&self, username: &str, password: &str, timezone: &str) -> Result<User> {
         self.create_account(username, password, timezone, None, false).await
     }
 
     /// A new account. With an invite token, the invite is used up in the
     /// same transaction, so one link can't make two accounts.
+    ///
+    /// # Errors
+    ///
+    /// - `BadRequest` if the username or password breaks the rules, every tag of the username is taken, or the
+    ///   invite was used or has expired.
+    /// - `Internal` if the database fails.
     pub async fn create_account(
         &self,
         username: &str,
@@ -336,10 +347,19 @@ impl App {
         })
     }
 
+    /// # Errors
+    ///
+    /// - `NotFound` if there is no such user.
+    /// - `Internal` if the database fails.
     pub async fn user(&self, id: i64) -> Result<User> {
         Ok(sqlx::query_as("SELECT * FROM users WHERE id = ?").bind(id).fetch_one(&self.db).await?)
     }
 
+    /// # Errors
+    ///
+    /// - `NotFound` if no user has that name.
+    /// - `BadRequest` if several do and the handle has no `#tag`.
+    /// - `Internal` if the database fails.
     pub async fn find_user(&self, handle: &str) -> Result<User> {
         let (name, tag) = parse_handle(handle);
         let users: Vec<User> = match tag {
@@ -367,6 +387,11 @@ impl App {
         }
     }
 
+    /// # Errors
+    ///
+    /// - `BadRequest` ("wrong username or password") if either is wrong, the same message for both so names don't
+    ///   leak.
+    /// - `Internal` if the database fails.
     pub async fn authenticate(&self, handle: &str, password: &str) -> Result<User> {
         let wrong = || AppError::bad("wrong username or password");
         if password.len() > MAX_PASSWORD_BYTES {
@@ -387,6 +412,10 @@ impl App {
         if ok { Ok(user) } else { Err(AppError::bad("wrong username or password")) }
     }
 
+    /// # Errors
+    ///
+    /// - `BadRequest` if the password is shorter than 8 characters or too long.
+    /// - `Internal` if the database fails.
     pub async fn set_password(&self, user_id: i64, password: &str) -> Result<()> {
         validate_password(password)?;
         let pw = password.to_string();
@@ -401,6 +430,10 @@ impl App {
         Ok(())
     }
 
+    /// # Errors
+    ///
+    /// - `BadRequest` if the current password is wrong or the new one breaks the rules.
+    /// - `Internal` if the database fails.
     pub async fn change_password(&self, user: &User, current: &str, new: &str) -> Result<()> {
         // Argon2 takes tens of milliseconds: off the request threads, as at login.
         let (pw, hash) = (current.to_string(), user.password_hash.clone());
@@ -415,6 +448,9 @@ impl App {
         Ok(())
     }
 
+    /// # Errors
+    ///
+    /// `Internal` if the database fails.
     pub async fn create_session(&self, user_id: i64) -> Result<String> {
         let token = random_hex(32);
         sqlx::query("INSERT INTO sessions (id, user_id, created_at, expires_at) VALUES (?, ?, ?, ?)")
@@ -427,6 +463,9 @@ impl App {
         Ok(token)
     }
 
+    /// # Errors
+    ///
+    /// `Internal` if the database fails. An unknown or expired token is `Ok(None)`, not an error.
     pub async fn session_user(&self, token: &str) -> Result<Option<User>> {
         Ok(sqlx::query_as(
             "SELECT users.* FROM sessions JOIN users ON users.id = sessions.user_id
@@ -441,6 +480,10 @@ impl App {
     /// Keep a session that is in use alive: its expiry moves back to
     /// `SESSION_DAYS` from now, at most once a day. True when it moved, so
     /// the cookie can be sent again with the new lifetime.
+    ///
+    /// # Errors
+    ///
+    /// `Internal` if the database fails.
     pub async fn renew_session(&self, token: &str) -> Result<bool> {
         let id = sha256_hex(token);
         let t = now();
@@ -462,12 +505,20 @@ impl App {
         }
     }
 
+    /// # Errors
+    ///
+    /// `Internal` if the database fails.
     pub async fn delete_session(&self, token: &str) -> Result<()> {
         sqlx::query("DELETE FROM sessions WHERE id = ?").bind(sha256_hex(token)).execute(&self.db).await?;
         Ok(())
     }
 
     /// Returns the token record and the raw secret, which is shown only once.
+    ///
+    /// # Errors
+    ///
+    /// - `BadRequest` if the name is empty or `deck_ids` is an empty list.
+    /// - `Internal` if the database fails.
     pub async fn create_token(
         &self,
         user_id: i64,
@@ -542,6 +593,9 @@ impl App {
         Ok(sqlx::query_as("SELECT * FROM api_tokens WHERE id = ?").bind(id).fetch_one(&self.db).await?)
     }
 
+    /// # Errors
+    ///
+    /// `Internal` if the database fails.
     pub async fn list_tokens(&self, user_id: i64) -> Result<Vec<(ApiToken, Vec<String>)>> {
         let tokens: Vec<ApiToken> = sqlx::query_as(
             "SELECT * FROM api_tokens WHERE user_id = ? AND revoked_at IS NULL ORDER BY created_at DESC",
@@ -563,6 +617,9 @@ impl App {
         Ok(out)
     }
 
+    /// # Errors
+    ///
+    /// `Internal` if the database fails. Revoking an unknown token, or another user's, does nothing.
     pub async fn revoke_token(&self, user_id: i64, token_id: i64) -> Result<()> {
         let n = sqlx::query("UPDATE api_tokens SET revoked_at = ? WHERE id = ? AND user_id = ?")
             .bind(now())
@@ -577,6 +634,10 @@ impl App {
         Ok(())
     }
 
+    /// # Errors
+    ///
+    /// - `Unauthorized` if the token is unknown or revoked.
+    /// - `Internal` if the database fails.
     pub async fn token_access(&self, raw: &str) -> Result<Access> {
         let hash = sha256_hex(raw.trim());
         // A manual token, or an OAuth access token pointing at its connection.

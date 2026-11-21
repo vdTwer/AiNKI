@@ -156,6 +156,10 @@ pub struct CardFilter {
 }
 
 impl App {
+    /// # Errors
+    ///
+    /// - `NotFound` if the card isn't the user's or lies outside the token's decks.
+    /// - `Internal` if the database fails.
     pub async fn card(&self, access: &Access, id: i64) -> Result<Card> {
         let card: Card = sqlx::query_as("SELECT * FROM cards WHERE id = ? AND user_id = ?")
             .bind(id)
@@ -180,6 +184,13 @@ impl App {
         Ok(())
     }
 
+    /// # Errors
+    ///
+    /// - `Forbidden` if the token is read-only.
+    /// - `NotFound` if the deck isn't the user's or lies outside the token's decks.
+    /// - `BadRequest` if the front has neither text nor an image, a side is too long, or an image id isn't the
+    ///   user's.
+    /// - `Internal` if the database fails.
     pub async fn create_card(&self, access: &Access, deck_id: i64, new: NewCard<'_>) -> Result<Card> {
         access.require_write()?;
         self.deck(access, deck_id).await?;
@@ -245,6 +256,13 @@ impl App {
         .await?)
     }
 
+    /// # Errors
+    ///
+    /// - `Forbidden` if the token is read-only.
+    /// - `NotFound` if the card isn't the user's or lies outside the token's decks.
+    /// - `BadRequest` if the front has neither text nor an image, a side is too long, or an image id isn't the
+    ///   user's.
+    /// - `Internal` if the database fails.
     pub async fn update_card(&self, access: &Access, id: i64, input: CardInput) -> Result<Card> {
         access.require_write()?;
         let mut card = self.card(access, id).await?;
@@ -291,6 +309,11 @@ impl App {
         self.card(access, id).await
     }
 
+    /// # Errors
+    ///
+    /// - `Forbidden` if the token is read-only.
+    /// - `NotFound` if the card isn't the user's or lies outside the token's decks.
+    /// - `Internal` if the database fails.
     pub async fn delete_card(&self, access: &Access, id: i64) -> Result<()> {
         access.require_write()?;
         self.card(access, id).await?;
@@ -302,6 +325,12 @@ impl App {
         Ok(())
     }
 
+    /// # Errors
+    ///
+    /// - `Forbidden` if the token is read-only.
+    /// - `NotFound` if the card isn't the user's or lies outside the token's decks, or the same for the target
+    ///   deck.
+    /// - `Internal` if the database fails.
     pub async fn move_card(&self, access: &Access, id: i64, deck_id: i64) -> Result<Card> {
         access.require_write()?;
         self.card(access, id).await?;
@@ -326,6 +355,11 @@ impl App {
         self.card(access, id).await
     }
 
+    /// # Errors
+    ///
+    /// - `Forbidden` if the token is read-only.
+    /// - `NotFound` if the card isn't the user's or lies outside the token's decks.
+    /// - `Internal` if the database fails.
     pub async fn set_suspended(&self, access: &Access, id: i64, suspended: bool) -> Result<Card> {
         access.require_write()?;
         self.card(access, id).await?;
@@ -342,6 +376,12 @@ impl App {
 
     /// Forget all progress; the card becomes new again. Review history is
     /// kept but the optimizer ignores everything before the reset.
+    ///
+    /// # Errors
+    ///
+    /// - `Forbidden` if the token is read-only.
+    /// - `NotFound` if the card isn't the user's or lies outside the token's decks.
+    /// - `Internal` if the database fails.
     pub async fn reset_card(&self, access: &Access, id: i64) -> Result<Card> {
         access.require_write()?;
         let card = self.card(access, id).await?;
@@ -380,6 +420,10 @@ impl App {
 
     /// Every visible card's front and the start of its back, for the quick
     /// find, newest first. Only the text: the find scores it in memory.
+    ///
+    /// # Errors
+    ///
+    /// `Internal` if the database fails.
     pub async fn card_texts(&self, access: &Access) -> Result<Vec<CardText>> {
         // One JSON array: quick find reads every card, and sqlx hands rows
         // over one at a time.
@@ -398,6 +442,11 @@ impl App {
             .collect())
     }
 
+    /// # Errors
+    ///
+    /// - `NotFound` if a deck is given that the access doesn't see.
+    /// - `BadRequest` if the state filter is no state.
+    /// - `Internal` if the database fails.
     pub async fn list_cards(&self, access: &Access, filter: &CardFilter) -> Result<(Vec<Card>, i64)> {
         let deck_ids: Vec<i64> = match filter.deck_id {
             Some(id) => {

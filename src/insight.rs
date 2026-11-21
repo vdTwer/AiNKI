@@ -79,6 +79,10 @@ impl Week {
 
 impl App {
     /// How much of each deck was remembered when due over the last 30 days.
+    ///
+    /// # Errors
+    ///
+    /// `Internal` if the database fails.
     pub async fn deck_retention(&self, access: &Access) -> Result<Vec<DeckRetention>> {
         let decks = self.decks(access).await?;
         let presets: HashMap<i64, f64> =
@@ -112,6 +116,10 @@ impl App {
     }
 
     /// The last seven days, today included.
+    ///
+    /// # Errors
+    ///
+    /// `Internal` if the database fails.
     pub async fn week(&self, access: &Access) -> Result<Week> {
         let clock = access.user.clock();
         let today = clock.today();

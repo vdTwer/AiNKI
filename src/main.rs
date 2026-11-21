@@ -122,6 +122,10 @@ impl App {
     }
 
     /// Delete expired sessions, codes, tokens and leftover import files.
+    ///
+    /// # Errors
+    ///
+    /// An error if the database or the data folder fails; the caller logs it and tries again on the next round.
     pub async fn cleanup(&self) -> anyhow::Result<()> {
         let t = now();
         sqlx::query("DELETE FROM sessions WHERE expires_at < ?").bind(t).execute(&self.db).await?;

@@ -69,6 +69,9 @@ pub struct PresetInput {
 }
 
 impl App {
+    /// # Errors
+    ///
+    /// `Internal` if the database fails.
     pub async fn list_presets(&self, access: &Access) -> Result<Vec<Preset>> {
         Ok(sqlx::query_as("SELECT * FROM presets WHERE user_id = ? ORDER BY id")
             .bind(access.user_id())
@@ -76,6 +79,10 @@ impl App {
             .await?)
     }
 
+    /// # Errors
+    ///
+    /// - `NotFound` if the preset isn't the user's.
+    /// - `Internal` if the database fails.
     pub async fn preset(&self, access: &Access, id: i64) -> Result<Preset> {
         Ok(sqlx::query_as("SELECT * FROM presets WHERE id = ? AND user_id = ?")
             .bind(id)
@@ -144,6 +151,13 @@ impl App {
     }
 
     /// Create a preset, starting from a built-in template (default: standard).
+    ///
+    /// # Errors
+    ///
+    /// - `Forbidden` if the token is read-only or limited to some decks.
+    /// - `BadRequest` if the template is unknown or a value is out of range (name, retention 0.70–0.99, limits,
+    ///   interval, time limit).
+    /// - `Internal` if the database fails.
     pub async fn create_preset(&self, access: &Access, template: Option<&str>, input: PresetInput) -> Result<Preset> {
         access.require_write()?;
         access.require_all_decks()?;
@@ -192,6 +206,12 @@ impl App {
         self.preset(access, id).await
     }
 
+    /// # Errors
+    ///
+    /// - `Forbidden` if the token is read-only or limited to some decks.
+    /// - `NotFound` if the preset isn't the user's.
+    /// - `BadRequest` if a value is out of range.
+    /// - `Internal` if the database fails.
     pub async fn update_preset(&self, access: &Access, id: i64, input: PresetInput) -> Result<Preset> {
         access.require_write()?;
         access.require_all_decks()?;
@@ -221,6 +241,12 @@ impl App {
         Ok(p)
     }
 
+    /// # Errors
+    ///
+    /// - `Forbidden` if the token is read-only or limited to some decks.
+    /// - `NotFound` if the preset isn't the user's.
+    /// - `BadRequest` if decks still use it.
+    /// - `Internal` if the database fails.
     pub async fn delete_preset(&self, access: &Access, id: i64) -> Result<()> {
         access.require_write()?;
         access.require_all_decks()?;

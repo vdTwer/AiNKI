@@ -15,6 +15,10 @@ pub struct Settings<'a> {
 }
 
 impl App {
+    /// # Errors
+    ///
+    /// - `BadRequest` if the look or the time zone is unknown.
+    /// - `Internal` if the database fails.
     pub async fn update_settings(&self, user_id: i64, settings: &Settings<'_>) -> Result<()> {
         let Settings { timezone, rollover_hour, four_buttons, font_scale, optimize_include_agent, desktop_look } =
             *settings;
@@ -38,6 +42,10 @@ impl App {
         Ok(())
     }
 
+    /// # Errors
+    ///
+    /// - `Forbidden` if the token is read-only or limited to some decks.
+    /// - `Internal` if the database fails.
     pub async fn reset_parameters(&self, access: &Access) -> Result<()> {
         access.require_write()?;
         access.require_all_decks()?;

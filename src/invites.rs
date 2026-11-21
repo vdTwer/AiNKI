@@ -86,6 +86,9 @@ impl App {
         Ok((last.map(|l| l + WEEK).filter(|&n| n > t), false))
     }
 
+    /// # Errors
+    ///
+    /// `Internal` if the database fails.
     pub async fn invites(&self, user: &User) -> Result<Invites> {
         let open = sqlx::query_as(
             "SELECT * FROM invites WHERE user_id = ? AND used_at IS NULL AND expires_at > ? ORDER BY created_at DESC",
@@ -111,6 +114,11 @@ impl App {
     }
 
     /// A new link, if the week allows it.
+    ///
+    /// # Errors
+    ///
+    /// - `BadRequest` if the user made an invite less than a week ago.
+    /// - `Internal` if the database fails.
     pub async fn create_invite(&self, user: &User) -> Result<Invite> {
         if self.next_invite_at(user).await?.0.is_some() {
             return Err(AppError::bad("you can make one invite a week"));
@@ -128,6 +136,11 @@ impl App {
     }
 
     /// Take back a link nobody has used. The week comes back with it.
+    ///
+    /// # Errors
+    ///
+    /// - `NotFound` if the invite isn't the user's or was used.
+    /// - `Internal` if the database fails.
     pub async fn cancel_invite(&self, user: &User, id: i64) -> Result<()> {
         let done = sqlx::query("DELETE FROM invites WHERE id = ? AND user_id = ? AND used_at IS NULL")
             .bind(id)
@@ -142,6 +155,10 @@ impl App {
 
     /// The invite behind a link, with the account that made it, while it
     /// still works.
+    ///
+    /// # Errors
+    ///
+    /// `Internal` if the database fails. An unknown, used or expired invite is `Ok(None)`.
     pub async fn open_invite(&self, token: &str) -> Result<Option<(Invite, User)>> {
         if token.len() != 32 || !token.bytes().all(|b| b.is_ascii_hexdigit()) {
             return Ok(None);
@@ -158,6 +175,11 @@ impl App {
     }
 
     /// Every account with a few numbers, oldest first. Admin only.
+    ///
+    /// # Errors
+    ///
+    /// - `Forbidden` if the user is no admin.
+    /// - `Internal` if the database fails.
     pub async fn accounts(&self, admin: &User) -> Result<Vec<Account>> {
         if !admin.is_admin {
             return Err(AppError::forbidden("admin only"));

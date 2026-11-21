@@ -129,6 +129,10 @@ impl DeckSummary {
 }
 
 impl App {
+    /// # Errors
+    ///
+    /// - `NotFound` if the deck isn't the user's or lies outside the token's decks.
+    /// - `Internal` if the database fails.
     pub async fn deck(&self, access: &Access, id: i64) -> Result<Deck> {
         access.require_deck(id)?;
         Ok(sqlx::query_as("SELECT * FROM decks WHERE id = ? AND user_id = ?")
@@ -138,6 +142,9 @@ impl App {
             .await?)
     }
 
+    /// # Errors
+    ///
+    /// `Internal` if the database fails.
     pub async fn decks(&self, access: &Access) -> Result<Vec<Deck>> {
         let all: Vec<Deck> = sqlx::query_as("SELECT * FROM decks WHERE user_id = ? ORDER BY name COLLATE NOCASE")
             .bind(access.user_id())
@@ -147,6 +154,10 @@ impl App {
     }
 
     /// The visible deck a card was most recently added to.
+    ///
+    /// # Errors
+    ///
+    /// `Internal` if the database fails.
     pub async fn last_used_deck(&self, access: &Access) -> Result<Option<i64>> {
         let recent: Vec<i64> = sqlx::query_scalar(
             "SELECT deck_id FROM cards WHERE user_id = ? ORDER BY created_at DESC, id DESC LIMIT 50",
@@ -157,6 +168,9 @@ impl App {
         Ok(recent.into_iter().find(|d| access.can_see_deck(*d)))
     }
 
+    /// # Errors
+    ///
+    /// `Internal` if the database fails.
     pub async fn deck_by_name(&self, access: &Access, name: &str) -> Result<Option<Deck>> {
         let deck: Option<Deck> = sqlx::query_as("SELECT * FROM decks WHERE user_id = ? AND name = ? COLLATE NOCASE")
             .bind(access.user_id())
@@ -166,6 +180,9 @@ impl App {
         Ok(deck.filter(|d| access.can_see_deck(d.id)))
     }
 
+    /// # Errors
+    ///
+    /// `Internal` if the database fails.
     pub async fn deck_summaries(&self, access: &Access) -> Result<Vec<DeckSummary>> {
         let decks = self.decks(access).await?;
         let presets: HashMap<i64, Preset> = self.list_presets(access).await?.into_iter().map(|p| (p.id, p)).collect();
@@ -215,6 +232,10 @@ impl App {
     /// while it is still being learned and the last answer was right, and
     /// not at all after a miss. So the line only fills when the last card
     /// has really been learned, and a miss takes its share back.
+    ///
+    /// # Errors
+    ///
+    /// `Internal` if the database fails.
     pub async fn session_progress(&self, access: &Access, deck_id: Option<i64>) -> Result<(i64, i64)> {
         let summaries: Vec<DeckSummary> = self
             .deck_summaries(access)
@@ -267,6 +288,13 @@ impl App {
         Ok((done, total + (waiting - touched_due_now).max(0)))
     }
 
+    /// # Errors
+    ///
+    /// - `Forbidden` if the token is read-only or limited to some decks.
+    /// - `NotFound` if the preset isn't the user's (when one is given).
+    /// - `BadRequest` if the name is empty or too long.
+    /// - `Conflict` if another deck already has the name.
+    /// - `Internal` if the database fails.
     pub async fn create_deck(
         &self,
         access: &Access,
@@ -304,6 +332,15 @@ impl App {
     }
 
     /// `exam_date`: `Some("")` clears it.
+    ///
+    /// # Errors
+    ///
+    /// - `Forbidden` if the token is read-only.
+    /// - `NotFound` if the deck isn't the user's or lies outside the token's decks.
+    /// - `NotFound` if the preset isn't the user's (when one is given).
+    /// - `BadRequest` if the name is empty or too long, or the exam date isn't `YYYY-MM-DD`.
+    /// - `Conflict` if another deck already has the name.
+    /// - `Internal` if the database fails.
     pub async fn update_deck(
         &self,
         access: &Access,
@@ -360,6 +397,11 @@ impl App {
         Ok(deck)
     }
 
+    /// # Errors
+    ///
+    /// - `Forbidden` if the token is read-only or limited to some decks.
+    /// - `NotFound` if the deck isn't the user's or lies outside the token's decks.
+    /// - `Internal` if the database fails.
     pub async fn delete_deck(&self, access: &Access, id: i64) -> Result<i64> {
         access.require_write()?;
         access.require_all_decks()?;
@@ -377,6 +419,12 @@ impl App {
     /// Pause, archive or resume a deck. A deck at rest has all its cards
     /// suspended; resuming wakes the ones it suspended and leaves cards that
     /// were suspended by hand as they are.
+    ///
+    /// # Errors
+    ///
+    /// - `Forbidden` if the token is read-only.
+    /// - `NotFound` if the deck isn't the user's or lies outside the token's decks.
+    /// - `Internal` if the database fails.
     pub async fn set_deck_status(&self, access: &Access, id: i64, status: DeckStatus) -> Result<Deck> {
         access.require_write()?;
         self.deck(access, id).await?;

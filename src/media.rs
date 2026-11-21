@@ -117,6 +117,11 @@ impl App {
         self.config.data_dir.join("media").join(format!("{id}.png"))
     }
 
+    /// # Errors
+    ///
+    /// - `Forbidden` if the token is read-only.
+    /// - `BadRequest` if the data is too large, no image, or broken.
+    /// - `Internal` if the database or the data folder fails.
     pub async fn store_image(&self, access: &Access, data: Vec<u8>) -> Result<Media> {
         access.require_write()?;
         check_size(&data)?;
@@ -150,6 +155,11 @@ impl App {
 
     /// An image as seen through `access`: tokens limited to some decks only
     /// see images on cards in those decks.
+    ///
+    /// # Errors
+    ///
+    /// - `NotFound` if the image isn't the user's, or no visible card uses it for a token limited to some decks.
+    /// - `Internal` if the database or the data folder fails.
     pub async fn media_for(&self, access: &Access, id: &str) -> Result<(Media, Vec<u8>)> {
         if let crate::auth::Actor::Agent { decks: Some(decks), .. } = &access.actor {
             let deck_ids: Vec<i64> = sqlx::query_scalar(
@@ -170,6 +180,10 @@ impl App {
     /// Remove images no card shows any more (replaced, removed, or their
     /// card or deck deleted) that are older than `before`. Newer ones are
     /// kept: an agent uploads first and makes the card after.
+    ///
+    /// # Errors
+    ///
+    /// `Internal` if the database or the data folder fails.
     pub async fn delete_unused_images(&self, before: i64) -> Result<usize> {
         let used: std::collections::HashSet<String> = sqlx::query_as::<_, (Option<String>, Option<String>)>(
             "SELECT front_image, back_image FROM cards WHERE front_image IS NOT NULL OR back_image IS NOT NULL",
@@ -203,6 +217,10 @@ impl App {
         Ok(n)
     }
 
+    /// # Errors
+    ///
+    /// - `NotFound` if the image isn't the user's or its file is gone.
+    /// - `Internal` if the database or the data folder fails.
     pub async fn media(&self, user_id: i64, id: &str) -> Result<(Media, Vec<u8>)> {
         let m: Media = sqlx::query_as("SELECT * FROM media WHERE id = ? AND user_id = ?")
             .bind(id)

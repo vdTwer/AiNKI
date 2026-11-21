@@ -87,6 +87,10 @@ impl Outlook {
 impl App {
     /// The coming week for these decks (as the home lists them), if you
     /// study every day. Paused and archived decks rest, so they add nothing.
+    ///
+    /// # Errors
+    ///
+    /// `Internal` if the database fails. Also `Internal` if stored FSRS parameters are broken.
     pub async fn outlook(&self, access: &Access, decks: &[DeckSummary]) -> Result<Outlook> {
         let clock = access.user.clock();
         let presets: HashMap<i64, _> = self.list_presets(access).await?.into_iter().map(|p| (p.id, p)).collect();

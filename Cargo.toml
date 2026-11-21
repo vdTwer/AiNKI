@@ -70,8 +70,7 @@ suspicious_operation_groupings = "allow"
 # - Math (edit distance, dithering) keeps the textbook's one-letter names.
 many_single_char_names = "allow"
 similar_names = "allow"
-# Turned on in later batches of the cleanup: errors sections come with
-# the core contracts, and the function length limit drops to 60 lines
-# once the handlers are split into fetch, build and render.
-missing_errors_doc = "allow"
+# Contracts: every public method that can fail says how in `# Errors`.
+missing_errors_doc = "warn"
+# Functions stay under 60 lines (the threshold is in clippy.toml).
 too_many_lines = "warn"

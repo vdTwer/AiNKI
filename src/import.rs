@@ -533,6 +533,12 @@ struct ImportRun {
 }
 
 impl App {
+    /// # Errors
+    ///
+    /// - `Forbidden` if the token is read-only.
+    /// - `NotFound` if the deck isn't the user's or lies outside the token's decks.
+    /// - `BadRequest` if a card breaks the card rules.
+    /// - `Internal` if the database fails.
     pub async fn import_csv(&self, access: &Access, deck_id: i64, text: &str) -> Result<ImportReport> {
         access.require_write()?;
         self.deck(access, deck_id).await?;
@@ -549,6 +555,10 @@ impl App {
         Ok(report)
     }
 
+    /// # Errors
+    ///
+    /// - `NotFound` if the deck isn't the user's or lies outside the token's decks.
+    /// - `Internal` if the database fails.
     pub async fn export_csv(&self, access: &Access, deck_id: i64) -> Result<String> {
         self.deck(access, deck_id).await?;
         let rows: Vec<(String, String)> =
@@ -560,6 +570,12 @@ impl App {
     }
 
     /// Import an Anki package. Decks are matched by name or created.
+    ///
+    /// # Errors
+    ///
+    /// - `Forbidden` if the token is read-only or limited to some decks.
+    /// - `BadRequest` if the file is no readable Anki package or is too large.
+    /// - `Internal` if the database or the data folder fails.
     pub async fn import_apkg(&self, access: &Access, data: Vec<u8>) -> Result<ImportReport> {
         access.require_write()?;
         access.require_all_decks()?;

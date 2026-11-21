@@ -33,6 +33,13 @@ pub struct OutgoingShare {
 
 impl App {
     /// Offer a copy of a deck to another user (by `name#1234`, or a unique name).
+    ///
+    /// # Errors
+    ///
+    /// - `Forbidden` if the token is read-only or limited to some decks.
+    /// - `NotFound` if the deck isn't the user's or lies outside the token's decks.
+    /// - `BadRequest` if no user has the recipient's name or it is the sender.
+    /// - `Internal` if the database fails.
     pub async fn share_deck(&self, access: &Access, deck_id: i64, recipient: &str) -> Result<OutgoingShare> {
         access.require_write()?;
         // Sending data to another account is an account-wide decision: a
@@ -64,6 +71,10 @@ impl App {
         shares.pop().ok_or(AppError::NotFound)
     }
 
+    /// # Errors
+    ///
+    /// - `NotFound` if the deck isn't the user's or lies outside the token's decks.
+    /// - `Internal` if the database fails.
     pub async fn outgoing_shares(&self, access: &Access, deck_id: i64) -> Result<Vec<OutgoingShare>> {
         self.deck(access, deck_id).await?;
         Ok(sqlx::query_as(
@@ -78,6 +89,12 @@ impl App {
     }
 
     /// Withdraw a pending offer. Returns the deck it was for.
+    ///
+    /// # Errors
+    ///
+    /// - `Forbidden` if the token is read-only.
+    /// - `NotFound` if the share isn't one of the user's decks'.
+    /// - `Internal` if the database fails.
     pub async fn cancel_share(&self, access: &Access, share_id: i64) -> Result<i64> {
         access.require_write()?;
         let deck_id: i64 = sqlx::query_scalar("SELECT deck_id FROM deck_shares WHERE id = ? AND from_user = ?")
@@ -94,6 +111,9 @@ impl App {
         Ok(deck_id)
     }
 
+    /// # Errors
+    ///
+    /// `Internal` if the database fails.
     pub async fn incoming_shares(&self, access: &Access) -> Result<Vec<IncomingShare>> {
         Ok(sqlx::query_as(
             "SELECT s.id, s.deck_id, d.name AS deck_name, d.description AS deck_description,
@@ -107,6 +127,11 @@ impl App {
         .await?)
     }
 
+    /// # Errors
+    ///
+    /// - `Forbidden` if the token is read-only.
+    /// - `NotFound` if the share isn't open for this user.
+    /// - `Internal` if the database fails.
     pub async fn decline_share(&self, access: &Access, share_id: i64) -> Result<()> {
         access.require_write()?;
         let n = sqlx::query("DELETE FROM deck_shares WHERE id = ? AND to_user = ?")
@@ -119,6 +144,12 @@ impl App {
     }
 
     /// Copy the shared deck into the recipient's account.
+    ///
+    /// # Errors
+    ///
+    /// - `Forbidden` if the token is read-only or limited to some decks.
+    /// - `NotFound` if the share isn't open for this user.
+    /// - `Internal` if the database fails.
     pub async fn accept_share(&self, access: &Access, share_id: i64) -> Result<Deck> {
         access.require_write()?;
         access.require_all_decks()?;

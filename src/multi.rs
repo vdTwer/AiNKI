@@ -371,6 +371,10 @@ pub enum Missed {
 impl App {
     /// A list card's items in list order (empty for other cards). The caller
     /// has already checked that the card is visible.
+    ///
+    /// # Errors
+    ///
+    /// `Internal` if the database fails.
     pub async fn card_items(&self, card: &Card) -> Result<Vec<CardItem>> {
         if card.multi.is_none() {
             return Ok(vec![]);
@@ -517,6 +521,10 @@ impl App {
     /// changed how backs are split (`SPLIT_VERSION`), so items match the
     /// backs as they are now shown. Items keep their memory (see
     /// [`App::sync_items`]).
+    ///
+    /// # Errors
+    ///
+    /// `Internal` if the database fails.
     pub async fn resplit_multicards(&self) -> Result<()> {
         let version: i64 = sqlx::query_scalar("PRAGMA user_version").fetch_one(&self.db).await?;
         if version >= SPLIT_VERSION {

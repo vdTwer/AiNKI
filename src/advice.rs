@@ -821,6 +821,10 @@ pub struct Known<'a> {
 
 impl App {
     /// Everything the coach would say, most important first.
+    ///
+    /// # Errors
+    ///
+    /// `Internal` if the database fails.
     pub async fn advice(&self, access: &Access) -> Result<Vec<Advice>> {
         let decks = self.deck_summaries(access).await?;
         let stats = self.stats(access, None).await?;
@@ -832,6 +836,10 @@ impl App {
 
     /// The same, from what the caller already has. Rules put off with
     /// "Not now" stay out.
+    ///
+    /// # Errors
+    ///
+    /// `Internal` if the database fails.
     pub async fn advice_from(&self, access: &Access, known: &Known<'_>) -> Result<Vec<Advice>> {
         let quiet: Vec<String> = sqlx::query_scalar("SELECT rule FROM coach_snoozes WHERE user_id = ? AND until > ?")
             .bind(access.user_id())
@@ -844,6 +852,11 @@ impl App {
     }
 
     /// "Not now": the rule stays quiet for three days.
+    ///
+    /// # Errors
+    ///
+    /// - `Forbidden` if the token is read-only.
+    /// - `Internal` if the database fails.
     pub async fn snooze_advice(&self, access: &Access, rule: Rule) -> Result<()> {
         access.require_write()?;
         sqlx::query(
@@ -858,6 +871,9 @@ impl App {
         Ok(())
     }
 
+    /// # Errors
+    ///
+    /// `Internal` if the database fails.
     pub async fn signals(&self, access: &Access, known: &Known<'_>) -> Result<Signals> {
         let user = &access.user;
         let clock = user.clock();

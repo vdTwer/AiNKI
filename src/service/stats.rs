@@ -54,6 +54,10 @@ pub struct History {
 }
 
 impl App {
+    /// # Errors
+    ///
+    /// - `NotFound` if a deck is given that the access doesn't see.
+    /// - `Internal` if the database fails. Also `Internal` if stored FSRS parameters are broken.
     pub async fn stats(&self, access: &Access, deck_id: Option<i64>) -> Result<Stats> {
         let deck_ids: Vec<i64> = match deck_id {
             Some(id) => {
@@ -217,6 +221,11 @@ impl App {
     /// The last twelve weeks, for the charts on the desktop stats page:
     /// reviews on each day, and per week how many review-state answers
     /// there were and how many were recalled. Oldest first.
+    ///
+    /// # Errors
+    ///
+    /// - `NotFound` if a deck is given that the access doesn't see.
+    /// - `Internal` if the database fails.
     pub async fn history(&self, access: &Access, deck_id: Option<i64>) -> Result<History> {
         let deck_ids: Vec<i64> = match deck_id {
             Some(id) => {

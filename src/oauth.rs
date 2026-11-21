@@ -272,6 +272,10 @@ fn clean_name(s: &str) -> String {
 }
 
 impl App {
+    /// # Errors
+    ///
+    /// - `OAuthError` (`invalid_redirect_uri` or `invalid_client_metadata`) if the request breaks RFC 7591's rules.
+    /// - `server_error` if the database fails.
     pub async fn register_client(&self, req: RegistrationRequest) -> Result<Value, OAuthError> {
         if req.redirect_uris.is_empty() || req.redirect_uris.len() > 20 {
             return Err(OAuthError::new("invalid_redirect_uri", "give 1 to 20 redirect_uris"));
@@ -317,6 +321,10 @@ impl App {
 
     /// Look up a registered client, or fetch the metadata document for a
     /// URL-shaped `client_id`.
+    ///
+    /// # Errors
+    ///
+    /// `Internal` if the database fails or a URL client's metadata can't be fetched.
     pub async fn client(&self, client_id: &str) -> Result<Option<Client>> {
         let stored: Option<Client> =
             sqlx::query_as("SELECT * FROM oauth_clients WHERE id = ?").bind(client_id).fetch_optional(&self.db).await?;
@@ -364,6 +372,9 @@ impl App {
         Ok(sqlx::query_as("SELECT * FROM oauth_clients WHERE id = ?").bind(url).fetch_optional(&self.db).await?)
     }
 
+    /// # Errors
+    ///
+    /// `Internal` if the database fails.
     #[allow(clippy::too_many_arguments)]
     pub async fn create_auth_code(
         &self,
@@ -442,6 +453,12 @@ impl App {
         Ok(scope_string(w, r))
     }
 
+    /// # Errors
+    ///
+    /// - `OAuthError` `invalid_client` if the client or its secret is wrong.
+    /// - `invalid_grant` if the code is unknown, used, expired, for another client or redirect, or the PKCE
+    ///   verifier doesn't match, or a granted deck is gone.
+    /// - `server_error` if the database fails.
     pub async fn exchange_code(
         &self,
         client_id: &str,
@@ -503,6 +520,11 @@ impl App {
         Ok(self.issue_tokens(grant.id, scope_string(row.can_write, row.can_review)).await?)
     }
 
+    /// # Errors
+    ///
+    /// - `OAuthError` `invalid_client` if the client or its secret is wrong.
+    /// - `invalid_grant` if the refresh token is unknown, revoked or another client's, or a granted deck is gone.
+    /// - `server_error` if the database fails.
     pub async fn refresh_tokens(
         &self,
         client_id: &str,
@@ -557,6 +579,10 @@ impl App {
     }
 
     /// RFC 7009: revoking either token ends the whole connection.
+    ///
+    /// # Errors
+    ///
+    /// `Internal` if the database fails. An unknown token is no error (RFC 7009).
     pub async fn revoke_oauth_token(&self, token: &str) -> Result<()> {
         let grant: Option<i64> = sqlx::query_scalar("SELECT api_token_id FROM oauth_tokens WHERE token_hash = ?")
             .bind(sha256_hex(token))

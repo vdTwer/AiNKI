@@ -71,6 +71,14 @@ impl Source {
 
 impl App {
     /// Make a new deck from the cards of `input.sources`.
+    ///
+    /// # Errors
+    ///
+    /// - `Forbidden` if the token is read-only or limited to some decks.
+    /// - `NotFound` if a deck isn't the user's.
+    /// - `BadRequest` if fewer than two decks are picked, or the name breaks the deck rules.
+    /// - `Conflict` if another deck already has the name.
+    /// - `Internal` if the database fails.
     pub async fn merge_decks(&self, access: &Access, input: MergeInput) -> Result<Merged> {
         access.require_write()?;
         access.require_all_decks()?;

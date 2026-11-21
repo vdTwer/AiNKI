@@ -1,12 +1,25 @@
 use std::fmt;
 
+/// What can go wrong in the service. The `# Errors` section of each public
+/// method names the variants it returns and when; they mean the same
+/// everywhere, so the web and MCP layers map each to one status.
 #[derive(Debug)]
 pub enum AppError {
+    /// The thing doesn't exist, isn't the user's, or lies outside a token's
+    /// decks. All three look the same, so ids say nothing about others.
     NotFound,
+    /// No valid login or token.
     Unauthorized,
+    /// The token may not do this: it is read-only, may not submit reviews,
+    /// or is limited to some decks for an account-wide action.
     Forbidden(String),
+    /// The input breaks a rule; the message says which, for the user.
     BadRequest(String),
+    /// The state changed under the caller: the card was answered since it
+    /// was shown, or the name is taken.
     Conflict(String),
+    /// The database, the data folder or FSRS failed. A bug or an outage,
+    /// never the caller's doing; the message is logged, not shown.
     Internal(anyhow::Error),
 }
 

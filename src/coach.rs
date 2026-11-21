@@ -303,6 +303,10 @@ impl App {
     }
 
     /// Cards whose front reads (almost) like `front`, other than `except`.
+    ///
+    /// # Errors
+    ///
+    /// `Internal` if the database fails.
     pub async fn similar_cards(&self, access: &Access, front: &str, except: Option<i64>) -> Result<Vec<Similar>> {
         let want = normalize(front);
         if want.is_empty() {
@@ -327,6 +331,10 @@ impl App {
     }
 
     /// What the coach notices about one card.
+    ///
+    /// # Errors
+    ///
+    /// `Internal` if the database fails.
     pub async fn card_flags(&self, access: &Access, card: &Card) -> Result<Vec<Flag>> {
         let items = self.card_items(card).await?;
         let secs = self.answer_seconds(&[card.id]).await?;
@@ -344,6 +352,10 @@ impl App {
     }
 
     /// Only the leech flag, cheap enough for every studied card.
+    ///
+    /// # Errors
+    ///
+    /// `Internal` if the database fails.
     pub async fn leech_note(&self, card: &Card) -> Result<Option<Flag>> {
         let items = self.card_items(card).await?;
         let Some(flag) = leech_flag(card, &items) else { return Ok(None) };
@@ -354,6 +366,11 @@ impl App {
 
     /// Every flagged card, in one deck or all visible decks: leeches first,
     /// then the rest, newest problems first.
+    ///
+    /// # Errors
+    ///
+    /// - `NotFound` if a deck is given that the access doesn't see.
+    /// - `Internal` if the database fails.
     pub async fn attention(&self, access: &Access, deck_id: Option<i64>) -> Result<Vec<Attention>> {
         if let Some(id) = deck_id {
             self.deck(access, id).await?;
@@ -466,6 +483,12 @@ impl App {
 
     /// "Keep as is": hide the flag until the card slips a few more times
     /// (a duplicate stays hidden).
+    ///
+    /// # Errors
+    ///
+    /// - `Forbidden` if the token is read-only.
+    /// - `NotFound` if the card isn't the user's or lies outside the token's decks.
+    /// - `Internal` if the database fails.
     pub async fn dismiss_flag(&self, access: &Access, card_id: i64, kind: Kind) -> Result<()> {
         access.require_write()?;
         let card = self.card(access, card_id).await?;
@@ -487,6 +510,13 @@ impl App {
     /// Replace a card by one card per item of its back: the same front, each
     /// item as a back, fresh progress. The original is deleted, or kept and
     /// suspended. Returns the new cards.
+    ///
+    /// # Errors
+    ///
+    /// - `Forbidden` if the token is read-only.
+    /// - `NotFound` if the card isn't the user's or lies outside the token's decks.
+    /// - `BadRequest` if fewer than two cards are given or one has no front.
+    /// - `Internal` if the database fails.
     pub async fn split_card(
         &self,
         access: &Access,

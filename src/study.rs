@@ -139,6 +139,10 @@ impl Confidence {
 impl App {
     /// After an answer on the website: whether the user felt sure, whether
     /// time ran out, and how long it took. Goes onto the review just logged.
+    ///
+    /// # Errors
+    ///
+    /// `Internal` if the database fails.
     pub async fn note_answer(
         &self,
         access: &Access,
@@ -169,6 +173,10 @@ impl App {
     }
 
     /// "Study anyway": quiet hours are off until they end this time.
+    ///
+    /// # Errors
+    ///
+    /// `Internal` if the database fails.
     pub async fn lift_quiet(&self, user: &User) -> Result<()> {
         let until = quiet_until(user, now()).unwrap_or_else(now);
         sqlx::query("UPDATE users SET quiet_lifted_until = ? WHERE id = ?")
@@ -182,6 +190,10 @@ impl App {
     /// When the session going on now began: the first answer on the website
     /// after the last pause of `SESSION_GAP_SECS`, or the last time a break
     /// hint was waved off. `None` when nothing was answered lately.
+    ///
+    /// # Errors
+    ///
+    /// `Internal` if the database fails.
     pub async fn session_start(&self, access: &Access) -> Result<Option<i64>> {
         Ok(self.session_began(access).await?.map(|start| match access.user.break_skipped_at {
             Some(b) if b > start => b,
@@ -218,6 +230,10 @@ impl App {
     /// Whether a break is due before the next card: on the fixed timer once
     /// the session has run the user's length, or with smart breaks once the
     /// answers show tiredness (see `breaks`).
+    ///
+    /// # Errors
+    ///
+    /// `Internal` if the database fails.
     pub async fn break_due(&self, access: &Access) -> Result<Option<BreakDue>> {
         let len = access.user.session_minutes;
         if len == SMART_BREAKS {
@@ -297,6 +313,10 @@ impl App {
     /// After an answer with smart breaks on: a pause the user took on their
     /// own, before any suggestion, shortens their stretches and lengthens
     /// their breaks.
+    ///
+    /// # Errors
+    ///
+    /// `Internal` if the database fails.
     pub async fn note_rest(&self, access: &Access) -> Result<()> {
         let user = &access.user;
         if user.session_minutes != SMART_BREAKS {
@@ -314,6 +334,10 @@ impl App {
     }
 
     /// A break page is on screen: remember when this suggestion first came.
+    ///
+    /// # Errors
+    ///
+    /// `Internal` if the database fails.
     pub async fn break_shown(&self, user_id: i64) -> Result<()> {
         sqlx::query(
             "UPDATE users SET break_shown_at = ?
@@ -330,6 +354,10 @@ impl App {
     /// Keep going, or the break is over: the stretch starts over. With
     /// smart breaks, Keep going right away means the user felt fresh: longer
     /// stretches, shorter breaks. After a few minutes it was a break.
+    ///
+    /// # Errors
+    ///
+    /// `Internal` if the database fails.
     pub async fn skip_break(&self, user: &User) -> Result<()> {
         let n = now();
         let refused =
@@ -356,6 +384,10 @@ impl App {
     }
 
     /// Review cards due for more than a day: what piled up while away.
+    ///
+    /// # Errors
+    ///
+    /// `Internal` if the database fails.
     pub async fn overdue(&self, access: &Access) -> Result<i64> {
         let ids: Vec<i64> = self.decks(access).await?.into_iter().map(|d| d.id).collect();
         if ids.is_empty() {
@@ -370,6 +402,10 @@ impl App {
 
     /// How often you remembered when you felt sure, and when you didn't,
     /// over the last year.
+    ///
+    /// # Errors
+    ///
+    /// `Internal` if the database fails.
     pub async fn confidence(&self, access: &Access, deck_id: Option<i64>) -> Result<Confidence> {
         #[derive(sqlx::FromRow)]
         struct Row {
@@ -400,6 +436,11 @@ impl App {
         Ok(c)
     }
 
+    /// # Errors
+    ///
+    /// - `BadRequest` if quiet hours aren't whole hours 0–23, the session length isn't -1, 0 or up to 240 minutes,
+    ///   or catch-up reviews aren't 1–9999.
+    /// - `Internal` if the database fails.
     #[allow(clippy::too_many_arguments)]
     pub async fn update_study_settings(
         &self,
@@ -438,6 +479,9 @@ impl App {
         Ok(())
     }
 
+    /// # Errors
+    ///
+    /// `Internal` if the database fails.
     pub async fn set_catch_up(&self, user_id: i64, on: bool) -> Result<()> {
         sqlx::query("UPDATE users SET catch_up = ? WHERE id = ?").bind(on).bind(user_id).execute(&self.db).await?;
         Ok(())

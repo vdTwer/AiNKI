@@ -255,6 +255,10 @@ fn optimize_note(global: &Fit, used: usize) -> String {
 
 impl App {
     /// The parameters for every visible deck, read once.
+    ///
+    /// # Errors
+    ///
+    /// `Internal` if the database fails.
     pub async fn param_book(&self, access: &Access) -> Result<ParamBook> {
         let rows: Vec<(i64, Json<Vec<f32>>)> = sqlx::query_as(
             "SELECT d.id, p.fsrs_params FROM decks d JOIN presets p ON p.id = d.preset_id WHERE d.user_id = ?",
@@ -269,6 +273,10 @@ impl App {
     }
 
     /// The parameters that schedule one deck.
+    ///
+    /// # Errors
+    ///
+    /// `Internal` if the database fails.
     pub async fn deck_params(&self, access: &Access, deck_id: i64) -> Result<Vec<f32>> {
         let own: Option<Json<Vec<f32>>> = sqlx::query_scalar(
             "SELECT p.fsrs_params FROM decks d JOIN presets p ON p.id = d.preset_id WHERE d.id = ? AND d.user_id = ?",
@@ -335,6 +343,12 @@ impl App {
     /// Fit FSRS to the user's history: once for everything, and once more
     /// for each preset with enough reviews of its own. New parameters are
     /// only kept where they predict the history better than the ones in use.
+    ///
+    /// # Errors
+    ///
+    /// - `Forbidden` if the token is read-only or limited to some decks.
+    /// - `BadRequest` if there is too little review history to fit.
+    /// - `Internal` if the database or FSRS fails.
     pub async fn optimize_parameters(&self, access: &Access) -> Result<Value> {
         access.require_write()?;
         access.require_all_decks()?;
@@ -442,6 +456,10 @@ impl App {
     }
 
     /// Count of reviews the optimizer would learn from.
+    ///
+    /// # Errors
+    ///
+    /// `Internal` if the database fails.
     pub async fn optimizable_reviews(&self, access: &Access) -> Result<i64> {
         self.optimizable_reviews_of(&access.user).await
     }
@@ -461,6 +479,10 @@ impl App {
 
     /// Re-optimize everyone who wants it: about once a month, when there
     /// are enough new reviews. Called from the hourly cleanup.
+    ///
+    /// # Errors
+    ///
+    /// An error if the database fails; a user whose fit fails is logged and skipped.
     pub async fn auto_optimize(&self) -> anyhow::Result<()> {
         let users: Vec<User> = sqlx::query_as(
             "SELECT * FROM users WHERE auto_optimize = 1 AND (optimized_at IS NULL OR optimized_at < ?)",
@@ -483,6 +505,11 @@ impl App {
     /// Simulate a preset's decks for `days` at several desired retentions:
     /// study time, reviews, and how much you would remember at the end. It
     /// assumes you keep learning the preset's new cards every day.
+    ///
+    /// # Errors
+    ///
+    /// - `NotFound` if the preset isn't the user's.
+    /// - `Internal` if the database fails or the FSRS parameters are broken.
     pub async fn workload(&self, access: &Access, preset_id: i64, days: usize) -> Result<Vec<Workload>> {
         let preset = self.preset(access, preset_id).await?;
         let deck_ids: Vec<i64> =
@@ -559,6 +586,11 @@ impl App {
     /// How well FSRS's predictions match what happened, over the last year:
     /// reviews of learned cards, grouped by the recall chance FSRS gave
     /// them, against the share actually remembered.
+    ///
+    /// # Errors
+    ///
+    /// - `NotFound` if a deck is given that the access doesn't see.
+    /// - `Internal` if the database fails.
     pub async fn calibration(&self, access: &Access, deck_id: Option<i64>) -> Result<Calibration> {
         let book = self.param_book(access).await?;
         let deck_ids: Vec<i64> = match deck_id {
@@ -616,6 +648,9 @@ impl App {
         Ok(out)
     }
 
+    /// # Errors
+    ///
+    /// `Internal` if the database fails.
     pub async fn set_auto_optimize(&self, user_id: i64, on: bool) -> Result<()> {
         sqlx::query("UPDATE users SET auto_optimize = ? WHERE id = ?").bind(on).bind(user_id).execute(&self.db).await?;
         Ok(())
