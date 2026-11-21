@@ -131,6 +131,8 @@ pub async fn headers(State(app): State<AppState>, req: Request, next: Next) -> R
     let h = res.headers_mut();
     h.insert("content-security-policy", HeaderValue::from_static(CSP));
     h.insert("x-content-type-options", HeaderValue::from_static("nosniff"));
+    // Links fetched on hover, before the click (see web::SPECULATION).
+    h.insert("speculation-rules", HeaderValue::from_static("\"/speculation.json\""));
     h.insert("x-frame-options", HeaderValue::from_static("DENY"));
     h.insert("referrer-policy", HeaderValue::from_static("same-origin"));
     h.insert("cross-origin-opener-policy", HeaderValue::from_static("same-origin"));

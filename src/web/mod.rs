@@ -74,6 +74,11 @@ pub(crate) use pages::tokens::permission_fields;
 const CSS: &str = include_str!("../style.css");
 const APP_JS: &str = include_str!("../static/app.js");
 const PARTS_JS: &str = include_str!("../static/parts.js");
+/// Speculation rules (Chromium): a link the pointer rests on is fetched
+/// before the click, so the page is there when it comes. Only pages that
+/// are safe to fetch early: studying starts a card's clock, exports are
+/// downloads, and agent consent pages are not for guessing.
+pub(crate) const SPECULATION: &str = r#"{"prefetch":[{"where":{"and":[{"href_matches":"/*"},{"not":{"href_matches":["/study*","/*export*","/oauth/*","/find*"]}}]},"eagerness":"moderate"}]}"#;
 // Two cards, Wild Orchid behind Terra Cotta, with the "done" tick.
 const FAVICON_SVG: &str = include_str!("../static/favicon.svg");
 const FAVICON_PNG: &[u8] = include_bytes!("../static/favicon-32.png");
@@ -205,6 +210,10 @@ pub fn router(app: AppState) -> Router {
         // Browsers ask for /favicon.ico on their own; a PNG there works everywhere.
         .route("/favicon.ico", get(|| async { static_file("image/png", FAVICON_PNG, false) }))
         .route("/apple-touch-icon.png", get(|| async { static_file("image/png", TOUCH_ICON_PNG, false) }))
+        .route(
+            "/speculation.json",
+            get(|q: RawQuery| async move { asset(q, "application/speculationrules+json", SPECULATION) }),
+        )
         .route("/healthz", get(|| async { "ok" }));
     Router::new()
         .merge(browser_routes)
@@ -212,6 +221,8 @@ pub fn router(app: AppState) -> Router {
         .merge(client_routes)
         .layer(middleware::from_fn(security::flash))
         .layer(middleware::from_fn_with_state(app.clone(), security::headers))
+        // Pages are text: gzip or Brotli shrinks them to a fifth.
+        .layer(tower_http::compression::CompressionLayer::new())
         .layer(tower_http::trace::TraceLayer::new_for_http())
         .with_state(app)
 }
