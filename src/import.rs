@@ -367,11 +367,13 @@ fn read_package(data: &[u8]) -> Result<Package> {
     Ok(Package { collection, media })
 }
 
+#[derive(sqlx::FromRow)]
 struct AnkiCard {
     id: i64,
     nid: i64,
     did: i64,
     ord: i64,
+    #[sqlx(rename = "type")]
     ctype: i64,
     queue: i64,
     due: i64,
@@ -381,10 +383,149 @@ struct AnkiCard {
     lapses: i64,
 }
 
+#[derive(sqlx::FromRow)]
 struct AnkiRev {
+    #[sqlx(rename = "id")]
     time_ms: i64,
+    cid: i64,
     ease: i64,
+    #[sqlx(rename = "type")]
     rtype: i64,
+}
+
+/// What an Anki collection holds, read into memory at once so the
+/// untrusted file is closed before anything is written.
+struct AnkiCollection {
+    /// The collection's creation time; review due dates count days from it.
+    crt: i64,
+    deck_names: HashMap<i64, String>,
+    /// Each note's fields.
+    notes: HashMap<i64, Vec<String>>,
+    cards: Vec<AnkiCard>,
+    /// Each card's reviews, oldest first.
+    revlog: HashMap<i64, Vec<AnkiRev>>,
+}
+
+fn unrecognized<E>(_: E) -> AppError {
+    AppError::bad("unrecognized Anki collection")
+}
+
+async fn read_collection(path: &std::path::Path) -> Result<AnkiCollection> {
+    // The file is untrusted. Read-only, and with trusted_schema off so
+    // views or triggers in it can't call functions with side effects.
+    let opts = SqliteConnectOptions::from_str(&format!("sqlite://{}", path.display()))
+        .map_err(|e| AppError::Internal(e.into()))?
+        .read_only(true)
+        .pragma("trusted_schema", "OFF")
+        .pragma("query_only", "ON");
+    let mut conn =
+        sqlx::ConnectOptions::connect(&opts).await.map_err(|_| AppError::bad("could not open the Anki collection"))?;
+    // Every name we read must be a plain table, not a (possibly very
+    // expensive) view.
+    let views: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM sqlite_master
+         WHERE name IN ('col', 'notes', 'cards', 'revlog', 'decks') AND type != 'table'",
+    )
+    .fetch_one(&mut conn)
+    .await
+    .map_err(unrecognized)?;
+    if views > 0 {
+        return Err(unrecognized(()));
+    }
+    let col = sqlx::query("SELECT crt, decks FROM col LIMIT 1").fetch_one(&mut conn).await.map_err(unrecognized)?;
+
+    // Deck names: new schema has a decks table, old one a JSON blob.
+    let rows: Vec<(i64, String)> =
+        sqlx::query_as("SELECT id, name FROM decks").fetch_all(&mut conn).await.unwrap_or_default();
+    let mut deck_names: HashMap<i64, String> =
+        rows.into_iter().map(|(id, name)| (id, name.replace('\x1f', "::"))).collect();
+    if deck_names.is_empty() {
+        deck_names = old_deck_names(&col.try_get::<String, _>("decks").unwrap_or_default());
+    }
+    let notes: Vec<(i64, String)> = sqlx::query_as("SELECT id, flds FROM notes").fetch_all(&mut conn).await?;
+    let cards: Vec<AnkiCard> = sqlx::query_as(
+        "SELECT id, nid, did, ord, type, queue, due, ivl, factor, reps, lapses FROM cards ORDER BY nid, ord",
+    )
+    .fetch_all(&mut conn)
+    .await?;
+    let revs: Vec<AnkiRev> = sqlx::query_as("SELECT id, cid, ease, type FROM revlog ORDER BY id")
+        .fetch_all(&mut conn)
+        .await
+        .unwrap_or_default();
+    let mut revlog: HashMap<i64, Vec<AnkiRev>> = HashMap::new();
+    for r in revs {
+        revlog.entry(r.cid).or_default().push(r);
+    }
+    Ok(AnkiCollection {
+        crt: col.try_get("crt").unwrap_or(0),
+        deck_names,
+        notes: notes.into_iter().map(|(id, flds)| (id, flds.split('\x1f').map(String::from).collect())).collect(),
+        cards,
+        revlog,
+    })
+}
+
+/// Deck names from the JSON blob older collections keep in `col.decks`.
+fn old_deck_names(blob: &str) -> HashMap<i64, String> {
+    let Ok(v) = serde_json::from_str::<HashMap<String, serde_json::Value>>(blob) else { return HashMap::new() };
+    v.into_iter().filter_map(|(id, d)| Some((id.parse().ok()?, d.get("name")?.as_str()?.to_string()))).collect()
+}
+
+/// A card's front and back as Anki shows them: a cloze card shows its
+/// own gap, a reverse card (ord 1) swaps the first two fields.
+fn card_html(c: &AnkiCard, fields: &[String]) -> (String, String) {
+    let f0 = fields.first().map_or("", String::as_str);
+    let f1 = fields.get(1).map_or("", String::as_str);
+    if !cloze_numbers(f0).is_empty() {
+        let full = render_cloze(f0, None);
+        let back = if f1.trim().is_empty() { full } else { format!("{full}<br><br>{f1}") };
+        (render_cloze(f0, Some(num::i64_u32(c.ord + 1))), back)
+    } else if c.ord == 1 && !f1.is_empty() {
+        (f1.to_string(), f0.to_string())
+    } else {
+        (f0.to_string(), f1.to_string())
+    }
+}
+
+/// One review as it is logged: when, its rating, the state before it and
+/// the days since the review before.
+struct LoggedReview {
+    at: i64,
+    ease: i64,
+    state_before: CardState,
+    delta_days: i64,
+}
+
+/// The reviews worth keeping (learning, review, relearning, filtered),
+/// with what FSRS needs to know about each.
+fn history(revs: &[AnkiRev], clock: &scheduler::Clock) -> Vec<LoggedReview> {
+    let kept: Vec<&AnkiRev> = revs.iter().filter(|r| (1..=4).contains(&r.ease) && r.rtype <= 3).collect();
+    let starts_new = kept.first().is_some_and(|r| r.rtype == 0);
+    let mut prev: Option<i64> = None;
+    (kept.iter().enumerate())
+        .map(|(i, r)| {
+            let at = r.time_ms / 1000;
+            let state_before = match r.rtype {
+                _ if i == 0 && starts_new => CardState::New,
+                0 => CardState::Learning,
+                2 => CardState::Relearning,
+                _ => CardState::Review,
+            };
+            let delta_days = prev.map_or(0, |p| clock.days_between(p, at).max(0));
+            prev = Some(at);
+            LoggedReview { at, ease: r.ease, state_before, delta_days }
+        })
+        .collect()
+}
+
+/// What one import has done so far: the report, and the decks and images
+/// it already made, so each is made once.
+struct ImportRun {
+    report: ImportReport,
+    decks: HashMap<i64, i64>,
+    images: HashMap<String, Option<String>>,
+    media: HashMap<String, Vec<u8>>,
+    fsrs: fsrs::FSRS,
 }
 
 impl App {
@@ -439,260 +580,160 @@ impl App {
         path: &std::path::Path,
         media: HashMap<String, Vec<u8>>,
     ) -> Result<ImportReport> {
-        // The file is untrusted. Read-only, and with trusted_schema off so
-        // views or triggers in it can't call functions with side effects.
-        let opts = SqliteConnectOptions::from_str(&format!("sqlite://{}", path.display()))
-            .map_err(|e| AppError::Internal(e.into()))?
-            .read_only(true)
-            .pragma("trusted_schema", "OFF")
-            .pragma("query_only", "ON");
-        let mut conn = sqlx::ConnectOptions::connect(&opts)
-            .await
-            .map_err(|_| AppError::bad("could not open the Anki collection"))?;
-        // Every name we read must be a plain table, not a (possibly very
-        // expensive) view.
-        let views: i64 = sqlx::query_scalar(
-            "SELECT COUNT(*) FROM sqlite_master
-             WHERE name IN ('col', 'notes', 'cards', 'revlog', 'decks') AND type != 'table'",
-        )
-        .fetch_one(&mut conn)
-        .await
-        .map_err(|_| AppError::bad("unrecognized Anki collection"))?;
-        if views > 0 {
-            return Err(AppError::bad("unrecognized Anki collection"));
+        let col = read_collection(path).await?;
+        let mut run = ImportRun {
+            report: ImportReport::default(),
+            decks: HashMap::new(),
+            images: HashMap::new(),
+            media,
+            fsrs: scheduler::fsrs_for(&access.user.params())?,
+        };
+        for c in &col.cards {
+            self.import_card(access, &col, c, &mut run).await?;
         }
+        Ok(run.report)
+    }
 
-        let col = sqlx::query("SELECT crt, decks FROM col LIMIT 1")
-            .fetch_one(&mut conn)
-            .await
-            .map_err(|_| AppError::bad("unrecognized Anki collection"))?;
-        let crt: i64 = col.try_get("crt").unwrap_or(0);
-
-        // Deck names: new schema has a decks table, old one a JSON blob.
-        let mut deck_names: HashMap<i64, String> = HashMap::new();
-        if let Ok(rows) = sqlx::query("SELECT id, name FROM decks").fetch_all(&mut conn).await {
-            for r in rows {
-                let name: String = r.try_get("name").unwrap_or_default();
-                deck_names.insert(r.try_get("id").unwrap_or(0), name.replace('\x1f', "::"));
-            }
+    async fn import_card(
+        &self,
+        access: &Access,
+        col: &AnkiCollection,
+        c: &AnkiCard,
+        run: &mut ImportRun,
+    ) -> Result<()> {
+        let Some(fields) = col.notes.get(&c.nid) else {
+            run.report.skipped += 1;
+            return Ok(());
+        };
+        let (front_html, back_html) = card_html(c, fields);
+        let (front, front_img) = anki_html_to_text(&front_html);
+        let (back, back_img) = anki_html_to_text(&back_html);
+        let front_image = self.import_image(access.user_id(), front_img, run).await;
+        let back_image = self.import_image(access.user_id(), back_img, run).await;
+        if front.is_empty() && front_image.is_none() {
+            run.report.skipped += 1;
+            return Ok(());
         }
-        if deck_names.is_empty() {
-            let blob: String = col.try_get("decks").unwrap_or_default();
-            if let Ok(v) = serde_json::from_str::<HashMap<String, serde_json::Value>>(&blob) {
-                for (id, d) in v {
-                    if let (Ok(id), Some(name)) = (id.parse(), d.get("name").and_then(|n| n.as_str())) {
-                        deck_names.insert(id, name.to_string());
-                    }
-                }
-            }
-        }
+        let deck_id = self.import_deck(access, col, c.did, run).await?;
+        let new = NewCard { front_image, back_image, ..NewCard::new(&front, &back) };
+        let card_id = self.insert_card(access.user_id(), deck_id, &new, "import").await?;
+        run.report.cards_imported += 1;
 
-        let notes: HashMap<i64, Vec<String>> = sqlx::query("SELECT id, flds FROM notes")
-            .fetch_all(&mut conn)
-            .await?
-            .into_iter()
-            .map(|r| {
-                let flds: String = r.try_get("flds").unwrap_or_default();
-                (r.try_get("id").unwrap_or(0), flds.split('\x1f').map(String::from).collect())
-            })
-            .collect();
-
-        let cards: Vec<AnkiCard> = sqlx::query(
-            "SELECT id, nid, did, ord, type, queue, due, ivl, factor, reps, lapses FROM cards ORDER BY nid, ord",
-        )
-        .fetch_all(&mut conn)
-        .await?
-        .into_iter()
-        .map(|r| AnkiCard {
-            id: r.get("id"),
-            nid: r.get("nid"),
-            did: r.get("did"),
-            ord: r.get("ord"),
-            ctype: r.get("type"),
-            queue: r.get("queue"),
-            due: r.get("due"),
-            ivl: r.get("ivl"),
-            factor: r.get("factor"),
-            reps: r.get("reps"),
-            lapses: r.get("lapses"),
-        })
-        .collect();
-
-        let mut revlog: HashMap<i64, Vec<AnkiRev>> = HashMap::new();
-        if let Ok(rows) = sqlx::query("SELECT id, cid, ease, type FROM revlog ORDER BY id").fetch_all(&mut conn).await {
-            for r in rows {
-                revlog.entry(r.get("cid")).or_default().push(AnkiRev {
-                    time_ms: r.get("id"),
-                    ease: r.get("ease"),
-                    rtype: r.get("type"),
-                });
-            }
-        }
-        drop(conn);
-
-        let mut report = ImportReport::default();
-        let mut deck_map: HashMap<i64, i64> = HashMap::new();
-        let mut image_map: HashMap<String, Option<String>> = HashMap::new();
-        let params = access.user.params();
-        let fsrs = scheduler::fsrs_for(&params)?;
         let clock = access.user.clock();
-
-        for c in &cards {
-            let Some(fields) = notes.get(&c.nid) else {
-                report.skipped += 1;
-                continue;
-            };
-            let f0 = fields.first().map_or("", String::as_str);
-            let f1 = fields.get(1).map_or("", String::as_str);
-
-            let (front_html, back_html) = if !cloze_numbers(f0).is_empty() {
-                let n = num::i64_u32(c.ord + 1);
-                let back = if f1.trim().is_empty() {
-                    render_cloze(f0, None)
-                } else {
-                    format!("{}<br><br>{}", render_cloze(f0, None), f1)
-                };
-                (render_cloze(f0, Some(n)), back)
-            } else if c.ord == 1 && !f1.is_empty() {
-                (f1.to_string(), f0.to_string())
-            } else {
-                (f0.to_string(), f1.to_string())
-            };
-            let (front, front_img) = anki_html_to_text(&front_html);
-            let (back, back_img) = anki_html_to_text(&back_html);
-
-            let mut resolve = async |name: Option<String>| -> Option<String> {
-                let name = name?;
-                if let Some(id) = image_map.get(&name) {
-                    return id.clone();
-                }
-                let id = match media.get(&name) {
-                    Some(bytes) => self.store_image_for(access.user_id(), bytes.clone()).await.ok().map(|m| m.id),
-                    None => None,
-                };
-                if id.is_some() {
-                    report.images_imported += 1;
-                }
-                image_map.insert(name, id.clone());
-                id
-            };
-            let front_image = resolve(front_img).await;
-            let back_image = resolve(back_img).await;
-            if front.is_empty() && front_image.is_none() {
-                report.skipped += 1;
-                continue;
-            }
-
-            let deck_id = if let Some(id) = deck_map.get(&c.did) {
-                *id
-            } else {
-                let name = deck_names.get(&c.did).cloned().unwrap_or_else(|| "Imported".into());
-                let id = if let Some(d) = self.deck_by_name(access, &name).await? {
-                    d.id
-                } else {
-                    report.decks_created.push(name.clone());
-                    self.create_deck(access, &name, "Imported from Anki", None).await?.id
-                };
-                deck_map.insert(c.did, id);
-                id
-            };
-
-            let card_id = self
-                .insert_card(
-                    access.user_id(),
-                    deck_id,
-                    &NewCard { front_image, back_image, ..NewCard::new(&front, &back) },
-                    "import",
-                )
-                .await?;
-            report.cards_imported += 1;
-
-            // History: learning/review/relearning/filtered entries only.
-            let revs: Vec<&AnkiRev> = revlog
-                .get(&c.id)
-                .map(|v| v.iter().filter(|r| (1..=4).contains(&r.ease) && r.rtype <= 3).collect())
-                .unwrap_or_default();
-            let starts_new = revs.first().is_some_and(|r| r.rtype == 0);
-            let mut fsrs_reviews = Vec::new();
-            let mut prev: Option<i64> = None;
-            for (i, r) in revs.iter().enumerate() {
-                let t = r.time_ms / 1000;
-                let state_before = if i == 0 && starts_new {
-                    CardState::New
-                } else {
-                    match r.rtype {
-                        0 => CardState::Learning,
-                        2 => CardState::Relearning,
-                        _ => CardState::Review,
-                    }
-                };
-                let delta = prev.map_or(0, |p| clock.days_between(p, t).max(0));
-                prev = Some(t);
-                fsrs_reviews.push(fsrs::FSRSReview { rating: num::i64_u32(r.ease), delta_t: num::i64_u32(delta) });
-                sqlx::query(
-                    "INSERT INTO review_log (user_id, card_id, deck_id, rating, reviewed_at,
-                        state_before, elapsed_days, scheduled_secs, source)
-                     VALUES (?, ?, ?, ?, ?, ?, ?, 0, 'import')",
-                )
-                .bind(access.user_id())
-                .bind(card_id)
-                .bind(deck_id)
-                .bind(r.ease)
-                .bind(t)
-                .bind(state_before as i64)
-                .bind(delta)
-                .execute(&self.db)
-                .await?;
-                report.reviews_imported += 1;
-            }
-
-            let state = match c.ctype {
-                1 => CardState::Learning,
-                2 => CardState::Review,
-                3 => CardState::Relearning,
-                _ => CardState::New,
-            };
-            if state == CardState::New {
-                if c.queue == -1 {
-                    sqlx::query("UPDATE cards SET suspended = 1, held = 0 WHERE id = ?")
-                        .bind(card_id)
-                        .execute(&self.db)
-                        .await?;
-                }
-                continue;
-            }
-            let memory = if starts_new && !fsrs_reviews.is_empty() {
-                fsrs.memory_state(fsrs::FSRSItem { reviews: fsrs_reviews }, None).ok()
-            } else if c.factor > 0 && c.ivl > 0 {
-                fsrs.memory_state_from_sm2(num::i64_f32(c.factor) / 1000.0, num::i64_f32(c.ivl), 0.9).ok()
-            } else {
-                None
-            };
-            let due = if state == CardState::Review {
-                let date = clock.date_of(crt + c.due * 86_400);
-                clock.day_start(date)
-            } else {
-                now()
-            };
-            let last_review =
-                prev.or_else(|| if state == CardState::Review { Some(due - c.ivl.max(1) * 86_400) } else { None });
+        let reviews = history(col.revlog.get(&c.id).map_or(&[], Vec::as_slice), &clock);
+        for r in &reviews {
             sqlx::query(
-                "UPDATE cards SET state = ?, stability = ?, difficulty = ?, due = ?, last_review = ?,
-                    reps = ?, lapses = ?, suspended = MAX(?, held) WHERE id = ?",
+                "INSERT INTO review_log (user_id, card_id, deck_id, rating, reviewed_at,
+                    state_before, elapsed_days, scheduled_secs, source)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, 0, 'import')",
             )
-            .bind(state as i64)
-            .bind(memory.map(|m| f64::from(m.stability)))
-            .bind(memory.map(|m| f64::from(m.difficulty)))
-            .bind(due)
-            .bind(last_review)
-            .bind(c.reps)
-            .bind(c.lapses)
-            .bind(c.queue == -1)
+            .bind(access.user_id())
             .bind(card_id)
+            .bind(deck_id)
+            .bind(r.ease)
+            .bind(r.at)
+            .bind(r.state_before)
+            .bind(r.delta_days)
             .execute(&self.db)
             .await?;
+            run.report.reviews_imported += 1;
         }
-        Ok(report)
+        self.import_schedule(access, col, c, card_id, &reviews, &run.fsrs).await
+    }
+
+    /// Stores an image the first time a name comes up; `None` when the
+    /// package lacks it or it isn't an image we take.
+    async fn import_image(&self, user_id: i64, name: Option<String>, run: &mut ImportRun) -> Option<String> {
+        let name = name?;
+        if let Some(id) = run.images.get(&name) {
+            return id.clone();
+        }
+        let id = match run.media.get(&name) {
+            Some(bytes) => self.store_image_for(user_id, bytes.clone()).await.ok().map(|m| m.id),
+            None => None,
+        };
+        if id.is_some() {
+            run.report.images_imported += 1;
+        }
+        run.images.insert(name, id.clone());
+        id
+    }
+
+    /// The deck an Anki deck lands in: one of the same name, else a new one.
+    async fn import_deck(&self, access: &Access, col: &AnkiCollection, did: i64, run: &mut ImportRun) -> Result<i64> {
+        if let Some(id) = run.decks.get(&did) {
+            return Ok(*id);
+        }
+        let name = col.deck_names.get(&did).cloned().unwrap_or_else(|| "Imported".into());
+        let id = if let Some(d) = self.deck_by_name(access, &name).await? {
+            d.id
+        } else {
+            run.report.decks_created.push(name.clone());
+            self.create_deck(access, &name, "Imported from Anki", None).await?.id
+        };
+        run.decks.insert(did, id);
+        Ok(id)
+    }
+
+    /// Carries a card's state over: FSRS memory from its history when that
+    /// starts at the beginning, else estimated from Anki's ease and interval.
+    async fn import_schedule(
+        &self,
+        access: &Access,
+        col: &AnkiCollection,
+        c: &AnkiCard,
+        card_id: i64,
+        reviews: &[LoggedReview],
+        fsrs: &fsrs::FSRS,
+    ) -> Result<()> {
+        let state = match c.ctype {
+            1 => CardState::Learning,
+            2 => CardState::Review,
+            3 => CardState::Relearning,
+            _ => CardState::New,
+        };
+        if state == CardState::New {
+            if c.queue == -1 {
+                sqlx::query("UPDATE cards SET suspended = 1, held = 0 WHERE id = ?")
+                    .bind(card_id)
+                    .execute(&self.db)
+                    .await?;
+            }
+            return Ok(());
+        }
+        let starts_new = reviews.first().is_some_and(|r| r.state_before == CardState::New);
+        let memory = if starts_new {
+            let reviews = reviews
+                .iter()
+                .map(|r| fsrs::FSRSReview { rating: num::i64_u32(r.ease), delta_t: num::i64_u32(r.delta_days) })
+                .collect();
+            fsrs.memory_state(fsrs::FSRSItem { reviews }, None).ok()
+        } else if c.factor > 0 && c.ivl > 0 {
+            fsrs.memory_state_from_sm2(num::i64_f32(c.factor) / 1000.0, num::i64_f32(c.ivl), 0.9).ok()
+        } else {
+            None
+        };
+        let clock = access.user.clock();
+        let due =
+            if state == CardState::Review { clock.day_start(clock.date_of(col.crt + c.due * 86_400)) } else { now() };
+        let last_review =
+            reviews.last().map(|r| r.at).or_else(|| (state == CardState::Review).then(|| due - c.ivl.max(1) * 86_400));
+        sqlx::query(
+            "UPDATE cards SET state = ?, stability = ?, difficulty = ?, due = ?, last_review = ?,
+                reps = ?, lapses = ?, suspended = MAX(?, held) WHERE id = ?",
+        )
+        .bind(state)
+        .bind(memory.map(|m| f64::from(m.stability)))
+        .bind(memory.map(|m| f64::from(m.difficulty)))
+        .bind(due)
+        .bind(last_review)
+        .bind(c.reps)
+        .bind(c.lapses)
+        .bind(c.queue == -1)
+        .bind(card_id)
+        .execute(&self.db)
+        .await?;
+        Ok(())
     }
 }
 
