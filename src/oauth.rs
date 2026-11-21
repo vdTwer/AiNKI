@@ -894,26 +894,7 @@ fn basic_auth(headers: &HeaderMap) -> Option<(String, String)> {
     let s = String::from_utf8(raw).ok()?;
     let (id, secret) = s.split_once(':')?;
     // RFC 6749 2.3.1: both parts are form-urlencoded.
-    let dec = |x: &str| -> String {
-        let x = x.replace('+', " ");
-        let bytes = x.as_bytes();
-        let mut out = Vec::with_capacity(bytes.len());
-        let mut i = 0;
-        while i < bytes.len() {
-            if bytes[i] == b'%'
-                && i + 2 < bytes.len()
-                && let Some(b) =
-                    std::str::from_utf8(&bytes[i + 1..i + 3]).ok().and_then(|h| u8::from_str_radix(h, 16).ok())
-            {
-                out.push(b);
-                i += 3;
-                continue;
-            }
-            out.push(bytes[i]);
-            i += 1;
-        }
-        String::from_utf8_lossy(&out).into_owned()
-    };
+    let dec = |x: &str| crate::security::percent_decode(&x.replace('+', " "));
     Some((dec(id), dec(secret)))
 }
 

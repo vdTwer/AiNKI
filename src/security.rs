@@ -205,21 +205,23 @@ impl<S: Send + Sync> FromRequestParts<S> for Flash {
     }
 }
 
+/// Decodes `%XX` escapes; anything else, a broken escape included, stays as
+/// it is. Invalid UTF-8 becomes U+FFFD.
 pub(crate) fn percent_decode(s: &str) -> String {
-    let b = s.as_bytes();
-    let mut out = Vec::with_capacity(b.len());
-    let mut i = 0;
-    while i < b.len() {
-        if b[i] == b'%'
-            && i + 2 < b.len()
-            && let Some(v) = std::str::from_utf8(&b[i + 1..i + 3]).ok().and_then(|h| u8::from_str_radix(h, 16).ok())
+    let hex = |c: &u8| char::from(*c).to_digit(16);
+    let mut out = Vec::with_capacity(s.len());
+    let mut rest = s.as_bytes();
+    while let Some((&b, tail)) = rest.split_first() {
+        if let (b'%', [h, l, after @ ..]) = (b, tail)
+            && let (Some(h), Some(l)) = (hex(h), hex(l))
+            && let Ok(v) = u8::try_from(h * 16 + l)
         {
             out.push(v);
-            i += 3;
-            continue;
+            rest = after;
+        } else {
+            out.push(b);
+            rest = tail;
         }
-        out.push(b[i]);
-        i += 1;
     }
     String::from_utf8_lossy(&out).into_owned()
 }
@@ -291,5 +293,7 @@ mod tests {
         assert_eq!(origin_of("http://localhost:8080"), Some("http://localhost:8080".into()));
         assert_eq!(percent_decode("Deck%20deleted%20(3%20cards)."), "Deck deleted (3 cards).");
         assert_eq!(percent_decode("100%"), "100%");
+        assert_eq!(percent_decode("%+1%4"), "%+1%4");
+        assert_eq!(percent_decode("%e2%9C%93"), "\u{2713}");
     }
 }
