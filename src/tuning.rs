@@ -159,6 +159,100 @@ pub struct Calibration {
 
 const BANDS: [(u32, u32); 7] = [(0, 70), (70, 75), (75, 80), (80, 85), (85, 90), (90, 95), (95, 100)];
 
+/// A learned card as the workload simulation starts from it.
+#[derive(Clone, Copy)]
+struct SimCard {
+    stability: f32,
+    difficulty: f32,
+    /// Days since its last review, and until it is due.
+    since: f32,
+    until: f32,
+    lapses: u32,
+}
+
+/// One preset's workload simulation, to run at several retentions.
+struct SimPlan {
+    existing: Vec<SimCard>,
+    /// New cards to learn over the span.
+    to_learn: usize,
+    days: usize,
+    /// The user's thinking time against the simulator's default.
+    scale: f32,
+    max_ivl: i64,
+    new_per_day: i64,
+    reviews_per_day: i64,
+    learning_steps: usize,
+    relearning_steps: usize,
+    /// The preset's own desired retention.
+    current: f64,
+}
+
+impl SimPlan {
+    fn run(&self, filled: &Arc<Vec<f32>>, r: f64) -> std::result::Result<Workload, fsrs::FSRSError> {
+        let current = (r - self.current).abs() < 0.005;
+        let mut config = fsrs::SimulatorConfig {
+            deck_size: self.existing.len() + self.to_learn,
+            learn_span: self.days,
+            max_cost_perday: f32::MAX,
+            max_ivl: num::i64_f32(self.max_ivl),
+            learn_limit: num::i64_usize(self.new_per_day.max(0)),
+            review_limit: num::i64_usize(self.reviews_per_day.max(0)),
+            learning_step_count: self.learning_steps,
+            relearning_step_count: self.relearning_steps,
+            ..Default::default()
+        };
+        if config.deck_size == 0 {
+            return Ok(Workload { retention: r, minutes_per_day: 0.0, reviews_per_day: 0.0, remembered: 0.0, current });
+        }
+        for c in config.state_rating_costs.iter_mut().flatten() {
+            *c *= self.scale;
+        }
+        let cards: Vec<fsrs::Card> = (self.existing.iter().enumerate())
+            .map(|(i, c)| fsrs::Card {
+                id: num::usize_i64(i) + 1,
+                difficulty: c.difficulty,
+                stability: c.stability,
+                last_date: -c.since,
+                due: c.until,
+                interval: c.since + c.until,
+                lapses: c.lapses,
+                desired_retention: num::f64_f32(r),
+                parameters: filled.clone(),
+            })
+            .collect();
+        let sim = fsrs::simulate(&config, filled, num::f64_f32(r), Some(42), Some(cards))?;
+        let n = num::usize_f64(self.days.max(1));
+        Ok(Workload {
+            retention: r,
+            minutes_per_day: sim.cost_per_day.iter().map(|c| f64::from(*c)).sum::<f64>() / 60.0 / n,
+            reviews_per_day: num::usize_f64(sim.review_cnt_per_day.iter().sum::<usize>()) / n,
+            remembered: f64::from(sim.memorized_cnt_per_day.last().copied().unwrap_or(0.0)),
+            current,
+        })
+    }
+}
+
+/// Runs `fit` off the async threads: fitting takes seconds.
+async fn fit_in_background(
+    items: Vec<fsrs::FSRSItem>,
+    card_ids: Vec<i64>,
+    current: Vec<f32>,
+    used: usize,
+) -> Result<std::result::Result<Fit, fsrs::FSRSError>> {
+    tokio::task::spawn_blocking(move || fit(&items, card_ids, current, used))
+        .await
+        .map_err(|e| AppError::Internal(e.into()))
+}
+
+/// What the settings page says about the last optimization.
+fn optimize_note(global: &Fit, used: usize) -> String {
+    match (global.changed, global.improvement) {
+        (true, Some(i)) => format!("Fitted to {} reviews; predicts {:.0}% better than before.", used, i * 100.0),
+        (true, None) => format!("Fitted to {used} reviews."),
+        (false, _) => "Kept the parameters in use: new ones would not predict your reviews better.".to_string(),
+    }
+}
+
 impl App {
     /// The parameters for every visible deck, read once.
     pub async fn param_book(&self, access: &Access) -> Result<ParamBook> {
@@ -257,28 +351,43 @@ impl App {
             ));
         }
         let n_items = items.len();
-        let current = user.params();
-        let global = tokio::task::spawn_blocking(move || fit(&items, card_ids, current, used))
-            .await
-            .map_err(|e| AppError::Internal(e.into()))?
-            .map_err(|e| match e {
-                fsrs::FSRSError::NotEnoughData => {
-                    AppError::bad("not enough review history yet to optimize; keep studying")
-                }
-                e => e.into(),
-            })?;
+        let global = fit_in_background(items, card_ids, user.params(), used).await?.map_err(|e| match e {
+            fsrs::FSRSError::NotEnoughData => AppError::bad("not enough review history yet to optimize; keep studying"),
+            e => e.into(),
+        })?;
         let t = now();
         if global.changed {
             sqlx::query("UPDATE users SET fsrs_params = ?, fsrs_params_updated_at = ? WHERE id = ?")
-                .bind(serde_json::to_string(&global.parameters).unwrap_or_else(|_| "[]".into()))
+                .bind(Json(&global.parameters))
                 .bind(t)
                 .bind(user.id)
                 .execute(&self.db)
                 .await?;
         }
+        let preset_results = self.optimize_presets(user, &histories, &global.parameters, t).await?;
+        let note = optimize_note(&global, used);
+        let reviews_now = self.optimizable_reviews_of(user).await?;
+        sqlx::query("UPDATE users SET optimized_at = ?, optimized_reviews = ?, optimize_note = ? WHERE id = ?")
+            .bind(t)
+            .bind(reviews_now)
+            .bind(&note)
+            .bind(user.id)
+            .execute(&self.db)
+            .await?;
+        Ok(json!({
+            "parameters": global.parameters,
+            "changed": global.changed,
+            "improvement": global.improvement,
+            "note": note,
+            "reviews_used": used,
+            "training_items": n_items,
+            "presets": preset_results,
+        }))
+    }
 
-        // Presets with enough reviews get their own; the others use the
-        // user's.
+    /// Presets with enough reviews get their own parameters, starting from
+    /// the user's (`global`); the others drop theirs and use the user's.
+    async fn optimize_presets(&self, user: &User, histories: &[History], global: &[f32], t: i64) -> Result<Vec<Value>> {
         #[derive(sqlx::FromRow)]
         struct P {
             id: i64,
@@ -296,7 +405,7 @@ impl App {
                 .await?
                 .into_iter()
                 .collect();
-        let mut preset_results = Vec::new();
+        let mut results = Vec::new();
         for p in presets {
             let mine: Vec<&History> = histories.iter().filter(|h| deck_preset.get(&h.deck_id) == Some(&p.id)).collect();
             let reviews: usize = mine.iter().map(|h| h.reviews.len()).sum();
@@ -315,46 +424,21 @@ impl App {
                 continue;
             }
             // A preset starts from the user's parameters: its own must beat those.
-            let current = if own.is_empty() { global.parameters.clone() } else { own };
-            let result = tokio::task::spawn_blocking(move || fit(&items, card_ids, current, used))
-                .await
-                .map_err(|e| AppError::Internal(e.into()))?;
-            let Ok(f) = result else { continue };
+            let current = if own.is_empty() { global.to_vec() } else { own };
+            let Ok(f) = fit_in_background(items, card_ids, current, used).await? else { continue };
             if f.changed {
                 sqlx::query("UPDATE presets SET fsrs_params = ?, fsrs_params_updated_at = ? WHERE id = ?")
-                    .bind(serde_json::to_string(&f.parameters).unwrap_or_else(|_| "[]".into()))
+                    .bind(Json(&f.parameters))
                     .bind(t)
                     .bind(p.id)
                     .execute(&self.db)
                     .await?;
             }
-            preset_results.push(
+            results.push(
                 json!({ "preset": p.name, "reviews": f.reviews, "changed": f.changed, "improvement": f.improvement }),
             );
         }
-
-        let note = match (global.changed, global.improvement) {
-            (true, Some(i)) => format!("Fitted to {} reviews; predicts {:.0}% better than before.", used, i * 100.0),
-            (true, None) => format!("Fitted to {used} reviews."),
-            (false, _) => "Kept the parameters in use: new ones would not predict your reviews better.".to_string(),
-        };
-        let reviews_now = self.optimizable_reviews_of(user).await?;
-        sqlx::query("UPDATE users SET optimized_at = ?, optimized_reviews = ?, optimize_note = ? WHERE id = ?")
-            .bind(t)
-            .bind(reviews_now)
-            .bind(&note)
-            .bind(user.id)
-            .execute(&self.db)
-            .await?;
-        Ok(json!({
-            "parameters": global.parameters,
-            "changed": global.changed,
-            "improvement": global.improvement,
-            "note": note,
-            "reviews_used": used,
-            "training_items": n_items,
-            "presets": preset_results,
-        }))
+        Ok(results)
     }
 
     /// Count of reviews the optimizer would learn from.
@@ -405,30 +489,7 @@ impl App {
             self.decks(access).await?.into_iter().filter(|d| d.preset_id == preset_id).map(|d| d.id).collect();
         let own = preset_params(self, preset_id).await?;
         let params = if own.is_empty() { access.user.params() } else { own };
-        let clock = access.user.clock();
-
-        // Cards already learned, as the simulator sees them (days from today).
-        let mut existing = Vec::new();
-        let mut new_cards = 0usize;
-        if !deck_ids.is_empty() {
-            let sql = "SELECT state, stability, difficulty, due, last_review, lapses FROM cards
-                 WHERE user_id = ? AND suspended = 0 AND deck_id IN (SELECT value FROM json_each(?))";
-            let q = sqlx::query_as::<_, (CardState, Option<f64>, Option<f64>, i64, Option<i64>, i64)>(sql)
-                .bind(access.user_id())
-                .bind(id_list(&deck_ids));
-            for (state, s, d, due, last, lapses) in q.fetch_all(&self.db).await? {
-                match (state, s, d, last) {
-                    (CardState::New, ..) => new_cards += 1,
-                    (_, Some(s), Some(d), Some(last)) => {
-                        let since = num::i64_f32(clock.now - last) / 86_400.0;
-                        let until = (num::i64_f32(due - clock.now) / 86_400.0).max(0.0);
-                        existing.push((num::f64_f32(s), num::f64_f32(d), since, until, num::i64_u32(lapses)));
-                    }
-                    _ => {}
-                }
-            }
-        }
-        let to_learn = new_cards.max(num::i64_usize(preset.new_per_day.max(0)) * days);
+        let (existing, new_cards) = self.simulator_cards(access, &deck_ids).await?;
         // Thinking time: the simulator's defaults, scaled to the user's own
         // typical time per review once there is enough history.
         let scale = self
@@ -440,71 +501,59 @@ impl App {
         let mut retentions = vec![0.80, 0.85, 0.90, 0.95];
         if !retentions.iter().any(|r: &f64| (r - current).abs() < 0.005) {
             retentions.push(current);
-            retentions.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+            retentions.sort_by(f64::total_cmp);
         }
-        let learning_steps = scheduler::parse_steps(&preset.learning_steps).map_err(AppError::BadRequest)?.len();
-        let relearning_steps = scheduler::parse_steps(&preset.relearning_steps).map_err(AppError::BadRequest)?.len();
-        let (new_per_day, reviews_per_day, max_ivl) = (preset.new_per_day, preset.reviews_per_day, preset.max_interval);
+        let plan = SimPlan {
+            to_learn: new_cards.max(num::i64_usize(preset.new_per_day.max(0)) * days),
+            existing,
+            days,
+            scale,
+            max_ivl: preset.max_interval,
+            new_per_day: preset.new_per_day,
+            reviews_per_day: preset.reviews_per_day,
+            learning_steps: scheduler::parse_steps(&preset.learning_steps).map_err(AppError::BadRequest)?.len(),
+            relearning_steps: scheduler::parse_steps(&preset.relearning_steps).map_err(AppError::BadRequest)?.len(),
+            current,
+        };
         let out = tokio::task::spawn_blocking(move || -> std::result::Result<Vec<Workload>, fsrs::FSRSError> {
             let filled = Arc::new(fsrs::check_and_fill_parameters(&params)?);
-            let mut out = Vec::new();
-            for r in retentions {
-                let mut config = fsrs::SimulatorConfig {
-                    deck_size: existing.len() + to_learn,
-                    learn_span: days,
-                    max_cost_perday: f32::MAX,
-                    max_ivl: num::i64_f32(max_ivl),
-                    learn_limit: num::i64_usize(new_per_day.max(0)),
-                    review_limit: num::i64_usize(reviews_per_day.max(0)),
-                    learning_step_count: learning_steps,
-                    relearning_step_count: relearning_steps,
-                    ..Default::default()
-                };
-                for row in &mut config.state_rating_costs {
-                    for c in row.iter_mut() {
-                        *c *= scale;
-                    }
-                }
-                if config.deck_size == 0 {
-                    out.push(Workload {
-                        retention: r,
-                        minutes_per_day: 0.0,
-                        reviews_per_day: 0.0,
-                        remembered: 0.0,
-                        current: (r - current).abs() < 0.005,
-                    });
-                    continue;
-                }
-                let cards: Vec<fsrs::Card> = existing
-                    .iter()
-                    .enumerate()
-                    .map(|(i, &(s, d, since, until, lapses))| fsrs::Card {
-                        id: num::usize_i64(i) + 1,
-                        difficulty: d,
-                        stability: s,
-                        last_date: -since,
-                        due: until,
-                        interval: since + until,
-                        lapses,
-                        desired_retention: num::f64_f32(r),
-                        parameters: filled.clone(),
-                    })
-                    .collect();
-                let sim = fsrs::simulate(&config, &filled, num::f64_f32(r), Some(42), Some(cards))?;
-                let n = num::usize_f64(days.max(1));
-                out.push(Workload {
-                    retention: r,
-                    minutes_per_day: sim.cost_per_day.iter().map(|c| f64::from(*c)).sum::<f64>() / 60.0 / n,
-                    reviews_per_day: num::usize_f64(sim.review_cnt_per_day.iter().sum::<usize>()) / n,
-                    remembered: f64::from(sim.memorized_cnt_per_day.last().copied().unwrap_or(0.0)),
-                    current: (r - current).abs() < 0.005,
-                });
-            }
-            Ok(out)
+            retentions.into_iter().map(|r| plan.run(&filled, r)).collect()
         })
         .await
         .map_err(|e| AppError::Internal(e.into()))??;
         Ok(out)
+    }
+
+    /// The learned cards of these decks as the simulator sees them (days
+    /// from today), and how many are still new.
+    async fn simulator_cards(&self, access: &Access, deck_ids: &[i64]) -> Result<(Vec<SimCard>, usize)> {
+        let clock = access.user.clock();
+        // state, stability, difficulty, due, last review, lapses
+        type Row = (CardState, Option<f64>, Option<f64>, i64, Option<i64>, i64);
+        let rows: Vec<Row> = sqlx::query_as(
+            "SELECT state, stability, difficulty, due, last_review, lapses FROM cards
+             WHERE user_id = ? AND suspended = 0 AND deck_id IN (SELECT value FROM json_each(?))",
+        )
+        .bind(access.user_id())
+        .bind(id_list(deck_ids))
+        .fetch_all(&self.db)
+        .await?;
+        let mut existing = Vec::new();
+        let mut new_cards = 0usize;
+        for (state, s, d, due, last, lapses) in rows {
+            match (state, s, d, last) {
+                (CardState::New, ..) => new_cards += 1,
+                (_, Some(s), Some(d), Some(last)) => existing.push(SimCard {
+                    stability: num::f64_f32(s),
+                    difficulty: num::f64_f32(d),
+                    since: num::i64_f32(clock.now - last) / 86_400.0,
+                    until: (num::i64_f32(due - clock.now) / 86_400.0).max(0.0),
+                    lapses: num::i64_u32(lapses),
+                }),
+                _ => {}
+            }
+        }
+        Ok((existing, new_cards))
     }
 
     /// How well FSRS's predictions match what happened, over the last year:
