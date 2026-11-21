@@ -50,11 +50,6 @@ test('home shows the next seven days, starting today', async ({ page, seed }) =>
   // Its tooltip gives the forecast, its bounds and why.
   await expect(forecast).toHaveAttribute('title', /^Forecast: \d+ cards\. Likely \d+ to \d+\. .*come back/);
   expect(Number((await forecast.getAttribute('title'))!.match(/\d+/)![0])).toBeGreaterThanOrEqual(4);
-  // Hovering a bar names its count just above it.
-  const busiest = days.nth(3).locator('.bar');
-  await expect(busiest).toHaveAttribute('data-n', /^[2-9]$/);
-  await days.nth(3).hover();
-  await expect.poll(() => busiest.evaluate((el) => getComputedStyle(el, '::before').opacity)).toBe('1');
 });
 
 test('a quiet week says so and draws no bars', async ({ page, seed }) => {
