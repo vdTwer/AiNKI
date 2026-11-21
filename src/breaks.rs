@@ -165,7 +165,7 @@ pub fn replay(steps: &[Step], watch_from: i64) -> State {
             && away < AWAY_MEASURED_MS
         {
             let slower = (num::i64_f64(t).ln() - usual).clamp(-CLIP, CLIP);
-            st.slowness = (1.0 - WEIGHT) * st.slowness + WEIGHT * slower;
+            st.slowness = WEIGHT.mul_add(slower, (1.0 - WEIGHT) * st.slowness);
         }
         prev = Some(s.at);
     }
@@ -239,7 +239,7 @@ mod tests {
     struct Noise(u64);
     impl Noise {
         fn next(&mut self) -> f64 {
-            self.0 = self.0.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            self.0 = self.0.wrapping_mul(6_364_136_223_846_793_005).wrapping_add(1_442_695_040_888_963_407);
             num::u64_f64(self.0 >> 11) / num::u64_f64(1u64 << 53)
         }
         /// Roughly normal, from twelve uniforms.
@@ -259,7 +259,7 @@ mod tests {
         let (mut t, mut worked) = (start * 1000, 0.0);
         while worked < minutes * 60_000.0 {
             let extra = if worked >= slow_from * 60_000.0 { slow } else { 0.0 };
-            let think = num::f64_i64(USUAL_MS * (0.35 * n.normal() + extra).exp());
+            let think = num::f64_i64(USUAL_MS * 0.35f64.mul_add(n.normal(), extra).exp());
             let answer = 2000;
             t += think + answer;
             worked += num::i64_f64(think + answer);

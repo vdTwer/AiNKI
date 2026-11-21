@@ -369,7 +369,7 @@ fn exam_close(s: &Signals) -> Option<Advice> {
             link(href, "Open the deck"),
         ));
     }
-    let pace = s.deck_preset(d).map(|p| p.new_per_day).unwrap_or(0);
+    let pace = s.deck_preset(d).map_or(0, |p| p.new_per_day);
     // Two days before the exam are for reviewing only.
     let need = num::f64_i64((num::i64_f64(d.new_left) / num::i64_f64((left - 2).max(1))).ceil());
     if need <= pace {
@@ -465,13 +465,13 @@ fn cause(s: &Signals, deck: Option<&DeckSignal>) -> (String, Option<Link>) {
         );
     }
     let (new_7d, limit) = match deck {
-        Some(d) => (num::i64_f64(d.new_started_7d), s.deck_preset(d).map(|p| p.new_per_day).unwrap_or(0)),
+        Some(d) => (num::i64_f64(d.new_started_7d), s.deck_preset(d).map_or(0, |p| p.new_per_day)),
         None => (num::i64_f64(s.new_started_7d), s.new_limit()),
     };
     if limit > 0 && new_7d / 7.0 >= num::i64_f64(limit) * 0.8 {
         return (
             "Many new cards came in this week. Fewer new cards for a while usually brings it back.".into(),
-            link(deck.map_or("/presets".into(), |d| format!("/decks/{}", d.id)), "Change new cards"),
+            link(deck.map_or_else(|| "/presets".into(), |d| format!("/decks/{}", d.id)), "Change new cards"),
         );
     }
     let fitted = match deck {
@@ -894,9 +894,7 @@ impl App {
         let day_of = |at: i64| (today - clock.date_of(at)).num_days();
 
         let mut s = Signals {
-            hour: chrono::DateTime::from_timestamp(clock.now, 0)
-                .map(|t| t.with_timezone(&clock.tz).hour())
-                .unwrap_or(12),
+            hour: chrono::DateTime::from_timestamp(clock.now, 0).map_or(12, |t| t.with_timezone(&clock.tz).hour()),
             quiet: crate::study::quiet_until(user, clock.now).is_some(),
             reviews_today: known.stats.reviews_today,
             overdue: known.overdue,

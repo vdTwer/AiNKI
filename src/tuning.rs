@@ -42,7 +42,7 @@ pub struct ParamBook {
 
 impl ParamBook {
     pub fn for_deck(&self, deck_id: i64) -> &[f32] {
-        self.by_deck.get(&deck_id).map(Vec::as_slice).unwrap_or(&self.user)
+        self.by_deck.get(&deck_id).map_or(&self.user, Vec::as_slice)
     }
 }
 
@@ -224,7 +224,7 @@ impl App {
         for (card_id, deck_id, logs) in by_card {
             // Only history after the last reset, and only if it starts from
             // the card being new (otherwise the memory state is unknown).
-            let start = logs.iter().rposition(|l| l.rating == 0).map(|i| i + 1).unwrap_or(0);
+            let start = logs.iter().rposition(|l| l.rating == 0).map_or(0, |i| i + 1);
             let logs = &logs[start..];
             if logs.first().is_none_or(|l| l.state_before != CardState::New as i64) {
                 continue;
@@ -232,7 +232,7 @@ impl App {
             let mut reviews = Vec::new();
             let mut prev: Option<i64> = None;
             for l in logs {
-                let delta = prev.map(|p| clock.days_between(p, l.reviewed_at).max(0)).unwrap_or(0);
+                let delta = prev.map_or(0, |p| clock.days_between(p, l.reviewed_at).max(0));
                 reviews.push(fsrs::FSRSReview {
                     rating: num::i64_u32(l.rating.clamp(1, 4)),
                     delta_t: num::i64_u32(delta),
@@ -446,8 +446,7 @@ impl App {
             .stats(access, None)
             .await?
             .seconds_per_review
-            .map(|s| num::f64_f32((s / 12.32).clamp(0.3, 4.0)))
-            .unwrap_or(1.0);
+            .map_or(1.0, |s| num::f64_f32((s / 12.32).clamp(0.3, 4.0)));
         let current = preset.desired_retention;
         let mut retentions = vec![0.80, 0.85, 0.90, 0.95];
         if !retentions.iter().any(|r: &f64| (r - current).abs() < 0.005) {

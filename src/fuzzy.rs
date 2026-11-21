@@ -113,7 +113,7 @@ fn in_order(q: &[char], raw: &[char], t: &[char]) -> Option<i32> {
             prev[j] = MATCH + position_bonus(raw, j) - lead;
         }
     }
-    for qi in 1..m {
+    for &qc in q.iter().take(m).skip(1) {
         let mut cur = vec![NONE; n];
         // Best earlier matches at least one letter back, with what the gap
         // costs: growing by GAP per letter, but never more than GAP_MAX.
@@ -123,7 +123,7 @@ fn in_order(q: &[char], raw: &[char], t: &[char]) -> Option<i32> {
                 decay = decay.max(prev[j - 2] - GAP_OPEN);
                 capped = capped.max(prev[j - 2] - GAP_MAX);
             }
-            if t[j] == q[qi] {
+            if t[j] == qc {
                 let mut best = decay.max(capped);
                 if best > NONE {
                     best += MATCH + position_bonus(raw, j);
@@ -182,8 +182,8 @@ fn prefix_distance(q: &[char], w: &[char], allowed: usize) -> Option<usize> {
     }
     let width = n + 1;
     let mut d = vec![0usize; (m + 1) * width];
-    for j in 0..=n {
-        d[j] = j;
+    for (j, cell) in d.iter_mut().enumerate().take(n + 1) {
+        *cell = j;
     }
     for i in 1..=m {
         d[i * width] = i;
@@ -208,7 +208,7 @@ mod tests {
 
     fn rank<'a>(q: &str, texts: &[&'a str]) -> Vec<&'a str> {
         let mut scored: Vec<(i32, &str)> = texts.iter().filter_map(|t| score(q, t).map(|s| (s, *t))).collect();
-        scored.sort_by(|a, b| b.0.cmp(&a.0));
+        scored.sort_by_key(|b| std::cmp::Reverse(b.0));
         scored.into_iter().map(|(_, t)| t).collect()
     }
 

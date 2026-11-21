@@ -171,10 +171,10 @@ pub fn forecast(plans: &[DeckPlan], clock: &Clock) -> anyhow::Result<Outlook> {
 /// total holds the summed variance, not a second moment.
 fn add(total: &mut Acc, one: &Acc, n: f64) {
     for (t, d) in total.days.iter_mut().zip(one.days) {
-        *t += n * d;
+        *t = n.mul_add(d, *t);
     }
-    total.m2 += n * (one.m2 - one.m1 * one.m1);
-    total.floor += n * one.floor;
+    total.m2 += n * one.m1.mul_add(-one.m1, one.m2);
+    total.floor = n.mul_add(one.floor, total.floor);
 }
 
 /// Follows one card from a review at `at`, carrying probability `p` and
@@ -227,8 +227,8 @@ fn walk(
 
 fn leaf(acc: &mut Acc, p: f64, k: u32) -> anyhow::Result<()> {
     let k = f64::from(k);
-    acc.m1 += p * k;
-    acc.m2 += p * k * k;
+    acc.m1 = p.mul_add(k, acc.m1);
+    acc.m2 = (p * k).mul_add(k, acc.m2);
     Ok(())
 }
 

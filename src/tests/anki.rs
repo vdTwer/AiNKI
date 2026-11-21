@@ -312,6 +312,6 @@ async fn broken_packages_and_narrow_tokens_are_refused() {
     let col = collection(Format::Legacy, now(), &[(1, "X")], &[card(1, "a|b", 1)]).await;
     assert!(app.import_apkg(&narrow, package(Format::Legacy, col, &[])).await.is_err());
     // Nothing was left behind in the data folder's tmp directory.
-    let left = std::fs::read_dir(app.config.data_dir.join("tmp")).map(std::iter::Iterator::count).unwrap_or(0);
+    let left = std::fs::read_dir(app.config.data_dir.join("tmp")).map_or(0, std::iter::Iterator::count);
     assert_eq!(left, 0);
 }

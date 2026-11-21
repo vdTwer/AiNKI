@@ -121,8 +121,7 @@ fn parse(slug: &'static str, text: &str) -> Lesson {
     let field = |name: &str| {
         head.lines()
             .find_map(|l| l.strip_prefix(name).and_then(|v| v.strip_prefix(':')))
-            .map(|v| v.trim().to_string())
-            .unwrap_or_else(|| panic!("lesson {slug}: no {name}"))
+            .map_or_else(|| panic!("lesson {slug}: no {name}"), |v| v.trim().to_string())
     };
     let (body, cards) = rest.split_once("\n=== cards\n").unwrap_or((rest, ""));
     let cards = cards

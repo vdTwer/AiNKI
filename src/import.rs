@@ -38,10 +38,11 @@ pub struct ImportReport {
 
 fn sniff_delimiter(text: &str) -> u8 {
     let first = text.lines().next().unwrap_or("");
-    [b'\t', b';', b',']
-        .into_iter()
-        .max_by_key(|d| first.matches(*d as char).count())
-        .filter(|d| first.contains(*d as char))
+    b"\t;,"
+        .iter()
+        .copied()
+        .max_by_key(|&d| first.matches(char::from(d)).count())
+        .filter(|&d| first.contains(char::from(d)))
         .unwrap_or(b',')
 }
 
@@ -124,15 +125,12 @@ fn decode_entities(s: &str) -> String {
             };
             ch.map(|c| (c, e))
         });
-        match decoded {
-            Some((c, e)) => {
-                out.push(c);
-                rest = &rest[e + 1..];
-            }
-            None => {
-                out.push('&');
-                rest = &rest[1..];
-            }
+        if let Some((c, e)) = decoded {
+            out.push(c);
+            rest = &rest[e + 1..];
+        } else {
+            out.push('&');
+            rest = &rest[1..];
         }
     }
     out.push_str(rest);
@@ -544,8 +542,8 @@ impl App {
                 report.skipped += 1;
                 continue;
             };
-            let f0 = fields.first().map(String::as_str).unwrap_or("");
-            let f1 = fields.get(1).map(String::as_str).unwrap_or("");
+            let f0 = fields.first().map_or("", String::as_str);
+            let f1 = fields.get(1).map_or("", String::as_str);
 
             let (front_html, back_html) = if !cloze_numbers(f0).is_empty() {
                 let n = num::i64_u32(c.ord + 1);
@@ -589,12 +587,11 @@ impl App {
                 Some(id) => *id,
                 None => {
                     let name = deck_names.get(&c.did).cloned().unwrap_or_else(|| "Imported".into());
-                    let id = match self.deck_by_name(access, &name).await? {
-                        Some(d) => d.id,
-                        None => {
-                            report.decks_created.push(name.clone());
-                            self.create_deck(access, &name, "Imported from Anki", None).await?.id
-                        }
+                    let id = if let Some(d) = self.deck_by_name(access, &name).await? {
+                        d.id
+                    } else {
+                        report.decks_created.push(name.clone());
+                        self.create_deck(access, &name, "Imported from Anki", None).await?.id
                     };
                     deck_map.insert(c.did, id);
                     id
@@ -624,7 +621,7 @@ impl App {
                         _ => CardState::Review,
                     }
                 };
-                let delta = prev.map(|p| clock.days_between(p, t).max(0)).unwrap_or(0);
+                let delta = prev.map_or(0, |p| clock.days_between(p, t).max(0));
                 prev = Some(t);
                 fsrs_reviews.push(fsrs::FSRSReview { rating: num::i64_u32(r.ease), delta_t: num::i64_u32(delta) });
                 sqlx::query(
@@ -673,7 +670,7 @@ impl App {
                 now()
             };
             let last_review =
-                prev.or(if state == CardState::Review { Some(due - c.ivl.max(1) * 86_400) } else { None });
+                prev.or_else(|| if state == CardState::Review { Some(due - c.ivl.max(1) * 86_400) } else { None });
             sqlx::query(
                 "UPDATE cards SET state = ?, stability = ?, difficulty = ?, due = ?, last_review = ?,
                     reps = ?, lapses = ?, suspended = MAX(?, held) WHERE id = ?",

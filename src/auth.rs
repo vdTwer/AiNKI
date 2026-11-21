@@ -179,7 +179,7 @@ pub fn hash_password(password: &str) -> Result<String> {
 }
 
 fn verify_password(password: &str, hash: &str) -> bool {
-    PasswordHash::new(hash).map(|h| Argon2::default().verify_password(password.as_bytes(), &h).is_ok()).unwrap_or(false)
+    PasswordHash::new(hash).is_ok_and(|h| Argon2::default().verify_password(password.as_bytes(), &h).is_ok())
 }
 
 pub(crate) fn sha256_hex(s: &str) -> String {

@@ -395,36 +395,33 @@ impl App {
             }
         }
         for (pos, text) in texts.iter().enumerate() {
-            match pick[pos] {
-                Some(n) => {
-                    sqlx::query("UPDATE card_items SET position = ?, text = ? WHERE id = ?")
-                        .bind(num::usize_i64(pos))
-                        .bind(text)
-                        .bind(old[n].id)
-                        .execute(&mut *tx)
-                        .await?;
-                }
-                None => {
-                    let s = if first_time { card.sched() } else { CardSched::new_card() };
-                    sqlx::query(
-                        "INSERT INTO card_items (card_id, position, text, state, step, stability, difficulty,
-                            due, last_review, reps, lapses)
-                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                    )
-                    .bind(card.id)
+            if let Some(n) = pick[pos] {
+                sqlx::query("UPDATE card_items SET position = ?, text = ? WHERE id = ?")
                     .bind(num::usize_i64(pos))
                     .bind(text)
-                    .bind(s.state as i64)
-                    .bind(s.step)
-                    .bind(s.stability.map(f64::from))
-                    .bind(s.difficulty.map(f64::from))
-                    .bind(s.due)
-                    .bind(s.last_review)
-                    .bind(s.reps)
-                    .bind(s.lapses)
+                    .bind(old[n].id)
                     .execute(&mut *tx)
                     .await?;
-                }
+            } else {
+                let s = if first_time { card.sched() } else { CardSched::new_card() };
+                sqlx::query(
+                    "INSERT INTO card_items (card_id, position, text, state, step, stability, difficulty,
+                        due, last_review, reps, lapses)
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                )
+                .bind(card.id)
+                .bind(num::usize_i64(pos))
+                .bind(text)
+                .bind(s.state as i64)
+                .bind(s.step)
+                .bind(s.stability.map(f64::from))
+                .bind(s.difficulty.map(f64::from))
+                .bind(s.due)
+                .bind(s.last_review)
+                .bind(s.reps)
+                .bind(s.lapses)
+                .execute(&mut *tx)
+                .await?;
             }
         }
         for (n, item) in old.iter().enumerate() {
@@ -506,7 +503,7 @@ impl App {
         if n_missed > 0 && before.state == CardState::Review {
             c.lapses += 1;
         }
-        let elapsed_days = before.last_review.map(|last| clock.days_between(last, clock.now).max(0)).unwrap_or(0);
+        let elapsed_days = before.last_review.map_or(0, |last| clock.days_between(last, clock.now).max(0));
         let interval_secs = (c.due - clock.now).max(0);
 
         let mut tx = self.db.begin_with("BEGIN IMMEDIATE").await?;

@@ -102,8 +102,8 @@ pub fn process_image(data: &[u8]) -> Result<(Vec<u8>, u32, u32)> {
     for (x, y, p) in rgba.enumerate_pixels() {
         let [r, g, b, a] = p.0;
         let a = f32::from(a) / 255.0;
-        let l = 0.2126 * f32::from(r) + 0.7152 * f32::from(g) + 0.0722 * f32::from(b);
-        gray.put_pixel(x, y, Luma([num::f32_u8((l * a + 255.0 * (1.0 - a)).round())]));
+        let l = 0.7152f32.mul_add(f32::from(g), 0.2126 * f32::from(r)) + 0.0722 * f32::from(b);
+        gray.put_pixel(x, y, Luma([num::f32_u8(255.0f32.mul_add(1.0 - a, l * a).round())]));
     }
     dither(&mut gray, GRAY_LEVELS);
     let mut out = Vec::new();

@@ -28,8 +28,7 @@ impl fmt::Display for AppError {
             Self::NotFound => write!(f, "not found"),
             Self::Unauthorized => write!(f, "not logged in"),
             Self::Forbidden(m) => write!(f, "forbidden: {m}"),
-            Self::BadRequest(m) => write!(f, "{m}"),
-            Self::Conflict(m) => write!(f, "{m}"),
+            Self::BadRequest(m) | Self::Conflict(m) => write!(f, "{m}"),
             Self::Internal(e) => write!(f, "internal error: {e}"),
         }
     }

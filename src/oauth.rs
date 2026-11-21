@@ -78,8 +78,9 @@ impl Client {
 fn same_loopback(registered: &str, requested: &str) -> bool {
     let strip = |u: &str| -> Option<(String, String)> {
         let rest = u.strip_prefix("http://")?;
-        let (hostport, path) = rest.split_once('/').map(|(h, p)| (h, format!("/{p}"))).unwrap_or((rest, "/".into()));
-        let host = hostport.rsplit_once(':').map(|(h, _)| h).unwrap_or(hostport);
+        let (hostport, path) =
+            rest.split_once('/').map(|(h, p)| (h, format!("/{p}"))).unwrap_or_else(|| (rest, "/".into()));
+        let host = hostport.rsplit_once(':').map_or(hostport, |(h, _)| h);
         matches!(host, "localhost" | "127.0.0.1" | "[::1]").then(|| (host.to_string(), path))
     };
     matches!((strip(registered), strip(requested)), (Some(a), Some(b)) if a == b)
@@ -331,7 +332,7 @@ impl App {
 
     async fn fetch_client_metadata(&self, url: &str) -> Result<Option<Client>> {
         // Anyone can make us fetch a URL here, so bound how often.
-        if self.limiter.check_and_hit("cimd-fetch", 300, std::time::Duration::from_secs(3600)) {
+        if self.limiter.check_and_hit("cimd-fetch", 300, std::time::Duration::from_hours(1)) {
             tracing::warn!("client metadata fetches throttled");
             return Ok(None);
         }
@@ -622,7 +623,7 @@ pub async fn register(
 ) -> Response {
     // Registration is open by design (MCP clients register themselves), so
     // bound how fast one address can fill the table.
-    if app.limiter.check_and_hit(&format!("oauth-register:{ip}"), 30, std::time::Duration::from_secs(3600)) {
+    if app.limiter.check_and_hit(&format!("oauth-register:{ip}"), 30, std::time::Duration::from_hours(1)) {
         return crate::security::too_many_requests(3600);
     }
     match app.register_client(req).await {

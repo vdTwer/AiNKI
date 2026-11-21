@@ -153,8 +153,7 @@ impl Clock {
                 .tz
                 .from_local_datetime(&(naive + Duration::hours(1)))
                 .earliest()
-                .map(|t| t.timestamp())
-                .unwrap_or_else(|| naive.and_utc().timestamp()),
+                .map_or_else(|| naive.and_utc().timestamp(), |t| t.timestamp()),
         }
     }
 
@@ -217,7 +216,7 @@ fn fuzzed_interval(interval: f64, max_interval: i64, seed: f64) -> i64 {
     const RANGES: [(f64, f64, f64); 3] = [(2.5, 7.0, 0.15), (7.0, 20.0, 0.1), (20.0, f64::MAX, 0.05)];
     let mut delta = 1.0;
     for (start, end, factor) in RANGES {
-        delta += factor * (interval.min(end) - start).max(0.0);
+        delta = factor.mul_add((interval.min(end) - start).max(0.0), delta);
     }
     let mut min_ivl = num::f64_i64((interval - delta).round()).max(2);
     let max_ivl = num::f64_i64((interval + delta).round());
@@ -246,7 +245,7 @@ pub fn answer(
     rating: Rating,
     clock: &Clock,
 ) -> anyhow::Result<Outcome> {
-    let elapsed_days = card.last_review.map(|last| clock.days_between(last, clock.now).max(0)).unwrap_or(0);
+    let elapsed_days = card.last_review.map_or(0, |last| clock.days_between(last, clock.now).max(0));
     let next =
         fsrs.next_states(card.memory(), cfg.desired_retention, num::i64_u32(elapsed_days.min(i64::from(u32::MAX))))?;
     let chosen = match rating {

@@ -17,7 +17,7 @@ pub fn number(n: i64) -> String {
     let digits = n.unsigned_abs().to_string();
     let mut out = String::new();
     for (i, c) in digits.chars().enumerate() {
-        if i > 0 && (digits.len() - i) % 3 == 0 {
+        if i > 0 && (digits.len() - i).is_multiple_of(3) {
             out.push(',');
         }
         out.push(c);
@@ -35,7 +35,7 @@ pub const NONE: &str = "—";
 
 /// A share as a whole percent, "91%"; the dash when there's none.
 pub fn percent(v: Option<f64>) -> String {
-    v.map(|v| format!("{:.0}%", v * 100.0)).unwrap_or_else(|| NONE.into())
+    v.map_or_else(|| NONE.into(), |v| format!("{:.0}%", v * 100.0))
 }
 
 /// Whole minutes, rounded: "about 3 minutes"; "under a minute" below one.

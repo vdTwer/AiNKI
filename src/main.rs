@@ -83,7 +83,7 @@ impl Config {
     fn from_env() -> anyhow::Result<Self> {
         let env = |k: &str| std::env::var(k).ok().filter(|v| !v.trim().is_empty());
         let flag = |k: &str, default: bool| {
-            env(k).map(|v| matches!(v.to_ascii_lowercase().as_str(), "1" | "true" | "yes" | "on")).unwrap_or(default)
+            env(k).map_or(default, |v| matches!(v.to_ascii_lowercase().as_str(), "1" | "true" | "yes" | "on"))
         };
         let tz = env("AINKI_TIMEZONE")
             .or_else(|| env("TZ"))
@@ -109,7 +109,7 @@ pub struct App {
 impl App {
     #[must_use]
     pub fn new(db: SqlitePool, config: Config) -> Self {
-        Self { db, config, limiter: Default::default() }
+        Self { db, config, limiter: security::RateLimiter::default() }
     }
 
     /// Whether the signup page is open right now.
@@ -221,7 +221,7 @@ async fn main() -> anyhow::Result<()> {
                     if let Err(e) = cleaner.cleanup().await {
                         tracing::warn!("cleanup failed: {e}");
                     }
-                    tokio::time::sleep(std::time::Duration::from_secs(3600)).await;
+                    tokio::time::sleep(std::time::Duration::from_hours(1)).await;
                 }
             });
             web::serve(app).await

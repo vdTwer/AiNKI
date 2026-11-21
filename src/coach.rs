@@ -150,7 +150,7 @@ fn near_duplicate(a: &str, b: &str) -> bool {
 
 /// How many list items the back has (0 when it has no list of two or more).
 pub fn list_items(back: &str) -> usize {
-    multi::items(back, Split::List).map(|i| i.len()).unwrap_or(0)
+    multi::items(back, Split::List).map_or(0, |i| i.len())
 }
 
 fn is_leech(lapses: i64, stability: Option<f64>, state: CardState) -> bool {

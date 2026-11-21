@@ -31,9 +31,9 @@ impl RateLimiter {
     fn with_bucket<T>(&self, key: &str, window: Duration, f: impl FnOnce(&mut (u32, Instant)) -> T) -> T {
         let mut map = self.buckets.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         if map.len() > 50_000 {
-            map.retain(|_, (_, start)| start.elapsed() < Duration::from_secs(3600));
+            map.retain(|_, (_, start)| start.elapsed() < Duration::from_hours(1));
         }
-        let entry = map.entry(key.to_string()).or_insert((0, Instant::now()));
+        let entry = map.entry(key.to_string()).or_insert_with(|| (0, Instant::now()));
         if entry.1.elapsed() >= window {
             *entry = (0, Instant::now());
         }
@@ -102,7 +102,7 @@ impl<S: Send + Sync> FromRequestParts<S> for ClientIp {
 
     async fn from_request_parts(parts: &mut Parts, _: &S) -> Result<Self, Self::Rejection> {
         let peer = parts.extensions.get::<ConnectInfo<SocketAddr>>().map(|c| c.0.ip());
-        Ok(Self(client_ip(&parts.headers, peer).map(|ip| ip.to_string()).unwrap_or_else(|| "unknown".into())))
+        Ok(Self(client_ip(&parts.headers, peer).map_or_else(|| "unknown".into(), |ip| ip.to_string())))
     }
 }
 
@@ -147,7 +147,7 @@ fn origin_of(url: &str) -> Option<String> {
 }
 
 fn host_of(origin: &str) -> &str {
-    origin.split_once("://").map(|(_, h)| h).unwrap_or(origin)
+    origin.split_once("://").map_or(origin, |(_, h)| h)
 }
 
 /// Hosts a legitimate same-origin request can come from: the Host the
@@ -227,7 +227,8 @@ pub async fn flash(mut req: Request, next: Next) -> Response {
         .get_all(header::COOKIE)
         .iter()
         .filter_map(|v| v.to_str().ok())
-        .flat_map(|v| v.split(';')).find_map(|c| c.trim().strip_prefix(&format!("{FLASH_COOKIE}=")).map(str::to_string))
+        .flat_map(|v| v.split(';'))
+        .find_map(|c| c.trim().strip_prefix(&format!("{FLASH_COOKIE}=")).map(str::to_string))
         .map(|v| percent_decode(&v))
         .filter(|m| !m.is_empty());
     let had = msg.is_some();
@@ -268,7 +269,7 @@ mod tests {
     #[test]
     fn limiter() {
         let l = RateLimiter::default();
-        let w = Duration::from_secs(60);
+        let w = Duration::from_mins(1);
         for _ in 0..3 {
             assert!(!l.check_and_hit("k", 3, w));
         }

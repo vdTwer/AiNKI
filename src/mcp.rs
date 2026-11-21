@@ -83,7 +83,7 @@ pub fn service(app: AppState) -> StreamableHttpService<AinkiMcp, NeverSessionMan
         // self-hosters run this behind arbitrary hostnames.
         .disable_allowed_hosts()
         .with_max_request_body_bytes(import::MAX_IMPORT_BYTES * 4 / 3 + 1024 * 1024);
-    StreamableHttpService::new(move || Ok(AinkiMcp::new(app.clone())), Default::default(), config)
+    StreamableHttpService::new(move || Ok(AinkiMcp::new(app.clone())), std::sync::Arc::default(), config)
 }
 
 /// Resolve the Bearer token into an [`Access`] for the tools.
@@ -98,22 +98,19 @@ pub async fn auth(State(app): State<AppState>, mut req: Request, next: Next) -> 
         Some(t) => app.token_access(&t).await.ok(),
         None => None,
     };
-    match access {
-        Some(a) => {
-            req.extensions_mut().insert(a);
-            next.run(req).await
-        }
-        None => {
-            // Tells MCP clients where to start the OAuth flow (RFC 9728).
-            let base = crate::oauth::base_url(&app, req.headers());
-            let challenge = format!("Bearer resource_metadata=\"{base}/.well-known/oauth-protected-resource/mcp\"");
-            (
-                StatusCode::UNAUTHORIZED,
-                [(header::WWW_AUTHENTICATE, challenge)],
-                "missing or invalid access token: connect through OAuth, or create a token in AiNKI under Settings → Agent access",
-            )
-                .into_response()
-        }
+    if let Some(a) = access {
+        req.extensions_mut().insert(a);
+        next.run(req).await
+    } else {
+        // Tells MCP clients where to start the OAuth flow (RFC 9728).
+        let base = crate::oauth::base_url(&app, req.headers());
+        let challenge = format!("Bearer resource_metadata=\"{base}/.well-known/oauth-protected-resource/mcp\"");
+        (
+            StatusCode::UNAUTHORIZED,
+            [(header::WWW_AUTHENTICATE, challenge)],
+            "missing or invalid access token: connect through OAuth, or create a token in AiNKI under Settings → Agent access",
+        )
+            .into_response()
     }
 }
 
@@ -166,7 +163,7 @@ fn out(v: impl Serialize) -> ToolResult {
 
 fn decode_b64(data: &str) -> Result<Vec<u8>, String> {
     // Accept data URLs too.
-    let data = data.split_once("base64,").map(|(_, d)| d).unwrap_or(data);
+    let data = data.split_once("base64,").map_or(data, |(_, d)| d);
     let cleaned: String = data.chars().filter(|c| !c.is_whitespace()).collect();
     base64::engine::general_purpose::STANDARD.decode(cleaned).map_err(|e| format!("invalid base64: {e}"))
 }
@@ -314,7 +311,7 @@ pub struct NewCard {
 
 impl NewCard {
     fn split(&self) -> Option<Split> {
-        self.multi.or(self.list.then_some(Split::List))
+        self.multi.or_else(|| self.list.then_some(Split::List))
     }
 }
 

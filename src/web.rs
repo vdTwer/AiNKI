@@ -223,7 +223,7 @@ fn admin_may(path: &str) -> bool {
 
 /// The login page, coming back here afterwards when this was a page view.
 fn login_url(parts: &Parts) -> String {
-    let here = parts.uri.path_and_query().map(http::uri::PathAndQuery::as_str).unwrap_or("/");
+    let here = parts.uri.path_and_query().map_or("/", http::uri::PathAndQuery::as_str);
     match safe_next(Some(here)) {
         Some(next) if parts.method == axum::http::Method::GET && next != "/" => {
             format!("/login?next={}", urlenc(next))
@@ -414,8 +414,7 @@ fn exam_words(user: &User, date: &str) -> String {
 
 fn forecast_day(user: &User, date: &str) -> String {
     chrono::NaiveDate::parse_from_str(date, "%Y-%m-%d")
-        .map(|d| format::short_day(&user.clock(), d))
-        .unwrap_or_else(|_| date.to_string())
+        .map_or_else(|_| date.to_string(), |d| format::short_day(&user.clock(), d))
 }
 
 /// The menu entry a page belongs to; marked as the current one.
@@ -442,7 +441,7 @@ pub fn layout_in(nav: Nav, title: &str, user: Option<&User>, body: Markup) -> Ma
 /// `page_kind` marks special pages for app.js.
 fn page(nav: Option<Nav>, title: &str, user: Option<&User>, page_kind: Option<&str>, body: Markup) -> Markup {
     let current = |n: Nav| (nav == Some(n)).then_some("page");
-    let scale = num::i64_f64(user.map(|u| u.font_scale).unwrap_or(100)) / 100.0;
+    let scale = num::i64_f64(user.map_or(100, |u| u.font_scale)) / 100.0;
     html! {
         (DOCTYPE)
         html lang="en" data-look=[user.map(|u| if u.desktop_look == "simple" { "simple" } else { "calm" })] {
@@ -741,7 +740,7 @@ async fn login_page(State(app): State<AppState>, user: Option<WebUser>, Query(q)
     auth_form(false, None, app.signup_open().await, next).into_response()
 }
 
-const LOGIN_WINDOW: Duration = Duration::from_secs(15 * 60);
+const LOGIN_WINDOW: Duration = Duration::from_mins(15);
 /// Failed logins allowed per client IP, and per account, per window.
 const LOGIN_FAILURES_PER_IP: u32 = 20;
 const LOGIN_FAILURES_PER_ACCOUNT: u32 = 50;
@@ -809,7 +808,7 @@ async fn signup(
     if !app.signup_open().await {
         return redirect("/login");
     }
-    if app.limiter.check_and_hit(&format!("signup-ip:{ip}"), 10, Duration::from_secs(3600)) {
+    if app.limiter.check_and_hit(&format!("signup-ip:{ip}"), 10, Duration::from_hours(1)) {
         return security::too_many_requests(3600);
     }
     let next = safe_next(f.next.as_deref());
@@ -983,7 +982,7 @@ async fn invite_accept(
     Path(token): Path<String>,
     Form(f): Form<LoginForm>,
 ) -> Response {
-    if app.limiter.check_and_hit(&format!("signup-ip:{ip}"), 10, Duration::from_secs(3600)) {
+    if app.limiter.check_and_hit(&format!("signup-ip:{ip}"), 10, Duration::from_hours(1)) {
         return security::too_many_requests(3600);
     }
     let from = match app.open_invite(&token).await {
@@ -1047,11 +1046,11 @@ fn invite_graph(accounts: &[invites::Account]) -> Markup {
             }
         }
     }
-    let x = |d: usize| LEFT + num::usize_f64(d) * INDENT;
-    let y = |r: usize| TOP + num::usize_f64(r) * ROW;
+    let x = |d: usize| num::usize_f64(d).mul_add(INDENT, LEFT);
+    let y = |r: usize| num::usize_f64(r).mul_add(ROW, TOP);
     let width = nodes
         .iter()
-        .map(|n| x(n.depth) + 16.0 + num::usize_f64(n.a.handle().len()) * 8.6 + 110.0)
+        .map(|n| num::usize_f64(n.a.handle().len()).mul_add(8.6, x(n.depth) + 16.0) + 110.0)
         .fold(320.0_f64, f64::max)
         .ceil();
     let height = (y(nodes.len().max(1)) - ROW + TOP).ceil();
@@ -1137,10 +1136,10 @@ async fn admin_page(State(app): State<AppState>, user: WebUser, headers: HeaderM
                             tr {
                                 td { (a.handle()) }
                                 td { (short_date(&clock, a.created_at)) }
-                                td { (a.invited_by.and_then(|i| names.get(&i)).map(String::as_str).unwrap_or(format::NONE)) }
+                                td { (a.invited_by.and_then(|i| names.get(&i)).map_or(format::NONE, String::as_str)) }
                                 td.num { (format::number(a.cards)) }
                                 td.num { (format::number(a.reviews_30d)) }
-                                td.num { (a.last_review.map(|t| short_date(&clock, t)).unwrap_or_else(|| "Never".into())) }
+                                td.num { (a.last_review.map_or_else(|| "Never".into(), |t| short_date(&clock, t))) }
                             }
                         }
                     }
@@ -1443,11 +1442,10 @@ fn rating_label(stored: &str) -> &str {
 /// Where a card or answer came from, in words.
 fn source_label(stored: &str) -> &str {
     match stored {
-        "web" => "On the website",
         "agent" => "By an agent",
         "import" => "Imported",
         "shared" => "From a shared deck",
-        "manual" => "On the website",
+        "web" | "manual" => "On the website",
         other => other,
     }
 }
@@ -1586,7 +1584,7 @@ async fn study_card(
                     @if let Some(d) = q_deck { input type="hidden" name="deck" value=(d); }
                     (sure_field)
                     @for (rating, label, key) in &buttons {
-                        @let preview = previews.iter().find(|(r, _)| r == rating).map(|(_, p)| p.as_str()).unwrap_or("");
+                        @let preview = previews.iter().find(|(r, _)| r == rating).map_or("", |(_, p)| p.as_str());
                         button.btn.primary[*rating == Rating::Good].again[*rating == Rating::Again] type="submit" name="rating" value=(*rating as i64) data-key=(key) {
                             span.label { (label) " " span.key { (key) } }
                             span.ivl { (preview) }
@@ -1989,10 +1987,10 @@ async fn find_json(State(app): State<AppState>, user: WebUser, Query(f): Query<F
         });
     }
     // Newest first already, so equal scores keep the newer card on top.
-    cards.sort_by(|a, b| b.score.cmp(&a.score));
+    cards.sort_by_key(|b| std::cmp::Reverse(b.score));
     cards.truncate(FIND_MAX_CARDS);
     found.extend(cards);
-    found.sort_by(|a, b| b.score.cmp(&a.score));
+    found.sort_by_key(|b| std::cmp::Reverse(b.score));
     // Letters scattered through a long text match too: next to a clear
     // match such stragglers are noise, so they go.
     if let Some(top) = found.first().map(|f| f.score).filter(|&s| s > 0) {
@@ -3062,7 +3060,7 @@ async fn read_card_form(mp: Multipart) -> Result<CardFormData, AppError> {
         remove_front_image: fields.contains_key("remove_front_image"),
         remove_back_image: fields.contains_key("remove_back_image"),
         // "list" is what the form sent before multicards.
-        multi: Split::parse(&text("multi")).or(fields.contains_key("list").then_some(Split::List)),
+        multi: Split::parse(&text("multi")).or_else(|| fields.contains_key("list").then_some(Split::List)),
         ..Default::default()
     };
     f.front_upload = fields.remove("front_image").filter(|d| !d.is_empty());
@@ -3333,15 +3331,12 @@ async fn card_create(State(app): State<AppState>, user: WebUser, mp: Multipart) 
                 if name.trim().is_empty() {
                     return Err(AppError::bad("give the new deck a name"));
                 }
-                match app.deck_by_name(&access, name).await? {
-                    Some(existing) => {
-                        msg = format!("Card added to your existing deck {}.", deck_plain(&existing.name));
-                        existing.id
-                    }
-                    None => {
-                        msg = "Deck created and card added.".into();
-                        app.create_deck(&access, name, "", None).await?.id
-                    }
+                if let Some(existing) = app.deck_by_name(&access, name).await? {
+                    msg = format!("Card added to your existing deck {}.", deck_plain(&existing.name));
+                    existing.id
+                } else {
+                    msg = "Deck created and card added.".into();
+                    app.create_deck(&access, name, "", None).await?.id
                 }
             }
             (None, Some(id)) => id,
@@ -4718,7 +4713,7 @@ async fn access_page(State(app): State<AppState>, user: WebUser, headers: Header
                             br;
                             span.muted.small {
                                 "Last used "
-                                (t.last_used_at.map(|ts| format::when(&clock, ts)).unwrap_or_else(|| "never".into()))
+                                (t.last_used_at.map_or_else(|| "never".into(), |ts| format::when(&clock, ts)))
                             }
                         }
                         form method="post" action=(format!("/access/{}/revoke", t.id)) {
