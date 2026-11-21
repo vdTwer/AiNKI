@@ -106,7 +106,7 @@ async fn seed_v1(db: &SqlitePool) -> V1 {
         ("Language vocabulary", 0.9),
         ("Relaxed", 0.85),
         ("My own pace", 0.88), // was "Maintenance", renamed by the user
-        ("Custom", 0.92),     // added by the user
+        ("Custom", 0.92),      // added by the user
     ] {
         let id: i64 = sqlx::query_scalar(
             "INSERT INTO presets (user_id, name, description, desired_retention, new_per_day, reviews_per_day,

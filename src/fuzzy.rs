@@ -186,9 +186,8 @@ fn prefix_distance(q: &[char], w: &[char], allowed: usize) -> Option<usize> {
         d[i * width] = i;
         for j in 1..=n {
             let cost = usize::from(q[i - 1] != w[j - 1]);
-            let mut v = (d[(i - 1) * width + j] + 1)
-                .min(d[i * width + j - 1] + 1)
-                .min(d[(i - 1) * width + j - 1] + cost);
+            let mut v =
+                (d[(i - 1) * width + j] + 1).min(d[i * width + j - 1] + 1).min(d[(i - 1) * width + j - 1] + cost);
             if i > 1 && j > 1 && q[i - 1] == w[j - 2] && q[i - 2] == w[j - 1] {
                 v = v.min(d[(i - 2) * width + j - 2] + 1);
             }

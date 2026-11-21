@@ -12,9 +12,9 @@ use crate::{
     App,
     auth::{Access, Actor},
     error::{AppError, Result},
-    now, presets,
     markdown,
     multi::{Missed, Split},
+    now, presets,
     scheduler::{self, CardSched, CardState, Clock, Rating, SchedConfig},
 };
 
@@ -100,9 +100,7 @@ impl DeckStatus {
 
 impl Deck {
     pub fn exam(&self) -> Option<NaiveDate> {
-        self.exam_date
-            .as_deref()
-            .and_then(|d| NaiveDate::parse_from_str(d, "%Y-%m-%d").ok())
+        self.exam_date.as_deref().and_then(|d| NaiveDate::parse_from_str(d, "%Y-%m-%d").ok())
     }
 }
 
@@ -155,11 +153,7 @@ impl Card {
     /// JSON shape used by the MCP API.
     pub fn to_json(&self, clock: &Clock, params: &[f32]) -> Value {
         let state = self.card_state();
-        let due = if state == CardState::New {
-            Value::Null
-        } else {
-            json!(crate::format::iso(self.due, clock))
-        };
+        let due = if state == CardState::New { Value::Null } else { json!(crate::format::iso(self.due, clock)) };
         json!({
             "id": self.id,
             "deck_id": self.deck_id,
@@ -405,12 +399,7 @@ impl App {
     }
 
     /// Create a preset, starting from a built-in template (default: standard).
-    pub async fn create_preset(
-        &self,
-        access: &Access,
-        template: Option<&str>,
-        input: PresetInput,
-    ) -> Result<Preset> {
+    pub async fn create_preset(&self, access: &Access, template: Option<&str>, input: PresetInput) -> Result<Preset> {
         access.require_write()?;
         access.require_all_decks()?;
         let t = presets::template(template.unwrap_or("standard"))
@@ -491,10 +480,8 @@ impl App {
         access.require_write()?;
         access.require_all_decks()?;
         self.preset(access, id).await?;
-        let used: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM decks WHERE preset_id = ?")
-            .bind(id)
-            .fetch_one(&self.db)
-            .await?;
+        let used: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM decks WHERE preset_id = ?").bind(id).fetch_one(&self.db).await?;
         if used > 0 {
             return Err(AppError::bad(format!(
                 "{} still {} this preset; switch {} to another preset first",
@@ -512,13 +499,11 @@ impl App {
     }
 
     async fn default_preset_id(&self, user_id: i64) -> Result<i64> {
-        Ok(
-            sqlx::query_scalar("SELECT id FROM presets WHERE user_id = ? ORDER BY id LIMIT 1")
-                .bind(user_id)
-                .fetch_optional(&self.db)
-                .await?
-                .ok_or_else(|| AppError::bad("create a preset first"))?,
-        )
+        Ok(sqlx::query_scalar("SELECT id FROM presets WHERE user_id = ? ORDER BY id LIMIT 1")
+            .bind(user_id)
+            .fetch_optional(&self.db)
+            .await?
+            .ok_or_else(|| AppError::bad("create a preset first"))?)
     }
 
     // ----- decks ---------------------------------------------------------
@@ -533,11 +518,10 @@ impl App {
     }
 
     pub async fn decks(&self, access: &Access) -> Result<Vec<Deck>> {
-        let all: Vec<Deck> =
-            sqlx::query_as("SELECT * FROM decks WHERE user_id = ? ORDER BY name COLLATE NOCASE")
-                .bind(access.user_id())
-                .fetch_all(&self.db)
-                .await?;
+        let all: Vec<Deck> = sqlx::query_as("SELECT * FROM decks WHERE user_id = ? ORDER BY name COLLATE NOCASE")
+            .bind(access.user_id())
+            .fetch_all(&self.db)
+            .await?;
         Ok(all.into_iter().filter(|d| access.can_see_deck(d.id)).collect())
     }
 
@@ -553,23 +537,17 @@ impl App {
     }
 
     pub async fn deck_by_name(&self, access: &Access, name: &str) -> Result<Option<Deck>> {
-        let deck: Option<Deck> =
-            sqlx::query_as("SELECT * FROM decks WHERE user_id = ? AND name = ? COLLATE NOCASE")
-                .bind(access.user_id())
-                .bind(name.trim())
-                .fetch_optional(&self.db)
-                .await?;
+        let deck: Option<Deck> = sqlx::query_as("SELECT * FROM decks WHERE user_id = ? AND name = ? COLLATE NOCASE")
+            .bind(access.user_id())
+            .bind(name.trim())
+            .fetch_optional(&self.db)
+            .await?;
         Ok(deck.filter(|d| access.can_see_deck(d.id)))
     }
 
     pub async fn deck_summaries(&self, access: &Access) -> Result<Vec<DeckSummary>> {
         let decks = self.decks(access).await?;
-        let presets: HashMap<i64, Preset> = self
-            .list_presets(access)
-            .await?
-            .into_iter()
-            .map(|p| (p.id, p))
-            .collect();
+        let presets: HashMap<i64, Preset> = self.list_presets(access).await?.into_iter().map(|p| (p.id, p)).collect();
         let clock = access.user.clock();
         let n = clock.now;
 
@@ -819,10 +797,8 @@ impl App {
         access.require_write()?;
         access.require_all_decks()?;
         self.deck(access, id).await?;
-        let cards: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM cards WHERE deck_id = ?")
-            .bind(id)
-            .fetch_one(&self.db)
-            .await?;
+        let cards: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM cards WHERE deck_id = ?").bind(id).fetch_one(&self.db).await?;
         sqlx::query("DELETE FROM decks WHERE id = ? AND user_id = ?")
             .bind(id)
             .bind(access.user_id())
@@ -852,12 +828,7 @@ impl App {
             "UPDATE cards SET suspended = 1, held = 1, updated_at = ?
              WHERE deck_id = ? AND user_id = ? AND suspended = 0"
         };
-        sqlx::query(cards)
-            .bind(t)
-            .bind(id)
-            .bind(access.user_id())
-            .execute(&mut *tx)
-            .await?;
+        sqlx::query(cards).bind(t).bind(id).bind(access.user_id()).execute(&mut *tx).await?;
         tx.commit().await?;
         self.deck(access, id).await
     }
@@ -876,12 +847,11 @@ impl App {
 
     async fn check_media(&self, access: &Access, id: &Option<String>) -> Result<()> {
         if let Some(id) = id {
-            let found: Option<String> =
-                sqlx::query_scalar("SELECT id FROM media WHERE id = ? AND user_id = ?")
-                    .bind(id)
-                    .bind(access.user_id())
-                    .fetch_optional(&self.db)
-                    .await?;
+            let found: Option<String> = sqlx::query_scalar("SELECT id FROM media WHERE id = ? AND user_id = ?")
+                .bind(id)
+                .bind(access.user_id())
+                .fetch_optional(&self.db)
+                .await?;
             if found.is_none() {
                 return Err(AppError::bad(format!("unknown image id '{id}'")));
             }
@@ -917,9 +887,7 @@ impl App {
             Actor::Web => "web",
             Actor::Agent { .. } => "agent",
         };
-        let id = self
-            .insert_card(access.user_id(), deck_id, front, back, front_image, back_image, source)
-            .await?;
+        let id = self.insert_card(access.user_id(), deck_id, front, back, front_image, back_image, source).await?;
         let card = self.card(access, id).await?;
         if multi.is_some() {
             self.sync_items(&card, multi).await?;
@@ -1140,20 +1108,13 @@ impl App {
             "suspended" => cond.push_str(" AND suspended = 1"),
             other => return Err(AppError::bad(format!("unknown state filter '{other}'"))),
         }
-        let like = query.map(|q| {
-            format!(
-                "%{}%",
-                q.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_")
-            )
-        });
+        let like = query.map(|q| format!("%{}%", q.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_")));
         let due_bound = filter.state.as_deref() == Some("due");
         let limit = filter.limit.unwrap_or(50).clamp(1, 500);
         let offset = filter.offset.unwrap_or(0).max(0);
 
         let count_sql = format!("SELECT COUNT(*) FROM cards WHERE {cond}");
-        let list_sql = format!(
-            "SELECT * FROM cards WHERE {cond} ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?"
-        );
+        let list_sql = format!("SELECT * FROM cards WHERE {cond} ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?");
         let mut count_q = sqlx::query_scalar::<_, i64>(&count_sql).bind(access.user_id());
         let mut list_q = sqlx::query_as::<_, Card>(&list_sql).bind(access.user_id());
         for id in &deck_ids {
@@ -1195,10 +1156,8 @@ impl App {
         let remaining: i64 = summaries.iter().map(|s| s.due_total()).sum();
         let n = now();
         let all_ids: Vec<i64> = summaries.iter().map(|s| s.deck.id).collect();
-        let review_ids: Vec<i64> =
-            summaries.iter().filter(|s| s.review_due > 0).map(|s| s.deck.id).collect();
-        let new_ids: Vec<i64> =
-            summaries.iter().filter(|s| s.new_today > 0).map(|s| s.deck.id).collect();
+        let review_ids: Vec<i64> = summaries.iter().filter(|s| s.review_due > 0).map(|s| s.deck.id).collect();
+        let new_ids: Vec<i64> = summaries.iter().filter(|s| s.new_today > 0).map(|s| s.deck.id).collect();
 
         let pick = |ids: &[i64], cond: &str, order: &str| {
             let sql = format!(
@@ -1233,12 +1192,7 @@ impl App {
 
         // Interleave new cards with reviews so both progress at the same rate.
         let (new_done, new_left, rev_done, rev_left) = summaries.iter().fold((0, 0, 0, 0), |a, s| {
-            (
-                a.0 + s.new_done_today,
-                a.1 + s.new_today,
-                a.2 + s.review_done_today,
-                a.3 + s.review_due,
-            )
+            (a.0 + s.new_done_today, a.1 + s.new_today, a.2 + s.review_done_today, a.3 + s.review_due)
         });
         let prefer_new = new_left > 0
             && (rev_left == 0
@@ -1258,18 +1212,10 @@ impl App {
         let Some(card) = chosen else {
             return Ok(None);
         };
-        let deck = summaries
-            .into_iter()
-            .find(|s| s.deck.id == card.deck_id)
-            .map(|s| s.deck)
-            .ok_or(AppError::NotFound)?;
+        let deck =
+            summaries.into_iter().find(|s| s.deck.id == card.deck_id).map(|s| s.deck).ok_or(AppError::NotFound)?;
         let previews = self.previews(access, &card, &deck).await?;
-        Ok(Some(StudyCard {
-            card,
-            deck,
-            previews,
-            remaining: remaining.max(1),
-        }))
+        Ok(Some(StudyCard { card, deck, previews, remaining: remaining.max(1) }))
     }
 
     pub async fn previews(&self, access: &Access, card: &Card, deck: &Deck) -> Result<Vec<(Rating, String)>> {
@@ -1420,11 +1366,7 @@ impl App {
             .bind(card.id)
             .fetch_one(&self.db)
             .await?;
-        let Some(prev) = last
-            .prev_card
-            .as_deref()
-            .and_then(|p| serde_json::from_str::<CardSched>(p).ok())
-        else {
+        let Some(prev) = last.prev_card.as_deref().and_then(|p| serde_json::from_str::<CardSched>(p).ok()) else {
             return Ok(None);
         };
         if newest != last.id {
@@ -1709,7 +1651,8 @@ impl App {
                 "SELECT reviewed_at, state_before = 2, rating > 1 FROM review_log
                  WHERE user_id = ? AND rating > 0 AND reviewed_at >= ? AND deck_id IN ({ph})"
             );
-            let mut q = sqlx::query_as::<_, (i64, bool, bool)>(&sql).bind(access.user_id()).bind(clock.day_start(first));
+            let mut q =
+                sqlx::query_as::<_, (i64, bool, bool)>(&sql).bind(access.user_id()).bind(clock.day_start(first));
             for id in &deck_ids {
                 q = q.bind(id);
             }
@@ -1751,9 +1694,7 @@ impl App {
         if !matches!(desktop_look, "calm" | "simple") {
             return Err(AppError::bad("unknown look"));
         }
-        timezone
-            .parse::<chrono_tz::Tz>()
-            .map_err(|_| AppError::bad(format!("unknown timezone '{timezone}'")))?;
+        timezone.parse::<chrono_tz::Tz>().map_err(|_| AppError::bad(format!("unknown timezone '{timezone}'")))?;
         sqlx::query(
             "UPDATE users SET timezone = ?, rollover_hour = ?, four_buttons = ?, font_scale = ?,
                 optimize_include_agent = ?, desktop_look = ? WHERE id = ?",

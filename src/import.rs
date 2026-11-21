@@ -77,11 +77,7 @@ pub fn parse_csv(text: &str) -> Result<Vec<(String, String)>> {
 /// such cells get a leading apostrophe, which spreadsheets hide and our
 /// importer strips again.
 fn defuse_formula(cell: &str) -> String {
-    if cell.starts_with(['=', '+', '-', '@', '\t', '\r']) {
-        format!("'{cell}")
-    } else {
-        cell.to_string()
-    }
+    if cell.starts_with(['=', '+', '-', '@', '\t', '\r']) { format!("'{cell}") } else { cell.to_string() }
 }
 
 fn restore_formula(cell: String) -> String {
@@ -156,11 +152,7 @@ pub fn anki_html_to_text(html: &str) -> (String, Option<String>) {
         };
         let tag = &rest[start + 1..start + end];
         let lower = tag.to_ascii_lowercase();
-        let name = lower
-            .trim_start_matches('/')
-            .split(|c: char| c.is_whitespace() || c == '/')
-            .next()
-            .unwrap_or("");
+        let name = lower.trim_start_matches('/').split(|c: char| c.is_whitespace() || c == '/').next().unwrap_or("");
         match name {
             "br" | "div" | "p" | "li" | "tr" | "h1" | "h2" | "h3" | "h4" => {
                 if !out.ends_with('\n') && !out.is_empty() {
@@ -192,13 +184,7 @@ pub fn anki_html_to_text(html: &str) -> (String, Option<String>) {
             None => break,
         }
     }
-    let text = text
-        .lines()
-        .map(str::trim_end)
-        .collect::<Vec<_>>()
-        .join("\n")
-        .trim()
-        .to_string();
+    let text = text.lines().map(str::trim_end).collect::<Vec<_>>().join("\n").trim().to_string();
     (text, image)
 }
 
@@ -370,9 +356,7 @@ fn read_package(data: &[u8]) -> Result<Package> {
     let mut total = 0u64;
     for (zip_name, file_name) in index {
         let lower = file_name.to_ascii_lowercase();
-        let is_image = [".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp"]
-            .iter()
-            .any(|e| lower.ends_with(e));
+        let is_image = [".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp"].iter().any(|e| lower.ends_with(e));
         if !is_image || media.len() >= MAX_MEDIA_FILES || total >= MAX_MEDIA_TOTAL_BYTES {
             continue;
         }
@@ -415,8 +399,7 @@ impl App {
                 report.skipped += 1;
                 continue;
             }
-            self.insert_card(access.user_id(), deck_id, &front, &back, None, None, "import")
-                .await?;
+            self.insert_card(access.user_id(), deck_id, &front, &back, None, None, "import").await?;
             report.cards_imported += 1;
         }
         Ok(report)
@@ -537,10 +520,7 @@ impl App {
         .collect();
 
         let mut revlog: HashMap<i64, Vec<AnkiRev>> = HashMap::new();
-        if let Ok(rows) = sqlx::query("SELECT id, cid, ease, type FROM revlog ORDER BY id")
-            .fetch_all(&mut conn)
-            .await
-        {
+        if let Ok(rows) = sqlx::query("SELECT id, cid, ease, type FROM revlog ORDER BY id").fetch_all(&mut conn).await {
             for r in rows {
                 revlog.entry(r.get("cid")).or_default().push(AnkiRev {
                     time_ms: r.get("id"),
@@ -588,11 +568,7 @@ impl App {
                     return id.clone();
                 }
                 let id = match media.get(&name) {
-                    Some(bytes) => self
-                        .store_image_for(access.user_id(), bytes.clone())
-                        .await
-                        .ok()
-                        .map(|m| m.id),
+                    Some(bytes) => self.store_image_for(access.user_id(), bytes.clone()).await.ok().map(|m| m.id),
                     None => None,
                 };
                 if id.is_some() {
@@ -611,10 +587,7 @@ impl App {
             let deck_id = match deck_map.get(&c.did) {
                 Some(id) => *id,
                 None => {
-                    let name = deck_names
-                        .get(&c.did)
-                        .cloned()
-                        .unwrap_or_else(|| "Imported".into());
+                    let name = deck_names.get(&c.did).cloned().unwrap_or_else(|| "Imported".into());
                     let id = match self.deck_by_name(access, &name).await? {
                         Some(d) => d.id,
                         None => {
@@ -627,9 +600,8 @@ impl App {
                 }
             };
 
-            let card_id = self
-                .insert_card(access.user_id(), deck_id, &front, &back, front_image, back_image, "import")
-                .await?;
+            let card_id =
+                self.insert_card(access.user_id(), deck_id, &front, &back, front_image, back_image, "import").await?;
             report.cards_imported += 1;
 
             // History: learning/review/relearning/filtered entries only.
@@ -653,10 +625,7 @@ impl App {
                 };
                 let delta = prev.map(|p| clock.days_between(p, t).max(0)).unwrap_or(0);
                 prev = Some(t);
-                fsrs_reviews.push(fsrs::FSRSReview {
-                    rating: r.ease as u32,
-                    delta_t: delta as u32,
-                });
+                fsrs_reviews.push(fsrs::FSRSReview { rating: r.ease as u32, delta_t: delta as u32 });
                 sqlx::query(
                     "INSERT INTO review_log (user_id, card_id, deck_id, rating, reviewed_at,
                         state_before, elapsed_days, scheduled_secs, source)
@@ -702,11 +671,8 @@ impl App {
             } else {
                 now()
             };
-            let last_review = prev.or(if state == CardState::Review {
-                Some(due - c.ivl.max(1) * 86_400)
-            } else {
-                None
-            });
+            let last_review =
+                prev.or(if state == CardState::Review { Some(due - c.ivl.max(1) * 86_400) } else { None });
             sqlx::query(
                 "UPDATE cards SET state = ?, stability = ?, difficulty = ?, due = ?, last_review = ?,
                     reps = ?, lapses = ?, suspended = MAX(?, held) WHERE id = ?",
@@ -761,9 +727,8 @@ mod tests {
 
     #[test]
     fn html_stripping() {
-        let (t, img) = anki_html_to_text(
-            "Hello&nbsp;<b>world</b><br>line 2<div><img src=\"cat.jpg\"></div>[sound:x.mp3]&#x41;",
-        );
+        let (t, img) =
+            anki_html_to_text("Hello&nbsp;<b>world</b><br>line 2<div><img src=\"cat.jpg\"></div>[sound:x.mp3]&#x41;");
         assert_eq!(t, "Hello world\nline 2\nA");
         assert_eq!(img.as_deref(), Some("cat.jpg"));
     }
@@ -781,8 +746,8 @@ mod tests {
     fn media_protobuf() {
         // entries { name: "a.png" size: 3 } entries { name: "b.jpg" }
         let buf = [
-            0x0a, 0x09, 0x0a, 0x05, b'a', b'.', b'p', b'n', b'g', 0x10, 0x03, 0x0a, 0x07, 0x0a,
-            0x05, b'b', b'.', b'j', b'p', b'g',
+            0x0a, 0x09, 0x0a, 0x05, b'a', b'.', b'p', b'n', b'g', 0x10, 0x03, 0x0a, 0x07, 0x0a, 0x05, b'b', b'.', b'j',
+            b'p', b'g',
         ];
         assert_eq!(parse_media_entries(&buf), vec!["a.png", "b.jpg"]);
     }

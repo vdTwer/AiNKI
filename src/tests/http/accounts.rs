@@ -112,7 +112,9 @@ async fn cleanup_drops_expired_sessions_and_leftover_files() {
 fn the_public_url_is_just_scheme_and_host() {
     assert_eq!(crate::parse_public_url(" https://Cards.Example.com/ ").unwrap(), "https://cards.example.com");
     assert_eq!(crate::parse_public_url("http://localhost:8080").unwrap(), "http://localhost:8080");
-    for bad in ["cards.example.com", "ftp://x.org", "https://", "https://x.org/path", "https://u@x.org", "https://x.org?q"] {
+    for bad in
+        ["cards.example.com", "ftp://x.org", "https://", "https://x.org/path", "https://u@x.org", "https://x.org?q"]
+    {
         assert!(crate::parse_public_url(bad).is_err(), "{bad}");
     }
 }

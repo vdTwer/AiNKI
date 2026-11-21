@@ -122,12 +122,8 @@ impl App {
     pub async fn accept_share(&self, access: &Access, share_id: i64) -> Result<Deck> {
         access.require_write()?;
         access.require_all_decks()?;
-        let share = self
-            .incoming_shares(access)
-            .await?
-            .into_iter()
-            .find(|s| s.id == share_id)
-            .ok_or(AppError::NotFound)?;
+        let share =
+            self.incoming_shares(access).await?.into_iter().find(|s| s.id == share_id).ok_or(AppError::NotFound)?;
         // Claim the offer first, so a second press (a double click, a slow
         // phone) finds nothing instead of making a second copy.
         let claimed = sqlx::query("DELETE FROM deck_shares WHERE id = ? AND to_user = ?")
@@ -183,9 +179,7 @@ impl App {
                 i += 1;
             }
         }
-        let deck = self
-            .create_deck(access, &name, &share.deck_description, None)
-            .await?;
+        let deck = self.create_deck(access, &name, &share.deck_description, None).await?;
 
         let mut images = std::collections::HashMap::new();
         for c in cards {

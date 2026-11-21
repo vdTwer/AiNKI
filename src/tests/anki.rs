@@ -60,9 +60,17 @@ async fn collection(format: Format, crt: i64, decks: &[(i64, &str)], cards: &[Ca
     let json: serde_json::Map<String, serde_json::Value> =
         decks.iter().map(|(id, name)| (id.to_string(), serde_json::json!({ "name": name }))).collect();
     let blob = if format == Format::Legacy { serde_json::Value::Object(json).to_string() } else { "{}".into() };
-    sqlx::query("INSERT INTO col (id, crt, decks) VALUES (1, ?, ?)").bind(crt).bind(blob).execute(&mut conn).await.unwrap();
+    sqlx::query("INSERT INTO col (id, crt, decks) VALUES (1, ?, ?)")
+        .bind(crt)
+        .bind(blob)
+        .execute(&mut conn)
+        .await
+        .unwrap();
     if format == Format::Modern {
-        sqlx::query("CREATE TABLE decks (id INTEGER PRIMARY KEY, name TEXT NOT NULL)").execute(&mut conn).await.unwrap();
+        sqlx::query("CREATE TABLE decks (id INTEGER PRIMARY KEY, name TEXT NOT NULL)")
+            .execute(&mut conn)
+            .await
+            .unwrap();
         for (id, name) in decks {
             // The modern schema separates nested names with \x1f.
             sqlx::query("INSERT INTO decks (id, name) VALUES (?, ?)")
@@ -221,10 +229,8 @@ async fn a_legacy_package_brings_cards_history_and_images() {
     assert!(flag.front_image.is_some());
 
     // The imported history counts for the optimizer and the log.
-    let logged: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM review_log WHERE source = 'import'")
-        .fetch_one(&app.db)
-        .await
-        .unwrap();
+    let logged: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM review_log WHERE source = 'import'").fetch_one(&app.db).await.unwrap();
     assert_eq!(logged, 4);
 }
 
@@ -232,7 +238,13 @@ async fn a_legacy_package_brings_cards_history_and_images() {
 async fn a_modern_package_reads_nested_deck_names() {
     let app = app().await;
     let a = user(&app, "kolja").await;
-    let col = collection(Format::Modern, now() - 10 * DAY, &[(5, "Uni::Biology::Cells")], &[card(1, "Mitochondria|powerhouse", 5)]).await;
+    let col = collection(
+        Format::Modern,
+        now() - 10 * DAY,
+        &[(5, "Uni::Biology::Cells")],
+        &[card(1, "Mitochondria|powerhouse", 5)],
+    )
+    .await;
     let report = app.import_apkg(&a, package(Format::Modern, col, &[])).await.unwrap();
     assert_eq!(report.decks_created, vec!["Uni::Biology::Cells".to_string()]);
     assert_eq!(cards_in(&app, &a, "Uni::Biology::Cells").await[0].back, "powerhouse");

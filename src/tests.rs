@@ -24,15 +24,9 @@ async fn app() -> Arc<App> {
 }
 
 async fn app_with(configure: impl FnOnce(&mut Config)) -> Arc<App> {
-    let opts = SqliteConnectOptions::from_str("sqlite::memory:")
-        .unwrap()
-        .foreign_keys(true);
+    let opts = SqliteConnectOptions::from_str("sqlite::memory:").unwrap().foreign_keys(true);
     // One connection: every in-memory connection is its own database.
-    let db = SqlitePoolOptions::new()
-        .max_connections(1)
-        .connect_with(opts)
-        .await
-        .unwrap();
+    let db = SqlitePoolOptions::new().max_connections(1).connect_with(opts).await.unwrap();
     sqlx::migrate!("./migrations").run(&db).await.unwrap();
     let dir = std::env::temp_dir().join(format!("ainki-test-{}", uuid::Uuid::new_v4().simple()));
     let mut config = Config {
@@ -66,10 +60,7 @@ async fn study_flow_and_undo() {
     assert_eq!(first.remaining, 3);
     assert_eq!(first.previews.len(), 4);
 
-    let r = app
-        .answer_card(&a, first.card.id, Rating::Good, Some(1500), Some(0))
-        .await
-        .unwrap();
+    let r = app.answer_card(&a, first.card.id, Rating::Good, Some(1500), Some(0)).await.unwrap();
     assert_eq!(r.card.card_state(), CardState::Review);
     assert!(r.card.stability.is_some());
 
@@ -115,11 +106,17 @@ async fn list_cards_remember_each_item() {
     // Item by item needs a numbered list.
     assert!(app.create_card(&a, deck.id, "q", "just text", None, None, Some(crate::multi::Split::List)).await.is_err());
     let back = "Cohen:\n1. Cultural body\n2. Always escapes\n3. Category crisis";
-    let card = app.create_card(&a, deck.id, "Theses on monsters?", back, None, None, Some(crate::multi::Split::List)).await.unwrap();
+    let card = app
+        .create_card(&a, deck.id, "Theses on monsters?", back, None, None, Some(crate::multi::Split::List))
+        .await
+        .unwrap();
     assert_eq!(card.multi, Some(crate::multi::Split::List));
     assert_eq!(card.card_state(), CardState::New);
     let items = app.card_items(&card).await.unwrap();
-    assert_eq!(items.iter().map(|i| i.text.as_str()).collect::<Vec<_>>(), ["Cultural body", "Always escapes", "Category crisis"]);
+    assert_eq!(
+        items.iter().map(|i| i.text.as_str()).collect::<Vec<_>>(),
+        ["Cultural body", "Always escapes", "Category crisis"]
+    );
     assert_eq!(crate::multi::asked(&card, &items, now()), [true, true, true]);
 
     // 1 of 3: the second and third were missed.
@@ -152,20 +149,14 @@ async fn list_cards_remember_each_item() {
 
     // Editing keeps the memory of items that stay; a new one starts fresh.
     let edited = format!("{back}\n4. Gates of difference");
-    let card = app
-        .update_card(&a, card.id, CardInput { back: Some(edited), ..Default::default() })
-        .await
-        .unwrap();
+    let card = app.update_card(&a, card.id, CardInput { back: Some(edited), ..Default::default() }).await.unwrap();
     let items = app.card_items(&card).await.unwrap();
     assert_eq!(items.iter().map(|i| i.reps).collect::<Vec<_>>(), [1, 1, 1, 0]);
     // A plain rating counts for every asked item.
     app.answer_card(&a, card.id, Rating::Again, None, None).await.unwrap();
 
     // Switching it off makes a plain card that keeps its schedule.
-    let card = app
-        .update_card(&a, card.id, CardInput { multi: Some(None), ..Default::default() })
-        .await
-        .unwrap();
+    let card = app.update_card(&a, card.id, CardInput { multi: Some(None), ..Default::default() }).await.unwrap();
     assert!(card.multi.is_none());
     assert!(app.card_items(&card).await.unwrap().is_empty());
     assert_ne!(card.card_state(), CardState::New);
@@ -176,7 +167,10 @@ async fn a_studied_card_turned_into_a_list_keeps_its_memory() {
     let app = app().await;
     let a = user(&app, "kolja").await;
     let deck = app.create_deck(&a, "Math", "", None).await.unwrap();
-    let card = app.create_card(&a, deck.id, "Operations on F^n?", "1. Scalar multiplication\n2. Addition", None, None, None).await.unwrap();
+    let card = app
+        .create_card(&a, deck.id, "Operations on F^n?", "1. Scalar multiplication\n2. Addition", None, None, None)
+        .await
+        .unwrap();
     let card = app.answer_card(&a, card.id, Rating::Good, None, None).await.unwrap().card;
     let list = app
         .update_card(&a, card.id, CardInput { multi: Some(Some(crate::multi::Split::List)), ..Default::default() })
@@ -196,7 +190,8 @@ async fn old_list_cards_are_split_again_and_keep_their_memory() {
     let a = user(&app, "kolja").await;
     let deck = app.create_deck(&a, "Lit", "", None).await.unwrap();
     let back = "1. Cultural body\n2. Always escapes\n\nRemark: Cohen, 1996";
-    let card = app.create_card(&a, deck.id, "Theses?", back, None, None, Some(crate::multi::Split::List)).await.unwrap();
+    let card =
+        app.create_card(&a, deck.id, "Theses?", back, None, None, Some(crate::multi::Split::List)).await.unwrap();
     let card = app.answer_list(&a, card.id, vec![], None, Some(0)).await.unwrap().card;
     // Before multicards the remark was part of the last item.
     sqlx::query("UPDATE card_items SET text = 'Always escapes\nRemark: Cohen, 1996' WHERE position = 1")
@@ -239,18 +234,12 @@ async fn token_permissions() {
     let d2 = app.create_deck(&a, "Two", "", None).await.unwrap();
     let c2 = app.create_card(&a, d2.id, "secret", "x", None, None, None).await.unwrap();
 
-    let (_, raw) = app
-        .create_token(a.user_id(), "reader", false, false, Some(vec![d1.id]))
-        .await
-        .unwrap();
+    let (_, raw) = app.create_token(a.user_id(), "reader", false, false, Some(vec![d1.id])).await.unwrap();
     let t = app.token_access(&raw).await.unwrap();
     assert_eq!(t.source(), "agent");
     assert_eq!(app.decks(&t).await.unwrap().len(), 1);
     assert!(matches!(app.card(&t, c2.id).await, Err(AppError::NotFound)));
-    assert!(matches!(
-        app.create_card(&t, d1.id, "q", "a", None, None, None).await,
-        Err(AppError::Forbidden(_))
-    ));
+    assert!(matches!(app.create_card(&t, d1.id, "q", "a", None, None, None).await, Err(AppError::Forbidden(_))));
     assert!(matches!(app.create_deck(&t, "New", "", None).await, Err(AppError::Forbidden(_))));
 
     // Other users never see each other's data.
@@ -290,10 +279,7 @@ async fn optimizer_fits_parameters() {
     let start = now() - 200 * 86_400;
     // Synthetic history: 300 cards, reviews at growing intervals with some lapses.
     for i in 0..300i64 {
-        let card = app
-            .create_card(&a, deck.id, &format!("q{i}"), "a", None, None, None)
-            .await
-            .unwrap();
+        let card = app.create_card(&a, deck.id, &format!("q{i}"), "a", None, None, None).await.unwrap();
         let mut t = start + i * 600;
         let mut ivl = 1;
         for n in 0..6 {
@@ -357,10 +343,7 @@ async fn csv_round_trip_and_exam_date() {
     assert_eq!(csv, "front,back\nuno,one\ndos,two\n");
 
     assert!(app.update_deck(&a, deck.id, None, None, None, Some("not a date")).await.is_err());
-    let d = app
-        .update_deck(&a, deck.id, None, None, None, Some("2030-01-31"))
-        .await
-        .unwrap();
+    let d = app.update_deck(&a, deck.id, None, None, None, Some("2030-01-31")).await.unwrap();
     assert_eq!(d.exam_date.as_deref(), Some("2030-01-31"));
     let d = app.update_deck(&a, deck.id, None, None, None, Some("")).await.unwrap();
     assert!(d.exam_date.is_none());
@@ -373,10 +356,7 @@ async fn sharing_gives_an_independent_copy() {
     let anna = user(&app, "anna").await;
     let deck = app.create_deck(&kolja, "Spanish", "verbs", None).await.unwrap();
     let img = app.store_image(&kolja, tiny_png()).await.unwrap();
-    let c = app
-        .create_card(&kolja, deck.id, "hablar", "to speak", Some(img.id.clone()), None, None)
-        .await
-        .unwrap();
+    let c = app.create_card(&kolja, deck.id, "hablar", "to speak", Some(img.id.clone()), None, None).await.unwrap();
     app.answer_card(&kolja, c.id, Rating::Good, None, None).await.unwrap();
 
     assert!(app.share_deck(&kolja, deck.id, &kolja.user.handle()).await.is_err());
@@ -394,10 +374,7 @@ async fn sharing_gives_an_independent_copy() {
     app.create_deck(&anna, "Spanish", "", None).await.unwrap();
     let copy = app.accept_share(&anna, incoming[0].id).await.unwrap();
     assert!(copy.name.starts_with("Spanish (from kolja#"));
-    let (cards, _) = app
-        .list_cards(&anna, &CardFilter { deck_id: Some(copy.id), ..Default::default() })
-        .await
-        .unwrap();
+    let (cards, _) = app.list_cards(&anna, &CardFilter { deck_id: Some(copy.id), ..Default::default() }).await.unwrap();
     assert_eq!(cards.len(), 1);
     assert_eq!(cards[0].card_state(), CardState::New);
     assert_eq!(cards[0].created_by, "shared");
@@ -488,19 +465,13 @@ async fn oauth_flow() {
     let verifier = "a".repeat(50);
     let challenge = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(sha2::Sha256::digest(verifier.as_bytes()));
     let redirect = "https://claude.ai/api/mcp/auth_callback";
-    let code = app
-        .create_auth_code(a.user_id(), &client, redirect, &challenge, true, false, None)
-        .await
-        .unwrap();
+    let code = app.create_auth_code(a.user_id(), &client, redirect, &challenge, true, false, None).await.unwrap();
 
     // Wrong verifier fails and burns the code.
     assert!(app.exchange_code(&client_id, None, &code, Some(redirect), &"b".repeat(50)).await.is_err());
     assert!(app.exchange_code(&client_id, None, &code, Some(redirect), &verifier).await.is_err());
 
-    let code = app
-        .create_auth_code(a.user_id(), &client, redirect, &challenge, true, false, None)
-        .await
-        .unwrap();
+    let code = app.create_auth_code(a.user_id(), &client, redirect, &challenge, true, false, None).await.unwrap();
     let tokens = app.exchange_code(&client_id, None, &code, Some(redirect), &verifier).await.unwrap();
     assert_eq!(tokens.scope, "read write");
     let agent = app.token_access(&tokens.access_token).await.unwrap();
@@ -524,10 +495,7 @@ async fn oauth_flow() {
     assert!(app.token_access(&fresh.access_token).await.is_err());
     assert!(app.refresh_tokens(&client_id, None, &fresh.refresh_token).await.is_err());
     // Connect again for the rest of the test.
-    let code = app
-        .create_auth_code(a.user_id(), &client, redirect, &challenge, true, false, None)
-        .await
-        .unwrap();
+    let code = app.create_auth_code(a.user_id(), &client, redirect, &challenge, true, false, None).await.unwrap();
     let tokens = app.exchange_code(&client_id, None, &code, Some(redirect), &verifier).await.unwrap();
     let fresh = app.refresh_tokens(&client_id, None, &tokens.refresh_token).await.unwrap();
     assert!(app.token_access(&fresh.access_token).await.is_ok());
@@ -570,21 +538,32 @@ async fn oauth_flow() {
     assert!(agent.require_all_decks().is_err());
 
     // Bad registrations.
-    assert!(app
-        .register_client(crate::oauth::RegistrationRequest {
+    assert!(
+        app.register_client(crate::oauth::RegistrationRequest {
             redirect_uris: vec!["http://evil.example/cb".into()],
             client_name: None,
             token_endpoint_auth_method: None,
         })
         .await
-        .is_err());
+        .is_err()
+    );
 }
 
 /// Moves an account (and its invites) `days` into the past.
 async fn age(app: &App, user_id: i64, days: i64) {
     let secs = days * 86_400;
-    sqlx::query("UPDATE users SET created_at = created_at - ? WHERE id = ?").bind(secs).bind(user_id).execute(&app.db).await.unwrap();
-    sqlx::query("UPDATE invites SET created_at = created_at - ? WHERE user_id = ?").bind(secs).bind(user_id).execute(&app.db).await.unwrap();
+    sqlx::query("UPDATE users SET created_at = created_at - ? WHERE id = ?")
+        .bind(secs)
+        .bind(user_id)
+        .execute(&app.db)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE invites SET created_at = created_at - ? WHERE user_id = ?")
+        .bind(secs)
+        .bind(user_id)
+        .execute(&app.db)
+        .await
+        .unwrap();
 }
 
 #[tokio::test]
@@ -637,7 +616,12 @@ async fn invites_expire_and_admins_have_no_limit() {
     let admin = app.create_account("admin", "password123", "UTC", None, true).await.unwrap();
     let a = app.create_invite(&admin).await.unwrap();
     let b = app.create_invite(&admin).await.unwrap();
-    sqlx::query("UPDATE invites SET expires_at = ? WHERE id = ?").bind(now() - 1).bind(a.id).execute(&app.db).await.unwrap();
+    sqlx::query("UPDATE invites SET expires_at = ? WHERE id = ?")
+        .bind(now() - 1)
+        .bind(a.id)
+        .execute(&app.db)
+        .await
+        .unwrap();
     assert!(app.open_invite(&a.token).await.unwrap().is_none());
     assert!(app.create_account("late", "password123", "UTC", Some(&a.token), false).await.is_err());
     assert!(app.open_invite(&b.token).await.unwrap().is_some());
@@ -702,7 +686,12 @@ mod http {
     }
 
     /// The same for a multipart form (the card form), text fields only.
-    async fn submit_multipart(app: &Arc<App>, cookie: &str, path: &str, fields: &[(&str, &str)]) -> axum::response::Response {
+    async fn submit_multipart(
+        app: &Arc<App>,
+        cookie: &str,
+        path: &str,
+        fields: &[(&str, &str)],
+    ) -> axum::response::Response {
         let mut body = String::new();
         for (k, v) in fields {
             body += &format!("--XX\r\nContent-Disposition: form-data; name=\"{k}\"\r\n\r\n{v}\r\n");
@@ -750,12 +739,18 @@ mod http {
         app.create_card(&b, theirs.id, "hablar en secreto", "whisper", None, None, None).await.unwrap();
         let cookie = login_cookie(&app, "kolja").await;
         let find = |q: &str| {
-            let req = Request::get(format!("/find?q={}", urlencode(q))).header(header::COOKIE, cookie.clone()).body(Body::empty()).unwrap();
+            let req = Request::get(format!("/find?q={}", urlencode(q)))
+                .header(header::COOKIE, cookie.clone())
+                .body(Body::empty())
+                .unwrap();
             let app = app.clone();
             async move {
                 let res = send(&app, req).await;
                 assert_eq!(res.status(), StatusCode::OK);
-                serde_json::from_str::<serde_json::Value>(&text(res).await).unwrap()["results"].as_array().unwrap().clone()
+                serde_json::from_str::<serde_json::Value>(&text(res).await).unwrap()["results"]
+                    .as_array()
+                    .unwrap()
+                    .clone()
             }
         };
 
@@ -787,27 +782,53 @@ mod http {
         let cookie = login_cookie(&app, "kolja").await;
         let d = deck.id.to_string();
 
-        let res = submit_multipart(&app, &cookie, "/cards/new", &[("deck", &d), ("front", "el gato"), ("back", "the cat")]).await;
+        let res =
+            submit_multipart(&app, &cookie, "/cards/new", &[("deck", &d), ("front", "el gato"), ("back", "the cat")])
+                .await;
         assert_eq!(res.status(), StatusCode::SEE_OTHER);
         assert_eq!(location(&res), format!("/cards/new?deck={d}"));
-        let (cards, _) = app.list_cards(&a, &CardFilter { deck_id: Some(deck.id), ..Default::default() }).await.unwrap();
+        let (cards, _) =
+            app.list_cards(&a, &CardFilter { deck_id: Some(deck.id), ..Default::default() }).await.unwrap();
         assert_eq!(cards.len(), 1);
         let id = cards[0].id;
 
         // A mistake shows the form again with what was typed.
-        let res = submit_multipart(&app, &cookie, "/cards/new", &[("deck", &d), ("front", ""), ("back", "kept back")]).await;
+        let res =
+            submit_multipart(&app, &cookie, "/cards/new", &[("deck", &d), ("front", ""), ("back", "kept back")]).await;
         assert_eq!(res.status(), StatusCode::BAD_REQUEST);
         assert!(text(res).await.contains("kept back"));
 
-        let res = submit_multipart(&app, &cookie, &format!("/cards/{id}"), &[("deck", &d), ("front", "el gato negro"), ("back", "the black cat")]).await;
+        let res = submit_multipart(
+            &app,
+            &cookie,
+            &format!("/cards/{id}"),
+            &[("deck", &d), ("front", "el gato negro"), ("back", "the black cat")],
+        )
+        .await;
         assert_eq!(res.status(), StatusCode::SEE_OTHER);
         assert_eq!(app.card(&a, id).await.unwrap().front, "el gato negro");
 
         // Opened from studying, saving goes back to the session.
-        let res = submit_multipart(&app, &cookie, &format!("/cards/{id}?study=1&deck={d}"), &[("deck", &d), ("front", "el gato"), ("back", "the cat")]).await;
+        let res = submit_multipart(
+            &app,
+            &cookie,
+            &format!("/cards/{id}?study=1&deck={d}"),
+            &[("deck", &d), ("front", "el gato"), ("back", "the cat")],
+        )
+        .await;
         assert_eq!(location(&res), format!("/study?deck={d}"));
         assert_eq!(flash(&res), "Card saved.");
-        let page = text(send(&app, Request::get(format!("/cards/{id}?study=1")).header(header::COOKIE, cookie.clone()).body(Body::empty()).unwrap()).await).await;
+        let page = text(
+            send(
+                &app,
+                Request::get(format!("/cards/{id}?study=1"))
+                    .header(header::COOKIE, cookie.clone())
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await,
+        )
+        .await;
         assert!(page.contains(r#"href="/study""#) && page.contains("Back to studying"));
 
         let res = submit(&app, &cookie, &format!("/cards/{id}/suspend"), "").await;
@@ -824,10 +845,14 @@ mod http {
         let app = app().await;
         let a = user(&app, "kolja").await;
         let deck = app.create_deck(&a, "Spanish", "", None).await.unwrap();
-        app.update_preset(&a, deck.preset_id, PresetInput { time_limit: Some(10), ..Default::default() }).await.unwrap();
+        app.update_preset(&a, deck.preset_id, PresetInput { time_limit: Some(10), ..Default::default() })
+            .await
+            .unwrap();
         let card = app.create_card(&a, deck.id, "el perro", "the dog", None, None, None).await.unwrap();
         let cookie = login_cookie(&app, "kolja").await;
-        let get = |path: &str| send(&app, Request::get(path).header(header::COOKIE, cookie.clone()).body(Body::empty()).unwrap());
+        let get = |path: &str| {
+            send(&app, Request::get(path).header(header::COOKIE, cookie.clone()).body(Body::empty()).unwrap())
+        };
 
         // A new card is never timed.
         assert!(!text(get("/study").await).await.contains("data-limit"));
@@ -867,13 +892,15 @@ mod http {
         };
 
         let card = app.create_card(&a, deck.id, "el perro", "the dog", None, None, None).await.unwrap();
-        let body = format!("card={}&reps=0&rating=3&think_ms=2345&answer_ms=812&away_ms=0&paused_ms=60000&input=key", card.id);
+        let body =
+            format!("card={}&reps=0&rating=3&think_ms=2345&answer_ms=812&away_ms=0&paused_ms=60000&input=key", card.id);
         assert_eq!(submit(&app, &cookie, "/study/answer", &body).await.status(), StatusCode::SEE_OTHER);
         assert_eq!(timing(card.id).await.unwrap(), (Some(2345), Some(812), Some(0), Some(60000), Some("key".into())));
 
         // Nonsense is dropped, not stored and not an error.
         let card = app.create_card(&a, deck.id, "el gato", "the cat", None, None, None).await.unwrap();
-        let body = format!("card={}&reps=0&rating=3&think_ms=-5&answer_ms=99999999999&paused_ms=-1&input=telepathy", card.id);
+        let body =
+            format!("card={}&reps=0&rating=3&think_ms=-5&answer_ms=99999999999&paused_ms=-1&input=telepathy", card.id);
         assert_eq!(submit(&app, &cookie, "/study/answer", &body).await.status(), StatusCode::SEE_OTHER);
         assert_eq!(timing(card.id).await.unwrap(), (None, None, None, None, None));
 
@@ -892,13 +919,16 @@ mod http {
         app.create_card(&a, deck.id, "el perro", "the dog", None, None, None).await.unwrap();
         let cookie = login_cookie(&app, "kolja").await;
         // Quiet all day but this hour's end: from the next hour round to this one.
-        let res = submit(&app, &cookie, "/settings/study", "quiet_from=0&quiet_to=0&session_minutes=0&catch_up_reviews=100").await;
+        let res =
+            submit(&app, &cookie, "/settings/study", "quiet_from=0&quiet_to=0&session_minutes=0&catch_up_reviews=100")
+                .await;
         assert_eq!(location(&res), "/settings#studying");
         use chrono::{TimeZone, Timelike};
         let hour = a.user.tz().timestamp_opt(now(), 0).unwrap().hour();
         let body = format!("quiet_from={hour}&quiet_to={}&session_minutes=0&catch_up_reviews=100", (hour + 1) % 24);
         submit(&app, &cookie, "/settings/study", &body).await;
-        let page = |c: String| send(&app, Request::get("/study").header(header::COOKIE, c).body(Body::empty()).unwrap());
+        let page =
+            |c: String| send(&app, Request::get("/study").header(header::COOKIE, c).body(Body::empty()).unwrap());
         let rest = text(page(cookie.clone()).await).await;
         assert!(rest.contains("Quiet hours") && !rest.contains("el perro"));
 
@@ -912,7 +942,9 @@ mod http {
         let app = app().await;
         let a = user(&app, "kolja").await;
         let cookie = login_cookie(&app, "kolja").await;
-        let get = |path: &str| send(&app, Request::get(path).header(header::COOKIE, cookie.clone()).body(Body::empty()).unwrap());
+        let get = |path: &str| {
+            send(&app, Request::get(path).header(header::COOKIE, cookie.clone()).body(Body::empty()).unwrap())
+        };
         assert!(text(get("/learn").await).await.contains("The spacing effect"));
         let page = text(get("/learn/spacing").await).await;
         assert!(page.contains("Strong evidence") && page.contains("Add as a deck"));
@@ -922,7 +954,8 @@ mod http {
         assert_eq!(flash(&res), "Lesson added as a deck.");
         let deck = app.deck_by_name(&a, "AiNKI lessons::The spacing effect").await.unwrap().unwrap();
         assert_eq!(location(&res), format!("/decks/{}", deck.id));
-        let (cards, _) = app.list_cards(&a, &CardFilter { deck_id: Some(deck.id), ..Default::default() }).await.unwrap();
+        let (cards, _) =
+            app.list_cards(&a, &CardFilter { deck_id: Some(deck.id), ..Default::default() }).await.unwrap();
         assert_eq!(cards.len(), crate::lessons::find("spacing").unwrap().cards.len());
 
         // Twice makes no second copy.
@@ -958,7 +991,11 @@ mod http {
         let before = app.list_presets(&a).await.unwrap().len();
 
         // Opening the form creates nothing.
-        let res = send(&app, Request::get("/presets/new").header(header::COOKIE, cookie.clone()).body(Body::empty()).unwrap()).await;
+        let res = send(
+            &app,
+            Request::get("/presets/new").header(header::COOKIE, cookie.clone()).body(Body::empty()).unwrap(),
+        )
+        .await;
         assert_eq!(res.status(), StatusCode::OK);
         assert_eq!(app.list_presets(&a).await.unwrap().len(), before);
 
@@ -1005,7 +1042,8 @@ mod http {
         sqlx::query("UPDATE sessions SET expires_at = expires_at - 10 * 86400").execute(&app.db).await.unwrap();
         let res = send(&app, get(&cookie)).await;
         assert!(res.headers()[header::SET_COOKIE].to_str().unwrap().starts_with("ainki_session="));
-        let left: i64 = sqlx::query_scalar("SELECT expires_at - ? FROM sessions").bind(now()).fetch_one(&app.db).await.unwrap();
+        let left: i64 =
+            sqlx::query_scalar("SELECT expires_at - ? FROM sessions").bind(now()).fetch_one(&app.db).await.unwrap();
         assert!(left > (crate::auth::SESSION_DAYS - 1) * 86_400);
     }
 
@@ -1026,7 +1064,10 @@ mod http {
         let a = user(&app, "kolja").await;
         let deck = app.create_deck(&a, "Español", "", None).await.unwrap();
         let cookie = login_cookie(&app, "kolja").await;
-        let req = Request::get(format!("/decks/{}/export.csv", deck.id)).header(header::COOKIE, cookie).body(Body::empty()).unwrap();
+        let req = Request::get(format!("/decks/{}/export.csv", deck.id))
+            .header(header::COOKIE, cookie)
+            .body(Body::empty())
+            .unwrap();
         let res = send(&app, req).await;
         let d = res.headers()[header::CONTENT_DISPOSITION].to_str().unwrap();
         assert_eq!(d, "attachment; filename=\"Espa_ol.csv\"; filename*=UTF-8''Espa%C3%B1ol.csv");
@@ -1041,7 +1082,8 @@ mod http {
         }
         user(&app, "kolja").await;
         let cookie = login_cookie(&app, "kolja").await;
-        let res = send(&app, Request::get("/settings").header(header::COOKIE, cookie).body(Body::empty()).unwrap()).await;
+        let res =
+            send(&app, Request::get("/settings").header(header::COOKIE, cookie).body(Body::empty()).unwrap()).await;
         let page = text(res).await;
         assert!(page.contains(&format!("Build {}", env!("AINKI_BUILD"))));
         assert!(page.contains(r#"rel="icon""#));
@@ -1131,10 +1173,13 @@ mod http {
     #[tokio::test]
     async fn signup_closes_after_first_account() {
         let app = app_with(|c| c.allow_signup = false).await;
-        let signup = |name: &str| form("/signup", "").body(Body::from(format!("username={name}&password=password123"))).unwrap();
+        let signup =
+            |name: &str| form("/signup", "").body(Body::from(format!("username={name}&password=password123"))).unwrap();
         let first = send(&app, signup("owner")).await;
         assert_eq!(first.status(), StatusCode::SEE_OTHER);
-        assert!(first.headers().get_all(header::SET_COOKIE).iter().any(|c| c.to_str().unwrap().contains("ainki_session=")));
+        assert!(
+            first.headers().get_all(header::SET_COOKIE).iter().any(|c| c.to_str().unwrap().contains("ainki_session="))
+        );
         let second = send(&app, signup("stranger")).await;
         assert_eq!(second.headers()[header::LOCATION], "/login");
         assert!(app.find_user("stranger").await.is_err());
@@ -1158,11 +1203,14 @@ mod http {
         assert!(String::from_utf8_lossy(&body).contains("Kolja invited you."));
 
         // A bad password keeps the link working.
-        let join = |name: &str, pw: &str| form(&path, "").body(Body::from(format!("username={name}&password={pw}"))).unwrap();
+        let join =
+            |name: &str, pw: &str| form(&path, "").body(Body::from(format!("username={name}&password={pw}"))).unwrap();
         assert_eq!(send(&app, join("anna", "short")).await.status(), StatusCode::BAD_REQUEST);
         let ok = send(&app, join("anna", "password123")).await;
         assert_eq!(ok.headers()[header::LOCATION], "/");
-        assert!(ok.headers().get_all(header::SET_COOKIE).iter().any(|c| c.to_str().unwrap().contains("ainki_session=")));
+        assert!(
+            ok.headers().get_all(header::SET_COOKIE).iter().any(|c| c.to_str().unwrap().contains("ainki_session="))
+        );
         assert_eq!(app.find_user("anna").await.unwrap().invited_by, Some(kolja.id));
 
         // Used up: a second try gets the "no longer works" page.
@@ -1180,14 +1228,16 @@ mod http {
         app.create_account("admin", "password123", "UTC", None, true).await.unwrap();
         user(&app, "kolja").await;
         let admin = login_cookie(&app, "admin").await;
-        let get = |path: &str, cookie: &str| Request::get(path).header(header::COOKIE, cookie).body(Body::empty()).unwrap();
+        let get =
+            |path: &str, cookie: &str| Request::get(path).header(header::COOKIE, cookie).body(Body::empty()).unwrap();
         for path in ["/", "/settings", "/decks/new", "/study"] {
             let res = send(&app, get(path, &admin)).await;
             assert_eq!(res.headers()[header::LOCATION], "/admin", "{path}");
         }
         let panel = send(&app, get("/admin", &admin)).await;
         assert_eq!(panel.status(), StatusCode::OK);
-        let body = String::from_utf8_lossy(&axum::body::to_bytes(panel.into_body(), usize::MAX).await.unwrap()).to_string();
+        let body =
+            String::from_utf8_lossy(&axum::body::to_bytes(panel.into_body(), usize::MAX).await.unwrap()).to_string();
         assert!(body.contains("invite-graph") && body.contains("kolja#"));
         assert!(!body.contains("nav class=\"top\""));
         // The admin invites without waiting.
@@ -1223,7 +1273,9 @@ mod http {
                 .unwrap(),
         )
         .await;
-        assert!(res.headers().get_all(header::SET_COOKIE).iter().any(|c| c.to_str().unwrap().starts_with("ainki_flash=;")));
+        assert!(
+            res.headers().get_all(header::SET_COOKIE).iter().any(|c| c.to_str().unwrap().starts_with("ainki_flash=;"))
+        );
         let body = axum::body::to_bytes(res.into_body(), usize::MAX).await.unwrap();
         assert!(String::from_utf8_lossy(&body).contains("Saved it."));
     }
@@ -1271,7 +1323,11 @@ mod http {
         assert!(String::from_utf8_lossy(&body).contains(r#"data-look="simple""#));
         assert!(app.update_settings(a.user_id(), "UTC", 4, false, 100, true, "neon").await.is_err());
 
-        for (path, kind) in [("/calm.css", "text/css"), ("/theme.js", "text/javascript"), ("/fonts/eb-garamond-normal-latin.woff2", "font/woff2")] {
+        for (path, kind) in [
+            ("/calm.css", "text/css"),
+            ("/theme.js", "text/javascript"),
+            ("/fonts/eb-garamond-normal-latin.woff2", "font/woff2"),
+        ] {
             let res = send(&app, Request::get(path).body(Body::empty()).unwrap()).await;
             assert_eq!(res.status(), StatusCode::OK, "{path}");
             assert!(res.headers()[header::CONTENT_TYPE].to_str().unwrap().starts_with(kind));
@@ -1288,7 +1344,8 @@ mod http {
         app.create_card(&a, deck.id, "el perro", "the dog", None, None, None).await.unwrap();
         let cookie = login_cookie(&app, "kolja").await;
         let res = send(&app, Request::get("/study").header(header::COOKIE, cookie).body(Body::empty()).unwrap()).await;
-        let html = String::from_utf8_lossy(&axum::body::to_bytes(res.into_body(), usize::MAX).await.unwrap()).into_owned();
+        let html =
+            String::from_utf8_lossy(&axum::body::to_bytes(res.into_body(), usize::MAX).await.unwrap()).into_owned();
         // The answer is already on the page, hidden until revealed.
         assert!(html.contains("the dog"));
         assert!(html.contains(r#"<section class="face back" id="answer" hidden>"#));
@@ -1309,14 +1366,26 @@ mod http {
         let back = "1. Cultural body\n2. Always escapes\n3. Category crisis";
 
         // The choice is only on the page once the back can be split.
-        let res = send(&app, Request::get("/cards/new").header(header::COOKIE, &cookie).body(Body::empty()).unwrap()).await;
+        let res =
+            send(&app, Request::get("/cards/new").header(header::COOKIE, &cookie).body(Body::empty()).unwrap()).await;
         assert!(text(res).await.contains(r#"<fieldset class="line multi-pick" hidden>"#));
-        let res = submit_multipart(&app, &cookie, "/cards/new", &[("deck", &d), ("front", "Theses?"), ("back", back), ("multi", "list")]).await;
+        let res = submit_multipart(
+            &app,
+            &cookie,
+            "/cards/new",
+            &[("deck", &d), ("front", "Theses?"), ("back", back), ("multi", "list")],
+        )
+        .await;
         assert_eq!(res.status(), StatusCode::SEE_OTHER);
-        let (cards, _) = app.list_cards(&a, &CardFilter { deck_id: Some(deck.id), ..Default::default() }).await.unwrap();
+        let (cards, _) =
+            app.list_cards(&a, &CardFilter { deck_id: Some(deck.id), ..Default::default() }).await.unwrap();
         let card = &cards[0];
         assert_eq!(card.multi, Some(crate::multi::Split::List));
-        let res = send(&app, Request::get(format!("/cards/{}", card.id)).header(header::COOKIE, &cookie).body(Body::empty()).unwrap()).await;
+        let res = send(
+            &app,
+            Request::get(format!("/cards/{}", card.id)).header(header::COOKIE, &cookie).body(Body::empty()).unwrap(),
+        )
+        .await;
         let html = text(res).await;
         assert!(html.contains(r#"<input type="radio" name="multi" value="list" checked>"#));
         assert!(html.contains("Always escapes"));
@@ -1327,11 +1396,21 @@ mod http {
         assert!(html.contains(r#"<form class="list-answer" method="post" action="/study/answer">"#));
         assert!(html.contains(r#"<input type="checkbox" name="recalled" value="2">"#));
         assert!(html.contains("0 of 3 remembered"));
-        let res = submit(&app, &cookie, "/study/answer", &format!("card={}&reps=0&asked=0&asked=1&asked=2&recalled=1", card.id)).await;
+        let res = submit(
+            &app,
+            &cookie,
+            "/study/answer",
+            &format!("card={}&reps=0&asked=0&asked=1&asked=2&recalled=1", card.id),
+        )
+        .await;
         assert_eq!(location(&res), "/study");
         let history = app.card_history(&a, card.id).await.unwrap();
         assert_eq!(history[0]["items_recalled"], 1);
-        let res = send(&app, Request::get(format!("/cards/{}", card.id)).header(header::COOKIE, &cookie).body(Body::empty()).unwrap()).await;
+        let res = send(
+            &app,
+            Request::get(format!("/cards/{}", card.id)).header(header::COOKIE, &cookie).body(Body::empty()).unwrap(),
+        )
+        .await;
         assert!(text(res).await.contains("1 of 3 remembered"));
     }
 
@@ -1356,13 +1435,27 @@ mod http {
         assert!(!html.contains("name=\"recalled\""));
 
         let d = deck.id.to_string();
-        submit_multipart(&app, &cookie, "/cards/new", &[("deck", &d), ("front", "Future simple?"), ("back", back), ("multi", "list")]).await;
-        let (cards, _) = app.list_cards(&a, &CardFilter { deck_id: Some(deck.id), ..Default::default() }).await.unwrap();
+        submit_multipart(
+            &app,
+            &cookie,
+            "/cards/new",
+            &[("deck", &d), ("front", "Future simple?"), ("back", back), ("multi", "list")],
+        )
+        .await;
+        let (cards, _) =
+            app.list_cards(&a, &CardFilter { deck_id: Some(deck.id), ..Default::default() }).await.unwrap();
         let card = &cards[0];
         // The pasted indent became a real list.
         assert!(card.back.contains("\n- guesses"));
         assert_eq!(app.card_items(card).await.unwrap().len(), 3);
-        let res = send(&app, Request::get(format!("/study?card={}&show=1", card.id)).header(header::COOKIE, &cookie).body(Body::empty()).unwrap()).await;
+        let res = send(
+            &app,
+            Request::get(format!("/study?card={}&show=1", card.id))
+                .header(header::COOKIE, &cookie)
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await;
         let html = text(res).await;
         for kept in ["<p>will</p>", "<p>be going to</p>", "Remark: will is for spontaneous decisions."] {
             assert!(html.contains(kept), "{kept}");
@@ -1404,7 +1497,10 @@ mod http {
         let hour = a.user.tz().timestamp_opt(now(), 0).unwrap().hour() as i64;
         app.update_study_settings(a.user_id(), Some((hour, (hour + 1) % 24)), 0, false, 100, false).await.unwrap();
         let next = mcp_tool(&app, &token, "get_next_card", serde_json::json!({})).await;
-        assert_eq!((next["done"].clone(), next["quiet_hours"].clone()), (serde_json::json!(true), serde_json::json!(true)));
+        assert_eq!(
+            (next["done"].clone(), next["quiet_hours"].clone()),
+            (serde_json::json!(true), serde_json::json!(true))
+        );
         let overview = mcp_tool(&app, &token, "get_overview", serde_json::json!({})).await;
         assert_eq!(overview["studying"]["quiet_now"], true);
 
@@ -1517,7 +1613,10 @@ async fn calibration_compares_predicted_and_actual_recall() {
     // (a little over 90% predicted): 15 remembered.
     let t = now() - 86_400;
     for n in 0..20 {
-        let prev = format!(r#"{{"state":"review","step":0,"stability":10.0,"difficulty":5.0,"due":0,"last_review":{},"reps":3,"lapses":0}}"#, t - 9 * 86_400);
+        let prev = format!(
+            r#"{{"state":"review","step":0,"stability":10.0,"difficulty":5.0,"due":0,"last_review":{},"reps":3,"lapses":0}}"#,
+            t - 9 * 86_400
+        );
         sqlx::query(
             "INSERT INTO review_log (user_id, card_id, deck_id, rating, reviewed_at, state_before,
                 elapsed_days, scheduled_secs, source, prev_card)
@@ -1871,7 +1970,11 @@ async fn the_coach_warns_before_an_exam() {
     app.update_deck(&a, deck.id, None, None, None, Some(&exam)).await.unwrap();
     let notes = app.advice(&a).await.unwrap();
     assert_eq!(notes[0].rule, Rule::ExamClose);
-    assert!(notes[0].text.starts_with("Your Spanish exam is in 12 days and 300 cards are still new."), "{}", notes[0].text);
+    assert!(
+        notes[0].text.starts_with("Your Spanish exam is in 12 days and 300 cards are still new."),
+        "{}",
+        notes[0].text
+    );
 
     // "Not now" keeps it quiet for three days, then it is back.
     app.snooze_advice(&a, Rule::ExamClose).await.unwrap();
@@ -1985,9 +2088,6 @@ async fn a_read_only_token_cannot_pause_a_deck() {
     let deck = app.create_deck(&a, "German", "", None).await.unwrap();
     let (_, raw) = app.create_token(a.user_id(), "reader", false, false, None).await.unwrap();
     let read = app.token_access(&raw).await.unwrap();
-    assert!(matches!(
-        app.set_deck_status(&read, deck.id, DeckStatus::Paused).await,
-        Err(AppError::Forbidden(_))
-    ));
+    assert!(matches!(app.set_deck_status(&read, deck.id, DeckStatus::Paused).await, Err(AppError::Forbidden(_))));
     assert_eq!(app.deck(&a, deck.id).await.unwrap().status, DeckStatus::Active);
 }

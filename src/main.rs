@@ -7,9 +7,9 @@ use sqlx::{
 };
 use tracing_subscriber::EnvFilter;
 
+mod advice;
 mod auth;
 mod breaks;
-mod advice;
 mod coach;
 mod error;
 mod format;
@@ -18,13 +18,13 @@ mod import;
 mod insight;
 mod invites;
 mod lessons;
-mod multi;
-mod outlook;
 mod markdown;
 mod mcp;
-mod oauth;
 mod media;
 mod merge;
+mod multi;
+mod oauth;
+mod outlook;
 mod presets;
 mod scheduler;
 mod security;
@@ -66,13 +66,9 @@ impl Config {
 /// Accept only a bare origin like `https://cards.example.com`.
 fn parse_public_url(raw: &str) -> anyhow::Result<String> {
     let url = raw.trim().trim_end_matches('/');
-    let (scheme, host) = url
-        .split_once("://")
-        .ok_or_else(|| anyhow::anyhow!("AINKI_PUBLIC_URL must start with https:// or http://"))?;
-    anyhow::ensure!(
-        matches!(scheme, "https" | "http"),
-        "AINKI_PUBLIC_URL must start with https:// or http://"
-    );
+    let (scheme, host) =
+        url.split_once("://").ok_or_else(|| anyhow::anyhow!("AINKI_PUBLIC_URL must start with https:// or http://"))?;
+    anyhow::ensure!(matches!(scheme, "https" | "http"), "AINKI_PUBLIC_URL must start with https:// or http://");
     anyhow::ensure!(
         !host.is_empty() && !host.contains(['/', '?', '#', '@', ' ']),
         "AINKI_PUBLIC_URL must be just scheme and host, like https://cards.example.com"
@@ -84,9 +80,7 @@ impl Config {
     fn from_env() -> anyhow::Result<Self> {
         let env = |k: &str| std::env::var(k).ok().filter(|v| !v.trim().is_empty());
         let flag = |k: &str, default: bool| {
-            env(k)
-                .map(|v| matches!(v.to_ascii_lowercase().as_str(), "1" | "true" | "yes" | "on"))
-                .unwrap_or(default)
+            env(k).map(|v| matches!(v.to_ascii_lowercase().as_str(), "1" | "true" | "yes" | "on")).unwrap_or(default)
         };
         let tz = env("AINKI_TIMEZONE")
             .or_else(|| env("TZ"))
@@ -119,10 +113,7 @@ impl App {
         if self.config.allow_signup {
             return true;
         }
-        let users: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM users")
-            .fetch_one(&self.db)
-            .await
-            .unwrap_or(1);
+        let users: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM users").fetch_one(&self.db).await.unwrap_or(1);
         users == 0
     }
 
@@ -200,9 +191,7 @@ const USAGE: &str = "usage:
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt()
-        .with_env_filter(
-            EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info,sqlx=warn")),
-        )
+        .with_env_filter(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info,sqlx=warn")))
         .init();
     let config = Config::from_env()?;
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -251,17 +240,12 @@ async fn main() -> anyhow::Result<()> {
         ["reset-password", handle, password] => {
             let user = app.find_user(handle).await.map_err(|e| anyhow::anyhow!("{e}"))?;
             app.set_password(user.id, password).await.map_err(|e| anyhow::anyhow!("{e}"))?;
-            sqlx::query("DELETE FROM sessions WHERE user_id = ?")
-                .bind(user.id)
-                .execute(&app.db)
-                .await?;
+            sqlx::query("DELETE FROM sessions WHERE user_id = ?").bind(user.id).execute(&app.db).await?;
             println!("password updated for {}", user.handle());
             Ok(())
         }
         ["list-users"] => {
-            let users: Vec<auth::User> = sqlx::query_as("SELECT * FROM users ORDER BY id")
-                .fetch_all(&app.db)
-                .await?;
+            let users: Vec<auth::User> = sqlx::query_as("SELECT * FROM users ORDER BY id").fetch_all(&app.db).await?;
             for u in users {
                 println!("{}{}", u.handle(), if u.is_admin { " (admin)" } else { "" });
             }

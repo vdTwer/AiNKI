@@ -136,18 +136,14 @@ impl Access {
 
     pub fn require_write(&self) -> Result<()> {
         match &self.actor {
-            Actor::Agent { can_write: false, .. } => {
-                Err(AppError::forbidden("this token is read-only"))
-            }
+            Actor::Agent { can_write: false, .. } => Err(AppError::forbidden("this token is read-only")),
             _ => Ok(()),
         }
     }
 
     pub fn require_review(&self) -> Result<()> {
         match &self.actor {
-            Actor::Agent { can_review: false, .. } => {
-                Err(AppError::forbidden("this token may not submit reviews"))
-            }
+            Actor::Agent { can_review: false, .. } => Err(AppError::forbidden("this token may not submit reviews")),
             _ => Ok(()),
         }
     }
@@ -160,20 +156,14 @@ impl Access {
     }
 
     pub fn require_deck(&self, deck_id: i64) -> Result<()> {
-        if self.can_see_deck(deck_id) {
-            Ok(())
-        } else {
-            Err(AppError::NotFound)
-        }
+        if self.can_see_deck(deck_id) { Ok(()) } else { Err(AppError::NotFound) }
     }
 
     /// Actions that affect the whole account (creating/deleting decks,
     /// editing presets, optimizing parameters) need an unrestricted token.
     pub fn require_all_decks(&self) -> Result<()> {
         match &self.actor {
-            Actor::Agent { decks: Some(_), .. } => Err(AppError::forbidden(
-                "this token is limited to specific decks",
-            )),
+            Actor::Agent { decks: Some(_), .. } => Err(AppError::forbidden("this token is limited to specific decks")),
             _ => Ok(()),
         }
     }
@@ -188,9 +178,7 @@ pub fn hash_password(password: &str) -> Result<String> {
 }
 
 fn verify_password(password: &str, hash: &str) -> bool {
-    PasswordHash::new(hash)
-        .map(|h| Argon2::default().verify_password(password.as_bytes(), &h).is_ok())
-        .unwrap_or(false)
+    PasswordHash::new(hash).map(|h| Argon2::default().verify_password(password.as_bytes(), &h).is_ok()).unwrap_or(false)
 }
 
 pub(crate) fn sha256_hex(s: &str) -> String {
@@ -206,16 +194,8 @@ pub(crate) fn random_hex(bytes: usize) -> String {
 pub fn validate_username(name: &str) -> Result<()> {
     let ok_len = (2..=32).contains(&name.chars().count());
     // ASCII only, so nobody can pose as "kolja" with a look-alike letter.
-    let ok_chars = name
-        .chars()
-        .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '.'));
-    if ok_len && ok_chars {
-        Ok(())
-    } else {
-        Err(AppError::bad(
-            "username must be 2–32 characters: a-z, 0-9, _ - .",
-        ))
-    }
+    let ok_chars = name.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '.'));
+    if ok_len && ok_chars { Ok(()) } else { Err(AppError::bad("username must be 2–32 characters: a-z, 0-9, _ - .")) }
 }
 
 /// Longer passwords are refused so nobody can make Argon2 hash megabytes.
@@ -278,11 +258,10 @@ impl App {
             .await
             .map_err(|e| AppError::Internal(e.into()))??;
 
-        let taken: Vec<i64> =
-            sqlx::query_scalar("SELECT discriminator FROM users WHERE username = ? COLLATE NOCASE")
-                .bind(username)
-                .fetch_all(&self.db)
-                .await?;
+        let taken: Vec<i64> = sqlx::query_scalar("SELECT discriminator FROM users WHERE username = ? COLLATE NOCASE")
+            .bind(username)
+            .fetch_all(&self.db)
+            .await?;
         if taken.len() >= 9999 {
             return Err(AppError::bad("that username is full, pick another"));
         }
@@ -355,33 +334,30 @@ impl App {
     }
 
     pub async fn user(&self, id: i64) -> Result<User> {
-        Ok(sqlx::query_as("SELECT * FROM users WHERE id = ?")
-            .bind(id)
-            .fetch_one(&self.db)
-            .await?)
+        Ok(sqlx::query_as("SELECT * FROM users WHERE id = ?").bind(id).fetch_one(&self.db).await?)
     }
 
     pub async fn find_user(&self, handle: &str) -> Result<User> {
         let (name, tag) = parse_handle(handle);
         let users: Vec<User> = match tag {
-            Some(t) => sqlx::query_as(
-                "SELECT * FROM users WHERE username = ? COLLATE NOCASE AND discriminator = ?",
-            )
-            .bind(&name)
-            .bind(t)
-            .fetch_all(&self.db)
-            .await?,
-            None => sqlx::query_as("SELECT * FROM users WHERE username = ? COLLATE NOCASE")
-                .bind(&name)
-                .fetch_all(&self.db)
-                .await?,
+            Some(t) => {
+                sqlx::query_as("SELECT * FROM users WHERE username = ? COLLATE NOCASE AND discriminator = ?")
+                    .bind(&name)
+                    .bind(t)
+                    .fetch_all(&self.db)
+                    .await?
+            }
+            None => {
+                sqlx::query_as("SELECT * FROM users WHERE username = ? COLLATE NOCASE")
+                    .bind(&name)
+                    .fetch_all(&self.db)
+                    .await?
+            }
         };
         match users.len() {
             1 => Ok(users.into_iter().next().unwrap()),
             0 => Err(AppError::NotFound),
-            _ => Err(AppError::bad(format!(
-                "several users are called {name}; log in with your full name#tag"
-            ))),
+            _ => Err(AppError::bad(format!("several users are called {name}; log in with your full name#tag"))),
         }
     }
 
@@ -401,14 +377,8 @@ impl App {
         };
         let pw = password.to_string();
         let hash = user.password_hash.clone();
-        let ok = tokio::task::spawn_blocking(move || verify_password(&pw, &hash))
-            .await
-            .unwrap_or(false);
-        if ok {
-            Ok(user)
-        } else {
-            Err(AppError::bad("wrong username or password"))
-        }
+        let ok = tokio::task::spawn_blocking(move || verify_password(&pw, &hash)).await.unwrap_or(false);
+        if ok { Ok(user) } else { Err(AppError::bad("wrong username or password")) }
     }
 
     pub async fn set_password(&self, user_id: i64, password: &str) -> Result<()> {
@@ -435,10 +405,7 @@ impl App {
         }
         self.set_password(user.id, new).await?;
         // Log out every other browser.
-        sqlx::query("DELETE FROM sessions WHERE user_id = ?")
-            .bind(user.id)
-            .execute(&self.db)
-            .await?;
+        sqlx::query("DELETE FROM sessions WHERE user_id = ?").bind(user.id).execute(&self.db).await?;
         Ok(())
     }
 
@@ -490,10 +457,7 @@ impl App {
     }
 
     pub async fn delete_session(&self, token: &str) -> Result<()> {
-        sqlx::query("DELETE FROM sessions WHERE id = ?")
-            .bind(sha256_hex(token))
-            .execute(&self.db)
-            .await?;
+        sqlx::query("DELETE FROM sessions WHERE id = ?").bind(sha256_hex(token)).execute(&self.db).await?;
         Ok(())
     }
 
@@ -507,9 +471,7 @@ impl App {
         deck_ids: Option<Vec<i64>>,
     ) -> Result<(ApiToken, String)> {
         let raw = format!("ainki_{}", random_hex(24));
-        let token = self
-            .create_grant(user_id, name, can_write, can_review, deck_ids, &raw, None)
-            .await?;
+        let token = self.create_grant(user_id, name, can_write, can_review, deck_ids, &raw, None).await?;
         Ok((token, raw))
     }
 
@@ -555,12 +517,11 @@ impl App {
                 return Err(AppError::bad("pick at least one deck, or allow all decks"));
             }
             for deck in decks {
-                let owned: Option<i64> =
-                    sqlx::query_scalar("SELECT id FROM decks WHERE id = ? AND user_id = ?")
-                        .bind(deck)
-                        .bind(user_id)
-                        .fetch_optional(&mut *tx)
-                        .await?;
+                let owned: Option<i64> = sqlx::query_scalar("SELECT id FROM decks WHERE id = ? AND user_id = ?")
+                    .bind(deck)
+                    .bind(user_id)
+                    .fetch_optional(&mut *tx)
+                    .await?;
                 if owned.is_none() {
                     return Err(AppError::NotFound);
                 }
@@ -572,10 +533,7 @@ impl App {
             }
         }
         tx.commit().await?;
-        Ok(sqlx::query_as("SELECT * FROM api_tokens WHERE id = ?")
-            .bind(id)
-            .fetch_one(&self.db)
-            .await?)
+        Ok(sqlx::query_as("SELECT * FROM api_tokens WHERE id = ?").bind(id).fetch_one(&self.db).await?)
     }
 
     pub async fn list_tokens(&self, user_id: i64) -> Result<Vec<(ApiToken, Vec<String>)>> {
@@ -608,10 +566,7 @@ impl App {
             .await?
             .rows_affected();
         if n > 0 {
-            sqlx::query("DELETE FROM oauth_tokens WHERE api_token_id = ?")
-                .bind(token_id)
-                .execute(&self.db)
-                .await?;
+            sqlx::query("DELETE FROM oauth_tokens WHERE api_token_id = ?").bind(token_id).execute(&self.db).await?;
         }
         Ok(())
     }
@@ -643,21 +598,15 @@ impl App {
         let decks = if token.all_decks {
             None
         } else {
-            let ids: Vec<i64> =
-                sqlx::query_scalar("SELECT deck_id FROM api_token_decks WHERE token_id = ?")
-                    .bind(token.id)
-                    .fetch_all(&self.db)
-                    .await?;
+            let ids: Vec<i64> = sqlx::query_scalar("SELECT deck_id FROM api_token_decks WHERE token_id = ?")
+                .bind(token.id)
+                .fetch_all(&self.db)
+                .await?;
             Some(ids.into_iter().collect())
         };
         Ok(Access {
             user: self.user(token.user_id).await?,
-            actor: Actor::Agent {
-                token_id: token.id,
-                can_write: token.can_write,
-                can_review: token.can_review,
-                decks,
-            },
+            actor: Actor::Agent { token_id: token.id, can_write: token.can_write, can_review: token.can_review, decks },
         })
     }
 }

@@ -100,10 +100,7 @@ impl CardSched {
 
     pub fn memory(&self) -> Option<MemoryState> {
         match (self.stability, self.difficulty) {
-            (Some(stability), Some(difficulty)) => Some(MemoryState {
-                stability,
-                difficulty,
-            }),
+            (Some(stability), Some(difficulty)) => Some(MemoryState { stability, difficulty }),
             _ => None,
         }
     }
@@ -131,11 +128,7 @@ pub struct Clock {
 
 impl Clock {
     pub fn new(now: i64, tz: Tz, rollover_hour: u32) -> Self {
-        Self {
-            now,
-            tz,
-            rollover_hour: rollover_hour.min(23),
-        }
+        Self { now, tz, rollover_hour: rollover_hour.min(23) }
     }
 
     pub fn date_of(&self, ts: i64) -> NaiveDate {
@@ -192,10 +185,7 @@ pub fn fsrs_for(params: &[f32]) -> FSRS {
 }
 
 pub fn decay_for(params: &[f32]) -> f32 {
-    fsrs::check_and_fill_parameters(params)
-        .ok()
-        .and_then(|p| p.get(20).copied())
-        .unwrap_or(fsrs::FSRS6_DEFAULT_DECAY)
+    fsrs::check_and_fill_parameters(params).ok().and_then(|p| p.get(20).copied()).unwrap_or(fsrs::FSRS6_DEFAULT_DECAY)
 }
 
 /// Probability of recall right now.
@@ -203,11 +193,7 @@ pub fn retrievability(card: &CardSched, params: &[f32], clock: &Clock) -> Option
     let memory = card.memory()?;
     let last = card.last_review?;
     let elapsed = ((clock.now - last).max(0) as f32) / 86_400.0;
-    Some(fsrs::current_retrievability(
-        memory,
-        elapsed,
-        decay_for(params),
-    ))
+    Some(fsrs::current_retrievability(memory, elapsed, decay_for(params)))
 }
 
 /// Deterministic pseudo-random number in [0, 1) so previews match answers.
@@ -259,15 +245,8 @@ pub fn answer(
     rating: Rating,
     clock: &Clock,
 ) -> anyhow::Result<Outcome> {
-    let elapsed_days = card
-        .last_review
-        .map(|last| clock.days_between(last, clock.now).max(0))
-        .unwrap_or(0);
-    let next = fsrs.next_states(
-        card.memory(),
-        cfg.desired_retention,
-        elapsed_days.min(u32::MAX as i64) as u32,
-    )?;
+    let elapsed_days = card.last_review.map(|last| clock.days_between(last, clock.now).max(0)).unwrap_or(0);
+    let next = fsrs.next_states(card.memory(), cfg.desired_retention, elapsed_days.min(u32::MAX as i64) as u32)?;
     let chosen = match rating {
         Rating::Again => &next.again,
         Rating::Hard => &next.hard,
@@ -315,11 +294,7 @@ pub fn answer(
             }
         }
         CardState::New | CardState::Learning | CardState::Relearning => {
-            let steps = if card.state == CardState::Relearning {
-                &cfg.relearning_steps
-            } else {
-                &cfg.learning_steps
-            };
+            let steps = if card.state == CardState::Relearning { &cfg.relearning_steps } else { &cfg.learning_steps };
             let step = if card.state == CardState::New { 0 } else { card.step.max(0) as usize };
             let in_steps = |out: &mut CardSched, state: CardState, idx: usize, delay: i64| -> i64 {
                 out.state = state;
@@ -327,11 +302,8 @@ pub fn answer(
                 out.due = clock.now + delay;
                 delay
             };
-            let learning_state = if card.state == CardState::Relearning {
-                CardState::Relearning
-            } else {
-                CardState::Learning
-            };
+            let learning_state =
+                if card.state == CardState::Relearning { CardState::Relearning } else { CardState::Learning };
             if steps.is_empty() {
                 graduate(&mut out)
             } else {
@@ -362,12 +334,7 @@ pub fn answer(
         }
     };
 
-    Ok(Outcome {
-        card: out,
-        interval_secs,
-        interval_days: graduated_days,
-        elapsed_days,
-    })
+    Ok(Outcome { card: out, interval_secs, interval_days: graduated_days, elapsed_days })
 }
 
 /// The longest learning step; anything longer is FSRS's job anyway.

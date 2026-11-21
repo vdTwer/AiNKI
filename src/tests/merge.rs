@@ -110,12 +110,16 @@ async fn keeping_progress_copies_the_schedule_of_cards_and_items() {
     let (copies, _) = app.list_cards(&a, &filter).await.unwrap();
     let copy = copies.iter().find(|c| c.front == "Numbers?").unwrap();
     assert_ne!(copy.id, original.id);
-    let sched = |c: &crate::service::Card| (c.state, c.step, c.stability, c.difficulty, c.due, c.last_review, c.reps, c.lapses);
+    let sched =
+        |c: &crate::service::Card| (c.state, c.step, c.stability, c.difficulty, c.due, c.last_review, c.reps, c.lapses);
     assert_eq!(sched(copy), sched(&original));
     let items = app.card_items(copy).await.unwrap();
     let item_sched =
         |i: &crate::multi::CardItem| (i.position, i.text.clone(), i.state, i.stability, i.due, i.reps, i.lapses);
-    assert_eq!(items.iter().map(item_sched).collect::<Vec<_>>(), original_items.iter().map(item_sched).collect::<Vec<_>>());
+    assert_eq!(
+        items.iter().map(item_sched).collect::<Vec<_>>(),
+        original_items.iter().map(item_sched).collect::<Vec<_>>()
+    );
 
     let hablar = copies.iter().find(|c| c.front == "hablar").unwrap();
     assert_eq!(hablar.reps, 1);

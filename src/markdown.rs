@@ -23,11 +23,7 @@ pub fn render(src: &str) -> String {
     });
     let mut out = String::new();
     html::push_html(&mut out, parser);
-    ammonia::Builder::default()
-        .rm_tags(&["img"])
-        .link_rel(Some("noopener noreferrer nofollow"))
-        .clean(&out)
-        .to_string()
+    ammonia::Builder::default().rm_tags(&["img"]).link_rel(Some("noopener noreferrer nofollow")).clean(&out).to_string()
 }
 
 /// The words of card text without its Markdown, on one line: for lists
@@ -65,10 +61,7 @@ pub fn tidy(src: &str) -> String {
             fence = Some(&t[..3]);
         } else if indent(line) < 4 && !t.is_empty() && !is_item(t) {
             // A run of indented items (and their own deeper lines) under it.
-            let run = lines[n + 1..]
-                .iter()
-                .take_while(|l| indent(l) >= 4 && !l.trim().is_empty())
-                .count();
+            let run = lines[n + 1..].iter().take_while(|l| indent(l) >= 4 && !l.trim().is_empty()).count();
             let block = &lines[n + 1..n + 1 + run];
             if block.first().is_some_and(|l| is_item(l.trim_start())) {
                 let cut = block.iter().map(|l| indent(l)).min().unwrap_or(0);
@@ -90,10 +83,7 @@ pub fn tidy(src: &str) -> String {
 
 /// Leading spaces, with a tab as four.
 fn indent(line: &str) -> usize {
-    line.chars()
-        .take_while(|c| *c == ' ' || *c == '\t')
-        .map(|c| if c == '\t' { 4 } else { 1 })
-        .sum()
+    line.chars().take_while(|c| *c == ' ' || *c == '\t').map(|c| if c == '\t' { 4 } else { 1 }).sum()
 }
 
 fn dedent(line: &str, cut: usize) -> String {

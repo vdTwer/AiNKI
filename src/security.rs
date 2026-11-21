@@ -102,17 +102,13 @@ impl<S: Send + Sync> FromRequestParts<S> for ClientIp {
 
     async fn from_request_parts(parts: &mut Parts, _: &S) -> Result<Self, Self::Rejection> {
         let peer = parts.extensions.get::<ConnectInfo<SocketAddr>>().map(|c| c.0.ip());
-        Ok(ClientIp(
-            client_ip(&parts.headers, peer).map(|ip| ip.to_string()).unwrap_or_else(|| "unknown".into()),
-        ))
+        Ok(ClientIp(client_ip(&parts.headers, peer).map(|ip| ip.to_string()).unwrap_or_else(|| "unknown".into())))
     }
 }
 
 pub fn too_many_requests(retry_after_secs: u64) -> Response {
-    let mut res = crate::web::sorry(
-        StatusCode::TOO_MANY_REQUESTS,
-        "Too many attempts. Please wait a while and try again.",
-    );
+    let mut res =
+        crate::web::sorry(StatusCode::TOO_MANY_REQUESTS, "Too many attempts. Please wait a while and try again.");
     res.headers_mut().insert(header::RETRY_AFTER, retry_after_secs.into());
     res
 }
@@ -136,10 +132,7 @@ pub async fn headers(State(app): State<AppState>, req: Request, next: Next) -> R
         HeaderValue::from_static("camera=(), microphone=(), geolocation=(), payment=(), usb=()"),
     );
     if app.config.secure() {
-        h.insert(
-            header::STRICT_TRANSPORT_SECURITY,
-            HeaderValue::from_static("max-age=31536000"),
-        );
+        h.insert(header::STRICT_TRANSPORT_SECURITY, HeaderValue::from_static("max-age=31536000"));
     }
     if !h.contains_key(header::CACHE_CONTROL) {
         h.insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));

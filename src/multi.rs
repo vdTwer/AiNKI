@@ -436,16 +436,18 @@ impl App {
             .fetch_all(&mut *tx)
             .await?;
         let s = summarize(&items, &card.sched());
-        sqlx::query("UPDATE cards SET multi = ?, state = ?, step = ?, stability = ?, difficulty = ?, due = ? WHERE id = ?")
-            .bind(how)
-            .bind(s.state as i64)
-            .bind(s.step)
-            .bind(s.stability.map(|v| v as f64))
-            .bind(s.difficulty.map(|v| v as f64))
-            .bind(s.due)
-            .bind(card.id)
-            .execute(&mut *tx)
-            .await?;
+        sqlx::query(
+            "UPDATE cards SET multi = ?, state = ?, step = ?, stability = ?, difficulty = ?, due = ? WHERE id = ?",
+        )
+        .bind(how)
+        .bind(s.state as i64)
+        .bind(s.step)
+        .bind(s.stability.map(|v| v as f64))
+        .bind(s.difficulty.map(|v| v as f64))
+        .bind(s.due)
+        .bind(card.id)
+        .execute(&mut *tx)
+        .await?;
         tx.commit().await?;
         Ok(())
     }
@@ -503,10 +505,7 @@ impl App {
         if n_missed > 0 && before.state == CardState::Review {
             c.lapses += 1;
         }
-        let elapsed_days = before
-            .last_review
-            .map(|last| clock.days_between(last, clock.now).max(0))
-            .unwrap_or(0);
+        let elapsed_days = before.last_review.map(|last| clock.days_between(last, clock.now).max(0)).unwrap_or(0);
         let interval_secs = (c.due - clock.now).max(0);
 
         let mut tx = self.db.begin_with("BEGIN IMMEDIATE").await?;
@@ -597,11 +596,7 @@ impl App {
         } else {
             format::interval(interval_secs)
         };
-        Ok(AnswerResult {
-            card: self.card(access, card.id).await?,
-            interval_secs,
-            interval,
-        })
+        Ok(AnswerResult { card: self.card(access, card.id).await?, interval_secs, interval })
     }
 
     /// Split every multicard's back again, once after an update that
@@ -613,7 +608,8 @@ impl App {
         if version >= SPLIT_VERSION {
             return Ok(());
         }
-        let cards: Vec<Card> = sqlx::query_as("SELECT * FROM cards WHERE multi IS NOT NULL").fetch_all(&self.db).await?;
+        let cards: Vec<Card> =
+            sqlx::query_as("SELECT * FROM cards WHERE multi IS NOT NULL").fetch_all(&self.db).await?;
         for card in &cards {
             let how = card.multi.filter(|&h| split(&card.back, h).is_some());
             if let Err(e) = self.sync_items(card, how).await {
@@ -719,7 +715,9 @@ mod tests {
                 Piece::Item("guesses: I think I'll make it.".into()),
                 Piece::Text("be going to".into()),
                 Piece::Item("intentions: We're going to have a barbecue.".into()),
-                Piece::Text("⚠️ Remark: will is for spontaneous decisions.\nOther future forms: the present simple.".into()),
+                Piece::Text(
+                    "⚠️ Remark: will is for spontaneous decisions.\nOther future forms: the present simple.".into()
+                ),
             ]
         );
     }

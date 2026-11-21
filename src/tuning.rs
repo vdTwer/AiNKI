@@ -99,7 +99,12 @@ pub struct Fit {
 
 /// Fit parameters and keep them only if they predict this history better
 /// than `current` (empty: the defaults). Runs on a blocking thread.
-fn fit(items: Vec<fsrs::FSRSItem>, card_ids: Vec<i64>, current: Vec<f32>, reviews: usize) -> std::result::Result<Fit, fsrs::FSRSError> {
+fn fit(
+    items: Vec<fsrs::FSRSItem>,
+    card_ids: Vec<i64>,
+    current: Vec<f32>,
+    reviews: usize,
+) -> std::result::Result<Fit, fsrs::FSRSError> {
     let new = fsrs::compute_parameters(fsrs::ComputeParametersInput {
         train_set: items.clone(),
         card_ids: Some(card_ids),
@@ -111,12 +116,9 @@ fn fit(items: Vec<fsrs::FSRSItem>, card_ids: Vec<i64>, current: Vec<f32>, review
     };
     let (old_loss, new_loss) = (loss(&current), loss(&new));
     Ok(match (old_loss, new_loss) {
-        (Some(o), Some(n)) if n < o => Fit {
-            parameters: new,
-            changed: true,
-            improvement: Some(((o - n) / o) as f64),
-            reviews,
-        },
+        (Some(o), Some(n)) if n < o => {
+            Fit { parameters: new, changed: true, improvement: Some(((o - n) / o) as f64), reviews }
+        }
         // A fit that could not be scored at all is kept, as before.
         (None, Some(_)) => Fit { parameters: new, changed: true, improvement: None, reviews },
         _ => Fit { parameters: current, changed: false, improvement: Some(0.0), reviews },
@@ -262,7 +264,9 @@ impl App {
             .await
             .map_err(|e| AppError::Internal(e.into()))?
             .map_err(|e| match e {
-                fsrs::FSRSError::NotEnoughData => AppError::bad("not enough review history yet to optimize; keep studying"),
+                fsrs::FSRSError::NotEnoughData => {
+                    AppError::bad("not enough review history yet to optimize; keep studying")
+                }
                 e => e.into(),
             })?;
         let t = now();
@@ -287,18 +291,16 @@ impl App {
             .bind(user.id)
             .fetch_all(&self.db)
             .await?;
-        let deck_preset: HashMap<i64, i64> = sqlx::query_as::<_, (i64, i64)>("SELECT id, preset_id FROM decks WHERE user_id = ?")
-            .bind(user.id)
-            .fetch_all(&self.db)
-            .await?
-            .into_iter()
-            .collect();
+        let deck_preset: HashMap<i64, i64> =
+            sqlx::query_as::<_, (i64, i64)>("SELECT id, preset_id FROM decks WHERE user_id = ?")
+                .bind(user.id)
+                .fetch_all(&self.db)
+                .await?
+                .into_iter()
+                .collect();
         let mut preset_results = Vec::new();
         for p in presets {
-            let mine: Vec<&History> = histories
-                .iter()
-                .filter(|h| deck_preset.get(&h.deck_id) == Some(&p.id))
-                .collect();
+            let mine: Vec<&History> = histories.iter().filter(|h| deck_preset.get(&h.deck_id) == Some(&p.id)).collect();
             let reviews: usize = mine.iter().map(|h| h.reviews.len()).sum();
             let own = parse_params(&p.fsrs_params);
             if reviews < PRESET_MIN_REVIEWS {
@@ -328,7 +330,9 @@ impl App {
                     .execute(&self.db)
                     .await?;
             }
-            preset_results.push(json!({ "preset": p.name, "reviews": f.reviews, "changed": f.changed, "improvement": f.improvement }));
+            preset_results.push(
+                json!({ "preset": p.name, "reviews": f.reviews, "changed": f.changed, "improvement": f.improvement }),
+            );
         }
 
         let note = match (global.changed, global.improvement) {
@@ -399,13 +403,8 @@ impl App {
     /// assumes you keep learning the preset's new cards every day.
     pub async fn workload(&self, access: &Access, preset_id: i64, days: usize) -> Result<Vec<Workload>> {
         let preset = self.preset(access, preset_id).await?;
-        let deck_ids: Vec<i64> = self
-            .decks(access)
-            .await?
-            .into_iter()
-            .filter(|d| d.preset_id == preset_id)
-            .map(|d| d.id)
-            .collect();
+        let deck_ids: Vec<i64> =
+            self.decks(access).await?.into_iter().filter(|d| d.preset_id == preset_id).map(|d| d.id).collect();
         let own = parse_params(&preset_params(self, preset_id).await?);
         let params = if own.is_empty() { access.user.params() } else { own };
         let clock = access.user.clock();
@@ -419,7 +418,8 @@ impl App {
                  WHERE user_id = ? AND suspended = 0 AND deck_id IN ({})",
                 placeholders(deck_ids.len())
             );
-            let mut q = sqlx::query_as::<_, (i64, Option<f64>, Option<f64>, i64, Option<i64>, i64)>(&sql).bind(access.user_id());
+            let mut q = sqlx::query_as::<_, (i64, Option<f64>, Option<f64>, i64, Option<i64>, i64)>(&sql)
+                .bind(access.user_id());
             for id in &deck_ids {
                 q = q.bind(id);
             }
@@ -474,7 +474,13 @@ impl App {
                     }
                 }
                 if config.deck_size == 0 {
-                    out.push(Workload { retention: r, minutes_per_day: 0.0, reviews_per_day: 0.0, remembered: 0.0, current: (r - current).abs() < 0.005 });
+                    out.push(Workload {
+                        retention: r,
+                        minutes_per_day: 0.0,
+                        reviews_per_day: 0.0,
+                        remembered: 0.0,
+                        current: (r - current).abs() < 0.005,
+                    });
                     continue;
                 }
                 let cards: Vec<fsrs::Card> = existing
@@ -572,18 +578,11 @@ impl App {
     }
 
     pub async fn set_auto_optimize(&self, user_id: i64, on: bool) -> Result<()> {
-        sqlx::query("UPDATE users SET auto_optimize = ? WHERE id = ?")
-            .bind(on)
-            .bind(user_id)
-            .execute(&self.db)
-            .await?;
+        sqlx::query("UPDATE users SET auto_optimize = ? WHERE id = ?").bind(on).bind(user_id).execute(&self.db).await?;
         Ok(())
     }
 }
 
 async fn preset_params(app: &App, preset_id: i64) -> Result<String> {
-    Ok(sqlx::query_scalar("SELECT fsrs_params FROM presets WHERE id = ?")
-        .bind(preset_id)
-        .fetch_one(&app.db)
-        .await?)
+    Ok(sqlx::query_scalar("SELECT fsrs_params FROM presets WHERE id = ?").bind(preset_id).fetch_one(&app.db).await?)
 }

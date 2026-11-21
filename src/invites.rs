@@ -146,10 +146,8 @@ impl App {
         if token.len() != 32 || !token.bytes().all(|b| b.is_ascii_hexdigit()) {
             return Ok(None);
         }
-        let invite: Option<Invite> = sqlx::query_as("SELECT * FROM invites WHERE token = ?")
-            .bind(token)
-            .fetch_optional(&self.db)
-            .await?;
+        let invite: Option<Invite> =
+            sqlx::query_as("SELECT * FROM invites WHERE token = ?").bind(token).fetch_optional(&self.db).await?;
         match invite.filter(|i| i.open(now())) {
             Some(i) => {
                 let from = self.user(i.user_id).await?;

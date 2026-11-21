@@ -109,10 +109,7 @@ pub struct Attention {
 /// fronts that read the same compare equal.
 pub fn normalize(text: &str) -> String {
     let mut out = String::new();
-    for word in text
-        .split(|c: char| !c.is_alphanumeric())
-        .filter(|w| !w.is_empty())
-    {
+    for word in text.split(|c: char| !c.is_alphanumeric()).filter(|w| !w.is_empty()) {
         if !out.is_empty() {
             out.push(' ');
         }
@@ -202,7 +199,9 @@ fn split_flag(card: &Card, avg_secs: Option<f64>) -> Option<Flag> {
     let lapses = card.lapses;
     let items = if card.multi.is_none() { list_items(&card.back) } else { 0 };
     let reason = if items >= 2 && lapses >= SPLIT_LAPSES {
-        format!("The back lists {items} things and the card was forgotten {lapses} times. Each thing on its own is easier to remember.")
+        format!(
+            "The back lists {items} things and the card was forgotten {lapses} times. Each thing on its own is easier to remember."
+        )
     } else if lapses >= SLOW_LAPSES && avg_secs.is_some_and(|s| s >= SLOW_SECS) {
         format!(
             "Answers take about {:.0} seconds and the card was forgotten {lapses} times. A card that asks for less is quicker and sticks better.",
@@ -335,10 +334,8 @@ impl App {
         hits.truncate(3);
         let mut out = Vec::new();
         for (_, id, deck_id) in hits {
-            let front: String = sqlx::query_scalar("SELECT front FROM cards WHERE id = ?")
-                .bind(id)
-                .fetch_one(&self.db)
-                .await?;
+            let front: String =
+                sqlx::query_scalar("SELECT front FROM cards WHERE id = ?").bind(id).fetch_one(&self.db).await?;
             out.push(Similar { card_id: id, deck_id, front });
         }
         Ok(out)
@@ -349,10 +346,8 @@ impl App {
         let items = self.card_items(card).await?;
         let secs = self.answer_seconds(&[card.id]).await?;
         let dismissed = self.dismissals(&[card.id]).await?;
-        let mut flags: Vec<Flag> = leech_flag(card, &items)
-            .into_iter()
-            .chain(split_flag(card, secs.get(&card.id).copied()))
-            .collect();
+        let mut flags: Vec<Flag> =
+            leech_flag(card, &items).into_iter().chain(split_flag(card, secs.get(&card.id).copied())).collect();
         let me = normalize(&card.front);
         let fronts = self.fronts(access).await?;
         let family = fronts.iter().find(|f| f.id == card.id).map_or(card.id, |f| f.family);
@@ -493,11 +488,7 @@ impl App {
         access.require_write()?;
         let card = self.card(access, card_id).await?;
         let items = self.card_items(&card).await?;
-        let lapses = if card.multi.is_some() {
-            items.iter().map(|i| i.lapses).max().unwrap_or(0)
-        } else {
-            card.lapses
-        };
+        let lapses = if card.multi.is_some() { items.iter().map(|i| i.lapses).max().unwrap_or(0) } else { card.lapses };
         sqlx::query(
             "INSERT INTO coach_dismissals (card_id, kind, lapses, created_at) VALUES (?, ?, ?, ?)
              ON CONFLICT (card_id, kind) DO UPDATE SET lapses = excluded.lapses, created_at = excluded.created_at",
@@ -523,10 +514,8 @@ impl App {
     ) -> Result<Vec<Card>> {
         access.require_write()?;
         let card = self.card(access, card_id).await?;
-        let cards: Vec<(String, String)> = cards
-            .into_iter()
-            .filter(|(f, b)| !f.trim().is_empty() || !b.trim().is_empty())
-            .collect();
+        let cards: Vec<(String, String)> =
+            cards.into_iter().filter(|(f, b)| !f.trim().is_empty() || !b.trim().is_empty()).collect();
         if cards.len() < 2 {
             return Err(AppError::bad("a split needs at least two cards"));
         }

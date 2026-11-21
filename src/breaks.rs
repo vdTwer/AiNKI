@@ -185,7 +185,8 @@ pub struct Suggestion {
 pub fn suggest(st: &State, r: Rhythm) -> Option<Suggestion> {
     let w = st.worked_min;
     let slowing = st.slowness >= SLOW;
-    let due = w >= LATE * r.work_min || (w >= EARLY * r.work_min && slowing) || (w >= MIN_WORK_MIN && st.slowness >= SLUMP);
+    let due =
+        w >= LATE * r.work_min || (w >= EARLY * r.work_min && slowing) || (w >= MIN_WORK_MIN && st.slowness >= SLUMP);
     if !due {
         return None;
     }
@@ -255,7 +256,13 @@ mod tests {
             let answer = 2000;
             t += think + answer;
             worked += (think + answer) as f64;
-            out.push(Step { at: t / 1000, think_ms: Some(think), answer_ms: Some(answer), away_ms: Some(0), usual: Some(USUAL_MS.ln()) });
+            out.push(Step {
+                at: t / 1000,
+                think_ms: Some(think),
+                answer_ms: Some(answer),
+                away_ms: Some(0),
+                usual: Some(USUAL_MS.ln()),
+            });
         }
         out
     }

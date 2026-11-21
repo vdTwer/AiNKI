@@ -364,10 +364,7 @@ fn exam_close(s: &Signals) -> Option<Advice> {
     if left <= 3 {
         return Some(note(
             Rule::ExamClose,
-            format!(
-                "Your {} exam is {when}. Stop new cards now and review what you already know.",
-                d.name
-            ),
+            format!("Your {} exam is {when}. Stop new cards now and review what you already know.", d.name),
             link(href, "Open the deck"),
         ));
     }
@@ -773,12 +770,7 @@ fn forgotten_deck(s: &Signals) -> Option<Advice> {
     let weeks = d.days_since_review.unwrap_or(14) / 7;
     Some(note(
         Rule::ForgottenDeck,
-        format!(
-            "{} waited {}; {} are due.",
-            d.name,
-            plural(weeks, "week", "weeks"),
-            crate::format::number(d.due)
-        ),
+        format!("{} waited {}; {} are due.", d.name, plural(weeks, "week", "weeks"), crate::format::number(d.due)),
         link(format!("/decks/{}", d.id), "Open it"),
     ))
 }
@@ -875,11 +867,8 @@ impl App {
         let start_today = clock.start_of_today();
         let presets = self.list_presets(access).await?;
         let target_of: HashMap<i64, f64> = presets.iter().map(|p| (p.id, p.desired_retention)).collect();
-        let deck_target: HashMap<i64, f64> = known
-            .decks
-            .iter()
-            .map(|d| (d.deck.id, target_of.get(&d.deck.preset_id).copied().unwrap_or(0.9)))
-            .collect();
+        let deck_target: HashMap<i64, f64> =
+            known.decks.iter().map(|d| (d.deck.id, target_of.get(&d.deck.preset_id).copied().unwrap_or(0.9))).collect();
 
         // Six weeks of answers: recall now and before, pace, sessions.
         #[derive(sqlx::FromRow)]
@@ -1018,7 +1007,14 @@ impl App {
             s.decks.push(DeckSignal {
                 id: d.deck.id,
                 // A nested deck by its own name: "Spanish", not the path.
-                name: d.deck.name.rsplit("::").map(str::trim).find(|p| !p.is_empty()).unwrap_or(&d.deck.name).to_string(),
+                name: d
+                    .deck
+                    .name
+                    .rsplit("::")
+                    .map(str::trim)
+                    .find(|p| !p.is_empty())
+                    .unwrap_or(&d.deck.name)
+                    .to_string(),
                 preset_id: d.deck.preset_id,
                 recall: recall_deck.get(&d.deck.id).copied().unwrap_or_default(),
                 target: deck_target.get(&d.deck.id).copied().unwrap_or(0.9),

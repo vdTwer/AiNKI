@@ -7,10 +7,10 @@
 use chrono::{Duration, NaiveTime, TimeZone, Timelike};
 use serde::Serialize;
 
+use crate::App;
 use crate::auth::{Access, User};
 use crate::breaks;
 use crate::error::{AppError, Result};
-use crate::App;
 use crate::now;
 
 /// A gap this long between answers ends a session.
@@ -145,7 +145,14 @@ impl Confidence {
 impl App {
     /// After an answer on the website: whether the user felt sure, whether
     /// time ran out, and how long it took. Goes onto the review just logged.
-    pub async fn note_answer(&self, access: &Access, card_id: i64, sure: Option<bool>, timed_out: bool, timing: &Timing) -> Result<()> {
+    pub async fn note_answer(
+        &self,
+        access: &Access,
+        card_id: i64,
+        sure: Option<bool>,
+        timed_out: bool,
+        timing: &Timing,
+    ) -> Result<()> {
         if sure.is_none() && !timed_out && *timing == Timing::default() {
             return Ok(());
         }
@@ -227,7 +234,13 @@ impl App {
         }
         let Some(start) = self.session_start(access).await? else { return Ok(None) };
         let minutes = (now() - start) / 60;
-        Ok((minutes >= len).then_some(BreakDue { studied: minutes, length: TIMER_BREAK_MINUTES, smart: false, long: false, slowing: false }))
+        Ok((minutes >= len).then_some(BreakDue {
+            studied: minutes,
+            length: TIMER_BREAK_MINUTES,
+            smart: false,
+            long: false,
+            slowing: false,
+        }))
     }
 
     async fn smart_break_due(&self, access: &Access) -> Result<Option<BreakDue>> {
@@ -271,7 +284,8 @@ impl App {
         .bind(n - RECOVERY_DAYS * 86_400)
         .fetch_all(&self.db)
         .await?;
-        let usuals = breaks::card_usuals(&rows.iter().map(|r| (r.card_id, r.think_ms.filter(|_| r.plain))).collect::<Vec<_>>());
+        let usuals =
+            breaks::card_usuals(&rows.iter().map(|r| (r.card_id, r.think_ms.filter(|_| r.plain))).collect::<Vec<_>>());
         Ok(rows
             .iter()
             .zip(usuals)
@@ -295,7 +309,11 @@ impl App {
             return Ok(());
         }
         let steps = self.break_steps(access).await?;
-        if breaks::paused_on_own(&breaks::replay(&steps, user.break_skipped_at.unwrap_or(0)), &steps, user.break_shown_at) {
+        if breaks::paused_on_own(
+            &breaks::replay(&steps, user.break_skipped_at.unwrap_or(0)),
+            &steps,
+            user.break_shown_at,
+        ) {
             self.set_rhythm(user.id, rhythm(user).paused_early()).await?;
         }
         Ok(())
@@ -320,7 +338,8 @@ impl App {
     /// stretches, shorter breaks. After a few minutes it was a break.
     pub async fn skip_break(&self, user: &User) -> Result<()> {
         let n = now();
-        let refused = user.session_minutes == SMART_BREAKS && user.break_shown_at.is_some_and(|t| n - t < breaks::REST_SECS);
+        let refused =
+            user.session_minutes == SMART_BREAKS && user.break_shown_at.is_some_and(|t| n - t < breaks::REST_SECS);
         if refused {
             self.set_rhythm(user.id, rhythm(user).kept_going()).await?;
         }
@@ -431,11 +450,7 @@ impl App {
     }
 
     pub async fn set_catch_up(&self, user_id: i64, on: bool) -> Result<()> {
-        sqlx::query("UPDATE users SET catch_up = ? WHERE id = ?")
-            .bind(on)
-            .bind(user_id)
-            .execute(&self.db)
-            .await?;
+        sqlx::query("UPDATE users SET catch_up = ? WHERE id = ?").bind(on).bind(user_id).execute(&self.db).await?;
         Ok(())
     }
 }

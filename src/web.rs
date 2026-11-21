@@ -24,14 +24,16 @@ use crate::{
     auth::{Access, User},
     coach,
     error::AppError,
-    fuzzy, import, insight, invites, lessons, markdown, mcp, media, multi::{self, Piece, Split}, now, oauth,
+    format::{self, count},
+    fuzzy, import, insight, invites, lessons, markdown, mcp, media,
+    multi::{self, Piece, Split},
+    now, oauth,
     outlook::{self, Outlook},
     presets,
-    security::{self, ClientIp, Flash},
     scheduler::{self, CardState, Rating},
-    study,
+    security::{self, ClientIp, Flash},
     service::{Card, CardFilter, CardInput, Deck, DeckStatus, PresetInput},
-    format::{self, count},
+    study,
 };
 
 const CSS: &str = include_str!("style.css");
@@ -163,9 +165,7 @@ pub fn router(app: AppState) -> Router {
         .route("/cards/{id}", get(card_page).post(card_update).layer(card_upload))
         .route(
             "/import",
-            get(import_page)
-                .post(import_upload)
-                .layer(DefaultBodyLimit::max(import::MAX_IMPORT_BYTES + 1024 * 1024)),
+            get(import_page).post(import_upload).layer(DefaultBodyLimit::max(import::MAX_IMPORT_BYTES + 1024 * 1024)),
         )
         .layer(middleware::from_fn_with_state(app.clone(), security::check_origin))
         .layer(middleware::from_fn_with_state(app.clone(), renew_session));
@@ -519,17 +519,21 @@ fn page(nav: Option<Nav>, title: &str, user: Option<&User>, page_kind: Option<&s
 // Icons: line drawings on a 24px grid in the text colour. The rail shows
 // them at 26px; in a page, next to a word, at 20px.
 const ICON_DECKS: &str = r#"<rect x="4" y="9.5" width="16" height="10.5" rx="2"/><path d="M6.5 6.5h11M9 3.5h6"/>"#;
-const ICON_STUDY: &str = r#"<rect x="5" y="3.5" width="14" height="17" rx="2.5"/><path d="M9 10.5l2 2 4-4"/><path d="M9 16.5h6"/>"#;
+const ICON_STUDY: &str =
+    r#"<rect x="5" y="3.5" width="14" height="17" rx="2.5"/><path d="M9 10.5l2 2 4-4"/><path d="M9 16.5h6"/>"#;
 const ICON_FIND: &str = r#"<circle cx="10.5" cy="10.5" r="5.5"/><path d="M14.5 14.5l5 5"/>"#;
 const ICON_ADD: &str = r#"<path d="M12 5v14M5 12h14"/>"#;
 const ICON_STATS: &str = r#"<path d="M5 20V13M12 20V5M19 20v-9"/>"#;
 const ICON_LEARN: &str = r#"<path d="M12 6.5C10 5 7.5 4.5 4.5 4.5v13.5c3 0 5.5.5 7.5 2 2-1.5 4.5-2 7.5-2V4.5c-3 0-5.5.5-7.5 2z"/><path d="M12 6.5v13.5"/>"#;
-const ICON_SETTINGS: &str = r#"<path d="M5 7h8M17 7h2M5 17h2M11 17h8"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/>"#;
+const ICON_SETTINGS: &str =
+    r#"<path d="M5 7h8M17 7h2M5 17h2M11 17h8"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/>"#;
 const ICON_EDIT: &str = r#"<path d="M14.5 5.5l4 4L9 19H5v-4z"/><path d="M12.5 7.5l4 4"/>"#;
 // A paper plane, so Share doesn't look like Export's tray.
 const ICON_SHARE: &str = r#"<path d="M20 4L3.5 10.5l7 3 3 7z"/><path d="M20 4l-9.5 9.5"/>"#;
-const ICON_IMPORT: &str = r#"<path d="M12 4v11M8 11l4 4 4-4"/><path d="M5 16v2.5A1.5 1.5 0 0 0 6.5 20h11a1.5 1.5 0 0 0 1.5-1.5V16"/>"#;
-const ICON_EXPORT: &str = r#"<path d="M12 15V4M8 8l4-4 4 4"/><path d="M5 16v2.5A1.5 1.5 0 0 0 6.5 20h11a1.5 1.5 0 0 0 1.5-1.5V16"/>"#;
+const ICON_IMPORT: &str =
+    r#"<path d="M12 4v11M8 11l4 4 4-4"/><path d="M5 16v2.5A1.5 1.5 0 0 0 6.5 20h11a1.5 1.5 0 0 0 1.5-1.5V16"/>"#;
+const ICON_EXPORT: &str =
+    r#"<path d="M12 15V4M8 8l4-4 4 4"/><path d="M5 16v2.5A1.5 1.5 0 0 0 6.5 20h11a1.5 1.5 0 0 0 1.5-1.5V16"/>"#;
 const ICON_PAUSE: &str = r#"<path d="M9 6.5v11M15 6.5v11"/>"#;
 const ICON_UNDO: &str = r#"<path d="M9 7L5 11l4 4"/><path d="M5 11h9a5 5 0 0 1 0 10h-2"/>"#;
 const ICON_IMAGE: &str = r#"<rect x="3.5" y="5" width="17" height="14" rx="2.5"/><circle cx="9" cy="10" r="1.6"/><path d="M4.5 17l4.5-4.2 3.2 3 2.6-2.2 4.7 4"/>"#;
@@ -625,7 +629,12 @@ fn session_cookie(app: &AppState, token: String) -> Cookie<'static> {
 
 /// Someone who keeps using AiNKI stays logged in: once a day their session
 /// and its cookie get the full lifetime again.
-async fn renew_session(State(app): State<AppState>, jar: CookieJar, req: axum::extract::Request, next: middleware::Next) -> Response {
+async fn renew_session(
+    State(app): State<AppState>,
+    jar: CookieJar,
+    req: axum::extract::Request,
+    next: middleware::Next,
+) -> Response {
     let mut res = next.run(req).await;
     if let Some(c) = jar.get(app.config.session_cookie_name()) {
         if app.renew_session(c.value()).await.unwrap_or(false) {
@@ -813,17 +822,12 @@ async fn signup(
     match result {
         Ok((user, token)) => {
             let welcome = format!("Welcome! Your username is {}. Use it to log in.", user.handle());
-            (
-                jar.add(session_cookie(&app, token)).add(flash_cookie(&welcome)),
-                Redirect::to(next.unwrap_or("/")),
-            )
+            (jar.add(session_cookie(&app, token)).add(flash_cookie(&welcome)), Redirect::to(next.unwrap_or("/")))
                 .into_response()
         }
-        Err(e) => (
-            StatusCode::BAD_REQUEST,
-            auth_form(true, Some(&capitalize(&e.to_string())), true, next),
-        )
-            .into_response(),
+        Err(e) => {
+            (StatusCode::BAD_REQUEST, auth_form(true, Some(&capitalize(&e.to_string())), true, next)).into_response()
+        }
     }
 }
 
@@ -1021,7 +1025,12 @@ fn invite_graph(accounts: &[invites::Account]) -> Markup {
         children.entry(parent).or_default().push(a);
     }
     // Depth first: each account takes the next row.
-    struct Node<'a> { a: &'a invites::Account, depth: usize, row: usize, parent_row: Option<usize> }
+    struct Node<'a> {
+        a: &'a invites::Account,
+        depth: usize,
+        row: usize,
+        parent_row: Option<usize>,
+    }
     let mut nodes: Vec<Node> = Vec::new();
     let mut stack: Vec<(&invites::Account, usize, Option<usize>)> =
         children.get(&None).map(|r| r.iter().rev().map(|a| (*a, 0, None)).collect()).unwrap_or_default();
@@ -1150,11 +1159,8 @@ async fn admin_page(State(app): State<AppState>, user: WebUser, headers: HeaderM
 
 async fn home(State(app): State<AppState>, user: WebUser, Flash(msg): Flash) -> WebResult {
     let access = user.access();
-    let (archived, decks): (Vec<_>, Vec<_>) = app
-        .deck_summaries(&access)
-        .await?
-        .into_iter()
-        .partition(|d| d.deck.status == DeckStatus::Archived);
+    let (archived, decks): (Vec<_>, Vec<_>) =
+        app.deck_summaries(&access).await?.into_iter().partition(|d| d.deck.status == DeckStatus::Archived);
     let shares = app.incoming_shares(&access).await?;
     let stats = app.stats(&access, None).await?;
     let total_due: i64 = decks.iter().map(|d| d.due_total()).sum();
@@ -1360,7 +1366,15 @@ fn study_url(deck: Option<i64>) -> String {
 
 /// The thin line and "14 of 32" under the card. `done` is in half cards
 /// (see `App::session_progress`).
-fn study_foot(deck_name: &str, deck_id: i64, done: i64, total: i64, q_deck: Option<i64>, card_id: Option<i64>, leech: bool) -> Markup {
+fn study_foot(
+    deck_name: &str,
+    deck_id: i64,
+    done: i64,
+    total: i64,
+    q_deck: Option<i64>,
+    card_id: Option<i64>,
+    leech: bool,
+) -> Markup {
     let pct = if total > 0 { (done * 50 / total).clamp(0, 100) } else { 0 };
     let total = total.max(1);
     let position = (done / 2 + 1).min(total);
@@ -1517,7 +1531,11 @@ async fn study_card(
     if let Some(how) = card.multi {
         let items = app.card_items(card).await?;
         let extras = StudyExtras {
-            reveal_inside: if reveal_form { html! {} } else { reveal.clone() },
+            reveal_inside: if reveal_form {
+                html! {}
+            } else {
+                reveal.clone()
+            },
             sure_field: sure_field.clone(),
             echo: echo.clone(),
             timed_out,
@@ -1653,10 +1671,7 @@ fn reveal_button(href: &str, revealed: bool) -> Markup {
 fn item_md(text: &str) -> Markup {
     let html = markdown::render(text);
     let t = html.trim();
-    let inner = t
-        .strip_prefix("<p>")
-        .and_then(|x| x.strip_suffix("</p>"))
-        .filter(|x| !x.contains("<p>"));
+    let inner = t.strip_prefix("<p>").and_then(|x| x.strip_suffix("</p>")).filter(|x| !x.contains("<p>"));
     PreEscaped(inner.unwrap_or(t).to_string())
 }
 
@@ -1725,7 +1740,14 @@ fn pieces_for(card: &Card, how: Split, items: &[multi::CardItem]) -> Vec<Piece> 
 /// relearning), then the whole back with every item as a row to tap when
 /// you remembered it, and one Done. It is all one form, so it also works
 /// without JavaScript.
-fn multi_study(card: &Card, how: Split, items: &[multi::CardItem], q_deck: Option<i64>, shown: &Shown, extras: &StudyExtras) -> Markup {
+fn multi_study(
+    card: &Card,
+    how: Split,
+    items: &[multi::CardItem],
+    q_deck: Option<i64>,
+    shown: &Shown,
+    extras: &StudyExtras,
+) -> Markup {
     let revealed = shown.revealed;
     let asked = multi::asked(card, items, now());
     let n_asked = asked.iter().filter(|a| **a).count();
@@ -1854,9 +1876,7 @@ fn find_score(q: &str, name: &str, also: &str) -> Option<i32> {
         None
     } else {
         let words: Vec<&str> = name.split_whitespace().chain(also.split_whitespace()).collect();
-        q.split_whitespace()
-            .map(|qw| words.iter().filter_map(|w| fuzzy::score(qw, w)).max())
-            .sum::<Option<i32>>()
+        q.split_whitespace().map(|qw| words.iter().filter_map(|w| fuzzy::score(qw, w)).max()).sum::<Option<i32>>()
     };
     by_name.max(by_also)
 }
@@ -1891,31 +1911,65 @@ async fn find_json(State(app): State<AppState>, user: WebUser, Query(f): Query<F
     // Nothing typed yet: the places, then the decks.
     if q.is_empty() {
         for (name, href, _) in FIND_PLACES.iter().filter(|p| matches!(p.1, "/" | "/stats" | "/learn" | "/settings")) {
-            found.push(Found { kind: "place", title: name.to_string(), sub: String::new(), href: href.to_string(), score: 0 });
+            found.push(Found {
+                kind: "place",
+                title: name.to_string(),
+                sub: String::new(),
+                href: href.to_string(),
+                score: 0,
+            });
         }
         for d in &decks {
-            found.push(Found { kind: "deck", title: deck_plain(&d.name), sub: deck_kind(d.status).into(), href: format!("/decks/{}", d.id), score: 0 });
+            found.push(Found {
+                kind: "deck",
+                title: deck_plain(&d.name),
+                sub: deck_kind(d.status).into(),
+                href: format!("/decks/{}", d.id),
+                score: 0,
+            });
         }
         found.truncate(FIND_MAX);
-        return Ok(([(header::CONTENT_TYPE, "application/json")], serde_json::json!({ "q": q, "results": found }).to_string()).into_response());
+        return Ok((
+            [(header::CONTENT_TYPE, "application/json")],
+            serde_json::json!({ "q": q, "results": found }).to_string(),
+        )
+            .into_response());
     }
 
     for (name, href, also) in FIND_PLACES {
         if let Some(s) = find_score(q, name, also) {
-            found.push(Found { kind: "place", title: name.to_string(), sub: String::new(), href: href.to_string(), score: s + 4 });
+            found.push(Found {
+                kind: "place",
+                title: name.to_string(),
+                sub: String::new(),
+                href: href.to_string(),
+                score: s + 4,
+            });
         }
     }
     let mut names = HashMap::new();
     for d in &decks {
         let title = deck_plain(&d.name);
         if let Some(s) = find_score(q, &title, &d.description) {
-            found.push(Found { kind: "deck", title: title.clone(), sub: deck_kind(d.status).into(), href: format!("/decks/{}", d.id), score: s + 3 });
+            found.push(Found {
+                kind: "deck",
+                title: title.clone(),
+                sub: deck_kind(d.status).into(),
+                href: format!("/decks/{}", d.id),
+                score: s + 3,
+            });
         }
         names.insert(d.id, title);
     }
     for l in lessons::all() {
         if let Some(s) = find_score(q, &l.title, &l.summary) {
-            found.push(Found { kind: "lesson", title: l.title.clone(), sub: "Lesson".into(), href: format!("/learn/{}", l.slug), score: s + 1 });
+            found.push(Found {
+                kind: "lesson",
+                title: l.title.clone(),
+                sub: "Lesson".into(),
+                href: format!("/learn/{}", l.slug),
+                score: s + 1,
+            });
         }
     }
     let mut cards: Vec<Found> = Vec::new();
@@ -1925,7 +1979,13 @@ async fn find_json(State(app): State<AppState>, user: WebUser, Query(f): Query<F
         let back = fuzzy::score(q, &c.back).map(|s| s - 10);
         let Some(s) = front.max(back) else { continue };
         let deck = names.get(&c.deck_id).cloned().unwrap_or_default();
-        cards.push(Found { kind: "card", title: find_line(&c.front, 80), sub: deck, href: format!("/cards/{}", c.id), score: s });
+        cards.push(Found {
+            kind: "card",
+            title: find_line(&c.front, 80),
+            sub: deck,
+            href: format!("/cards/{}", c.id),
+            score: s,
+        });
     }
     // Newest first already, so equal scores keep the newer card on top.
     cards.sort_by(|a, b| b.score.cmp(&a.score));
@@ -1938,22 +1998,24 @@ async fn find_json(State(app): State<AppState>, user: WebUser, Query(f): Query<F
         found.retain(|f| f.score * 2 >= top);
     }
     found.truncate(FIND_MAX);
-    Ok(([(header::CONTENT_TYPE, "application/json")], serde_json::json!({ "q": q, "results": found }).to_string()).into_response())
+    Ok(([(header::CONTENT_TYPE, "application/json")], serde_json::json!({ "q": q, "results": found }).to_string())
+        .into_response())
 }
 
-async fn study(State(app): State<AppState>, user: WebUser, Flash(msg): Flash, Query(q): Query<StudyQuery>) -> WebResult {
+async fn study(
+    State(app): State<AppState>,
+    user: WebUser,
+    Flash(msg): Flash,
+    Query(q): Query<StudyQuery>,
+) -> WebResult {
     let access = user.access();
 
     // Answer side of a specific card.
     if let (Some(card_id), Some(1)) = (q.card, q.show) {
         let card = app.card(&access, card_id).await?;
         let deck = app.deck(&access, card.deck_id).await?;
-        let shown = Shown {
-            at: q.t.unwrap_or_else(now),
-            revealed: true,
-            sure: q.sure.map(|s| s == 1),
-            typed: q.typed.clone(),
-        };
+        let shown =
+            Shown { at: q.t.unwrap_or_else(now), revealed: true, sure: q.sure.map(|s| s == 1), typed: q.typed.clone() };
         return Ok(study_card(&app, &access, &user.0, &msg, &card, &deck, q.deck, &shown).await?.into_response());
     }
 
@@ -2012,12 +2074,16 @@ async fn study(State(app): State<AppState>, user: WebUser, Flash(msg): Flash, Qu
         )
         .into_response());
     };
-    Ok(study_card(&app, &access, &user.0, &msg, &sc.card, &sc.deck, q.deck, &Shown::front(now())).await?.into_response())
+    Ok(study_card(&app, &access, &user.0, &msg, &sc.card, &sc.deck, q.deck, &Shown::front(now()))
+        .await?
+        .into_response())
 }
 
 /// "7:00": the time of day of a moment, in the user's zone.
 fn clock_time(clock: &crate::scheduler::Clock, ts: i64) -> String {
-    chrono::DateTime::from_timestamp(ts, 0).map(|t| t.with_timezone(&clock.tz).format("%-H:%M").to_string()).unwrap_or_default()
+    chrono::DateTime::from_timestamp(ts, 0)
+        .map(|t| t.with_timezone(&clock.tz).format("%-H:%M").to_string())
+        .unwrap_or_default()
 }
 
 /// Quiet hours: a rest screen instead of cards.
@@ -2249,7 +2315,12 @@ async fn learn_page(user: WebUser) -> WebResult {
     .into_response())
 }
 
-async fn lesson_page(State(app): State<AppState>, user: WebUser, Flash(msg): Flash, Path(slug): Path<String>) -> WebResult {
+async fn lesson_page(
+    State(app): State<AppState>,
+    user: WebUser,
+    Flash(msg): Flash,
+    Path(slug): Path<String>,
+) -> WebResult {
     let lesson = lessons::find(&slug).ok_or(AppError::NotFound)?;
     let access = user.access();
     let deck = app.deck_by_name(&access, &lessons::deck_name(lesson)).await?;
@@ -2293,14 +2364,17 @@ async fn lesson_deck(State(app): State<AppState>, user: WebUser, Path(slug): Pat
     if let Some(d) = app.deck_by_name(&access, &name).await? {
         return Ok(redirect_msg(format!("/decks/{}", d.id), "You already have this deck."));
     }
-    or_back(format!("/learn/{slug}"), async {
-        let deck = app.create_deck(&access, &name, &lesson.summary, None).await?;
-        for (front, back) in &lesson.cards {
-            app.create_card(&access, deck.id, front, back, None, None, None).await?;
+    or_back(
+        format!("/learn/{slug}"),
+        async {
+            let deck = app.create_deck(&access, &name, &lesson.summary, None).await?;
+            for (front, back) in &lesson.cards {
+                app.create_card(&access, deck.id, front, back, None, None, None).await?;
+            }
+            Ok(redirect_msg(format!("/decks/{}", deck.id), "Lesson added as a deck."))
         }
-        Ok(redirect_msg(format!("/decks/{}", deck.id), "Lesson added as a deck."))
-    }
-    .await)
+        .await,
+    )
 }
 
 // ----- decks --------------------------------------------------------------
@@ -2334,7 +2408,8 @@ fn goal_words(template: Option<&str>) -> Option<&'static str> {
 fn goal_picker(presets: &[crate::service::Preset], selected: Option<i64>) -> Markup {
     let order = ["standard", "exam", "language", "relaxed", "maintenance"];
     let mut sorted: Vec<&crate::service::Preset> = presets.iter().collect();
-    sorted.sort_by_key(|p| p.template.as_deref().and_then(|t| order.iter().position(|o| *o == t)).unwrap_or(order.len()));
+    sorted
+        .sort_by_key(|p| p.template.as_deref().and_then(|t| order.iter().position(|o| *o == t)).unwrap_or(order.len()));
     html! {
         fieldset.goals {
             legend { "What is this deck for?" }
@@ -2471,7 +2546,9 @@ fn deck_merge_view(
 ) -> Markup {
     let selected = draft
         .preset_id
-        .or_else(|| draft.decks.first().and_then(|id| decks.iter().find(|d| d.deck.id == *id)).map(|d| d.deck.preset_id))
+        .or_else(|| {
+            draft.decks.first().and_then(|id| decks.iter().find(|d| d.deck.id == *id)).map(|d| d.deck.preset_id)
+        })
         .or_else(|| presets.iter().find(|p| p.template.as_deref() == Some("standard")).map(|p| p.id))
         .or_else(|| presets.first().map(|p| p.id));
     layout_in(
@@ -2589,12 +2666,7 @@ async fn deck_page(
     Query(q): Query<DeckQuery>,
 ) -> WebResult {
     let access = user.access();
-    let summary = app
-        .deck_summaries(&access)
-        .await?
-        .into_iter()
-        .find(|d| d.deck.id == id)
-        .ok_or(AppError::NotFound)?;
+    let summary = app.deck_summaries(&access).await?.into_iter().find(|d| d.deck.id == id).ok_or(AppError::NotFound)?;
     let page = q.page.unwrap_or(0).max(0);
     let per_page = 50;
     let (cards, total) = app
@@ -2719,16 +2791,8 @@ async fn deck_page(
 
 /// One-line plain preview of Markdown text for lists.
 fn truncate(s: &str, n: usize) -> String {
-    let flat: String = s
-        .replace('\n', " ")
-        .chars()
-        .filter(|c| !matches!(c, '*' | '`' | '#' | '_'))
-        .collect();
-    if flat.chars().count() > n {
-        flat.chars().take(n).collect::<String>() + "…"
-    } else {
-        flat
-    }
+    let flat: String = s.replace('\n', " ").chars().filter(|c| !matches!(c, '*' | '`' | '#' | '_')).collect();
+    if flat.chars().count() > n { flat.chars().take(n).collect::<String>() + "…" } else { flat }
 }
 
 /// The edit-deck page; `draft` and `error` when a sent form comes back.
@@ -2847,11 +2911,14 @@ async fn deck_update(
 }
 
 async fn deck_delete(State(app): State<AppState>, user: WebUser, Path(id): Path<i64>) -> WebResult {
-    or_back(format!("/decks/{id}/edit"), async {
-        let n = app.delete_deck(&user.access(), id).await?;
-        Ok(redirect_msg("/", &format!("Deck deleted, with its {}.", count(n, "card"))))
-    }
-    .await)
+    or_back(
+        format!("/decks/{id}/edit"),
+        async {
+            let n = app.delete_deck(&user.access(), id).await?;
+            Ok(redirect_msg("/", &format!("Deck deleted, with its {}.", count(n, "card"))))
+        }
+        .await,
+    )
 }
 
 /// The decks to pick from for a card: archived ones are put away, except
@@ -2863,40 +2930,39 @@ fn open_decks(decks: Vec<Deck>, keep: Option<i64>) -> Vec<Deck> {
 /// What resting means for a deck, said on its pages.
 fn rest_words(status: DeckStatus) -> &'static str {
     match status {
-        DeckStatus::Active => "Pausing stops a deck's cards until you resume it; the deck stays on your list. Archiving also puts it away. Progress is kept either way.",
+        DeckStatus::Active => {
+            "Pausing stops a deck's cards until you resume it; the deck stays on your list. Archiving also puts it away. Progress is kept either way."
+        }
         DeckStatus::Paused => "Paused. Its cards wait, with their progress, until you resume the deck.",
-        DeckStatus::Archived => "Archived. The deck is put away and its cards wait, with their progress, until you restore it.",
+        DeckStatus::Archived => {
+            "Archived. The deck is put away and its cards wait, with their progress, until you restore it."
+        }
     }
 }
 
-async fn deck_action(
-    State(app): State<AppState>,
-    user: WebUser,
-    Path((id, action)): Path<(i64, String)>,
-) -> WebResult {
-    or_back(format!("/decks/{id}"), async {
-        let (status, msg) = match action.as_str() {
-            "pause" => (DeckStatus::Paused, "Deck paused."),
-            "archive" => (DeckStatus::Archived, "Deck archived. Find it under archived decks below."),
-            "resume" => (DeckStatus::Active, "Deck back in study."),
-            _ => return Err(AppError::bad("unknown action")),
-        };
-        app.set_deck_status(&user.access(), id, status).await?;
-        // An archived deck leaves the list: home is where it went from.
-        let to = if status == DeckStatus::Archived { "/".to_string() } else { format!("/decks/{id}") };
-        Ok(redirect_msg(to, msg))
-    }
-    .await)
+async fn deck_action(State(app): State<AppState>, user: WebUser, Path((id, action)): Path<(i64, String)>) -> WebResult {
+    or_back(
+        format!("/decks/{id}"),
+        async {
+            let (status, msg) = match action.as_str() {
+                "pause" => (DeckStatus::Paused, "Deck paused."),
+                "archive" => (DeckStatus::Archived, "Deck archived. Find it under archived decks below."),
+                "resume" => (DeckStatus::Active, "Deck back in study."),
+                _ => return Err(AppError::bad("unknown action")),
+            };
+            app.set_deck_status(&user.access(), id, status).await?;
+            // An archived deck leaves the list: home is where it went from.
+            let to = if status == DeckStatus::Archived { "/".to_string() } else { format!("/decks/{id}") };
+            Ok(redirect_msg(to, msg))
+        }
+        .await,
+    )
 }
 
 async fn archived_page(State(app): State<AppState>, user: WebUser, Flash(msg): Flash) -> WebResult {
     let access = user.access();
-    let decks: Vec<_> = app
-        .deck_summaries(&access)
-        .await?
-        .into_iter()
-        .filter(|d| d.deck.status == DeckStatus::Archived)
-        .collect();
+    let decks: Vec<_> =
+        app.deck_summaries(&access).await?.into_iter().filter(|d| d.deck.status == DeckStatus::Archived).collect();
     Ok(layout_in(
         Nav::Decks,
         "Archived decks",
@@ -3056,7 +3122,14 @@ const NEW_DECK: &str = "new";
 
 /// One side of the card being written: its text, and an optional image
 /// that can be picked, dropped or pasted.
-fn face_field(side: &str, title: &str, placeholder: &str, text: &str, image: &Option<String>, autofocus: bool) -> Markup {
+fn face_field(
+    side: &str,
+    title: &str,
+    placeholder: &str,
+    text: &str,
+    image: &Option<String>,
+    autofocus: bool,
+) -> Markup {
     html! {
         div.face-edit data-face=(side) {
             label.face-label for=(side) { (title) }
@@ -3106,8 +3179,16 @@ struct WriteHint {
 
 /// What the coach says about a card being written: a long list, or a front
 /// like one you already have.
-async fn write_hints(app: &App, access: &Access, front: &str, back: &str, how: Option<Split>, except: Option<i64>) -> Result<Vec<WriteHint>, AppError> {
-    let mut out: Vec<WriteHint> = coach::write_hints(back, how).into_iter().map(|text| WriteHint { text, href: None }).collect();
+async fn write_hints(
+    app: &App,
+    access: &Access,
+    front: &str,
+    back: &str,
+    how: Option<Split>,
+    except: Option<i64>,
+) -> Result<Vec<WriteHint>, AppError> {
+    let mut out: Vec<WriteHint> =
+        coach::write_hints(back, how).into_iter().map(|text| WriteHint { text, href: None }).collect();
     if let Some(s) = app.similar_cards(access, front, except).await?.into_iter().next() {
         out.push(WriteHint {
             text: format!("You have a card like this: “{}”. Cards this alike get mixed up.", truncate(&s.front, 60)),
@@ -3128,7 +3209,14 @@ fn hint_lines(hints: &[WriteHint]) -> Markup {
     }
 }
 
-fn card_form(action: &str, decks: &[crate::service::Deck], c: &CardDraft, submit: &str, allow_new_deck: bool, hints: &[WriteHint]) -> Markup {
+fn card_form(
+    action: &str,
+    decks: &[crate::service::Deck],
+    c: &CardDraft,
+    submit: &str,
+    allow_new_deck: bool,
+    hints: &[WriteHint],
+) -> Markup {
     let new_selected = allow_new_deck && (decks.is_empty() || c.deck.is_none());
     html! {
         form.card-form method="post" action=(action) enctype="multipart/form-data" data-card=[c.id] {
@@ -3202,7 +3290,12 @@ fn card_new_view(user: &User, decks: &[Deck], c: &CardDraft, msg: &Option<String
     )
 }
 
-async fn card_new_page(State(app): State<AppState>, user: WebUser, Flash(msg): Flash, Query(q): Query<NewCardQuery>) -> WebResult {
+async fn card_new_page(
+    State(app): State<AppState>,
+    user: WebUser,
+    Flash(msg): Flash,
+    Query(q): Query<NewCardQuery>,
+) -> WebResult {
     let access = user.access();
     let decks = open_decks(app.decks(&access).await?, q.deck);
     // The deck from the link, else the one last added to, else the first.
@@ -3210,7 +3303,16 @@ async fn card_new_page(State(app): State<AppState>, user: WebUser, Flash(msg): F
         Some(id) => Some(id),
         None => app.last_used_deck(&access).await?.or_else(|| decks.first().map(|d| d.id)),
     };
-    let draft = CardDraft { id: None, deck, new_deck: "", front: "", back: "", front_image: &None, back_image: &None, multi: None };
+    let draft = CardDraft {
+        id: None,
+        deck,
+        new_deck: "",
+        front: "",
+        back: "",
+        front_image: &None,
+        back_image: &None,
+        multi: None,
+    };
     Ok(card_new_view(&user.0, &decks, &draft, &msg, None).into_response())
 }
 
@@ -3496,45 +3598,46 @@ async fn card_update(
     }
 }
 
-async fn card_action(
-    State(app): State<AppState>,
-    user: WebUser,
-    Path((id, action)): Path<(i64, String)>,
-) -> WebResult {
+async fn card_action(State(app): State<AppState>, user: WebUser, Path((id, action)): Path<(i64, String)>) -> WebResult {
     let access = user.access();
-    or_back(format!("/cards/{id}"), async {
-        let msg = match action.as_str() {
-            "suspend" => {
-                app.set_suspended(&access, id, true).await?;
-                "Card suspended."
-            }
-            "unsuspend" => {
-                app.set_suspended(&access, id, false).await?;
-                "Card unsuspended."
-            }
-            "forget" => {
-                app.reset_card(&access, id).await?;
-                "Card progress forgotten; it's new again."
-            }
-            "delete" => {
-                let card = app.card(&access, id).await?;
-                app.delete_card(&access, id).await?;
-                return Ok(redirect_msg(format!("/decks/{}", card.deck_id), "Card deleted."));
-            }
-            "learn-items" => {
-                app.update_card(&access, id, CardInput { multi: Some(Some(Split::List)), ..Default::default() }).await?;
-                "Now learned item by item: you mark what you remembered, and each item keeps its own schedule."
-            }
-            keep if keep.starts_with("keep-") => {
-                let kind = coach::Kind::parse(&keep["keep-".len()..]).ok_or_else(|| AppError::bad("unknown action"))?;
-                app.dismiss_flag(&access, id, kind).await?;
-                "Kept as is."
-            }
-            _ => return Err(AppError::bad("unknown action")),
-        };
-        Ok(redirect_msg(format!("/cards/{id}"), msg))
-    }
-    .await)
+    or_back(
+        format!("/cards/{id}"),
+        async {
+            let msg = match action.as_str() {
+                "suspend" => {
+                    app.set_suspended(&access, id, true).await?;
+                    "Card suspended."
+                }
+                "unsuspend" => {
+                    app.set_suspended(&access, id, false).await?;
+                    "Card unsuspended."
+                }
+                "forget" => {
+                    app.reset_card(&access, id).await?;
+                    "Card progress forgotten; it's new again."
+                }
+                "delete" => {
+                    let card = app.card(&access, id).await?;
+                    app.delete_card(&access, id).await?;
+                    return Ok(redirect_msg(format!("/decks/{}", card.deck_id), "Card deleted."));
+                }
+                "learn-items" => {
+                    app.update_card(&access, id, CardInput { multi: Some(Some(Split::List)), ..Default::default() })
+                        .await?;
+                    "Now learned item by item: you mark what you remembered, and each item keeps its own schedule."
+                }
+                keep if keep.starts_with("keep-") => {
+                    let kind =
+                        coach::Kind::parse(&keep["keep-".len()..]).ok_or_else(|| AppError::bad("unknown action"))?;
+                    app.dismiss_flag(&access, id, kind).await?;
+                    "Kept as is."
+                }
+                _ => return Err(AppError::bad("unknown action")),
+            };
+            Ok(redirect_msg(format!("/cards/{id}"), msg))
+        }
+        .await,
+    )
 }
 
 // ----- the card coach -----------------------------------------------------
@@ -3595,7 +3698,12 @@ struct AttentionQuery {
 }
 
 /// Every card the coach flagged, in one deck or all of them.
-async fn attention_page(State(app): State<AppState>, user: WebUser, Flash(msg): Flash, Query(q): Query<AttentionQuery>) -> WebResult {
+async fn attention_page(
+    State(app): State<AppState>,
+    user: WebUser,
+    Flash(msg): Flash,
+    Query(q): Query<AttentionQuery>,
+) -> WebResult {
     let access = user.access();
     let found = app.attention(&access, q.deck).await?;
     let deck = match q.deck {
@@ -3643,10 +3751,7 @@ fn split_drafts(card: &Card, items: &[multi::CardItem]) -> Vec<(String, String)>
     let texts: Vec<String> = if !items.is_empty() {
         items.iter().map(|i| i.text.clone()).collect()
     } else {
-        multi::splits(&card.back)
-            .first()
-            .and_then(|&how| multi::items(&card.back, how))
-            .unwrap_or_default()
+        multi::splits(&card.back).first().and_then(|&how| multi::items(&card.back, how)).unwrap_or_default()
     };
     if texts.len() >= 2 {
         texts.into_iter().map(|t| (card.front.clone(), t)).collect()
@@ -3694,7 +3799,12 @@ fn split_view(user: &User, card: &Card, drafts: &[(String, String)], keep: bool,
     )
 }
 
-async fn split_page(State(app): State<AppState>, user: WebUser, Path(id): Path<i64>, Query(q): Query<SplitQuery>) -> WebResult {
+async fn split_page(
+    State(app): State<AppState>,
+    user: WebUser,
+    Path(id): Path<i64>,
+    Query(q): Query<SplitQuery>,
+) -> WebResult {
     let access = user.access();
     let card = app.card(&access, id).await?;
     let items = app.card_items(&card).await?;
@@ -3705,17 +3815,19 @@ async fn split_page(State(app): State<AppState>, user: WebUser, Path(id): Path<i
     Ok(split_view(&user.0, &card, &drafts, false, None).into_response())
 }
 
-async fn split_submit(State(app): State<AppState>, user: WebUser, Path(id): Path<i64>, Form(f): Form<HashMap<String, String>>) -> WebResult {
+async fn split_submit(
+    State(app): State<AppState>,
+    user: WebUser,
+    Path(id): Path<i64>,
+    Form(f): Form<HashMap<String, String>>,
+) -> WebResult {
     let access = user.access();
     let card = app.card(&access, id).await?;
     let mut drafts = Vec::new();
     for n in 0..50 {
         match (f.get(&format!("front_{n}")), f.get(&format!("back_{n}"))) {
             (None, None) => break,
-            (front, back) => drafts.push((
-                front.cloned().unwrap_or_default(),
-                back.cloned().unwrap_or_default(),
-            )),
+            (front, back) => drafts.push((front.cloned().unwrap_or_default(), back.cloned().unwrap_or_default())),
         }
     }
     let keep = f.contains_key("keep");
@@ -3916,13 +4028,8 @@ async fn preset_view(
     let access = Access::web(user.clone());
     let p = app.preset(&access, id).await?;
     let workload = app.workload(&access, id, days).await?;
-    let decks: Vec<String> = app
-        .decks(&access)
-        .await?
-        .into_iter()
-        .filter(|d| d.preset_id == id)
-        .map(|d| d.name)
-        .collect();
+    let decks: Vec<String> =
+        app.decks(&access).await?.into_iter().filter(|d| d.preset_id == id).map(|d| d.name).collect();
     Ok(layout_in(
         Nav::Settings,
         "Edit preset",
@@ -4075,11 +4182,14 @@ async fn preset_update(
 }
 
 async fn preset_delete(State(app): State<AppState>, user: WebUser, Path(id): Path<i64>) -> WebResult {
-    or_back(format!("/presets/{id}"), async {
-        app.delete_preset(&user.access(), id).await?;
-        Ok(redirect_msg("/presets", "Preset deleted."))
-    }
-    .await)
+    or_back(
+        format!("/presets/{id}"),
+        async {
+            app.delete_preset(&user.access(), id).await?;
+            Ok(redirect_msg("/presets", "Preset deleted."))
+        }
+        .await,
+    )
 }
 
 // ----- settings -----------------------------------------------------------
@@ -4241,20 +4351,23 @@ struct SettingsForm {
 }
 
 async fn settings_update(State(app): State<AppState>, user: WebUser, Form(f): Form<SettingsForm>) -> WebResult {
-    or_back("/settings", async {
-        app.update_settings(
-            user.0.id,
-            f.timezone.trim(),
-            f.rollover_hour.trim().parse().unwrap_or(user.0.rollover_hour),
-            f.four_buttons.is_some(),
-            f.font_scale.trim().parse().unwrap_or(user.0.font_scale),
-            f.optimize_include_agent.is_some(),
-            f.desktop_look.as_deref().unwrap_or("calm"),
-        )
-        .await?;
-        Ok(redirect_msg("/settings", "Settings saved."))
-    }
-    .await)
+    or_back(
+        "/settings",
+        async {
+            app.update_settings(
+                user.0.id,
+                f.timezone.trim(),
+                f.rollover_hour.trim().parse().unwrap_or(user.0.rollover_hour),
+                f.four_buttons.is_some(),
+                f.font_scale.trim().parse().unwrap_or(user.0.font_scale),
+                f.optimize_include_agent.is_some(),
+                f.desktop_look.as_deref().unwrap_or("calm"),
+            )
+            .await?;
+            Ok(redirect_msg("/settings", "Settings saved."))
+        }
+        .await,
+    )
 }
 
 #[derive(Deserialize)]
@@ -4275,10 +4388,7 @@ async fn password_update(
         return or_back("/settings#password", Err(e));
     }
     let token = app.create_session(user.0.id).await?;
-    Ok((
-        jar.add(session_cookie(&app, token)).add(flash_cookie("Password changed.")),
-        Redirect::to("/settings"),
-    )
+    Ok((jar.add(session_cookie(&app, token)).add(flash_cookie("Password changed.")), Redirect::to("/settings"))
         .into_response())
 }
 
@@ -4370,10 +4480,18 @@ fn week_home(user: &User, today_due: i64, outlook: &Outlook, seconds_per_review:
 /// The last seven days in a sentence or two, and one thing worth doing.
 fn week_note(w: &insight::Week) -> Markup {
     let tip = match w.tip {
-        insight::Tip::Attention => Some(html! { p.tip { span { (count(w.attention, "card")) " keep slipping or ask too much at once. Fixing them saves more time than reviewing them. " a href="/attention" { "Have a look" } } } }),
-        insight::Tip::BelowTarget => Some(html! { p.tip { span { "You forgot more than you aim for. Fewer new cards for a while, or optimizing FSRS, usually brings it back. " a href="/learn/desired-retention" { "Why" } } } }),
-        insight::Tip::AboveTarget => Some(html! { p.tip { span { "You remember more than you aim for. Optimizing lets FSRS space your cards further apart. " a href="/settings#fsrs" { "Optimize" } } } }),
-        insight::Tip::Spread => Some(html! { p.tip { span { "A little every day works better than a lot on a few days. " a href="/learn/spacing" { "Why" } } } }),
+        insight::Tip::Attention => Some(
+            html! { p.tip { span { (count(w.attention, "card")) " keep slipping or ask too much at once. Fixing them saves more time than reviewing them. " a href="/attention" { "Have a look" } } } },
+        ),
+        insight::Tip::BelowTarget => Some(
+            html! { p.tip { span { "You forgot more than you aim for. Fewer new cards for a while, or optimizing FSRS, usually brings it back. " a href="/learn/desired-retention" { "Why" } } } },
+        ),
+        insight::Tip::AboveTarget => Some(
+            html! { p.tip { span { "You remember more than you aim for. Optimizing lets FSRS space your cards further apart. " a href="/settings#fsrs" { "Optimize" } } } },
+        ),
+        insight::Tip::Spread => Some(
+            html! { p.tip { span { "A little every day works better than a lot on a few days. " a href="/learn/spacing" { "Why" } } } },
+        ),
         insight::Tip::Nothing => None,
     };
     week_note_with(w, tip)
@@ -4460,25 +4578,32 @@ struct StudySettingsForm {
     catch_up_reviews: String,
 }
 
-async fn study_settings_update(State(app): State<AppState>, user: WebUser, Form(f): Form<StudySettingsForm>) -> WebResult {
+async fn study_settings_update(
+    State(app): State<AppState>,
+    user: WebUser,
+    Form(f): Form<StudySettingsForm>,
+) -> WebResult {
     let u = &user.0;
     let quiet = match (f.quiet_from.trim().parse::<i64>(), f.quiet_to.trim().parse::<i64>()) {
         (Ok(a), Ok(b)) => Some((a, b)),
         _ => None,
     };
-    or_back("/settings#studying", async {
-        app.update_study_settings(
-            u.id,
-            quiet,
-            f.session_minutes.trim().parse().unwrap_or(u.session_minutes),
-            f.catch_up.is_some(),
-            f.catch_up_reviews.trim().parse().unwrap_or(u.catch_up_reviews),
-            f.confidence_check.is_some(),
-        )
-        .await?;
-        Ok(redirect_msg("/settings#studying", "Settings saved."))
-    }
-    .await)
+    or_back(
+        "/settings#studying",
+        async {
+            app.update_study_settings(
+                u.id,
+                quiet,
+                f.session_minutes.trim().parse().unwrap_or(u.session_minutes),
+                f.catch_up.is_some(),
+                f.catch_up_reviews.trim().parse().unwrap_or(u.catch_up_reviews),
+                f.confidence_check.is_some(),
+            )
+            .await?;
+            Ok(redirect_msg("/settings#studying", "Settings saved."))
+        }
+        .await,
+    )
 }
 
 #[derive(Deserialize)]
@@ -4490,7 +4615,11 @@ async fn catch_up_update(State(app): State<AppState>, user: WebUser, Form(f): Fo
     app.set_catch_up(user.0.id, f.on.is_some()).await?;
     Ok(redirect_msg(
         "/",
-        if f.on.is_some() { "Catch-up mode is on. No new cards until you have caught up." } else { "Catch-up mode is off." },
+        if f.on.is_some() {
+            "Catch-up mode is on. No new cards until you have caught up."
+        } else {
+            "Catch-up mode is off."
+        },
     ))
 }
 
@@ -4518,11 +4647,14 @@ async fn optimize(State(app): State<AppState>, user: WebUser) -> WebResult {
 }
 
 async fn reset_params(State(app): State<AppState>, user: WebUser) -> WebResult {
-    or_back("/settings#fsrs", async {
-        app.reset_parameters(&user.access()).await?;
-        Ok(redirect_msg("/settings#fsrs", "FSRS parameters reset to the defaults."))
-    }
-    .await)
+    or_back(
+        "/settings#fsrs",
+        async {
+            app.reset_parameters(&user.access()).await?;
+            Ok(redirect_msg("/settings#fsrs", "FSRS parameters reset to the defaults."))
+        }
+        .await,
+    )
 }
 
 // ----- tokens -------------------------------------------------------------
@@ -4538,12 +4670,7 @@ fn mcp_url(app: &AppState, headers: &HeaderMap) -> String {
     format!("{}/mcp", oauth::base_url(app, headers))
 }
 
-async fn access_page(
-    State(app): State<AppState>,
-    user: WebUser,
-    headers: HeaderMap,
-    Flash(msg): Flash,
-) -> WebResult {
+async fn access_page(State(app): State<AppState>, user: WebUser, headers: HeaderMap, Flash(msg): Flash) -> WebResult {
     let access = user.access();
     let tokens = app.list_tokens(user.0.id).await?;
     let decks = app.decks(&access).await?;
@@ -4641,13 +4768,11 @@ async fn token_create(
     Form(f): Form<TokenForm>,
 ) -> WebResult {
     let decks = if f.deck_scope == "all" { None } else { Some(f.decks) };
-    let (token, raw) = match app
-        .create_token(user.0.id, &f.name, f.can_write.is_some(), f.can_review.is_some(), decks)
-        .await
-    {
-        Ok(t) => t,
-        Err(e) => return or_back("/access", Err(e)),
-    };
+    let (token, raw) =
+        match app.create_token(user.0.id, &f.name, f.can_write.is_some(), f.can_review.is_some(), decks).await {
+            Ok(t) => t,
+            Err(e) => return or_back("/access", Err(e)),
+        };
     let url = mcp_url(&app, &headers);
     let config = serde_json::to_string_pretty(&serde_json::json!({
         "mcpServers": {
@@ -4683,11 +4808,14 @@ async fn token_create(
 }
 
 async fn token_revoke(State(app): State<AppState>, user: WebUser, Path(id): Path<i64>) -> WebResult {
-    or_back("/access", async {
-        app.revoke_token(user.0.id, id).await?;
-        Ok(redirect_msg("/access", "Access removed."))
-    }
-    .await)
+    or_back(
+        "/access",
+        async {
+            app.revoke_token(user.0.id, id).await?;
+            Ok(redirect_msg("/access", "Access removed."))
+        }
+        .await,
+    )
 }
 
 // ----- import -------------------------------------------------------------
@@ -4753,21 +4881,23 @@ async fn import_upload(State(app): State<AppState>, user: WebUser, mp: Multipart
     let text = |k: &str| field_text(&fields, k);
     // The file has to be picked again anyway, so problems come back as a
     // message on the import page.
-    let report = async { Ok::<_, AppError>(match text("kind").as_str() {
-        "apkg" => {
-            let data = file.filter(|d| !d.is_empty()).ok_or_else(|| AppError::bad("choose a file"))?;
-            app.import_apkg(&access, data).await?
-        }
-        "csv" => {
-            let deck: i64 = text("deck").parse().map_err(|_| AppError::bad("pick a deck"))?;
-            let mut body = String::from_utf8_lossy(file.as_deref().unwrap_or_default()).to_string();
-            if body.trim().is_empty() {
-                body = text("text");
+    let report = async {
+        Ok::<_, AppError>(match text("kind").as_str() {
+            "apkg" => {
+                let data = file.filter(|d| !d.is_empty()).ok_or_else(|| AppError::bad("choose a file"))?;
+                app.import_apkg(&access, data).await?
             }
-            app.import_csv(&access, deck, &body).await?
-        }
-        _ => return Err(AppError::bad("unknown import type")),
-    }) }
+            "csv" => {
+                let deck: i64 = text("deck").parse().map_err(|_| AppError::bad("pick a deck"))?;
+                let mut body = String::from_utf8_lossy(file.as_deref().unwrap_or_default()).to_string();
+                if body.trim().is_empty() {
+                    body = text("text");
+                }
+                app.import_csv(&access, deck, &body).await?
+            }
+            _ => return Err(AppError::bad("unknown import type")),
+        })
+    }
     .await;
     let report = match report {
         Ok(r) => r,
@@ -4798,7 +4928,12 @@ struct StatsQuery {
     deck: Option<i64>,
 }
 
-async fn stats_page(State(app): State<AppState>, user: WebUser, Flash(msg): Flash, Query(q): Query<StatsQuery>) -> WebResult {
+async fn stats_page(
+    State(app): State<AppState>,
+    user: WebUser,
+    Flash(msg): Flash,
+    Query(q): Query<StatsQuery>,
+) -> WebResult {
     let access = user.access();
     let s = app.stats(&access, q.deck).await?;
     let cal = app.calibration(&access, q.deck).await?;
@@ -4818,7 +4953,16 @@ async fn stats_page(State(app): State<AppState>, user: WebUser, Flash(msg): Flas
     };
     let max = s.forecast.iter().map(|(_, n)| *n).max().unwrap_or(0).max(1);
     let history = app.history(&access, q.deck).await?;
-    let desk = DeskStats { user: &user.0, deck: q.deck, s: &s, cal: &cal, sure: &sure, retention: &retention, history: &history, notes: &notes };
+    let desk = DeskStats {
+        user: &user.0,
+        deck: q.deck,
+        s: &s,
+        cal: &cal,
+        sure: &sure,
+        retention: &retention,
+        history: &history,
+        notes: &notes,
+    };
     Ok(layout_in(
         Nav::Stats,
         "Stats",
@@ -4952,19 +5096,25 @@ struct DeskStats<'a> {
 // What the three big numbers count, on hover.
 const WHY_DUE: &str = "Learned cards whose review falls today or earlier. New cards come on top. The time below uses your average time per review.";
 const WHY_WEEK: &str = "Of the learned cards that came due in the last 7 days, the share you remembered.";
-const WHY_STREAK: &str = "Days in a row with at least one review. Today counts once you study, and doesn't break the streak before then.";
+const WHY_STREAK: &str =
+    "Days in a row with at least one review. Today counts once you study, and doesn't break the streak before then.";
 
 /// The desktop stats: three numbers to act on, then charts, each with a
 /// note beside it. desk.js draws the charts from the data attributes.
 fn desk_stats(d: &DeskStats) -> Markup {
     let s = d.s;
-    let study = match d.deck { Some(id) => format!("/study?deck={id}"), None => "/study".into() };
+    let study = match d.deck {
+        Some(id) => format!("/study?deck={id}"),
+        None => "/study".into(),
+    };
     let (week_total, week_passed) = d.history.weeks.last().copied().unwrap_or((0, 0));
     let this_week = (week_total > 0).then(|| week_passed as f64 / week_total as f64);
     let aims: Vec<f64> = d.retention.iter().map(|r| r.target).collect();
     let aim = (!aims.is_empty()).then(|| aims.iter().sum::<f64>() / aims.len() as f64);
     let worst = d.retention.iter().filter(|r| r.short()).min_by(|a, b| {
-        (a.actual.unwrap_or(1.0) - a.target).partial_cmp(&(b.actual.unwrap_or(1.0) - b.target)).unwrap_or(std::cmp::Ordering::Equal)
+        (a.actual.unwrap_or(1.0) - a.target)
+            .partial_cmp(&(b.actual.unwrap_or(1.0) - b.target))
+            .unwrap_or(std::cmp::Ordering::Equal)
     });
     let last7 = d.history.days.iter().rev().take(7).filter(|(_, n)| *n > 0).count();
     let minutes = s.seconds_per_review.map(|sec| sec * s.due_now as f64 / 60.0);
@@ -4975,10 +5125,22 @@ fn desk_stats(d: &DeskStats) -> Markup {
     let decks: Vec<String> = d
         .retention
         .iter()
-        .filter_map(|r| r.actual.map(|a| format!("{}|{}|{}|{}|{}", deck_plain(&r.deck_name).replace(['|', ';'], " "), r.target, a, r.deck_id, r.reviews)))
+        .filter_map(|r| {
+            r.actual.map(|a| {
+                format!(
+                    "{}|{}|{}|{}|{}",
+                    deck_plain(&r.deck_name).replace(['|', ';'], " "),
+                    r.target,
+                    a,
+                    r.deck_id,
+                    r.reviews
+                )
+            })
+        })
         .collect();
     let first_day = d.history.days.first().map_or("", |(day, _)| day.as_str());
-    let bins: Vec<String> = d.cal.bins.iter().map(|b| format!("{},{},{},{},{}", b.predicted, b.actual, b.reviews, b.from, b.to)).collect();
+    let bins: Vec<String> =
+        d.cal.bins.iter().map(|b| format!("{},{},{},{},{}", b.predicted, b.actual, b.reviews, b.from, b.to)).collect();
     html! {
         div.desk-stats.calm-only {
             section.big3 {
@@ -5125,14 +5287,17 @@ async fn deck_share(
     Path(id): Path<i64>,
     Form(f): Form<ShareForm>,
 ) -> WebResult {
-    or_back(format!("/decks/{id}/edit#share"), async {
-        let share = app.share_deck(&user.access(), id, &f.user).await?;
-        Ok(redirect_msg(
-            format!("/decks/{id}/edit#share"),
-            &format!("Shared with {}. They'll see it on their home page.", share.to),
-        ))
-    }
-    .await)
+    or_back(
+        format!("/decks/{id}/edit#share"),
+        async {
+            let share = app.share_deck(&user.access(), id, &f.user).await?;
+            Ok(redirect_msg(
+                format!("/decks/{id}/edit#share"),
+                &format!("Shared with {}. They'll see it on their home page.", share.to),
+            ))
+        }
+        .await,
+    )
 }
 
 async fn share_action(
@@ -5141,24 +5306,27 @@ async fn share_action(
     Path((id, action)): Path<(i64, String)>,
 ) -> WebResult {
     let access = user.access();
-    or_back("/", async {
-        match action.as_str() {
-            "accept" => {
-                let deck = app.accept_share(&access, id).await?;
-                Ok(redirect_msg(format!("/decks/{}", deck.id), "Shared deck added to your decks."))
+    or_back(
+        "/",
+        async {
+            match action.as_str() {
+                "accept" => {
+                    let deck = app.accept_share(&access, id).await?;
+                    Ok(redirect_msg(format!("/decks/{}", deck.id), "Shared deck added to your decks."))
+                }
+                "decline" => {
+                    app.decline_share(&access, id).await?;
+                    Ok(redirect_msg("/", "Share declined."))
+                }
+                "cancel" => {
+                    let deck = app.cancel_share(&access, id).await?;
+                    Ok(redirect_msg(format!("/decks/{deck}/edit#share"), "Share cancelled."))
+                }
+                _ => Err(AppError::bad("unknown action")),
             }
-            "decline" => {
-                app.decline_share(&access, id).await?;
-                Ok(redirect_msg("/", "Share declined."))
-            }
-            "cancel" => {
-                let deck = app.cancel_share(&access, id).await?;
-                Ok(redirect_msg(format!("/decks/{deck}/edit#share"), "Share cancelled."))
-            }
-            _ => Err(AppError::bad("unknown action")),
         }
-    }
-    .await)
+        .await,
+    )
 }
 
 #[cfg(test)]

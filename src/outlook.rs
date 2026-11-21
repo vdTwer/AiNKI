@@ -90,13 +90,12 @@ impl App {
         let presets: HashMap<i64, _> = self.list_presets(access).await?.into_iter().map(|p| (p.id, p)).collect();
         let book = self.param_book(access).await?;
         let horizon = clock.day_start(clock.today() + Duration::days(DAYS as i64));
-        let cards: Vec<Card> = sqlx::query_as(
-            "SELECT * FROM cards WHERE user_id = ? AND state != 0 AND suspended = 0 AND due < ?",
-        )
-        .bind(access.user_id())
-        .bind(horizon)
-        .fetch_all(&self.db)
-        .await?;
+        let cards: Vec<Card> =
+            sqlx::query_as("SELECT * FROM cards WHERE user_id = ? AND state != 0 AND suspended = 0 AND due < ?")
+                .bind(access.user_id())
+                .bind(horizon)
+                .fetch_all(&self.db)
+                .await?;
         let mut by_deck: HashMap<i64, Vec<(i64, CardSched)>> = HashMap::new();
         for card in cards {
             by_deck.entry(card.deck_id).or_default().push((card.id, card.sched()));
@@ -179,7 +178,16 @@ fn add(total: &mut Acc, one: &Acc, n: f64) {
 /// Follows one card from a review at `at`, carrying probability `p` and
 /// `k` visits so far after today.
 #[allow(clippy::too_many_arguments)]
-fn walk(plan: &DeckPlan, clock: &Clock, id: i64, card: CardSched, at: i64, p: f64, k: u32, acc: &mut Acc) -> anyhow::Result<()> {
+fn walk(
+    plan: &DeckPlan,
+    clock: &Clock,
+    id: i64,
+    card: CardSched,
+    at: i64,
+    p: f64,
+    k: u32,
+    acc: &mut Acc,
+) -> anyhow::Result<()> {
     let day = (clock.date_of(at) - clock.today()).num_days().max(0) as usize;
     if day >= DAYS {
         return leaf(acc, p, k);
@@ -224,7 +232,14 @@ fn leaf(acc: &mut Acc, p: f64, k: u32) -> anyhow::Result<()> {
 
 /// Answers `rating` at `at`, then Good at each step that is still due the
 /// same day, so the card leaves the day the way studying would let it.
-fn settle(plan: &DeckPlan, clock: &Clock, id: i64, card: &CardSched, rating: Rating, at: i64) -> anyhow::Result<CardSched> {
+fn settle(
+    plan: &DeckPlan,
+    clock: &Clock,
+    id: i64,
+    card: &CardSched,
+    rating: Rating,
+    at: i64,
+) -> anyhow::Result<CardSched> {
     let at_clock = |t: i64| Clock::new(t, clock.tz, clock.rollover_hour);
     let day = clock.date_of(at);
     let mut out = scheduler::answer(&plan.fsrs, &plan.cfg, id, card, rating, &at_clock(at))?.card;

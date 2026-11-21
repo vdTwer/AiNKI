@@ -144,10 +144,7 @@ impl App {
         .bind(now())
         .execute(&self.db)
         .await?;
-        Ok(sqlx::query_as("SELECT * FROM media WHERE id = ?")
-            .bind(&id)
-            .fetch_one(&self.db)
-            .await?)
+        Ok(sqlx::query_as("SELECT * FROM media WHERE id = ?").bind(&id).fetch_one(&self.db).await?)
     }
 
     /// An image as seen through `access`: tokens limited to some decks only
@@ -182,10 +179,8 @@ impl App {
         .flat_map(|(f, b)| [f, b])
         .flatten()
         .collect();
-        let old: Vec<String> = sqlx::query_scalar("SELECT id FROM media WHERE created_at < ?")
-            .bind(before)
-            .fetch_all(&self.db)
-            .await?;
+        let old: Vec<String> =
+            sqlx::query_scalar("SELECT id FROM media WHERE created_at < ?").bind(before).fetch_all(&self.db).await?;
         let mut n = 0;
         for id in old.into_iter().filter(|id| !used.contains(id)) {
             // Checked again in the delete, in case a card took it up just
@@ -213,9 +208,7 @@ impl App {
             .bind(user_id)
             .fetch_one(&self.db)
             .await?;
-        let bytes = tokio::fs::read(self.media_path(&m.id))
-            .await
-            .map_err(|_| AppError::NotFound)?;
+        let bytes = tokio::fs::read(self.media_path(&m.id)).await.map_err(|_| AppError::NotFound)?;
         Ok((m, bytes))
     }
 }
@@ -231,8 +224,7 @@ mod tests {
             *p = image::Rgba([(x % 256) as u8, 80, 200, 255]);
         }
         let mut png = Vec::new();
-        img.write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png)
-            .unwrap();
+        img.write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png).unwrap();
         let (out, w, h) = process_image(&png).unwrap();
         assert_eq!((w, h), (1200, 600));
         let decoded = image::load_from_memory(&out).unwrap().to_luma8();
@@ -258,9 +250,8 @@ mod tests {
         let mut jpg = Vec::new();
         let mut enc = image::codecs::jpeg::JpegEncoder::new(&mut jpg);
         // EXIF: big-endian TIFF, one IFD entry: Orientation (0x0112) = 6.
-        let exif: Vec<u8> = vec![
-            b'M', b'M', 0, 42, 0, 0, 0, 8, 0, 1, 0x01, 0x12, 0, 3, 0, 0, 0, 1, 0, 6, 0, 0, 0, 0, 0, 0, 0, 0,
-        ];
+        let exif: Vec<u8> =
+            vec![b'M', b'M', 0, 42, 0, 0, 0, 8, 0, 1, 0x01, 0x12, 0, 3, 0, 0, 0, 1, 0, 6, 0, 0, 0, 0, 0, 0, 0, 0];
         image::ImageEncoder::set_exif_metadata(&mut enc, exif).unwrap();
         image::ImageEncoder::write_image(enc, &img, 4, 2, image::ExtendedColorType::Rgb8).unwrap();
         let (_, w, h) = process_image(&jpg).unwrap();
