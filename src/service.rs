@@ -383,6 +383,72 @@ pub(crate) const fn id_list(ids: &[i64]) -> sqlx::types::Json<&[i64]> {
     sqlx::types::Json(ids)
 }
 
+/// Cards of one deck in one state, counted in the database.
+#[derive(sqlx::FromRow)]
+struct StateCount {
+    deck_id: i64,
+    state: CardState,
+    suspended: bool,
+    cnt: i64,
+    due_now: i64,
+    /// Due within the learn-ahead window.
+    due_soon: i64,
+}
+
+/// Cards of one deck answered today, by the state they were in.
+#[derive(sqlx::FromRow)]
+struct DoneToday {
+    deck_id: i64,
+    state_before: CardState,
+    cnt: i64,
+}
+
+impl DeckSummary {
+    /// A deck's counts from the per-state rows, capped by its preset's
+    /// daily limits.
+    fn tally(deck: Deck, preset: Option<&Preset>, rows: &[StateCount], done: &[DoneToday]) -> Self {
+        let mut s = Self {
+            preset_name: preset.map(|p| p.name.clone()).unwrap_or_default(),
+            deck,
+            total: 0,
+            new: 0,
+            suspended: 0,
+            learning_due: 0,
+            review_due: 0,
+            new_today: 0,
+            new_done_today: 0,
+            review_done_today: 0,
+        };
+        for r in rows.iter().filter(|r| r.deck_id == s.deck.id) {
+            s.total += r.cnt;
+            if r.suspended {
+                s.suspended += r.cnt;
+                continue;
+            }
+            match r.state {
+                CardState::New => s.new += r.cnt,
+                // Studying learns ahead, so these count as due too;
+                // otherwise a left session reads "all done" while
+                // studying still has cards to show.
+                CardState::Learning | CardState::Relearning => s.learning_due += r.due_soon,
+                CardState::Review => s.review_due += r.due_now,
+            }
+        }
+        for d in done.iter().filter(|d| d.deck_id == s.deck.id) {
+            match d.state_before {
+                CardState::New => s.new_done_today += d.cnt,
+                CardState::Review => s.review_done_today += d.cnt,
+                _ => {}
+            }
+        }
+        if let Some(p) = preset {
+            s.new_today = (p.new_per_day - s.new_done_today).clamp(0, s.new);
+            s.review_due = (p.reviews_per_day - s.review_done_today).clamp(0, s.review_due);
+        }
+        s
+    }
+}
+
 impl App {
     // ----- presets -------------------------------------------------------
 
@@ -611,35 +677,17 @@ impl App {
         let decks = self.decks(access).await?;
         let presets: HashMap<i64, Preset> = self.list_presets(access).await?.into_iter().map(|p| (p.id, p)).collect();
         let clock = access.user.clock();
-        let n = clock.now;
-
-        #[derive(sqlx::FromRow)]
-        struct Row {
-            deck_id: i64,
-            state: CardState,
-            suspended: bool,
-            cnt: i64,
-            due_now: i64,
-            due_soon: i64,
-        }
-        let rows: Vec<Row> = sqlx::query_as(
+        let rows: Vec<StateCount> = sqlx::query_as(
             "SELECT deck_id, state, suspended, COUNT(*) AS cnt, SUM(due <= ?) AS due_now,
                     SUM(due <= ?) AS due_soon
              FROM cards WHERE user_id = ? GROUP BY deck_id, state, suspended",
         )
-        .bind(n)
-        .bind(n + LEARN_AHEAD_SECS)
+        .bind(clock.now)
+        .bind(clock.now + LEARN_AHEAD_SECS)
         .bind(access.user_id())
         .fetch_all(&self.db)
         .await?;
-
-        #[derive(sqlx::FromRow)]
-        struct Done {
-            deck_id: i64,
-            state_before: CardState,
-            cnt: i64,
-        }
-        let done: Vec<Done> = sqlx::query_as(
+        let done: Vec<DoneToday> = sqlx::query_as(
             "SELECT deck_id, state_before, COUNT(DISTINCT card_id) AS cnt FROM review_log
              WHERE user_id = ? AND reviewed_at >= ? AND rating > 0 AND source != 'import'
              GROUP BY deck_id, state_before",
@@ -648,50 +696,13 @@ impl App {
         .bind(clock.start_of_today())
         .fetch_all(&self.db)
         .await?;
-
-        let mut out = Vec::new();
-        for deck in decks {
-            let preset = presets.get(&deck.preset_id);
-            let mut s = DeckSummary {
-                preset_name: preset.map(|p| p.name.clone()).unwrap_or_default(),
-                deck,
-                total: 0,
-                new: 0,
-                suspended: 0,
-                learning_due: 0,
-                review_due: 0,
-                new_today: 0,
-                new_done_today: 0,
-                review_done_today: 0,
-            };
-            for r in rows.iter().filter(|r| r.deck_id == s.deck.id) {
-                s.total += r.cnt;
-                if r.suspended {
-                    s.suspended += r.cnt;
-                    continue;
-                }
-                match r.state {
-                    CardState::New => s.new += r.cnt,
-                    // Studying learns ahead, so these count as due too;
-                    // otherwise a left session reads "all done" while
-                    // studying still has cards to show.
-                    CardState::Learning | CardState::Relearning => s.learning_due += r.due_soon,
-                    CardState::Review => s.review_due += r.due_now,
-                }
-            }
-            for d in done.iter().filter(|d| d.deck_id == s.deck.id) {
-                match d.state_before {
-                    CardState::New => s.new_done_today += d.cnt,
-                    CardState::Review => s.review_done_today += d.cnt,
-                    _ => {}
-                }
-            }
-            if let Some(p) = preset {
-                s.new_today = (p.new_per_day - s.new_done_today).clamp(0, s.new);
-                s.review_due = (p.reviews_per_day - s.review_done_today).clamp(0, s.review_due);
-            }
-            out.push(s);
-        }
+        let mut out: Vec<DeckSummary> = decks
+            .into_iter()
+            .map(|deck| {
+                let preset = presets.get(&deck.preset_id);
+                DeckSummary::tally(deck, preset, &rows, &done)
+            })
+            .collect();
         // Catch-up mode: no new cards, and one review budget for all decks.
         let user = &access.user;
         if user.catch_up {
