@@ -181,7 +181,7 @@ pub fn anki_html_to_text(html: &str) -> (String, Option<String>) {
     // Drop [sound:...] tags; audio isn't supported.
     while let Some(s) = text.find("[sound:") {
         match text[s..].find(']') {
-            Some(e) => text.replace_range(s..s + e + 1, ""),
+            Some(e) => text.replace_range(s..=(s + e), ""),
             None => break,
         }
     }

@@ -2,7 +2,7 @@
 //! its reason. Callers say which conversion they mean (`num::i64_f64`), and
 //! the edge cases are decided here once:
 //!
-//! - Integer to float may round above 2^53 (f64) or 2^24 (f32). AiNKI's
+//! - Integer to float may round above 2^53 (f64) or 2^24 (f32). `AiNKI`'s
 //!   counts, seconds and milliseconds stay far below that.
 //! - Float to integer drops the fraction toward zero and saturates at the
 //!   target's range; NaN becomes 0. Callers round first when they mean it.

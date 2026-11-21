@@ -500,11 +500,11 @@ impl App {
     }
 
     async fn default_preset_id(&self, user_id: i64) -> Result<i64> {
-        Ok(sqlx::query_scalar("SELECT id FROM presets WHERE user_id = ? ORDER BY id LIMIT 1")
+        sqlx::query_scalar("SELECT id FROM presets WHERE user_id = ? ORDER BY id LIMIT 1")
             .bind(user_id)
             .fetch_optional(&self.db)
             .await?
-            .ok_or_else(|| AppError::bad("create a preset first"))?)
+            .ok_or_else(|| AppError::bad("create a preset first"))
     }
 
     // ----- decks ---------------------------------------------------------

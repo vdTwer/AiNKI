@@ -1222,7 +1222,7 @@ async fn home(State(app): State<AppState>, user: WebUser, Flash(msg): Flash) -> 
                             p.small.muted { (format::number(overdue)) " overdue, " (format::number(user.0.catch_up_reviews)) " a day." }
                         }
                     }
-                    @if attention > 0 && !notes.first().is_some_and(|n| n.rule == advice::Rule::Leeches) {
+                    @if attention > 0 && notes.first().is_none_or(|n| n.rule != advice::Rule::Leeches) {
                         p.small { a href="/attention" { (count(attention, "card")) " " (if attention == 1 { "needs" } else { "need" }) " a look" } }
                     }
                 }
@@ -1424,7 +1424,7 @@ const fn state_label(state: CardState) -> &'static str {
 }
 
 /// A card's state, or "Suspended", for lists.
-fn card_status(card: &Card) -> &'static str {
+const fn card_status(card: &Card) -> &'static str {
     if card.suspended { "Suspended" } else { state_label(card.card_state()) }
 }
 
@@ -3749,10 +3749,10 @@ async fn attention_page(
 /// The cards a split starts from: one per item of the back, each with the
 /// original front. Without items, the card itself and an empty one.
 fn split_drafts(card: &Card, items: &[multi::CardItem]) -> Vec<(String, String)> {
-    let texts: Vec<String> = if !items.is_empty() {
-        items.iter().map(|i| i.text.clone()).collect()
-    } else {
+    let texts: Vec<String> = if items.is_empty() {
         multi::splits(&card.back).first().and_then(|&how| multi::items(&card.back, how)).unwrap_or_default()
+    } else {
+        items.iter().map(|i| i.text.clone()).collect()
     };
     if texts.len() >= 2 {
         texts.into_iter().map(|t| (card.front.clone(), t)).collect()

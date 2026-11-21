@@ -227,9 +227,7 @@ pub async fn flash(mut req: Request, next: Next) -> Response {
         .get_all(header::COOKIE)
         .iter()
         .filter_map(|v| v.to_str().ok())
-        .flat_map(|v| v.split(';'))
-        .filter_map(|c| c.trim().strip_prefix(&format!("{FLASH_COOKIE}=")).map(str::to_string))
-        .next()
+        .flat_map(|v| v.split(';')).find_map(|c| c.trim().strip_prefix(&format!("{FLASH_COOKIE}=")).map(str::to_string))
         .map(|v| percent_decode(&v))
         .filter(|m| !m.is_empty());
     let had = msg.is_some();
