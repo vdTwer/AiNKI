@@ -36,12 +36,10 @@ AiNKI is one Rust binary. `src/service/` holds everything a user can do; the web
 
 ## Browser
 
-- `src/style.css`: the simple look, which is the base everywhere.
-- `src/static/theme.js`: picks the look before the page is drawn. The desktop look switches on only with JavaScript, on wide screens with a mouse that aren't e-ink, unless turned off in settings.
-- `src/static/calm.css`: the desktop look, built on `style.css`.
-- `src/static/desk.js`: the desktop look's extras: watercolor washes, the dot rail and quick find, stats charts.
+- `src/style.css`: the one look, for every screen. Plain modern CSS: `@layer`, nesting, `light-dark()`, `:has()` and container queries; e-ink is one `@media (monochrome)` override.
+- `src/web/charts.rs`: the stats charts, drawn on the server as SVG with a `<title>` on every mark.
 - `src/static/app.js`: studying without page reloads and small touches. Every page works without it.
-- `src/static/fonts/`: EB Garamond (SIL Open Font License), served by AiNKI itself.
+- `src/static/parts.js`: custom elements around server markup: `<ainki-find>` (the quick find dialog over the `/find` page) and `<ainki-break>` (a break that counts down). Plain JavaScript with JSDoc types, checked by `tsc --checkJs` in CI (`e2e/tsconfig.parts.json`); there is no build step.
 
 ## Tests
 

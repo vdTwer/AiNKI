@@ -1,4 +1,4 @@
-//! The Stats page and its desktop charts.
+//! The Stats page and its charts.
 
 use crate::service::Stats;
 #[allow(
@@ -240,8 +240,7 @@ pub(crate) const WHY_WEEK: &str = "Of the learned cards that came due in the las
 pub(crate) const WHY_STREAK: &str =
     "Days in a row with at least one review. Today counts once you study, and doesn't break the streak before then.";
 
-/// The desktop stats open with three numbers to act on. desk.js draws the
-/// charts below them from the data attributes.
+/// Stats open with three numbers to act on; the charts follow.
 fn desk_big3(d: &StatsPage) -> Markup {
     let (s, study, this_week, aim, worst, last7) = (&d.s, d.study_url(), d.this_week(), d.aim(), d.worst(), d.last7());
     let minutes = s.seconds_per_review.map(|sec| sec * num::i64_f64(s.due_now) / 60.0);

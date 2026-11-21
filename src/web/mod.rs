@@ -567,9 +567,8 @@ fn sleep_wall(u: &User) -> Markup {
     }
 }
 
-/// The "done" tick: Terra, drawn with straight strokes and square ends, like
-/// the numbers beside it. pathLength lets calm.css draw it in from 1 to 0
-/// at any size.
+/// The "done" tick, drawn with straight strokes and square ends, like the
+/// numbers beside it.
 fn done_check(size: u32, class: &'static str) -> Markup {
     html! {
         svg class=(class) viewBox="0 0 24 24" width=(size) height=(size) fill="none" stroke="currentColor" stroke-width=(format!("{:.2}", 52.0 / f64::from(size))) stroke-linecap="square" stroke-linejoin="miter" aria-hidden="true" {

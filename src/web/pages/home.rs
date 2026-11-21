@@ -156,7 +156,7 @@ fn home_decks(user: &User, h: &Home) -> Markup {
     @if decks.is_empty() && archived > 0 {
         p.muted { "Every deck is archived. Restore one to study it again." }
     } @else if decks.is_empty() {
-        // The desktop look: someone new gets three quiet ways in.
+        // Someone new gets three quiet ways in.
         div.first-steps {
             p.lede { "Three ways to begin." }
             ul.list.links {
@@ -238,7 +238,7 @@ pub(crate) const fn about(n: f64) -> i64 {
 
 pub(crate) const WHY_OUTLOOK: &str = "Cards come back after you study them: a miss the next day, a young card a few days later. The forecast counts them too, if you study every day and add no more cards.";
 
-/// The desktop home's week looks ahead: what tomorrow asks for, what the
+/// The home page's week looks ahead: what tomorrow asks for, what the
 /// next seven days probably ask for (with the forecast and its range on
 /// hover), then a bar for each day, today first and in bold. Today holds
 /// what the page says to study now (new cards and limits included); later
