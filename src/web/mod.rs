@@ -510,11 +510,8 @@ fn main_nav(nav: Option<Nav>) -> Markup {
             a href="/study" data-label="Study" aria-current=[current(Nav::Study)] { "Study" }
             a href="/cards/new" data-label="Add" aria-current=[current(Nav::Add)] { "Add" }
             a href="/stats" data-label="Stats" aria-current=[current(Nav::Stats)] { "Stats" }
-            // Phones reach the lessons through settings; the bar stays as it was.
-            a.rail-only href="/learn" data-label="Learn" aria-current=[current(Nav::Learn)] { "Learn" }
+            a href="/learn" data-label="Learn" aria-current=[current(Nav::Learn)] { "Learn" }
             a href="/settings" data-label="Settings" aria-current=[current(Nav::Settings)] { "Settings" }
-            // Last, so it opens right under the dot: hovering the dot offers Home.
-            a.rail-only href="/" data-label="Home" aria-current=[current(Nav::Decks)] { "Home" }
         }
     }
 }
@@ -525,7 +522,7 @@ fn main_nav(nav: Option<Nav>) -> Markup {
 fn sleep_wall(u: &User) -> Markup {
     html! {
         @if let Some(until) = study::quiet_until(u, now()) {
-            div.sleep-wall.calm-only role="dialog" aria-modal="true" aria-labelledby="sleep-title" {
+            div.sleep-wall role="dialog" aria-modal="true" aria-labelledby="sleep-title" {
                 h1 #sleep-title { "Go to sleep." }
                 p { "Your cards open again at " (clock_time(&u.clock(), until)) "." }
                 details.sleep-anyway {

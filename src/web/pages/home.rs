@@ -85,13 +85,13 @@ fn home_today(user: &User, h: &Home) -> Markup {
     let (decks, total_due, facts, quiet, overdue) = (&h.decks, h.total_due, h.facts(), h.quiet, h.overdue);
     html! {
     section.today aria-label="Today" {
-        p.date { @if user.catch_up { span.calm-only { "Catching up · " } } (format::long_date(&user.clock())) }
+        p.date { @if user.catch_up { "Catching up · " } (format::long_date(&user.clock())) }
         @if total_due > 0 {
             h1 { span.count { (total_due) " " (format::plural(total_due, "card")) } " to study today" }
         } @else if !decks.is_empty() {
-            h1.all-done { span.simple-only { "All done for today" } span.calm-only { "All done." } }
+            h1.all-done { "All done for today" }
         } @else {
-            h1 { span.simple-only { "Welcome to AiNKI" } span.calm-only { "Welcome, " (capitalize(&user.username)) "." } }
+            h1 { "Welcome, " (capitalize(&user.username)) }
         }
         @if !facts.is_empty() { p.facts { (facts.join(" · ")) } }
         @if let Some(t) = quiet {
@@ -108,7 +108,7 @@ fn home_side(user: &User, h: &Home) -> Markup {
     let (decks, week, notes, overdue, attention) = (&h.decks, &h.week, &h.notes, h.overdue, h.attention);
     html! {
     @if !decks.is_empty() {
-        aside.today-side.calm-only {
+        aside.today-side {
             (week_note_with(week, notes.first().map(|n| coach_note(n, "/"))))
             @if user.catch_up && overdue >= 20 {
                 @let days = (overdue + user.catch_up_reviews - 1) / user.catch_up_reviews.max(1);
@@ -156,9 +156,8 @@ fn home_decks(user: &User, h: &Home) -> Markup {
     @if decks.is_empty() && archived > 0 {
         p.muted { "Every deck is archived. Restore one to study it again." }
     } @else if decks.is_empty() {
-        p.simple-only { "No decks yet. Create one, or bring your Anki decks along." }
         // The desktop look: someone new gets three quiet ways in.
-        div.calm-only.first-steps {
+        div.first-steps {
             p.lede { "Three ways to begin." }
             ul.list.links {
                 @for (href, name, sub) in [
@@ -219,11 +218,6 @@ fn home_footer(user: &User, h: &Home) -> Markup {
         a.btn href=("/cards/new") { "Add card" }
         a.btn href=("/decks/new") { "New deck" }
         a.btn href=("/import") { "Import" }
-    }
-    // The desktop look: a plus for a new deck, Import in words.
-    p.desk-actions.calm-only hidden[decks.is_empty()] {
-        a.add-deck href="/decks/new" { "New deck" }
-        a href="/import" { "Import deck" }
     }
     @if !decks.is_empty() {
         (week_home(user, total_due, outlook, stats.seconds_per_review))

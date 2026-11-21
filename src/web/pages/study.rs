@@ -577,16 +577,12 @@ pub(crate) fn rest_page(user: &User, msg: Option<&str>, deck: Option<i64>, until
         html! {
             (flash(msg))
             section.session-end.rest {
-                p.kicker.calm-only { "Quiet hours" }
-                h1 {
-                    span.simple-only { "Quiet hours" }
-                    span.calm-only { "Rest until " (clock_time(&user.clock(), until)) }
-                }
+                h1 { "Rest until " (clock_time(&user.clock(), until)) }
                 p.summary { "You asked for rest until " (format::when(&user.clock(), until)) ". Sleep helps the day's learning settle." }
-                p.summary.calm-only { "Agents won't quiz you now either." }
+                p.summary { "Agents won't quiz you now either." }
                 div.end-links {
                     a href="/" { "Back to decks" }
-                    a.calm-only href="/learn/sleep" { "Why sleep helps" }
+                    a href="/learn/sleep" { "Why sleep helps" }
                     form method="post" action="/study/anyway" {
                         @if let Some(d) = deck { input type="hidden" name="deck" value=(d); }
                         button.link type="submit" { "Study anyway" }
@@ -610,7 +606,6 @@ pub(crate) fn break_page(user: &User, msg: Option<&str>, deck: Option<i64>, due:
         html! {
             (flash(msg))
             section.session-end.rest.break {
-                p.kicker.calm-only { "Break" }
                 h1 { "Time for a break" }
                 @if due.smart && due.slowing {
                     p.summary { "You have studied for " (format::count(due.studied, "minute")) ", and your answers are slowing down. A " (length) " break should bring you back." }
@@ -742,7 +737,7 @@ pub(crate) fn catch_up_note(user: &User, overdue: i64) -> Markup {
                     } @else {
                         "Catch-up mode: no new cards, at most " (user.catch_up_reviews) " reviews a day, the ones you most likely still know first. "
                         a href="/learn/backlog" { "Why" }
-                        button.link.calm-only type="submit" { "Turn off catch-up mode" }
+                        button.link type="submit" { "Turn off catch-up mode" }
                     }
                 }
             }

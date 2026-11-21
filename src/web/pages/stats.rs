@@ -86,16 +86,13 @@ pub(crate) async fn stats_page(
     let body = html! {
         (flash(msg.as_deref()))
         @if let Some(deck) = &d.deck { (parent(&format!("/decks/{}", deck.id), &deck_plain(&deck.name))) }
-        div.stats-title {
-            h1 { "Stats" }
-            label.numbers-toggle.calm-only { "I love numbers" input type="checkbox" role="switch"; }
-        }
-        div.desk-stats.calm-only {
+        h1 { "Stats" }
+        div.desk-stats {
             (desk_big3(&d)) (desk_coach(&d)) (desk_charts(u, &d)) (desk_decks(&d)) (desk_model(&d))
         }
-        // On desktops these are the exact numbers, under the charts, for
-        // those who switch them on.
-        div.numbers {
+        // The exact numbers, folded under the charts.
+        details.numbers {
+            summary { "All the numbers" }
             (numbers_today(&d)) (numbers_retention(&d)) (numbers_cards(&d)) (numbers_model(&d))
             (numbers_sure(&d)) (numbers_forecast(u, &d))
         }
