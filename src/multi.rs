@@ -231,6 +231,33 @@ pub fn title(text: &str) -> &str {
 }
 
 /// Items match across edits by their words, ignoring case and spacing.
+/// Which stored item each new item continues, as an index into `old`: an
+/// item with the same words first, then the item at the same place when one
+/// starts the way the other does. Each stored item is continued at most once;
+/// `None` is a new item.
+fn match_items(old: &[String], new: &[String]) -> Vec<Option<usize>> {
+    let mut used = vec![false; old.len()];
+    let mut pick: Vec<Option<usize>> = new
+        .iter()
+        .map(|k| {
+            let n = old.iter().zip(&used).position(|(o, u)| !u && o == k)?;
+            if let Some(u) = used.get_mut(n) {
+                *u = true;
+            }
+            Some(n)
+        })
+        .collect();
+    for ((pos, slot), k) in pick.iter_mut().enumerate().zip(new) {
+        let (Some(o), Some(u)) = (old.get(pos), used.get_mut(pos)) else { continue };
+        let same_start = !k.is_empty() && !o.is_empty() && (o.starts_with(k.as_str()) || k.starts_with(o.as_str()));
+        if slot.is_none() && !*u && same_start {
+            *u = true;
+            *slot = Some(pos);
+        }
+    }
+    pick
+}
+
 fn key(text: &str) -> String {
     text.split_whitespace().collect::<Vec<_>>().join(" ").to_lowercase()
 }
@@ -374,32 +401,15 @@ impl App {
             .fetch_all(&mut *tx)
             .await?;
         let first_time = old.is_empty();
-        let mut used = vec![false; old.len()];
-        // Same words first, then the same start at the same place.
         let keys: Vec<String> = texts.iter().map(|t| key(t)).collect();
-        let mut pick: Vec<Option<usize>> = keys
-            .iter()
-            .map(|k| {
-                let n = (0..old.len()).find(|&n| !used[n] && key(&old[n].text) == *k)?;
-                used[n] = true;
-                Some(n)
-            })
-            .collect();
-        for (pos, k) in keys.iter().enumerate() {
-            if pick[pos].is_none() && pos < old.len() && !used[pos] {
-                let o = key(&old[pos].text);
-                if !k.is_empty() && !o.is_empty() && (o.starts_with(k.as_str()) || k.starts_with(o.as_str())) {
-                    used[pos] = true;
-                    pick[pos] = Some(pos);
-                }
-            }
-        }
-        for (pos, text) in texts.iter().enumerate() {
-            if let Some(n) = pick[pos] {
+        let old_keys: Vec<String> = old.iter().map(|o| key(&o.text)).collect();
+        let pick = match_items(&old_keys, &keys);
+        for (pos, (text, picked)) in texts.iter().zip(&pick).enumerate() {
+            if let Some(item) = picked.and_then(|n| old.get(n)) {
                 sqlx::query("UPDATE card_items SET position = ?, text = ? WHERE id = ?")
                     .bind(num::usize_i64(pos))
                     .bind(text)
-                    .bind(old[n].id)
+                    .bind(item.id)
                     .execute(&mut *tx)
                     .await?;
             } else {
@@ -425,7 +435,7 @@ impl App {
             }
         }
         for (n, item) in old.iter().enumerate() {
-            if !used[n] {
+            if !pick.contains(&Some(n)) {
                 sqlx::query("DELETE FROM card_items WHERE id = ?").bind(item.id).execute(&mut *tx).await?;
             }
         }
@@ -471,10 +481,10 @@ impl App {
             Missed::These(positions) => {
                 let mut m = vec![false; items.len()];
                 for p in positions {
-                    if p >= items.len() || !asked[p] {
-                        return Err(AppError::bad(format!("item {} was not asked this time", p + 1)));
+                    match (asked.get(p), m.get_mut(p)) {
+                        (Some(true), Some(slot)) => *slot = true,
+                        _ => return Err(AppError::bad(format!("item {} was not asked this time", p + 1))),
                     }
-                    m[p] = true;
                 }
                 m
             }
@@ -484,11 +494,11 @@ impl App {
         let fsrs = scheduler::fsrs_for(&self.deck_params(access, deck.id).await?);
         let before_items = serde_json::to_string(&items).ok();
         let mut item_logs = Vec::new();
-        for (n, item) in items.iter_mut().enumerate() {
-            if !asked[n] {
+        for ((item, &was_asked), &was_missed) in items.iter_mut().zip(&asked).zip(&missed) {
+            if !was_asked {
                 continue;
             }
-            let rating = if missed[n] { Rating::Again } else { Rating::Good };
+            let rating = if was_missed { Rating::Again } else { Rating::Good };
             let out = scheduler::answer(&fsrs, &cfg, item.id, &item.sched(), rating, &clock)?;
             item_logs.push((item.id, rating, item.state));
             item.set(&out.card);
@@ -529,10 +539,7 @@ impl App {
         if updated.rows_affected() == 0 {
             return Err(AppError::Conflict("this card was already answered".into()));
         }
-        for (n, item) in items.iter().enumerate() {
-            if !asked[n] {
-                continue;
-            }
+        for (item, _) in items.iter().zip(&asked).filter(|(_, a)| **a) {
             sqlx::query(
                 "UPDATE card_items SET state = ?, step = ?, stability = ?, difficulty = ?, due = ?,
                     last_review = ?, reps = ?, lapses = ? WHERE id = ?",
@@ -671,8 +678,8 @@ pub fn items_json(items: &[CardItem], asked: Option<&[bool]>, clock: &Clock, par
                 "retrievability": scheduler::retrievability(&i.sched(), params, clock)
                     .map(|r| (f64::from(r) * 1000.0).round() / 1000.0),
             });
-            if let Some(a) = asked {
-                v["asked"] = json!(a[n]);
+            if let (Some(a), Some(o)) = (asked.and_then(|a| a.get(n)), v.as_object_mut()) {
+                o.insert("asked".into(), json!(a));
             }
             v
         })
@@ -682,6 +689,17 @@ pub fn items_json(items: &[CardItem], asked: Option<&[bool]>, clock: &Clock, par
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn items_keep_their_memory_by_words_then_by_place() {
+        let v = |xs: &[&str]| xs.iter().map(|x| (*x).to_string()).collect::<Vec<_>>();
+        // Moved items keep theirs; a reworded item at its old place keeps its own.
+        assert_eq!(match_items(&v(&["a", "b", "c"]), &v(&["c", "a"])), [Some(2), Some(0)]);
+        assert_eq!(match_items(&v(&["paris", "rome"]), &v(&["paris", "rome italy"])), [Some(0), Some(1)]);
+        // A new item is new, and no stored item is continued twice.
+        assert_eq!(match_items(&v(&["a"]), &v(&["a", "a", "z"])), [Some(0), None, None]);
+        assert_eq!(match_items(&[], &v(&["x"])), [None]);
+    }
 
     fn texts(back: &str, how: Split) -> Vec<String> {
         items(back, how).unwrap_or_default()
