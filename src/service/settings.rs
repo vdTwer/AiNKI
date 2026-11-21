@@ -11,31 +11,25 @@ pub struct Settings<'a> {
     pub four_buttons: bool,
     pub font_scale: i64,
     pub optimize_include_agent: bool,
-    pub desktop_look: &'a str,
 }
 
 impl App {
     /// # Errors
     ///
-    /// - `BadRequest` if the look or the time zone is unknown.
+    /// - `BadRequest` if the time zone is unknown.
     /// - `Internal` if the database fails.
     pub async fn update_settings(&self, user_id: i64, settings: &Settings<'_>) -> Result<()> {
-        let Settings { timezone, rollover_hour, four_buttons, font_scale, optimize_include_agent, desktop_look } =
-            *settings;
-        if !matches!(desktop_look, "calm" | "simple") {
-            return Err(AppError::bad("unknown look"));
-        }
+        let Settings { timezone, rollover_hour, four_buttons, font_scale, optimize_include_agent } = *settings;
         timezone.parse::<chrono_tz::Tz>().map_err(|_| AppError::bad(format!("unknown timezone '{timezone}'")))?;
         sqlx::query(
             "UPDATE users SET timezone = ?, rollover_hour = ?, four_buttons = ?, font_scale = ?,
-                optimize_include_agent = ?, desktop_look = ? WHERE id = ?",
+                optimize_include_agent = ? WHERE id = ?",
         )
         .bind(timezone)
         .bind(rollover_hour.clamp(0, 23))
         .bind(four_buttons)
         .bind(font_scale.clamp(80, 200))
         .bind(optimize_include_agent)
-        .bind(desktop_look)
         .bind(user_id)
         .execute(&self.db)
         .await?;

@@ -356,7 +356,6 @@ fn deck_hero(user: &User, summary: &DeckSummary, attention: i64) -> Markup {
         div.deck-main {
         div.deck-title {
             h1 { (deck_title(&d.name)) }
-            button.more-toggle.calm-only type="button" aria-label="More" aria-expanded="false" aria-controls="deck-menu" { span {} span {} span {} }
         }
         @if !d.description.is_empty() { p { (d.description) } }
         dl.stats-inline {
@@ -374,13 +373,13 @@ fn deck_hero(user: &User, summary: &DeckSummary, attention: i64) -> Markup {
         } @else if summary.due_total() > 0 {
             p { a.btn.primary.start href=(format!("/study?deck={id}")) { "Start studying " span.arrow aria-hidden="true" { "→" } } }
         }
-        p.actions.icon-links.deck-menu id="deck-menu" {
-            (icon_btn(&format!("/cards/new?deck={id}"), ICON_ADD, "Add card"))
-            (icon_btn(&format!("/decks/{id}/edit"), ICON_EDIT, "Edit deck"))
-            (icon_btn(&format!("/decks/{id}/edit#share"), ICON_SHARE, "Share"))
-            (icon_btn(&format!("/stats?deck={id}"), ICON_STATS, "Stats"))
-            a.btn.icon-link.calm-only href=(format!("/decks/merge?with={id}")) { span { "Merge with other decks" } }
-            a.btn.icon-link.calm-only href=(format!("/decks/{id}/export.csv")) { span { "Export as CSV" } }
+        p.actions.deck-menu id="deck-menu" {
+            a.btn href=(&format!("/cards/new?deck={id}")) { "Add card" }
+            a.btn href=(&format!("/decks/{id}/edit")) { "Edit deck" }
+            a.btn href=(&format!("/decks/{id}/edit#share")) { "Share" }
+            a.btn href=(&format!("/stats?deck={id}")) { "Stats" }
+            a.btn href=(format!("/decks/merge?with={id}")) { "Merge" }
+            a.btn href=(format!("/decks/{id}/export.csv")) { "Export CSV" }
         }
         }
         div.deck-side {
@@ -398,7 +397,6 @@ fn deck_cards(id: i64, q: &DeckQuery, cards: &[Card], total: i64, page: i64, bas
     html! {
         div.cards-head {
             h2 { "Cards" }
-            a.calm-only href=(format!("/cards/new?deck={id}")) { "Add card" }
         }
         form.search method="get" action=(format!("/decks/{id}")) {
             input type="search" name="q" value=(q.q.clone().unwrap_or_default()) placeholder="Search text" aria-label="Search";
@@ -420,7 +418,6 @@ fn deck_cards(id: i64, q: &DeckQuery, cards: &[Card], total: i64, page: i64, bas
         } @else {
             p.muted.small { (count(total, "card")) }
         }
-        div.table-head.calm-only aria-hidden="true" hidden[cards.is_empty()] { span.grow { "Card" } span.num { "State" } span.chev {} }
         ul.list.cards hidden[cards.is_empty()] {
             @for c in cards {
                 li {
@@ -433,7 +430,6 @@ fn deck_cards(id: i64, q: &DeckQuery, cards: &[Card], total: i64, page: i64, bas
                         span.counts.small {
                             (card_status(c))
                         }
-                        span.chev.calm-only aria-hidden="true" { "›" }
                     }
                 }
             }
@@ -444,7 +440,7 @@ fn deck_cards(id: i64, q: &DeckQuery, cards: &[Card], total: i64, page: i64, bas
                 @if (page + 1) * per_page < total { a.btn href=(format!("{base}&page={}", page + 1)) { "Next ›" } }
             }
         }
-        p.icon-links.deck-export { (icon_link(&format!("/decks/{id}/export.csv"), ICON_EXPORT, "Export as CSV")) }
+        p.deck-export { a href=(&format!("/decks/{id}/export.csv")) { "Export as CSV" } }
     }
 }
 

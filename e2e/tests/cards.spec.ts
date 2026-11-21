@@ -191,7 +191,7 @@ test('deck page: search, filter, edit, export and delete', async ({ page, seed, 
 
   await page.goto(`/decks/${deck}`);
   await expect(page.locator('main a.row')).toHaveCount(3);
-  await page.locator('input[name=q]').fill('water');
+  await page.locator('main input[name=q]').fill('water');
   await page.locator('form.search').getByRole('button', { name: 'Find' }).click();
   await expect(page.locator('main a.row')).toHaveCount(1);
   await expect(page.locator('main a.row')).toContainText('Waterloo');

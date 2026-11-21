@@ -16,8 +16,8 @@ const DECKS: usize = 5;
 /// and stats 970, so a page that starts to scale with the answers again
 /// fails here, while a slower runner does not.
 const BUDGETS: [(&str, u128); 9] = [
-    ("/", 500),
-    ("/stats", 500),
+    ("/", 300),
+    ("/stats", 300),
     ("/study", 100),
     ("/decks/DECK", 150),
     ("/find?q=front+number+1999", 100),

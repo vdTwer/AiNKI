@@ -1,6 +1,6 @@
 // Studying: the heart of the site. Answers never reload the page, keys
 // work, undo puts the card back, and the end of a session is reached.
-import { test, expect, sql, isCalm, type Seed } from '../support/fixtures.ts';
+import { test, expect, sql, type Seed } from '../support/fixtures.ts';
 import type { Page } from '@playwright/test';
 
 const front = (page: Page) => page.locator('main .study .face.front');
@@ -222,14 +222,6 @@ test('a pause covers the card, and its time is kept apart', async ({ page, seed,
   await page.goto('/study');
   await expect(front(page)).toBeVisible();
   const pauseButton = page.getByRole('button', { name: 'Pause' });
-
-  // Phones and the simple look have no pause.
-  if (!(await isCalm(page))) {
-    await expect(pauseButton).toBeHidden();
-    await page.keyboard.press('p');
-    await expect(front(page)).toBeVisible();
-    return;
-  }
 
   await page.clock.runFor(1000);
   await pauseButton.click();

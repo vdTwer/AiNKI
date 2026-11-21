@@ -28,22 +28,30 @@ pub(crate) struct Home {
 
 impl Home {
     async fn load(app: &App, access: &Access) -> Result<Self, AppError> {
+        // Everything that doesn't depend on anything else, at once.
+        let (summaries, stats, flagged, overdue, shares, reads) = tokio::try_join!(
+            app.deck_summaries(access),
+            app.stats(access, None),
+            app.attention(access, None),
+            app.overdue(access),
+            app.incoming_shares(access),
+            app.coach_reads(access),
+        )?;
         let (archived, decks): (Vec<_>, Vec<_>) =
-            app.deck_summaries(access).await?.into_iter().partition(|d| d.deck.status == DeckStatus::Archived);
-        let stats = app.stats(access, None).await?;
-        let flagged = app.attention(access, None).await?;
-        let overdue = app.overdue(access).await?;
+            summaries.into_iter().partition(|d| d.deck.status == DeckStatus::Archived);
+        let attention = num::usize_i64(flagged.len());
+        let (week, outlook) = tokio::try_join!(app.week_with(access, attention), app.outlook(access, &decks))?;
         let known = advice::Known { decks: &decks, stats: &stats, attention: &flagged, overdue };
-        let notes = app.advice_from(access, &known).await?;
+        let notes = advice::advice_with(access, &known, reads);
         Ok(Self {
             total_due: decks.iter().map(DeckSummary::due_total).sum(),
             archived: archived.len(),
-            shares: app.incoming_shares(access).await?,
-            attention: num::usize_i64(flagged.len()),
+            shares,
+            attention,
             overdue,
             quiet: study::quiet_until(&access.user, now()),
-            week: app.week(access).await?,
-            outlook: app.outlook(access, &decks).await?,
+            week,
+            outlook,
             notes,
             decks,
             stats,
@@ -85,13 +93,13 @@ fn home_today(user: &User, h: &Home) -> Markup {
     let (decks, total_due, facts, quiet, overdue) = (&h.decks, h.total_due, h.facts(), h.quiet, h.overdue);
     html! {
     section.today aria-label="Today" {
-        p.date { @if user.catch_up { span.calm-only { "Catching up · " } } (format::long_date(&user.clock())) }
+        p.date { @if user.catch_up { "Catching up · " } (format::long_date(&user.clock())) }
         @if total_due > 0 {
             h1 { span.count { (total_due) " " (format::plural(total_due, "card")) } " to study today" }
         } @else if !decks.is_empty() {
-            h1.all-done { span.simple-only { "All done for today" } span.calm-only { "All done." } }
+            h1.all-done { "All done for today" }
         } @else {
-            h1 { span.simple-only { "Welcome to AiNKI" } span.calm-only { "Welcome, " (capitalize(&user.username)) "." } }
+            h1 { "Welcome, " (capitalize(&user.username)) }
         }
         @if !facts.is_empty() { p.facts { (facts.join(" · ")) } }
         @if let Some(t) = quiet {
@@ -108,7 +116,7 @@ fn home_side(user: &User, h: &Home) -> Markup {
     let (decks, week, notes, overdue, attention) = (&h.decks, &h.week, &h.notes, h.overdue, h.attention);
     html! {
     @if !decks.is_empty() {
-        aside.today-side.calm-only {
+        aside.today-side {
             (week_note_with(week, notes.first().map(|n| coach_note(n, "/"))))
             @if user.catch_up && overdue >= 20 {
                 @let days = (overdue + user.catch_up_reviews - 1) / user.catch_up_reviews.max(1);
@@ -156,9 +164,8 @@ fn home_decks(user: &User, h: &Home) -> Markup {
     @if decks.is_empty() && archived > 0 {
         p.muted { "Every deck is archived. Restore one to study it again." }
     } @else if decks.is_empty() {
-        p.simple-only { "No decks yet. Create one, or bring your Anki decks along." }
-        // The desktop look: someone new gets three quiet ways in.
-        div.calm-only.first-steps {
+        // Someone new gets three quiet ways in.
+        div.first-steps {
             p.lede { "Three ways to begin." }
             ul.list.links {
                 @for (href, name, sub) in [
@@ -215,15 +222,10 @@ fn home_footer(user: &User, h: &Home) -> Markup {
     @if attention > 0 {
         p.small.attention-link { a href="/attention" { (count(attention, "card")) " " (format::agree(attention, "needs", "need")) " a look" } }
     }
-    p.actions.icon-links.home-actions {
-        (icon_btn("/cards/new", ICON_ADD, "Add card"))
-        (icon_btn("/decks/new", ICON_DECKS, "New deck"))
-        (icon_btn("/import", ICON_IMPORT, "Import"))
-    }
-    // The desktop look: a plus for a new deck, Import in words.
-    p.desk-actions.calm-only hidden[decks.is_empty()] {
-        a.add-deck href="/decks/new" aria-label="New deck" data-label="New deck" { (icon(ICON_ADD, PAGE_ICON)) }
-        a href="/import" { "Import deck" }
+    p.actions.home-actions {
+        a.btn href=("/cards/new") { "Add card" }
+        a.btn href=("/decks/new") { "New deck" }
+        a.btn href=("/import") { "Import" }
     }
     @if !decks.is_empty() {
         (week_home(user, total_due, outlook, stats.seconds_per_review))
@@ -244,7 +246,7 @@ pub(crate) const fn about(n: f64) -> i64 {
 
 pub(crate) const WHY_OUTLOOK: &str = "Cards come back after you study them: a miss the next day, a young card a few days later. The forecast counts them too, if you study every day and add no more cards.";
 
-/// The desktop home's week looks ahead: what tomorrow asks for, what the
+/// The home page's week looks ahead: what tomorrow asks for, what the
 /// next seven days probably ask for (with the forecast and its range on
 /// hover), then a bar for each day, today first and in bold. Today holds
 /// what the page says to study now (new cards and limits included); later
@@ -301,7 +303,7 @@ pub(crate) fn week_home(user: &User, today_due: i64, outlook: &Outlook, seconds_
     };
     let WeekAhead { days, tomorrow: tomorrow_n, tomorrow_settled, week, range: (low, high), total, most } = w;
     html! {
-        div.week-home.calm-only {
+        div.week-home {
             section.week aria-label="Next seven days" {
                 h2 { "Next seven days" }
                 @if total == 0 {
@@ -316,9 +318,7 @@ pub(crate) fn week_home(user: &User, today_due: i64, outlook: &Outlook, seconds_
                         }
                         " Probably "
                         span.forecast
-                            data-tip=(format!("Forecast: {}", count(total, "card")))
-                            data-tip-label=(format!("Likely {} to {}", format::number(low), format::number(high)))
-                            data-why=(WHY_OUTLOOK) {
+                            title=(format!("Forecast: {}. Likely {} to {}. {WHY_OUTLOOK}", count(total, "card"), format::number(low), format::number(high))) {
                             "about " (format::number(about(week)))
                         }
                         " in the next week"
@@ -332,7 +332,7 @@ pub(crate) fn week_home(user: &User, today_due: i64, outlook: &Outlook, seconds_
                 @for (i, &(date, n)) in days.iter().enumerate() {
                     @let r = num::f64_i64(n.round());
                     div.day.today[i == 0] title=(tip(i, date, n)) {
-                        span.bar.empty[r == 0] style=(format!("height: {}%", (r * 100 / most).max(3))) data-n=(format::number(r)) {}
+                        span.bar.empty[r == 0] style=(format!("height: {}%", (r * 100 / most).max(3))) {}
                         span.letter { (date.format("%a").to_string().chars().next().unwrap_or(' ')) }
                     }
                 }

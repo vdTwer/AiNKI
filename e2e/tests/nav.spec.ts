@@ -1,6 +1,6 @@
-// Getting around: the top navigation everywhere, and on the desktop the
-// dot that opens into icons, the quick find sheet and the keys sheet.
-import { test, expect, desktopOnly, isCalm } from '../support/fixtures.ts';
+// Getting around: the top navigation everywhere, the quick find (a page,
+// and with JavaScript a dialog) and the keys sheet.
+import { test, expect, desktopOnly } from '../support/fixtures.ts';
 
 const PLACES: [string, RegExp][] = [
   ['Study', /\/study$/],
@@ -8,93 +8,71 @@ const PLACES: [string, RegExp][] = [
   ['Stats', /\/stats$/],
   ['Learn', /\/learn$/],
   ['Settings', /\/settings$/],
-  ['Home', /\/$/],
+  ['AiNKI', /\/$/],
 ];
 
 test('every place is reachable from the navigation', async ({ page, seed }) => {
   await seed.deck('Something');
   await page.goto('/');
   const nav = page.getByRole('navigation', { name: 'Main' });
-  const calm = await isCalm(page);
   for (const [name, url] of PLACES) {
-    // On the desktop the places open out of the dot when the pointer is near.
-    if (calm) await nav.hover();
-    const link = nav.getByRole('link', { name, exact: true });
-    if (!(await link.isVisible()) && !calm) {
-      // Phones keep Learn under Settings: the simple top bar never changes.
-      test.info().annotations.push({ type: 'not in the bar', description: name });
-      continue;
-    }
-    await link.click();
+    await nav.getByRole('link', { name, exact: true }).click();
     await expect(page).toHaveURL(url);
     await expect(nav.getByRole('link', { name, exact: true })).toHaveAttribute('aria-current', 'page');
   }
 });
 
+test('the menu reads Study, Add, Stats, Learn, Settings, Find', async ({ page }) => {
+  await page.goto('/stats');
+  const names = await page.locator('nav.top a:not(.brand)').allTextContents();
+  expect(names).toEqual(['Study', 'Add', 'Stats', 'Learn', 'Settings', 'Find']);
+});
+
+test('quick find forgives typos and goes where you pick', async ({ page, seed }) => {
+  const deck = await seed.deck('Languages::Spanish');
+  const card = await seed.card(deck, 'el murciélago', 'the bat');
+  await page.goto('/stats');
+
+  await page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: 'Find' }).click();
+  const sheet = page.locator('ainki-find dialog');
+  await expect(sheet).toBeVisible();
+  const input = sheet.locator('input[type=search]');
+  await expect(input).toBeFocused();
+  await input.fill('spansh');
+  const rows = sheet.locator('#find-results a.row');
+  await expect(rows.first()).toContainText('Spanish');
+  await page.keyboard.press('Enter');
+  await expect(page).toHaveURL(`/decks/${deck}`);
+
+  // Slash opens it too; accents don't matter for cards.
+  await page.keyboard.press('/');
+  await expect(sheet).toBeVisible();
+  await sheet.locator('input[type=search]').fill('murcielago');
+  await expect(rows.first()).toContainText('murciélago');
+  await rows.first().click();
+  await expect(page).toHaveURL(new RegExp(`/cards/${card}`));
+});
+
+test.describe('without JavaScript', () => {
+  test.use({ javaScriptEnabled: false });
+
+  test('quick find is a page of its own', async ({ page, seed }) => {
+    await seed.deck('Languages::Spanish');
+    await page.goto('/');
+    await page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: 'Find' }).click();
+    await expect(page).toHaveURL('/find');
+    await page.locator('main input[type=search]').fill('spansh');
+    await page.locator('main').getByRole('button', { name: 'Find' }).click();
+    await expect(page.locator('#find-results a.row').first()).toContainText('Spanish');
+  });
+});
+
 test.describe('desktop', () => {
   desktopOnly();
 
-  test('the dot itself opens into Home', async ({ page }) => {
-    await page.goto('/stats');
-    // The resting dot sits 31px in from the nav's right edge, mid-height.
-    const box = await page.locator('nav.top').boundingBox();
-    if (!box) throw new Error('no nav');
-    const x = box.x + box.width - 31;
-    const y = box.y + box.height / 2;
-    await page.mouse.move(x, y);
-    const home = page.locator('nav.top a[href="/"][data-label="Home"]');
-    await expect(home.locator('.tile')).toHaveCSS('opacity', '1');
-    const under = await page.evaluate(
-      ([px, py]) => document.elementFromPoint(px, py)?.closest('a, button')?.getAttribute('data-label') ?? null,
-      [x, y],
-    );
-    expect(under).toBe('Home');
-  });
-
-  test('the row reads Home, Add, Study, Stats, Learn, Settings, then Find', async ({ page }) => {
-    await page.goto('/stats');
-    const nav = page.locator('nav.top');
-    await nav.hover();
-    await expect(nav.locator('a[href="/"].rail-only .tile')).toHaveCSS('opacity', '1');
-    const order = await nav.locator('a.rail-only, a:not(.brand), button.find-dot').evaluateAll((els) =>
-      els
-        .map((e) => ({ label: e.getAttribute('data-label'), x: e.getBoundingClientRect().left }))
-        .sort((a, b) => b.x - a.x)
-        .map((e) => e.label),
-    );
-    expect([...new Set(order)]).toEqual(['Home', 'Add', 'Study', 'Stats', 'Learn', 'Settings', 'Find']);
-  });
-
-  test('quick find forgives typos and goes where you pick', async ({ page, seed }) => {
-    const deck = await seed.deck('Languages::Spanish');
-    const card = await seed.card(deck, 'el murciélago', 'the bat');
-    await page.goto('/stats');
-
-    // The dot opens into icons near the pointer; the first is Find.
-    await page.getByRole('navigation', { name: 'Main' }).hover();
-    await page.locator('nav.top .find-dot').click();
-    const sheet = page.locator('dialog.find-sheet');
-    await expect(sheet).toBeVisible();
-    const input = sheet.locator('input[type=search]');
-    await expect(input).toBeFocused();
-    await input.fill('spansh');
-    const rows = sheet.locator('.find-results .find-row');
-    await expect(rows.first()).toContainText('Spanish');
-    await page.keyboard.press('Enter');
-    await expect(page).toHaveURL(`/decks/${deck}`);
-
-    // Slash opens it too; accents don't matter for cards.
-    await page.keyboard.press('/');
-    await expect(sheet).toBeVisible();
-    await sheet.locator('input[type=search]').fill('murcielago');
-    await expect(rows.first()).toContainText('murciélago');
-    await rows.first().click();
-    await expect(page).toHaveURL(new RegExp(`/cards/${card}`));
-  });
-
   test('Ctrl+K, a typed letter, Escape and places', async ({ page }) => {
     await page.goto('/');
-    const sheet = page.locator('dialog.find-sheet');
+    const sheet = page.locator('ainki-find dialog');
     await page.keyboard.press('Control+k');
     await expect(sheet).toBeVisible();
     await page.keyboard.press('Escape');
@@ -108,7 +86,7 @@ test.describe('desktop', () => {
     await expect(sheet).toBeVisible();
     await expect(sheet.locator('input[type=search]')).toHaveValue('s');
     await sheet.locator('input[type=search]').fill('setings');
-    await expect(sheet.locator('.find-row').first()).toContainText('Settings');
+    await expect(sheet.locator('#find-results a.row').first()).toContainText('Settings');
     await page.keyboard.press('Enter');
     await expect(page).toHaveURL('/settings');
   });
@@ -118,10 +96,10 @@ test.describe('desktop', () => {
     await seed.card(deck, 'front', 'back');
     await page.goto('/study');
     await page.keyboard.press('s');
-    await expect(page.locator('dialog.find-sheet')).toHaveCount(0);
+    await expect(page.locator('ainki-find dialog')).toBeHidden();
     // Ctrl+K still works there.
     await page.keyboard.press('Control+k');
-    await expect(page.locator('dialog.find-sheet')).toBeVisible();
+    await expect(page.locator('ainki-find dialog')).toBeVisible();
   });
 
   test('? shows the keys, once per page', async ({ page, seed }) => {
@@ -129,15 +107,18 @@ test.describe('desktop', () => {
     await seed.card(deck, 'front', 'back');
     for (const path of ['/', '/study', `/decks/${deck}`, '/cards/new']) {
       await page.goto(path);
-      await expect(page.locator('.keys-button')).toHaveCount(1);
+      await expect(page.locator('.keys-hint')).toHaveCount(1);
     }
     await page.goto('/study');
     await page.keyboard.press('?');
-    const sheet = page.locator('dialog[open]');
+    const sheet = page.locator('#keys');
     await expect(sheet).toBeVisible();
     await expect(sheet).toContainText(/space/i);
     await page.keyboard.press('Escape');
-    await expect(page.locator('dialog[open]')).toHaveCount(0);
+    await expect(sheet).toBeHidden();
+    // The hint opens it with a click, no script needed.
+    await page.locator('.keys-hint button').click();
+    await expect(sheet).toBeVisible();
   });
 });
 

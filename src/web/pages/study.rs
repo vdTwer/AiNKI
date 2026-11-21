@@ -75,17 +75,17 @@ pub(crate) fn study_foot(
             div.study-tools {
                 form method="post" action="/study/undo" {
                     @if let Some(d) = q_deck { input type="hidden" name="deck" value=(d); }
-                    button.link.icon-link type="submit" { (icon(ICON_UNDO, PAGE_ICON)) span { "Undo last answer" } }
+                    button.link type="submit" { span { "Undo last answer" } }
                 }
-                @if let Some(id) = card_id { (icon_link(&format!("/cards/{id}{}", CardFrom::study(q_deck).query()), ICON_EDIT, "Edit card")) }
+                @if let Some(id) = card_id { a href=(format!("/cards/{id}{}", CardFrom::study(q_deck).query())) { "Edit card" } }
                 // Desktop only: a break of your own. The card is covered and
                 // its clock stops (app.js).
                 @if card_id.is_some() {
-                    button.link.icon-link.pause-study.calm-only type="button" { (icon(ICON_PAUSE, PAGE_ICON)) span { "Pause" } }
+                    button.link.pause-study type="button" { span { "Pause" } }
                 }
             }
             @if card_id.is_some() {
-                div.pause-cover.calm-only hidden data-stay {
+                div.pause-cover hidden data-stay {
                     p.kicker { "Paused" }
                     button.btn.primary type="button" data-resume { "Resume" }
                 }
@@ -554,7 +554,7 @@ async fn session_end(app: &App, access: &Access, deck: Option<i64>) -> Result<Ma
             a href="/" { "Back to decks" }
             form method="post" action="/study/undo" {
                 @if let Some(d) = deck { input type="hidden" name="deck" value=(d); }
-                button.link.icon-link type="submit" { (icon(ICON_UNDO, PAGE_ICON)) span { "Undo last answer" } }
+                button.link type="submit" { span { "Undo last answer" } }
             }
         }
     }
@@ -577,16 +577,12 @@ pub(crate) fn rest_page(user: &User, msg: Option<&str>, deck: Option<i64>, until
         html! {
             (flash(msg))
             section.session-end.rest {
-                p.kicker.calm-only { "Quiet hours" }
-                h1 {
-                    span.simple-only { "Quiet hours" }
-                    span.calm-only { "Rest until " (clock_time(&user.clock(), until)) }
-                }
+                h1 { "Rest until " (clock_time(&user.clock(), until)) }
                 p.summary { "You asked for rest until " (format::when(&user.clock(), until)) ". Sleep helps the day's learning settle." }
-                p.summary.calm-only { "Agents won't quiz you now either." }
+                p.summary { "Agents won't quiz you now either." }
                 div.end-links {
                     a href="/" { "Back to decks" }
-                    a.calm-only href="/learn/sleep" { "Why sleep helps" }
+                    a href="/learn/sleep" { "Why sleep helps" }
                     form method="post" action="/study/anyway" {
                         @if let Some(d) = deck { input type="hidden" name="deck" value=(d); }
                         button.link type="submit" { "Study anyway" }
@@ -610,7 +606,6 @@ pub(crate) fn break_page(user: &User, msg: Option<&str>, deck: Option<i64>, due:
         html! {
             (flash(msg))
             section.session-end.rest.break {
-                p.kicker.calm-only { "Break" }
                 h1 { "Time for a break" }
                 @if due.smart && due.slowing {
                     p.summary { "You have studied for " (format::count(due.studied, "minute")) ", and your answers are slowing down. A " (length) " break should bring you back." }
@@ -628,16 +623,11 @@ pub(crate) fn break_page(user: &User, msg: Option<&str>, deck: Option<i64>, due:
                         button.link type="submit" { "Keep going" }
                     }
                 }
-                // On desktops a break can run here: desk.js counts it down
-                // and sends the form above when it is over.
-                div.break-start.calm-only {
-                    button.btn.primary type="button" data-break=(due.length * 60) { "Start a " (length) " break" }
-                    button.btn type="submit" form="keep-going" { "Skip break" }
-                }
-                div.break-run.calm-only hidden {
+                // With JavaScript the break runs here: parts.js counts it
+                // down and sends the form above when it is over.
+                ainki-break seconds=(due.length * 60) {
                     p.break-clock role="timer" aria-live="off" { (due.length) ":00" }
                     div.break-line aria-hidden="true" { div.break-fill {} }
-                    @if due.slowing { p.summary { "Your answers were slowing down." } }
                     p.summary { "The next card comes back by itself when the time is up." }
                     p { button.btn type="submit" form="keep-going" { "End break now" } }
                 }
@@ -742,7 +732,7 @@ pub(crate) fn catch_up_note(user: &User, overdue: i64) -> Markup {
                     } @else {
                         "Catch-up mode: no new cards, at most " (user.catch_up_reviews) " reviews a day, the ones you most likely still know first. "
                         a href="/learn/backlog" { "Why" }
-                        button.link.calm-only type="submit" { "Turn off catch-up mode" }
+                        button.link type="submit" { "Turn off catch-up mode" }
                     }
                 }
             }

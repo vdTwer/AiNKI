@@ -66,47 +66,22 @@ pub(crate) async fn read_card_form(mp: Multipart) -> Result<CardFormData, AppErr
 }
 
 /// The "Add" section: one click to a new card, a new deck, or an import.
-/// Phones keep three tabs over the page's title. On desktop the two are one
-/// title, "Add card", whose last words open a menu of the three.
+/// Three tabs over the page's title.
 #[expect(clippy::needless_pass_by_value, reason = "maud renders by reference; callers build the markup inline")]
 pub(crate) fn add_head(current: &str, title: &str, notice: Markup) -> Markup {
-    const PLACES: [(&str, &str, &str, &str); 3] = [
-        ("card", "/cards/new", "Card", "card"),
-        ("deck", "/decks/new", "Deck", "deck"),
-        ("import", "/import", "Import", "from a file"),
-    ];
-    // Merging is a kind of new deck: no tab of its own on phones (it is
-    // linked from the new-deck page), a line in the desktop menu.
-    const MENU: [(&str, &str, &str); 4] = [
-        ("card", "/cards/new", "card"),
-        ("deck", "/decks/new", "deck"),
-        ("merge", "/decks/merge", "merged deck"),
-        ("import", "/import", "from a file"),
-    ];
-    let words = MENU.iter().find(|p| p.0 == current).map_or("card", |p| p.2);
+    const PLACES: [(&str, &str, &str); 3] =
+        [("card", "/cards/new", "Card"), ("deck", "/decks/new", "Deck"), ("import", "/import", "Import")];
+    // Merging is a kind of new deck: no tab of its own (it is linked from
+    // the new-deck page).
     let tab = if current == "merge" { "deck" } else { current };
     html! {
-        nav.tabs.simple-only aria-label="Add" {
-            @for (key, href, label, _) in PLACES {
+        nav.tabs aria-label="Add" {
+            @for (key, href, label) in PLACES {
                 a href=(href) aria-current=[(key == tab).then_some("page")] { (label) }
             }
         }
         (notice)
-        h1.simple-only { (title) }
-        div.add-head.calm-only {
-            h1 {
-                "Add "
-                button.add-pick type="button" aria-haspopup="true" aria-expanded="false" aria-controls="add-menu" {
-                    (words)
-                    svg.add-chev viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" { path d="M4 6l4 4 4-4" {} }
-                }
-            }
-            nav #add-menu .add-menu aria-label="Add" {
-                @for (key, href, words) in MENU {
-                    a href=(href) aria-current=[(key == current).then_some("page")] { "Add " (words) }
-                }
-            }
-        }
+        h1 { (title) }
     }
 }
 
@@ -137,8 +112,8 @@ pub(crate) fn face_field(
                 img alt="";
                 button.link type="button" data-clear-image { "Remove" }
             }
-            label.file.attach.icon-link {
-                (icon(ICON_IMAGE, PAGE_ICON))
+            label.file.attach {
+
                 span.attach-text { @if image.is_some() { "Replace image" } @else { "Add image" } }
                 " " span.muted.optional { "(optional)" }
                 input type="file" name=(format!("{side}_image")) accept="image/*";

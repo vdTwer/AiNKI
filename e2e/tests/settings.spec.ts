@@ -1,7 +1,7 @@
-// Settings and the study options they turn on: the look, four buttons,
+// Settings and the study options they turn on: text size, four buttons,
 // quiet hours, timed and typed cards, the sure check, catch-up mode,
 // presets, agent access and the password.
-import { test, expect, sql, isCalm, makeAccount, logIn, desktopOnly } from '../support/fixtures.ts';
+import { test, expect, sql, makeAccount, logIn } from '../support/fixtures.ts';
 import { flash, open, reveal, unfold } from '../support/ui.ts';
 
 /** Timers, typed answers and the sure check are only for cards seen before. */
@@ -12,34 +12,6 @@ function seen(cardId: number) {
     cardId,
   );
 }
-
-test.describe('desktop', () => {
-  desktopOnly();
-
-  test('the look can be switched to simple and back', async ({ page, account }) => {
-    await page.goto('/settings');
-    expect(await isCalm(page)).toBe(true);
-    const form = page.locator('form[action="/settings"]');
-    await form.locator('input[name=desktop_look][value=simple]').check({ force: true });
-    await form.getByRole('button', { name: 'Save' }).click();
-    await page.goto('/');
-    expect(await isCalm(page)).toBe(false);
-    expect(sql<{ desktop_look: string }>('SELECT desktop_look FROM users WHERE id = ?', account.id)[0].desktop_look).toBe('simple');
-
-    await page.goto('/settings');
-    const again = page.locator('form[action="/settings"]');
-    await again.locator('input[name=desktop_look][value=calm]').check({ force: true });
-    await again.getByRole('button', { name: 'Save' }).click();
-    await page.goto('/');
-    expect(await isCalm(page)).toBe(true);
-  });
-});
-
-test('phones always get the simple look', async ({ page, isMobile, viewport }) => {
-  test.skip(!isMobile && (viewport?.width ?? 0) >= 960, 'phones only');
-  await page.goto('/');
-  expect(await isCalm(page)).toBe(false);
-});
 
 test('a larger font scale makes the text larger', async ({ page, account }) => {
   await page.goto('/');
@@ -61,9 +33,9 @@ test('quiet hours: a rest screen, and Study anyway lifts it', async ({ page, see
   quietNow(account.id);
   await page.goto('/study');
   await expect(page.locator('main .study .face.front')).toHaveCount(0);
-  if (await isCalm(page)) {
-    // The desktop look: one dark screen over everything. The way past is
-    // a faint line that asks twice.
+  // One dark screen over everything. The way past is a faint line that
+  // asks twice.
+  {
     const wall = page.locator('.sleep-wall');
     await expect(wall).toBeVisible();
     await expect(wall.locator('h1')).toHaveText('Go to sleep.');
@@ -80,22 +52,15 @@ test('quiet hours: a rest screen, and Study anyway lifts it', async ({ page, see
     await yes.click();
     await expect(page.locator('.sleep-wall')).toHaveCount(0);
     await expect(page.locator('main .study .face.front')).toHaveText('q');
-    return;
   }
-  await expect(page.locator('main')).toContainText('Quiet hours');
-  await page.getByRole('button', { name: 'Study anyway' }).click();
-  await expect(page.locator('main .study .face.front')).toHaveText('q');
 });
 
-test.describe('desktop', () => {
-  desktopOnly();
-  // Settings sit under the wall too; the way past is "study anyway".
-  test('quiet hours also cover Settings', async ({ page, account }) => {
-    quietNow(account.id);
-    await page.goto('/settings');
-    await expect(page.locator('.sleep-wall')).toBeVisible();
-    expect(await page.locator('body > main').evaluate((m) => (m as HTMLElement).inert)).toBe(true);
-  });
+// Settings sit under the wall too; the way past is "study anyway".
+test('quiet hours also cover Settings', async ({ page, account }) => {
+  quietNow(account.id);
+  await page.goto('/settings');
+  await expect(page.locator('.sleep-wall')).toBeVisible();
+  expect(await page.locator('body > main').evaluate((m) => (m as HTMLElement).inert)).toBe(true);
 });
 
 test('new cards are never timed', async ({ page, seed }) => {
@@ -173,9 +138,7 @@ test('catch-up mode holds back new cards', async ({ page, seed, account }) => {
   // Switches are labels; the box itself is drawn by CSS.
   await label.click();
   await expect(form.locator('input[name=catch_up]')).toBeChecked();
-  // The desktop look saves by itself ("Saved"); the simple look has Save.
-  const save = form.getByRole('button', { name: 'Save' });
-  if (await save.isVisible()) await save.click();
+  await form.getByRole('button', { name: 'Save' }).click();
   await expect.poll(() => sql<{ catch_up: number }>('SELECT catch_up FROM users WHERE id = ?', account.id)[0].catch_up).toBe(1);
   await page.goto('/study');
   await expect(page.locator('main .study-meta .count')).toHaveText('1 of 1');
@@ -285,9 +248,7 @@ test('smart breaks: chosen in Settings, suggested when the work stretch is up', 
   const select = form.locator('select[name=session_minutes]');
   await reveal(page, select, /Suggest a break/);
   await select.selectOption({ label: 'When I need one' });
-  // The desktop look saves by itself ("Saved"); the simple look has Save.
-  const save = form.getByRole('button', { name: 'Save' });
-  if (await save.isVisible()) await save.click();
+  await form.getByRole('button', { name: 'Save' }).click();
   await expect.poll(() => sql<{ m: number }>('SELECT session_minutes AS m FROM users WHERE id = ?', account.id)[0].m).toBe(-1);
 
   // 160 answers, one every 12 s and ending now, each 9 s on the front and
@@ -304,13 +265,9 @@ test('smart breaks: chosen in Settings, suggested when the work stretch is up', 
   const main = page.locator('main');
   await expect(main.locator('h1')).toHaveText('Time for a break');
   await expect(main).toContainText('You have studied for 29 minutes since your last break. A 5-minute break keeps you fresh for the next stretch.');
-  if (await isCalm(page)) {
-    // The desktop starts the break by itself.
-    await expect(main.locator('.break-clock')).toHaveText(/^[45]:\d\d$/);
-    await main.getByRole('button', { name: 'End break now' }).click();
-  } else {
-    await main.getByRole('button', { name: 'Keep going' }).click();
-  }
+  // The break starts by itself.
+  await expect(main.locator('.break-clock')).toHaveText(/^[45]:\d\d$/);
+  await main.getByRole('button', { name: 'End break now' }).click();
   await expect(main.locator('.study .face.front')).toHaveText('q');
   // Waved off right away: the next stretches get a little longer.
   expect(sql<{ w: number }>('SELECT break_work_min AS w FROM users WHERE id = ?', account.id)[0].w).toBeCloseTo(27.5);

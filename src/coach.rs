@@ -267,13 +267,17 @@ impl App {
     async fn answer_seconds(&self, card_ids: &[i64]) -> Result<HashMap<i64, f64>> {
         // One JSON array: a heavy user has thousands of such cards.
         let Json(rows): Json<Vec<(i64, f64)>> = sqlx::query_scalar(
-            "SELECT json_group_array(json_array(card_id, ms)) FROM (SELECT card_id, AVG(duration_ms) AS ms FROM (
-                SELECT card_id, duration_ms,
-                    ROW_NUMBER() OVER (PARTITION BY card_id ORDER BY reviewed_at DESC, id DESC) AS n
-                FROM review_log
-                WHERE card_id IN (SELECT value FROM json_each(?))
-                  AND rating > 0 AND duration_ms > 0 AND source != 'import')
-             WHERE n <= 5 GROUP BY card_id HAVING COUNT(*) >= 3)",
+            // Each card's last five answers straight from the (card_id,
+            // reviewed_at) index: a few rows per card instead of sorting
+            // every answer of every card.
+            "SELECT json_group_array(json_array(id, ms)) FROM (
+                SELECT c.value AS id, AVG(r.duration_ms) AS ms
+                FROM json_each(?) c
+                JOIN review_log r ON r.id IN (
+                    SELECT id FROM review_log
+                    WHERE card_id = c.value AND rating > 0 AND duration_ms > 0 AND source != 'import'
+                    ORDER BY reviewed_at DESC, id DESC LIMIT 5)
+                GROUP BY c.value HAVING COUNT(*) >= 3)",
         )
         .bind(id_list(card_ids))
         .fetch_one(&self.db)
@@ -396,7 +400,6 @@ impl App {
                 found.insert(card.id, (Some(card), flags));
             }
         }
-
         let fronts = self.fronts(access).await?;
         for (id, flag) in duplicate_flags(&fronts, &in_scope) {
             found.entry(id).or_insert((None, vec![])).1.push((flag, 0));

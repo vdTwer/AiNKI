@@ -56,8 +56,6 @@ pub struct User {
     pub fsrs_params: sqlx::types::Json<Vec<f32>>,
     pub fsrs_params_updated_at: Option<i64>,
     pub optimize_include_agent: bool,
-    /// 'calm' or 'simple'; only matters on desktop computers.
-    pub desktop_look: String,
     pub created_at: i64,
     /// Re-optimize FSRS about once a month (see `tuning`).
     pub auto_optimize: bool,

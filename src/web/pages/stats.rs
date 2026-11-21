@@ -1,4 +1,4 @@
-//! The Stats page and its desktop charts.
+//! The Stats page and its charts.
 
 use crate::service::Stats;
 #[allow(
@@ -29,22 +29,38 @@ pub(crate) struct StatsPage {
 
 impl StatsPage {
     async fn load(app: &App, access: &Access, deck: Option<i64>) -> Result<Self, AppError> {
-        let all = deck.is_none();
-        Ok(Self {
-            deck: match deck {
-                Some(id) => Some(app.deck(access, id).await?),
-                None => None,
-            },
-            s: app.stats(access, deck).await?,
-            cal: app.calibration(access, deck).await?,
-            sure: app.confidence(access, deck).await?,
-            week: if all { Some(app.week(access).await?) } else { None },
-            retention: (app.deck_retention(access).await?.into_iter())
-                .filter(|d| d.reviews > 0 && deck.is_none_or(|id| id == d.deck_id))
-                .collect(),
-            history: app.history(access, deck).await?,
-            notes: if all { app.advice(access).await? } else { vec![] },
-        })
+        let the_deck = async {
+            match deck {
+                Some(id) => app.deck(access, id).await.map(Some),
+                None => Ok(None),
+            }
+        };
+        let (the_deck, s, cal, sure, retention, history) = tokio::try_join!(
+            the_deck,
+            app.stats(access, deck),
+            app.calibration(access, deck),
+            app.confidence(access, deck),
+            app.deck_retention(access),
+            app.history(access, deck),
+        )?;
+        let retention =
+            retention.into_iter().filter(|d| d.reviews > 0 && deck.is_none_or(|id| id == d.deck_id)).collect();
+        // The week and the coach speak about everything: all decks only.
+        let (week, notes) = if deck.is_none() {
+            let (decks, flagged, overdue, reads) = tokio::try_join!(
+                app.deck_summaries(access),
+                app.attention(access, None),
+                app.overdue(access),
+                app.coach_reads(access),
+            )?;
+            let attention = num::usize_i64(flagged.len());
+            let week = app.week_with(access, attention).await?;
+            let known = advice::Known { decks: &decks, stats: &s, attention: &flagged, overdue };
+            (Some(week), advice::advice_with(access, &known, reads))
+        } else {
+            (None, vec![])
+        };
+        Ok(Self { deck: the_deck, s, cal, sure, week, retention, history, notes })
     }
 
     fn study_url(&self) -> String {
@@ -86,16 +102,13 @@ pub(crate) async fn stats_page(
     let body = html! {
         (flash(msg.as_deref()))
         @if let Some(deck) = &d.deck { (parent(&format!("/decks/{}", deck.id), &deck_plain(&deck.name))) }
-        div.stats-title {
-            h1 { "Stats" }
-            label.numbers-toggle.calm-only { "I love numbers" input type="checkbox" role="switch"; }
-        }
-        div.desk-stats.calm-only {
+        h1 { "Stats" }
+        div.desk-stats {
             (desk_big3(&d)) (desk_coach(&d)) (desk_charts(u, &d)) (desk_decks(&d)) (desk_model(&d))
         }
-        // On desktops these are the exact numbers, under the charts, for
-        // those who switch them on.
-        div.numbers {
+        // The exact numbers, folded under the charts.
+        details.numbers {
+            summary { "All the numbers" }
             (numbers_today(&d)) (numbers_retention(&d)) (numbers_cards(&d)) (numbers_model(&d))
             (numbers_sure(&d)) (numbers_forecast(u, &d))
         }
@@ -243,24 +256,23 @@ pub(crate) const WHY_WEEK: &str = "Of the learned cards that came due in the las
 pub(crate) const WHY_STREAK: &str =
     "Days in a row with at least one review. Today counts once you study, and doesn't break the streak before then.";
 
-/// The desktop stats open with three numbers to act on. desk.js draws the
-/// charts below them from the data attributes.
+/// Stats open with three numbers to act on; the charts follow.
 fn desk_big3(d: &StatsPage) -> Markup {
     let (s, study, this_week, aim, worst, last7) = (&d.s, d.study_url(), d.this_week(), d.aim(), d.worst(), d.last7());
     let minutes = s.seconds_per_review.map(|sec| sec * num::i64_f64(s.due_now) / 60.0);
     html! {
     section.big3 {
         div {
-            p.kicker data-why=(WHY_DUE) { "Due today" }
-            p.n.due data-why=(WHY_DUE) { (format::number(s.due_now)) }
+            p.kicker title=(WHY_DUE) { "Due today" }
+            p.n.due title=(WHY_DUE) { (format::number(s.due_now)) }
             p.small.muted {
                 @if let Some(m) = minutes.filter(|_| s.due_now > 0) { (capitalize(&format::minutes(m))) "." } @else if s.due_now == 0 { "Nothing waiting." }
             }
             @if s.due_now > 0 { a.small href=(study) { "Start studying" } }
         }
         div {
-            p.kicker data-why=(WHY_WEEK) { "This week" }
-            p.n data-why=(WHY_WEEK) { (format::percent(this_week)) }
+            p.kicker title=(WHY_WEEK) { "This week" }
+            p.n title=(WHY_WEEK) { (format::percent(this_week)) }
             p.small.muted {
                 @if this_week.is_none() { "No reviews of learned cards this week. " }
                 @if let Some(a) = aim { "You aim for " (format::percent(Some(a))) "." }
@@ -269,8 +281,8 @@ fn desk_big3(d: &StatsPage) -> Markup {
             @if let Some(w) = worst { a.small href=(format!("/decks/{}", w.deck_id)) { "Look at that deck" } }
         }
         div {
-            p.kicker data-why=(WHY_STREAK) { "Days in a row" }
-            p.n.it data-why=(WHY_STREAK) { (s.streak_days) }
+            p.kicker title=(WHY_STREAK) { "Days in a row" }
+            p.n.it title=(WHY_STREAK) { (s.streak_days) }
             p.small.muted { "You studied on " (last7) " of the last 7 days." }
         }
     }
@@ -296,33 +308,29 @@ fn desk_coach(d: &StatsPage) -> Markup {
 
 fn desk_charts(user: &User, d: &StatsPage) -> Markup {
     let (s, last7) = (&d.s, d.last7());
-    let weeks: Vec<String> = d.history.weeks.iter().map(|(t, p)| format!("{t},{p}")).collect();
-    let days: Vec<String> = d.history.days.iter().map(|(_, n)| n.to_string()).collect();
-    let fc: Vec<String> = s.forecast.iter().map(|(_, n)| n.to_string()).collect();
-    let fc_labels: Vec<String> = s.forecast.iter().map(|(day, _)| forecast_day(user, day)).collect();
-    let first_day = d.history.days.first().map_or("", |(day, _)| day.as_str());
+    let forecast: Vec<(String, i64)> = s.forecast.iter().map(|(day, n)| (forecast_day(user, day), *n)).collect();
     let aim = d.aim();
     html! {
     section.chart-sec {
         div.chart-main {
-            h2 data-why="Each point is one week: of the learned cards that came due, the share you remembered. The dashed line is your aim. Hover a week for its numbers." { "Are you remembering what you aim for?" }
+            h2 title="Each point is one week: of the learned cards that came due, the share you remembered. The dashed line is your aim. Hover a week for its numbers." { "Are you remembering what you aim for?" }
             p.small.muted { "Share of due cards you remembered, week by week." }
-            div.chart data-chart="retention" data-weeks=(weeks.join(";")) data-aim=[aim] data-first=(first_day) data-sample=(insight::MIN_SAMPLE) role="img" aria-label="Recall by week, last twelve weeks" {}
+            (charts::retention(&d.history.weeks, aim))
         }
         aside.chart-side {
-            p.kicker data-why="Each square is a day and each column a week, oldest on the left; today is the last square. The stronger the color, the more you reviewed." { "Study days" }
-            div.chart data-chart="days" data-days=(days.join(",")) data-first=(first_day) role="img" aria-label="Reviews per day, last twelve weeks" {}
+            p.kicker title="Each square is a day and each column a week, oldest on the left; today is the last square. The stronger the color, the more you reviewed." { "Study days" }
+            (charts::days(&d.history.days))
             p.small.muted { "Stronger color means more reviews. " (last7) " of the last 7 days." }
         }
     }
     section.chart-sec {
         div.chart-main {
-            h2 data-why="How many learned cards come due on each day, as they are scheduled now. Every review you do schedules its card again, so later days fill up as you study." { "Next two weeks" }
+            h2 title="How many learned cards come due on each day, as they are scheduled now. Every review you do schedules its card again, so later days fill up as you study." { "Next two weeks" }
             p.small.muted { "Cards due each day." }
-            div.chart data-chart="forecast" data-values=(fc.join(",")) data-labels=(fc_labels.join(",")) role="img" aria-label="Cards due on each of the next fourteen days" {}
+            (charts::bars(&forecast, "Cards due on each of the next fourteen days"))
         }
         aside.chart-side {
-            p.kicker data-why="New cards were never studied. Learning cards are in their first short steps. Review cards are learned, and FSRS spaces them out. Suspended cards are paused and never shown." { "Cards" }
+            p.kicker title="New cards were never studied. Learning cards are in their first short steps. Review cards are learned, and FSRS spaces them out. Suspended cards are paused and never shown." { "Cards" }
             p.serif-note { (count(s.total, "card")) ". " (format::number(s.review)) " in review, " (format::number(s.new)) " still new." }
             p.small.muted { (format::number(s.learning)) " learning, " (format::number(s.suspended)) " suspended." }
         }
@@ -332,32 +340,25 @@ fn desk_charts(user: &User, d: &StatsPage) -> Markup {
 
 fn desk_decks(d: &StatsPage) -> Markup {
     let worst = d.worst();
-    let decks: Vec<String> = (d.retention.iter())
-        .filter_map(|r| {
-            let name = deck_plain(&r.deck_name).replace(['|', ';'], " ");
-            r.actual.map(|a| format!("{name}|{}|{a}|{}|{}", r.target, r.deck_id, r.reviews))
-        })
-        .collect();
+    let rows: Vec<_> = d.retention.iter().filter(|r| r.actual.is_some()).collect();
     html! {
-    @if !decks.is_empty() {
+    @if !rows.is_empty() {
         section.chart-sec {
-            div.chart-main {
-                h2 data-why="One row per deck: the tick is its aim, the dot what you remembered in the last 30 days, the line between them the gap. Hover a deck for its numbers." { "By deck" }
-                p.legend.small {
-                    span.aim data-why="What the deck's preset aims for: the share of due cards you should remember." { "aim" }
-                    span.ok data-why="What you did remember of the deck's learned cards in the last 30 days." { "remembered" }
-                    span.low data-why="An open ring: more than 2 points below the aim." { "below aim" }
+            h2 title="What each deck aims for, and what you remembered of its learned cards in the last 30 days." { "By deck" }
+            table.by-deck {
+                thead { tr { th { "Deck" } th.num { "Aim" } th.num { "Remembered" } } }
+                tbody {
+                    @for r in &rows {
+                        tr.short[r.short()] {
+                            td { a href=(format!("/decks/{}", r.deck_id)) { (deck_plain(&r.deck_name)) } }
+                            td.num { (format::percent(Some(r.target))) }
+                            td.num title=(format!("{} reviews", r.reviews)) { (format::percent(r.actual)) }
+                        }
+                    }
                 }
-                div.chart data-chart="decks" data-decks=(decks.join(";")) data-sample=(insight::MIN_SAMPLE) role="img" aria-label="Recall by deck against its aim, last 30 days" {}
             }
-            aside.chart-side {
-                p.kicker { "What to do" }
-                @if let Some(w) = worst {
-                    p.small.warn-note { (deck_plain(&w.deck_name)) " is " (num::f64_i64(((w.target - w.actual.unwrap_or(w.target)) * 100.0).round())) " points below its aim." }
-                    a.small href="/attention" { "Open Needs a look" }
-                } @else {
-                    p.small { "Every deck is close to its aim." }
-                }
+            @if let Some(w) = worst {
+                p.small { (deck_plain(&w.deck_name)) " is " (num::f64_i64(((w.target - w.actual.unwrap_or(w.target)) * 100.0).round())) " points below its aim. " a href="/attention" { "Open Needs a look" } }
             }
         }
     }
@@ -365,15 +366,14 @@ fn desk_decks(d: &StatsPage) -> Markup {
 }
 
 fn desk_model(d: &StatsPage) -> Markup {
-    let bins: Vec<String> =
-        d.cal.bins.iter().map(|b| format!("{},{},{},{},{}", b.predicted, b.actual, b.reviews, b.from, b.to)).collect();
+    let bins: Vec<(f64, f64, i64)> = d.cal.bins.iter().map(|b| (b.predicted, b.actual, b.reviews)).collect();
     html! {
     @if d.cal.reviews >= 50 {
         section.chart-sec {
             div.chart-main.calib {
-                div.chart data-chart="calibration" data-bins=(bins.join(";")) role="img" aria-label="Expected against remembered, last year" {}
+                (charts::calibration(&bins))
                 div {
-                    h2 data-why="Before every review, FSRS predicts how likely you are to remember. Each dot groups a year of reviews by that prediction and shows how often you did remember. On the dashed line, FSRS knows you well." { "How well FSRS knows you" }
+                    h2 title="Before every review, FSRS predicts how likely you are to remember. Each dot groups a year of reviews by that prediction and shows how often you did remember. On the dashed line, FSRS knows you well." { "How well FSRS knows you" }
                     p.serif-note {
                         "FSRS expected you to remember " (format::percent(Some(d.cal.predicted))) " of your reviews last year. You remembered " (format::percent(Some(d.cal.actual))) "."
                         @if (d.cal.predicted - d.cal.actual).abs() <= 0.03 { " That's a close fit." }
@@ -383,12 +383,12 @@ fn desk_model(d: &StatsPage) -> Markup {
             }
             @if let (Some(a), Some(b)) = (d.sure.sure_pct(), d.sure.unsure_pct()) {
                 aside.chart-side {
-                    p.kicker data-why="Before seeing the answer, you said whether you knew it. These bars show how often you then remembered, over the last year." { "When you felt sure" }
+                    p.kicker title="Before seeing the answer, you said whether you knew it. These bars show how often you then remembered, over the last year." { "When you felt sure" }
                     div.sure-bars {
-                        div data-tip=(format!("{a:.0}% remembered")) data-tip-label="when you felt sure" data-why=(format!("You remembered {} of the {} answers where you felt sure.", d.sure.sure_recalled, d.sure.sure)) {
+                        div title=(format!("You remembered {} of the {} answers where you felt sure.", d.sure.sure_recalled, d.sure.sure)) {
                             span { "Sure" } span.track { span.fill style=(format!("width:{a:.0}%")) {} } span.num { (format!("{a:.0}%")) }
                         }
-                        div data-tip=(format!("{b:.0}% remembered")) data-tip-label="when you weren't sure" data-why=(format!("You remembered {} of the {} answers where you weren't sure.", d.sure.unsure_recalled, d.sure.unsure)) {
+                        div title=(format!("You remembered {} of the {} answers where you weren't sure.", d.sure.unsure_recalled, d.sure.unsure)) {
                             span { "Not sure" } span.track { span.fill.grey style=(format!("width:{b:.0}%")) {} } span.num { (format!("{b:.0}%")) }
                         }
                     }

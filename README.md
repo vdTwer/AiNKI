@@ -29,13 +29,12 @@ Ready to try it? Jump to the [installation instructions](#installation).
 
 - A rule-based coach flags cards that keep slipping, ask too much at once or look like another card, and offers to split them. On Home and Stats it gives one piece of advice at a time. AiNKI calls no AI model itself; you decide.
 - 18 short lessons explain FSRS, what memory research says, with how strong the evidence is, and how to write good cards. Each can be added as a deck.
-- Stats show the week, retention per deck against its aim, how well FSRS predicts your memory and how often you were right when you felt sure. On a desktop they are charts with a hover for every value, and an "I love numbers" switch shows the exact tables.
+- Stats show the week, retention per deck against its aim, how well FSRS predicts your memory and how often you were right when you felt sure. They are charts drawn on the server, with a hover for every value, and the exact tables fold out below them.
 
-### Two looks
+### One plain look
 
-- The simple look serves phones, e-ink readers and browsers without JavaScript: grayscale, high contrast, no animations, large tap targets. Images are dithered to 16 gray levels on upload.
-- On a desktop, AiNKI switches to a watercolor look: hard white pages, EB Garamond titles, soft washes of Wild Orchid and Terra Cotta, and a dark mode. A single dot in the corner opens into the places of the app, and a fuzzy quick find (any letter, `/` or Ctrl+K) reaches every deck, card and lesson. Home shows the cards due over the next 7 days, and `?` lists the keyboard shortcuts.
-- Anyone can choose the simple look in settings.
+- One narrow column, the system font and one accent color for what you can press, on phones and desktops alike. Dark mode follows the system, and e-ink readers get black on white with nothing moving. Images are dithered to 16 gray levels on upload.
+- Every page works without JavaScript. With it, studying never reloads, a fuzzy quick find (any letter, `/` or Ctrl+K) reaches every deck, card and lesson, and `?` lists the keyboard shortcuts. Home shows the cards due over the next 7 days.
 
 ### Agents
 
@@ -56,7 +55,7 @@ Ready to try it? Jump to the [installation instructions](#installation).
 - OAuth uses PKCE (S256 only), exact redirect URIs, 1-hour access tokens and rotating refresh tokens; reusing an old refresh token revokes the connection. The one outgoing request, fetching OAuth client metadata, goes only to public HTTPS addresses, pinned against DNS rebinding.
 - Uploads are size-limited before decoding and re-encoded. Anki packages are read with limits against zip and zstd bombs, and opened read-only with SQLite's `trusted_schema` off.
 - The container runs as an unprivileged user with a read-only root filesystem, all capabilities dropped and `no-new-privileges`. `cargo audit` is clean apart from one advisory for code that is never compiled (see `.cargo/audit.toml`).
-- About 160 Rust tests and 88 Playwright tests, run in Chromium and Firefox on desktop, simple look and phone. A separate job seeds data with the last v1 release and checks that it survives the upgrade.
+- About 160 Rust tests and 88 Playwright tests, run in Chromium and Firefox on desktop and phone. A separate job seeds data with the last v1 release and checks that it survives the upgrade.
 
 ## Tech stack
 
