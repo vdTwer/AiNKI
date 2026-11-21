@@ -449,6 +449,52 @@ impl DeckSummary {
     }
 }
 
+/// Stores a card's new schedule after an answer, unless another answer got there
+/// first (its `reps` moved on): then it's a conflict.
+pub(crate) async fn save_answered_card(
+    tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
+    access: &Access,
+    card: &Card,
+    c: &CardSched,
+    now: i64,
+) -> Result<()> {
+    let updated = sqlx::query(
+        "UPDATE cards SET state = ?, step = ?, stability = ?, difficulty = ?, due = ?,
+            last_review = ?, reps = ?, lapses = ?, updated_at = ?
+         WHERE id = ? AND user_id = ? AND reps = ?",
+    )
+    .bind(c.state)
+    .bind(c.step)
+    .bind(c.stability.map(f64::from))
+    .bind(c.difficulty.map(f64::from))
+    .bind(c.due)
+    .bind(c.last_review)
+    .bind(c.reps)
+    .bind(c.lapses)
+    .bind(now)
+    .bind(card.id)
+    .bind(access.user_id())
+    .bind(card.reps)
+    .execute(&mut **tx)
+    .await?;
+    if updated.rows_affected() == 0 {
+        return Err(AppError::Conflict("this card was already answered".into()));
+    }
+    Ok(())
+}
+
+/// Whether the next card should be a new one: new cards and reviews are
+/// interleaved so both progress at the same rate through the day.
+fn prefer_new(summaries: &[DeckSummary]) -> bool {
+    let (new_done, new_left, rev_done, rev_left) = summaries.iter().fold((0, 0, 0, 0), |a, s| {
+        (a.0 + s.new_done_today, a.1 + s.new_today, a.2 + s.review_done_today, a.3 + s.review_due)
+    });
+    new_left > 0
+        && (rev_left == 0
+            || (num::i64_f64(new_done) / num::i64_f64(new_done + new_left))
+                <= (num::i64_f64(rev_done) / num::i64_f64((rev_done + rev_left).max(1))))
+}
+
 impl App {
     // ----- presets -------------------------------------------------------
 
@@ -1246,14 +1292,7 @@ impl App {
         let review = pick(&review_ids, "state = 2 AND due <= ?", &review_order).await?;
         let new = pick(&new_ids, "state = 0 AND ? IS NOT NULL", "position, id").await?;
 
-        // Interleave new cards with reviews so both progress at the same rate.
-        let (new_done, new_left, rev_done, rev_left) = summaries.iter().fold((0, 0, 0, 0), |a, s| {
-            (a.0 + s.new_done_today, a.1 + s.new_today, a.2 + s.review_done_today, a.3 + s.review_due)
-        });
-        let prefer_new = new_left > 0
-            && (rev_left == 0
-                || (num::i64_f64(new_done) / num::i64_f64(new_done + new_left))
-                    <= (num::i64_f64(rev_done) / num::i64_f64((rev_done + rev_left).max(1))));
+        let prefer_new = prefer_new(&summaries);
 
         let chosen = match (learning, review, new) {
             (Some(c), _, _) => Some(c),
@@ -1321,28 +1360,7 @@ impl App {
         let c = &out.card;
 
         let mut tx = self.db.begin_with("BEGIN IMMEDIATE").await?;
-        let updated = sqlx::query(
-            "UPDATE cards SET state = ?, step = ?, stability = ?, difficulty = ?, due = ?,
-                last_review = ?, reps = ?, lapses = ?, updated_at = ?
-             WHERE id = ? AND user_id = ? AND reps = ?",
-        )
-        .bind(c.state as i64)
-        .bind(c.step)
-        .bind(c.stability.map(f64::from))
-        .bind(c.difficulty.map(f64::from))
-        .bind(c.due)
-        .bind(c.last_review)
-        .bind(c.reps)
-        .bind(c.lapses)
-        .bind(clock.now)
-        .bind(card.id)
-        .bind(access.user_id())
-        .bind(card.reps)
-        .execute(&mut *tx)
-        .await?;
-        if updated.rows_affected() == 0 {
-            return Err(AppError::Conflict("this card was already answered".into()));
-        }
+        save_answered_card(&mut tx, access, &card, c, clock.now).await?;
         sqlx::query(
             "INSERT INTO review_log (user_id, card_id, deck_id, rating, reviewed_at, state_before,
                 elapsed_days, scheduled_secs, stability, difficulty, duration_ms, source, prev_card)

@@ -20,7 +20,7 @@ use crate::{
     error::{AppError, Result},
     format, markdown, num,
     scheduler::{self, CardSched, CardState, Clock, Rating},
-    service::{AnswerResult, Card},
+    service::{AnswerResult, Card, save_answered_card},
 };
 
 /// Raised whenever splitting changes, so stored items are matched to the
@@ -667,34 +667,6 @@ async fn insert_item(tx: &mut Tx<'_>, card_id: i64, position: i64, text: &str, s
     .bind(s.lapses)
     .execute(&mut **tx)
     .await?;
-    Ok(())
-}
-
-/// Stores a multicard's new schedule, unless another answer got there
-/// first (its `reps` moved on): then it's a conflict.
-async fn save_answered_card(tx: &mut Tx<'_>, access: &Access, card: &Card, c: &CardSched, now: i64) -> Result<()> {
-    let updated = sqlx::query(
-        "UPDATE cards SET state = ?, step = ?, stability = ?, difficulty = ?, due = ?,
-            last_review = ?, reps = ?, lapses = ?, updated_at = ?
-         WHERE id = ? AND user_id = ? AND reps = ?",
-    )
-    .bind(c.state)
-    .bind(c.step)
-    .bind(c.stability.map(f64::from))
-    .bind(c.difficulty.map(f64::from))
-    .bind(c.due)
-    .bind(c.last_review)
-    .bind(c.reps)
-    .bind(c.lapses)
-    .bind(now)
-    .bind(card.id)
-    .bind(access.user_id())
-    .bind(card.reps)
-    .execute(&mut **tx)
-    .await?;
-    if updated.rows_affected() == 0 {
-        return Err(AppError::Conflict("this card was already answered".into()));
-    }
     Ok(())
 }
 

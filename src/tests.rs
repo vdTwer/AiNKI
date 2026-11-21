@@ -1,5 +1,6 @@
 //! Tests against an in-memory database: the service first, then the
 //! website and MCP over HTTP (the `http` module).
+#![allow(clippy::too_many_lines, reason = "a scenario test reads best as one story, top to bottom")]
 
 use std::{str::FromStr, sync::Arc};
 
