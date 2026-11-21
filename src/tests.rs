@@ -2138,3 +2138,16 @@ async fn damaged_steps_or_parameters_fail_instead_of_resetting() {
         .unwrap();
     assert!(matches!(app.answer_card(&a, card.id, Rating::Good, None, None).await, Err(AppError::Internal(_))));
 }
+
+#[tokio::test]
+async fn an_unknown_time_zone_fails_to_load() {
+    let app = app().await;
+    let a = user(&app, "kolja").await;
+    sqlx::query("UPDATE users SET timezone = 'Mars/Olympus' WHERE id = ?")
+        .bind(a.user_id())
+        .execute(&app.db)
+        .await
+        .unwrap();
+    // Before, it quietly became UTC and every day boundary moved.
+    assert!(app.find_user(&a.user.handle()).await.is_err());
+}

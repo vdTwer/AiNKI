@@ -14,6 +14,31 @@ use crate::{
 
 pub const SESSION_DAYS: i64 = 90;
 
+/// An IANA time zone such as `Europe/Berlin`, checked when the row loads:
+/// a name that no longer parses fails the query instead of becoming UTC.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Zone(pub chrono_tz::Tz);
+
+impl TryFrom<String> for Zone {
+    type Error = chrono_tz::ParseError;
+
+    fn try_from(name: String) -> std::result::Result<Self, Self::Error> {
+        name.parse().map(Self)
+    }
+}
+
+impl std::fmt::Display for Zone {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.0.name())
+    }
+}
+
+impl Serialize for Zone {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> std::result::Result<S::Ok, S::Error> {
+        s.serialize_str(self.0.name())
+    }
+}
+
 #[derive(Debug, Clone, sqlx::FromRow, Serialize)]
 #[expect(clippy::struct_excessive_bools, reason = "one column per account setting")]
 pub struct User {
@@ -22,7 +47,8 @@ pub struct User {
     pub discriminator: i64,
     #[serde(skip)]
     pub password_hash: String,
-    pub timezone: String,
+    #[sqlx(try_from = "String")]
+    pub timezone: Zone,
     pub rollover_hour: i64,
     pub four_buttons: bool,
     pub font_scale: i64,
@@ -73,8 +99,8 @@ impl User {
         self.fsrs_params.0.clone()
     }
 
-    pub fn tz(&self) -> chrono_tz::Tz {
-        self.timezone.parse().unwrap_or(chrono_tz::UTC)
+    pub const fn tz(&self) -> chrono_tz::Tz {
+        self.timezone.0
     }
 
     pub fn clock(&self) -> crate::scheduler::Clock {
