@@ -30,6 +30,12 @@ pub fn plural(n: i64, word: &str) -> String {
     if n == 1 { word.to_string() } else { format!("{word}s") }
 }
 
+/// The word that agrees with `n`: `agree(n, "needs", "need")`. For
+/// verbs and pronouns, which take no plain "s".
+pub const fn agree<'a>(n: i64, one: &'a str, many: &'a str) -> &'a str {
+    if n == 1 { one } else { many }
+}
+
 /// Shown where a number has no value yet.
 pub const NONE: &str = "—";
 
@@ -131,6 +137,8 @@ mod tests {
         assert_eq!(count(1, "card"), "1 card");
         assert_eq!(count(0, "card"), "0 cards");
         assert_eq!(count(20_000, "card"), "20,000 cards");
+        assert_eq!(agree(1, "is", "are"), "is");
+        assert_eq!(agree(0, "is", "are"), "are");
         assert_eq!(number(999), "999");
         assert_eq!(number(1_000), "1,000");
         assert_eq!(number(-1_234_567), "-1,234,567");

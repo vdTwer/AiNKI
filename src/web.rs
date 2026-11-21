@@ -1191,7 +1191,7 @@ async fn home(State(app): State<AppState>, user: WebUser, Flash(msg): Flash) -> 
             section.today aria-label="Today" {
                 p.date { @if user.0.catch_up { span.calm-only { "Catching up · " } } (format::long_date(&user.0.clock())) }
                 @if total_due > 0 {
-                    h1 { span.count { (total_due) (if total_due == 1 { " card" } else { " cards" }) } " to study today" }
+                    h1 { span.count { (total_due) " " (format::plural(total_due, "card")) } " to study today" }
                 } @else if !decks.is_empty() {
                     h1.all-done { span.simple-only { "All done for today" } span.calm-only { "All done." } }
                 } @else {
@@ -1212,12 +1212,12 @@ async fn home(State(app): State<AppState>, user: WebUser, Flash(msg): Flash) -> 
                         @let days = (overdue + user.0.catch_up_reviews - 1) / user.0.catch_up_reviews.max(1);
                         div.pace {
                             p.kicker { "At this pace" }
-                            p.pace-days { span.n { (days) } (if days == 1 { " day" } else { " days" }) " to catch up" }
+                            p.pace-days { span.n { (days) } " " (format::plural(days, "day")) " to catch up" }
                             p.small.muted { (format::number(overdue)) " overdue, " (format::number(user.0.catch_up_reviews)) " a day." }
                         }
                     }
                     @if attention > 0 && notes.first().is_none_or(|n| n.rule != advice::Rule::Leeches) {
-                        p.small { a href="/attention" { (count(attention, "card")) " " (if attention == 1 { "needs" } else { "need" }) " a look" } }
+                        p.small { a href="/attention" { (count(attention, "card")) " " (format::agree(attention, "needs", "need")) " a look" } }
                     }
                 }
             }
@@ -1229,7 +1229,7 @@ async fn home(State(app): State<AppState>, user: WebUser, Flash(msg): Flash) -> 
                         li.item {
                             div.grow {
                                 strong { (deck_title(&sh.deck_name)) } br;
-                                span.small { (sh.cards) (if sh.cards == 1 { " card" } else { " cards" }) " from " (sh.from) }
+                                span.small { (sh.cards) " " (format::plural(sh.cards, "card")) " from " (sh.from) }
                             }
                             form method="post" action=(format!("/shares/{}/accept", sh.id)) {
                                 button.btn type="submit" { "Accept" }
@@ -1294,7 +1294,7 @@ async fn home(State(app): State<AppState>, user: WebUser, Flash(msg): Flash) -> 
                 p.small.archived-link { a href="/decks/archived" { (count(num::usize_i64(archived.len()), "archived deck")) } }
             }
             @if attention > 0 {
-                p.small.attention-link { a href="/attention" { (count(attention, "card")) " " (if attention == 1 { "needs" } else { "need" }) " a look" } }
+                p.small.attention-link { a href="/attention" { (count(attention, "card")) " " (format::agree(attention, "needs", "need")) " a look" } }
             }
             p.actions.icon-links.home-actions {
                 (icon_btn("/cards/new", ICON_ADD, "Add card"))
@@ -2128,13 +2128,13 @@ fn break_page(user: &User, msg: Option<&str>, deck: Option<i64>, due: study::Bre
                 p.kicker.calm-only { "Break" }
                 h1 { "Time for a break" }
                 @if due.smart && due.slowing {
-                    p.summary { "You have studied for " (study::minutes_words(due.studied)) ", and your answers are slowing down. A " (length) " break should bring you back." }
+                    p.summary { "You have studied for " (format::count(due.studied, "minute")) ", and your answers are slowing down. A " (length) " break should bring you back." }
                 } @else if due.long {
-                    p.summary { "You have studied for " (study::minutes_words(due.studied)) " since your last break. Time for a longer one: " (study::minutes_words(due.length)) ". Get up and move about." }
+                    p.summary { "You have studied for " (format::count(due.studied, "minute")) " since your last break. Time for a longer one: " (format::count(due.length, "minute")) ". Get up and move about." }
                 } @else if due.smart {
-                    p.summary { "You have studied for " (study::minutes_words(due.studied)) " since your last break. A " (length) " break keeps you fresh for the next stretch." }
+                    p.summary { "You have studied for " (format::count(due.studied, "minute")) " since your last break. A " (length) " break keeps you fresh for the next stretch." }
                 } @else {
-                    p.summary { "You have studied for " (study::minutes_words(due.studied)) ". Stand up, look out of the window, then carry on if you like." }
+                    p.summary { "You have studied for " (format::count(due.studied, "minute")) ". Stand up, look out of the window, then carry on if you like." }
                 }
                 div.end-links {
                     a href="/" { "Stop here" }
@@ -2729,7 +2729,7 @@ async fn deck_page(
             div.deck-side {
             p.muted.small { "Preset: " a href=(format!("/presets/{}", d.preset_id)) { (summary.preset_name) } }
             @if attention > 0 {
-                p.small { a href=(format!("/attention?deck={id}")) { (count(attention, "card")) " " (if attention == 1 { "needs" } else { "need" }) " a look" } }
+                p.small { a href=(format!("/attention?deck={id}")) { (count(attention, "card")) " " (format::agree(attention, "needs", "need")) " a look" } }
             }
             }
             }
@@ -4255,12 +4255,12 @@ async fn settings_page(State(app): State<AppState>, user: WebUser, Flash(msg): F
                     label.line { "Suggest a break"
                         span.select { select name="session_minutes" {
                             @for m in study::SESSION_LENGTHS {
-                                option value=(m) selected[*m == u.session_minutes] { (if *m == 0 { "Never".to_string() } else { format!("After {}", study::minutes_words(*m)) }) }
+                                option value=(m) selected[*m == u.session_minutes] { (if *m == 0 { "Never".to_string() } else { format!("After {}", format::count(*m, "minute")) }) }
                             }
                             // Smart breaks: when the answers show tiredness (breaks.rs).
                             option value=(study::SMART_BREAKS) selected[u.session_minutes == study::SMART_BREAKS] { "When I need one" }
                             @if !study::SESSION_LENGTHS.contains(&u.session_minutes) && u.session_minutes != study::SMART_BREAKS {
-                                option value=(u.session_minutes) selected { "After " (study::minutes_words(u.session_minutes)) }
+                                option value=(u.session_minutes) selected { "After " (format::count(u.session_minutes, "minute")) }
                             }
                         } }
                     }

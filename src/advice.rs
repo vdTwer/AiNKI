@@ -19,6 +19,7 @@ use crate::{
     auth::Access,
     coach::{Attention, Kind},
     error::Result,
+    format::{agree, count},
     num,
     scheduler::CardState,
     service::{DeckSummary, Stats},
@@ -299,16 +300,12 @@ fn pct(v: f64) -> String {
     format!("{:.0}%", v * 100.0)
 }
 
-fn plural(n: i64, one: &str, many: &str) -> String {
-    format!("{} {}", crate::format::number(n), if n == 1 { one } else { many })
-}
-
 fn cards(n: i64) -> String {
-    plural(n, "card", "cards")
+    count(n, "card")
 }
 
 fn days(n: i64) -> String {
-    plural(n, "day", "days")
+    count(n, "day")
 }
 
 /// Everything the coach would say, most important first.
@@ -447,7 +444,7 @@ fn leeches(s: &Signals) -> Option<Advice> {
         format!(
             "{} {} forgotten again and again. Fixing them saves more time than reviewing them.",
             cards(s.leeches),
-            if s.leeches == 1 { "is" } else { "are" }
+            agree(s.leeches, "is", "are")
         )
     } else {
         format!("{} ask a lot at once or look like another card. A quick fix saves reviews later.", cards(all))
@@ -632,7 +629,7 @@ fn back_after_gap(s: &Signals) -> Option<Advice> {
             format!(
                 "Welcome back. {} waited for you, about {}. The ones you most likely still know come first.",
                 cards(s.due_today),
-                plural(s.minutes_due.max(1), "minute", "minutes")
+                count(s.minutes_due.max(1), "minute")
             ),
             None,
         )
@@ -771,7 +768,7 @@ fn forgotten_deck(s: &Signals) -> Option<Advice> {
     let weeks = d.days_since_review.unwrap_or(14) / 7;
     Some(note(
         Rule::ForgottenDeck,
-        format!("{} waited {}; {} are due.", d.name, plural(weeks, "week", "weeks"), crate::format::number(d.due)),
+        format!("{} waited {}; {} are due.", d.name, count(weeks, "week"), crate::format::number(d.due)),
         link(format!("/decks/{}", d.id), "Open it"),
     ))
 }

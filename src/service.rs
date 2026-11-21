@@ -519,8 +519,8 @@ impl App {
             return Err(AppError::bad(format!(
                 "{} still {} this preset; switch {} to another preset first",
                 crate::format::count(used, "deck"),
-                if used == 1 { "uses" } else { "use" },
-                if used == 1 { "it" } else { "them" }
+                crate::format::agree(used, "uses", "use"),
+                crate::format::agree(used, "it", "them")
             )));
         }
         sqlx::query("DELETE FROM presets WHERE id = ? AND user_id = ?")

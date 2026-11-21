@@ -85,10 +85,6 @@ pub fn quiet_until(user: &User, at: i64) -> Option<i64> {
     }
 }
 
-/// How a minute count reads in a break hint.
-pub fn minutes_words(m: i64) -> String {
-    if m == 1 { "1 minute".into() } else { format!("{m} minutes") }
-}
 
 /// How long an answer took, as the browser measured it. Anything out of
 /// range is dropped rather than stored.
