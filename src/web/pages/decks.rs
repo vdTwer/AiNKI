@@ -481,57 +481,70 @@ pub(crate) async fn deck_edit_view(
                 (deck_sheet(Some(shown), &presets, Some(shown.preset_id)))
                 div.form-foot.end { button.btn.primary type="submit" { "Save" } }
             }
-            h2 id="share" { "Share" }
-            p { "Send a copy of this deck to someone. They get the cards with fresh progress; your deck stays as it is." }
-            form method="post" action=(format!("/decks/{id}/share")) {
-                div.sheet.form {
-                    label.line { "Their username"
-                        input type="text" name="user" required autocapitalize="none" autocorrect="off" placeholder="name#1234";
-                    }
+            (deck_sharing(id, &shares))
+            (deck_rest(&deck))
+        },
+    ))
+}
+
+fn deck_sharing(id: i64, shares: &[crate::share::OutgoingShare]) -> Markup {
+    html! {
+        h2 id="share" { "Share" }
+        p { "Send a copy of this deck to someone. They get the cards with fresh progress; your deck stays as it is." }
+        form method="post" action=(format!("/decks/{id}/share")) {
+            div.sheet.form {
+                label.line { "Their username"
+                    input type="text" name="user" required autocapitalize="none" autocorrect="off" placeholder="name#1234";
                 }
-                div.form-foot.end { button.btn type="submit" { "Share" } }
             }
-            @if !shares.is_empty() {
-                p { "Waiting for them to accept:" }
-                ul.list {
-                    @for sh in &shares {
-                        li.item {
-                            span.grow { (sh.to) }
-                            form method="post" action=(format!("/shares/{}/cancel", sh.id)) {
-                                button.btn type="submit" { "Cancel" }
-                            }
+            div.form-foot.end { button.btn type="submit" { "Share" } }
+        }
+        @if !shares.is_empty() {
+            p { "Waiting for them to accept:" }
+            ul.list {
+                @for sh in shares {
+                    li.item {
+                        span.grow { (sh.to) }
+                        form method="post" action=(format!("/shares/{}/cancel", sh.id)) {
+                            button.btn type="submit" { "Cancel" }
                         }
                     }
                 }
             }
-            h2 id="rest" { "Pause" }
-            p { (rest_words(deck.status)) }
-            form.actions.rest-actions method="post" action=(format!("/decks/{id}/pause")) {
-                @match deck.status {
-                    DeckStatus::Active => {
-                        button.btn type="submit" { "Pause deck" }
-                        " "
-                        button.btn type="submit" formaction=(format!("/decks/{id}/archive")) { "Archive deck" }
-                    }
-                    DeckStatus::Paused => {
-                        button.btn type="submit" formaction=(format!("/decks/{id}/resume")) { "Resume deck" }
-                        " "
-                        button.btn type="submit" formaction=(format!("/decks/{id}/archive")) { "Archive deck" }
-                    }
-                    DeckStatus::Archived => {
-                        button.btn type="submit" formaction=(format!("/decks/{id}/resume")) { "Restore deck" }
-                    }
+        }
+    }
+}
+
+fn deck_rest(deck: &Deck) -> Markup {
+    let id = deck.id;
+    html! {
+        h2 id="rest" { "Pause" }
+        p { (rest_words(deck.status)) }
+        form.actions.rest-actions method="post" action=(format!("/decks/{id}/pause")) {
+            @match deck.status {
+                DeckStatus::Active => {
+                    button.btn type="submit" { "Pause deck" }
+                    " "
+                    button.btn type="submit" formaction=(format!("/decks/{id}/archive")) { "Archive deck" }
+                }
+                DeckStatus::Paused => {
+                    button.btn type="submit" formaction=(format!("/decks/{id}/resume")) { "Resume deck" }
+                    " "
+                    button.btn type="submit" formaction=(format!("/decks/{id}/archive")) { "Archive deck" }
+                }
+                DeckStatus::Archived => {
+                    button.btn type="submit" formaction=(format!("/decks/{id}/resume")) { "Restore deck" }
                 }
             }
-            details.danger {
-                summary { "Delete this deck…" }
-                form method="post" action=(format!("/decks/{id}/delete")) {
-                    label.check { input type="checkbox" name="confirm" value="1" required; " Yes, delete it and all its cards" }
-                    button.btn.danger type="submit" { "Delete deck" }
-                }
+        }
+        details.danger {
+            summary { "Delete this deck…" }
+            form method="post" action=(format!("/decks/{id}/delete")) {
+                label.check { input type="checkbox" name="confirm" value="1" required; " Yes, delete it and all its cards" }
+                button.btn.danger type="submit" { "Delete deck" }
             }
-        },
-    ))
+        }
+    }
 }
 
 pub(crate) async fn deck_edit_page(

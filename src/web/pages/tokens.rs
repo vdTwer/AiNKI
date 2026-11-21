@@ -28,7 +28,6 @@ pub(crate) async fn access_page(
     let decks = app.decks(&access).await?;
     let clock = user.0.clock();
     let url = mcp_url(&app, &headers);
-    let https = url.starts_with("https://");
     Ok(layout_in(
         Nav::Settings,
         "Agent access",
@@ -37,70 +36,89 @@ pub(crate) async fn access_page(
             (flash(msg.as_deref()))
             (parent("/settings", "Settings"))
             h1 { "Agent access" }
-            h2 { "Connect Claude" }
-            ol.prose {
-                li { "In Claude, open " strong { "Settings → Connectors" } " and choose " strong { "Add custom connector" } "." }
-                li { "Name it AiNKI and paste this URL:" pre.copy { (url) } }
-                li { "Click " strong { "Connect" } ", log in here if asked, and click " strong { "Allow" } "." }
-            }
-            @if !https {
-                p.notice {
-                    "This address isn't HTTPS. Claude on the web and in the apps needs AiNKI on a public HTTPS address; "
-                    "set AINKI_PUBLIC_URL to it. Claude Code on this computer can use it as is: "
-                    code { "claude mcp add --transport http ainki " (url) }
-                }
-            }
-            p.muted.small { "Any MCP client that supports OAuth connects the same way. Agents can never change your password or settings." }
-            h2 { "Connected" }
-            @if tokens.is_empty() { p.muted { "Nothing connected yet." } }
-            ul.list hidden[tokens.is_empty()] {
-                @for (t, deck_names) in &tokens {
-                    li.item {
-                        div.grow {
-                            strong { (t.name) } " "
-                            @if t.oauth_client_id.is_some() { span.small { "(connected app)" } } @else { code { (t.prefix) "…" } }
-                            br;
-                            span.small {
-                                (if t.can_write { "read & write" } else { "read only" })
-                                (if t.can_review { " · can review" } else { "" })
-                                " · "
-                                @if t.all_decks { "all decks" } @else { (deck_names.iter().map(|n| deck_plain(n)).collect::<Vec<_>>().join(", ")) }
-                            }
-                            br;
-                            span.muted.small {
-                                "Last used "
-                                (t.last_used_at.map_or_else(|| "never".into(), |ts| format::when(&clock, ts)))
-                            }
-                        }
-                        form method="post" action=(format!("/access/{}/revoke", t.id)) {
-                            button.btn.danger type="submit" {
-                                (if t.oauth_client_id.is_some() { "Disconnect" } else { "Revoke" })
-                            }
-                        }
-                    }
-                }
-            }
-            details {
-                summary { "Create a token by hand" }
-                p.small { "For agents without OAuth support: they send the token as " code { "Authorization: Bearer <token>" } "." }
-                form method="post" action="/access/new" {
-                    label { "Name" input type="text" name="name" required placeholder="e.g. Claude"; }
-                    label.check { input type="checkbox" name="can_write" value="1" checked; " " (PERM_WRITE) }
-                    label.check { input type="checkbox" name="can_review" value="1" checked; " " (PERM_REVIEW) }
-                    fieldset {
-                        legend { "Decks" }
-                        label.check { input type="radio" name="deck_scope" value="all" checked; " " (PERM_ALL_DECKS) }
-                        label.check { input type="radio" name="deck_scope" value="some"; " " (PERM_SOME_DECKS) }
-                        @for d in &decks {
-                            label.check.indent { input type="checkbox" name="decks" value=(d.id); " " (deck_plain(&d.name)) }
-                        }
-                    }
-                    button.btn type="submit" { "Create token" }
-                }
-            }
+            (connect_steps(&url))
+            (connected_tokens(&tokens, &clock))
+            (token_form(&decks))
         },
     )
     .into_response())
+}
+
+fn connect_steps(url: &str) -> Markup {
+    let https = url.starts_with("https://");
+    html! {
+        h2 { "Connect Claude" }
+        ol.prose {
+            li { "In Claude, open " strong { "Settings → Connectors" } " and choose " strong { "Add custom connector" } "." }
+            li { "Name it AiNKI and paste this URL:" pre.copy { (url) } }
+            li { "Click " strong { "Connect" } ", log in here if asked, and click " strong { "Allow" } "." }
+        }
+        @if !https {
+            p.notice {
+                "This address isn't HTTPS. Claude on the web and in the apps needs AiNKI on a public HTTPS address; "
+                "set AINKI_PUBLIC_URL to it. Claude Code on this computer can use it as is: "
+                code { "claude mcp add --transport http ainki " (url) }
+            }
+        }
+        p.muted.small { "Any MCP client that supports OAuth connects the same way. Agents can never change your password or settings." }
+    }
+}
+
+fn connected_tokens(tokens: &[(crate::auth::ApiToken, Vec<String>)], clock: &scheduler::Clock) -> Markup {
+    html! {
+        h2 { "Connected" }
+        @if tokens.is_empty() { p.muted { "Nothing connected yet." } }
+        ul.list hidden[tokens.is_empty()] {
+            @for (t, deck_names) in tokens {
+                li.item {
+                    div.grow {
+                        strong { (t.name) } " "
+                        @if t.oauth_client_id.is_some() { span.small { "(connected app)" } } @else { code { (t.prefix) "…" } }
+                        br;
+                        span.small {
+                            (if t.can_write { "read & write" } else { "read only" })
+                            (if t.can_review { " · can review" } else { "" })
+                            " · "
+                            @if t.all_decks { "all decks" } @else { (deck_names.iter().map(|n| deck_plain(n)).collect::<Vec<_>>().join(", ")) }
+                        }
+                        br;
+                        span.muted.small {
+                            "Last used "
+                            (t.last_used_at.map_or_else(|| "never".into(), |ts| format::when(clock, ts)))
+                        }
+                    }
+                    form method="post" action=(format!("/access/{}/revoke", t.id)) {
+                        button.btn.danger type="submit" {
+                            (if t.oauth_client_id.is_some() { "Disconnect" } else { "Revoke" })
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn token_form(decks: &[Deck]) -> Markup {
+    html! {
+        details {
+            summary { "Create a token by hand" }
+            p.small { "For agents without OAuth support: they send the token as " code { "Authorization: Bearer <token>" } "." }
+            form method="post" action="/access/new" {
+                label { "Name" input type="text" name="name" required placeholder="e.g. Claude"; }
+                label.check { input type="checkbox" name="can_write" value="1" checked; " " (PERM_WRITE) }
+                label.check { input type="checkbox" name="can_review" value="1" checked; " " (PERM_REVIEW) }
+                fieldset {
+                    legend { "Decks" }
+                    label.check { input type="radio" name="deck_scope" value="all" checked; " " (PERM_ALL_DECKS) }
+                    label.check { input type="radio" name="deck_scope" value="some"; " " (PERM_SOME_DECKS) }
+                    @for d in decks {
+                        label.check.indent { input type="checkbox" name="decks" value=(d.id); " " (deck_plain(&d.name)) }
+                    }
+                }
+                button.btn type="submit" { "Create token" }
+            }
+        }
+    }
 }
 
 #[derive(Deserialize)]

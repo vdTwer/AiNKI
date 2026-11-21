@@ -209,53 +209,66 @@ pub(crate) async fn preset_view(
                 (preset_sheet(draft.unwrap_or(&p), &decks))
                 div.form-foot.end { button.btn.primary type="submit" { "Save" } }
             }
-            h2 id="cost" { "What it costs" }
-            p.muted.small {
-                "A simulation of the next "
-                @for (n, (d, label)) in [(30, "30 days"), (90, "90 days"), (365, "year")].into_iter().enumerate() {
-                    @if n > 0 { " · " }
-                    @if d == days { (label) } @else { a href=(format!("/presets/{id}?days={d}#cost")) { (label) } }
-                }
-                ", with your memory model and "
-                @if p.new_per_day == 0 { "no new cards" } @else { (count(p.new_per_day, "new card")) " a day" }
-                ". Higher retention means more reviews but more remembered. "
-                a href="/learn/desired-retention" { "How to choose" }
+            (preset_cost(user, &p, &workload, days))
+            (preset_decks(id, &decks))
+        },
+    ))
+}
+
+fn preset_cost(user: &User, p: &crate::service::Preset, workload: &[crate::tuning::Workload], days: usize) -> Markup {
+    let id = p.id;
+    html! {
+        h2 id="cost" { "What it costs" }
+        p.muted.small {
+            "A simulation of the next "
+            @for (n, (d, label)) in [(30, "30 days"), (90, "90 days"), (365, "year")].into_iter().enumerate() {
+                @if n > 0 { " · " }
+                @if d == days { (label) } @else { a href=(format!("/presets/{id}?days={d}#cost")) { (label) } }
             }
-            div.fit {
-                table.workload {
-                    thead { tr { th { "Remember" } th.num { "Minutes a day" } th.num { "Reviews a day" } th.num { "Known at the end" } } }
-                    tbody {
-                        @for w in &workload {
-                            tr.current[w.current] {
-                                th scope="row" { (format!("{:.0}%", w.retention * 100.0)) @if w.current { span.muted.small { " this preset" } } }
-                                td.num { (format!("{:.0}", w.minutes_per_day.max(0.0))) }
-                                td.num { (format::number(num::f64_i64(w.reviews_per_day.round()))) }
-                                td.num { (format::number(num::f64_i64(w.remembered.round()))) }
-                            }
+            ", with your memory model and "
+            @if p.new_per_day == 0 { "no new cards" } @else { (count(p.new_per_day, "new card")) " a day" }
+            ". Higher retention means more reviews but more remembered. "
+            a href="/learn/desired-retention" { "How to choose" }
+        }
+        div.fit {
+            table.workload {
+                thead { tr { th { "Remember" } th.num { "Minutes a day" } th.num { "Reviews a day" } th.num { "Known at the end" } } }
+                tbody {
+                    @for w in workload {
+                        tr.current[w.current] {
+                            th scope="row" { (format!("{:.0}%", w.retention * 100.0)) @if w.current { span.muted.small { " this preset" } } }
+                            td.num { (format!("{:.0}", w.minutes_per_day.max(0.0))) }
+                            td.num { (format::number(num::f64_i64(w.reviews_per_day.round()))) }
+                            td.num { (format::number(num::f64_i64(w.remembered.round()))) }
                         }
                     }
                 }
             }
-            p.muted.small {
-                @if p.has_own_params() {
-                    "This preset has FSRS parameters of its own, fitted to its reviews"
-                    @if let Some(t) = p.fsrs_params_updated_at { " " (format::when(&user.clock(), t)) }
-                    "."
-                } @else {
-                    "This preset uses your FSRS parameters. Once its decks have about 400 reviews, optimizing fits it on its own."
+        }
+        p.muted.small {
+            @if p.has_own_params() {
+                "This preset has FSRS parameters of its own, fitted to its reviews"
+                @if let Some(t) = p.fsrs_params_updated_at { " " (format::when(&user.clock(), t)) }
+                "."
+            } @else {
+                "This preset uses your FSRS parameters. Once its decks have about 400 reviews, optimizing fits it on its own."
+            }
+        }
+    }
+}
+
+fn preset_decks(id: i64, decks: &[String]) -> Markup {
+    html! {
+        @if decks.is_empty() {
+            details.danger {
+                summary { "Delete this preset…" }
+                form method="post" action=(format!("/presets/{id}/delete")) {
+                    p { "No deck uses it, so nothing else changes." }
+                    button.btn.danger type="submit" { "Delete preset" }
                 }
             }
-            @if decks.is_empty() {
-                details.danger {
-                    summary { "Delete this preset…" }
-                    form method="post" action=(format!("/presets/{id}/delete")) {
-                        p { "No deck uses it, so nothing else changes." }
-                        button.btn.danger type="submit" { "Delete preset" }
-                    }
-                }
-            }
-        },
-    ))
+        }
+    }
 }
 
 #[derive(Deserialize, Default)]
