@@ -82,91 +82,69 @@ pub(crate) async fn find_json(State(app): State<AppState>, user: WebUser, Query(
     let q = f.q.trim();
     let q = &q[..q.char_indices().nth(64).map_or(q.len(), |(i, _)| i)];
     let decks = app.decks(&access).await?;
-    let mut found: Vec<Found> = Vec::new();
+    let found = if q.is_empty() { browse(&decks) } else { find(q, &decks, &app.card_texts(&access).await?) };
+    Ok(([(header::CONTENT_TYPE, "application/json")], serde_json::json!({ "q": q, "results": found }).to_string())
+        .into_response())
+}
 
-    // Nothing typed yet: the places, then the decks.
-    if q.is_empty() {
-        for (name, href, _) in FIND_PLACES.iter().filter(|p| matches!(p.1, "/" | "/stats" | "/learn" | "/settings")) {
-            found.push(Found {
-                kind: "place",
-                title: name.to_string(),
-                sub: String::new(),
-                href: href.to_string(),
-                score: 0,
-            });
-        }
-        for d in &decks {
-            found.push(Found {
-                kind: "deck",
-                title: deck_plain(&d.name),
-                sub: deck_kind(d.status).into(),
-                href: format!("/decks/{}", d.id),
-                score: 0,
-            });
-        }
-        found.truncate(FIND_MAX);
-        return Ok((
-            [(header::CONTENT_TYPE, "application/json")],
-            serde_json::json!({ "q": q, "results": found }).to_string(),
-        )
-            .into_response());
+impl Found {
+    fn place(name: &str, href: &str, score: i32) -> Self {
+        Self { kind: "place", title: name.to_string(), sub: String::new(), href: href.to_string(), score }
     }
 
-    for (name, href, also) in FIND_PLACES {
-        if let Some(s) = find_score(q, name, also) {
-            found.push(Found {
-                kind: "place",
-                title: name.to_string(),
-                sub: String::new(),
-                href: href.to_string(),
-                score: s + 4,
-            });
-        }
+    fn deck(d: &Deck, title: String, score: i32) -> Self {
+        Self { kind: "deck", title, sub: deck_kind(d.status).into(), href: format!("/decks/{}", d.id), score }
     }
-    let mut names = HashMap::new();
-    for d in &decks {
-        let title = deck_plain(&d.name);
+}
+
+/// Nothing typed yet: the main places, then the decks.
+fn browse(decks: &[Deck]) -> Vec<Found> {
+    let places = FIND_PLACES.iter().filter(|p| matches!(p.1, "/" | "/stats" | "/learn" | "/settings"));
+    let mut found: Vec<Found> = places.map(|(name, href, _)| Found::place(name, href, 0)).collect();
+    found.extend(decks.iter().map(|d| Found::deck(d, deck_plain(&d.name), 0)));
+    found.truncate(FIND_MAX);
+    found
+}
+
+/// The best matches for `q` among places, decks, lessons and cards. Places
+/// rank above decks above lessons on a tie; cards come in by their own
+/// score, at most `FIND_MAX_CARDS` of them.
+fn find(q: &str, decks: &[Deck], cards: &[crate::service::CardText]) -> Vec<Found> {
+    let mut found: Vec<Found> = FIND_PLACES
+        .iter()
+        .filter_map(|(name, href, also)| Some(Found::place(name, href, find_score(q, name, also)? + 4)))
+        .collect();
+    let names: HashMap<i64, String> = decks.iter().map(|d| (d.id, deck_plain(&d.name))).collect();
+    for d in decks {
+        let title = names.get(&d.id).cloned().unwrap_or_default();
         if let Some(s) = find_score(q, &title, &d.description) {
-            found.push(Found {
-                kind: "deck",
-                title: title.clone(),
-                sub: deck_kind(d.status).into(),
-                href: format!("/decks/{}", d.id),
-                score: s + 3,
-            });
+            found.push(Found::deck(d, title, s + 3));
         }
-        names.insert(d.id, title);
     }
     for l in lessons::all() {
         if let Some(s) = find_score(q, &l.title, &l.summary) {
-            found.push(Found {
-                kind: "lesson",
-                title: l.title.clone(),
-                sub: "Lesson".into(),
-                href: format!("/learn/{}", l.slug),
-                score: s + 1,
-            });
+            let href = format!("/learn/{}", l.slug);
+            found.push(Found { kind: "lesson", title: l.title.clone(), sub: "Lesson".into(), href, score: s + 1 });
         }
     }
-    let mut cards: Vec<Found> = Vec::new();
-    for c in app.card_texts(&access).await? {
-        let front = fuzzy::score(q, &c.front);
-        // A match on the back alone counts for less.
-        let back = fuzzy::score(q, &c.back).map(|s| s - 10);
-        let Some(s) = front.max(back) else { continue };
-        let deck = names.get(&c.deck_id).cloned().unwrap_or_default();
-        cards.push(Found {
-            kind: "card",
-            title: find_line(&c.front, 80),
-            sub: deck,
-            href: format!("/cards/{}", c.id),
-            score: s,
-        });
-    }
+    let mut matched: Vec<Found> = cards
+        .iter()
+        .filter_map(|c| {
+            // A match on the back alone counts for less.
+            let s = fuzzy::score(q, &c.front).max(fuzzy::score(q, &c.back).map(|s| s - 10))?;
+            Some(Found {
+                kind: "card",
+                title: find_line(&c.front, 80),
+                sub: names.get(&c.deck_id).cloned().unwrap_or_default(),
+                href: format!("/cards/{}", c.id),
+                score: s,
+            })
+        })
+        .collect();
     // Newest first already, so equal scores keep the newer card on top.
-    cards.sort_by_key(|b| std::cmp::Reverse(b.score));
-    cards.truncate(FIND_MAX_CARDS);
-    found.extend(cards);
+    matched.sort_by_key(|b| std::cmp::Reverse(b.score));
+    matched.truncate(FIND_MAX_CARDS);
+    found.extend(matched);
     found.sort_by_key(|b| std::cmp::Reverse(b.score));
     // Letters scattered through a long text match too: next to a clear
     // match such stragglers are noise, so they go.
@@ -174,6 +152,26 @@ pub(crate) async fn find_json(State(app): State<AppState>, user: WebUser, Query(
         found.retain(|f| f.score * 2 >= top);
     }
     found.truncate(FIND_MAX);
-    Ok(([(header::CONTENT_TYPE, "application/json")], serde_json::json!({ "q": q, "results": found }).to_string())
-        .into_response())
+    found
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{browse, find};
+    use crate::service::CardText;
+
+    #[test]
+    fn a_place_comes_first_and_cards_follow_by_score() {
+        let cards = [CardText { id: 7, deck_id: 1, front: "Statistics of memory".into(), back: String::new() }];
+        let found = find("stats", &[], &cards);
+        assert_eq!(found.first().map(|f| f.href.as_str()), Some("/stats"));
+        assert!(found.iter().any(|f| f.href == "/cards/7"));
+        assert!(find("zzzzqqq", &[], &cards).is_empty());
+    }
+
+    #[test]
+    fn nothing_typed_lists_the_main_places() {
+        let hrefs: Vec<String> = browse(&[]).into_iter().map(|f| f.href).collect();
+        assert_eq!(hrefs, ["/", "/stats", "/learn", "/settings"]);
+    }
 }
