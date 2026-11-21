@@ -33,7 +33,7 @@ use crate::{
     multi::Split,
     presets,
     scheduler::Rating,
-    service::{CardFilter, CardInput, DeckStatus, PresetInput},
+    service::{CardFilter, CardInput, DeckStatus, Patch, PresetInput},
 };
 
 const INSTRUCTIONS: &str = "\
@@ -168,8 +168,9 @@ fn decode_b64(data: &str) -> Result<Vec<u8>, String> {
     base64::engine::general_purpose::STANDARD.decode(cleaned).map_err(|e| format!("invalid base64: {e}"))
 }
 
-fn empty_to_none(s: Option<String>) -> Option<Option<String>> {
-    s.map(|v| if v.trim().is_empty() { None } else { Some(v) })
+/// An image id from the agent: absent keeps the image, empty clears it.
+fn image_patch(s: Option<String>) -> Patch<Option<String>> {
+    s.map_or(Patch::Keep, |v| Patch::Set(Some(v).filter(|v| !v.trim().is_empty())))
 }
 
 // ----- parameter types ------------------------------------------------------
@@ -688,12 +689,14 @@ impl AinkiMcp {
         let input = CardInput {
             front: p.front,
             back: p.back,
-            front_image: empty_to_none(p.front_image_id),
-            back_image: empty_to_none(p.back_image_id),
+            front_image: image_patch(p.front_image_id),
+            back_image: image_patch(p.back_image_id),
             multi: match (p.multi.as_deref(), p.list) {
-                (Some("none"), _) => Some(None),
-                (Some(m), _) => Some(Some(Split::parse(m).ok_or("multi is 'list', 'sections', 'parts' or 'none'")?)),
-                (None, l) => l.map(|l| l.then_some(Split::List)),
+                (Some("none"), _) => Patch::Set(None),
+                (Some(m), _) => {
+                    Patch::Set(Some(Split::parse(m).ok_or("multi is 'list', 'sections', 'parts' or 'none'")?))
+                }
+                (None, l) => l.map_or(Patch::Keep, |l| Patch::Set(l.then_some(Split::List))),
             },
         };
         let mut card = self.app.update_card(&a, p.card_id, input).await.map_err(err)?;

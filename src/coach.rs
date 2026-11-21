@@ -419,7 +419,8 @@ impl App {
         }
 
         // Each flag with the lapse count it is judged by.
-        let mut found: HashMap<i64, (Option<Card>, Vec<(Flag, i64)>)> = HashMap::new();
+        type Flagged = (Option<Card>, Vec<(Flag, i64)>);
+        let mut found: HashMap<i64, Flagged> = HashMap::new();
         for card in candidates {
             let items = self.card_items(&card).await?;
             let flags: Vec<(Flag, i64)> = leech_flag(&card, &items)

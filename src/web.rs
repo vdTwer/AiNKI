@@ -33,7 +33,7 @@ use crate::{
     presets,
     scheduler::{self, CardState, Rating},
     security::{self, ClientIp, Flash},
-    service::{Card, CardFilter, CardInput, Deck, DeckStatus, PresetInput},
+    service::{Card, CardFilter, CardInput, Deck, DeckStatus, Patch, PresetInput},
     study,
 };
 
@@ -171,11 +171,11 @@ pub fn router(app: AppState) -> Router {
         .layer(middleware::from_fn_with_state(app.clone(), security::check_origin))
         .layer(middleware::from_fn_with_state(app.clone(), renew_session));
     let static_routes = Router::new()
-        .route("/style.css", get(|q: RawQuery| asset(q, "text/css; charset=utf-8", CSS)))
-        .route("/calm.css", get(|q: RawQuery| asset(q, "text/css; charset=utf-8", CALM_CSS)))
-        .route("/theme.js", get(|q: RawQuery| asset(q, "text/javascript; charset=utf-8", THEME_JS)))
-        .route("/app.js", get(|q: RawQuery| asset(q, "text/javascript; charset=utf-8", APP_JS)))
-        .route("/desk.js", get(|q: RawQuery| asset(q, "text/javascript; charset=utf-8", DESK_JS)))
+        .route("/style.css", get(|q: RawQuery| async move { asset(q, "text/css; charset=utf-8", CSS) }))
+        .route("/calm.css", get(|q: RawQuery| async move { asset(q, "text/css; charset=utf-8", CALM_CSS) }))
+        .route("/theme.js", get(|q: RawQuery| async move { asset(q, "text/javascript; charset=utf-8", THEME_JS) }))
+        .route("/app.js", get(|q: RawQuery| async move { asset(q, "text/javascript; charset=utf-8", APP_JS) }))
+        .route("/desk.js", get(|q: RawQuery| async move { asset(q, "text/javascript; charset=utf-8", DESK_JS) }))
         .route("/fonts/{name}", get(font_file))
         .route("/favicon.svg", get(|| async { static_file("image/svg+xml", FAVICON_SVG.as_bytes(), false) }))
         // Browsers ask for /favicon.ico on their own; a PNG there works everywhere.
@@ -387,7 +387,7 @@ fn deck_parts(name: &str) -> Vec<&str> {
 
 fn deck_title(name: &str) -> Markup {
     let parts = deck_parts(name);
-    let (leaf, parents) = parts.split_last().expect("at least one part");
+    let Some((leaf, parents)) = parts.split_last() else { return html! { (name) } };
     html! {
         @if !parents.is_empty() {
             span.deck-path { @for p in parents { (p) span.sep aria-hidden="true" { "›" } } }
@@ -439,6 +439,7 @@ pub fn layout_in(nav: Nav, title: &str, user: Option<&User>, body: Markup) -> Ma
 }
 
 /// `page_kind` marks special pages for app.js.
+#[expect(clippy::needless_pass_by_value, reason = "maud renders by reference; callers build the markup inline")]
 fn page(nav: Option<Nav>, title: &str, user: Option<&User>, page_kind: Option<&str>, body: Markup) -> Markup {
     let current = |n: Nav| (nav == Some(n)).then_some("page");
     let scale = num::i64_f64(user.map_or(100, |u| u.font_scale)) / 100.0;
@@ -598,15 +599,15 @@ fn parent(href: &str, label: &str) -> Markup {
     html! { p.parent { a href=(href) { span aria-hidden="true" { "‹ " } (label) } } }
 }
 
-fn flash(msg: &Option<String>) -> Markup {
+fn flash(msg: Option<&str>) -> Markup {
     html! {
-        @if let Some(m) = msg.as_deref().filter(|m| !m.is_empty()) {
+        @if let Some(m) = msg.filter(|m| !m.is_empty()) {
             p.notice role="status" { (m) }
         }
     }
 }
 
-fn face(text: &str, image: &Option<String>) -> Markup {
+fn face(text: &str, image: Option<&str>) -> Markup {
     html! {
         @if let Some(img) = image {
             img src=(format!("/media/{img}")) alt="";
@@ -659,7 +660,7 @@ fn static_file(content_type: &'static str, body: &'static [u8], forever: bool) -
     ([(header::CONTENT_TYPE, content_type), (header::CACHE_CONTROL, cache)], body).into_response()
 }
 
-async fn asset(RawQuery(q): RawQuery, content_type: &'static str, body: &'static str) -> Response {
+fn asset(RawQuery(q): RawQuery, content_type: &'static str, body: &'static str) -> Response {
     let current = q.and_then(|q| q.strip_prefix("v=").map(|v| v == asset_version())).unwrap_or(false);
     static_file(content_type, body.as_bytes(), current)
 }
@@ -883,7 +884,7 @@ async fn invites_page(State(app): State<AppState>, user: WebUser, headers: Heade
         "Invite",
         Some(u),
         html! {
-            (flash(&msg))
+            (flash(msg.as_deref()))
             (parent("/settings", "Settings"))
             h1 { "Invite someone" }
             p { "AiNKI grows by invitation. Once a week you can send one person a link. It works once, for 30 days." }
@@ -1114,7 +1115,7 @@ async fn admin_page(State(app): State<AppState>, user: WebUser, headers: HeaderM
         Some(u),
         Some("admin"),
         html! {
-            (flash(&msg))
+            (flash(msg.as_deref()))
             h1 { "Accounts" }
             p.facts {
                 (count(num::usize_i64(people.len()), "account")) " · "
@@ -1190,7 +1191,7 @@ async fn home(State(app): State<AppState>, user: WebUser, Flash(msg): Flash) -> 
         Some(&user.0),
         Some("home"),
         html! {
-            (flash(&msg))
+            (flash(msg.as_deref()))
             // On desktops the week sits beside today, as a sidebar.
             div.hero {
             section.today aria-label="Today" {
@@ -1467,7 +1468,7 @@ async fn study_card(
     app: &App,
     access: &Access,
     user: &User,
-    msg: &Option<String>,
+    msg: Option<&str>,
     card: &Card,
     deck: &Deck,
     q_deck: Option<i64>,
@@ -1567,11 +1568,11 @@ async fn study_card(
             section.study.revealed[revealed].timed-out[timed_out] {
                 div.card-area {
                     (state_tag(card.card_state()))
-                    section.face.front { (face(&card.front, &card.front_image)) }
+                    section.face.front { (face(&card.front, card.front_image.as_deref())) }
                     hr.divider hidden[!revealed];
                     section.face.back id="answer" hidden[!revealed] {
                         (echo)
-                        (face(&card.back, &card.back_image))
+                        (face(&card.back, card.back_image.as_deref()))
                     }
                 }
                 (timer)
@@ -1761,7 +1762,7 @@ fn multi_study(
             (extras.sure_field)
             div.card-area {
                 (state_tag(card.card_state()))
-                section.face.front { (face(&card.front, &card.front_image)) }
+                section.face.front { (face(&card.front, card.front_image.as_deref())) }
                 @if !known.is_empty() {
                     div.list-known {
                         p.known-label { "You know" }
@@ -1792,11 +1793,11 @@ fn multi_study(
 fn card_preview(front: &str, back: &str, how: Option<Split>) -> Markup {
     let pieces = how.and_then(|h| multi::split(back, h));
     html! {
-        section.face.front { (face(front, &None)) }
+        section.face.front { (face(front, None)) }
         hr.divider;
         @match &pieces {
             Some(p) => section.face.back.list { (multi_back(p, &[], false)) },
-            None => section.face.back { (face(back, &None)) },
+            None => section.face.back { (face(back, None)) },
         }
     }
 }
@@ -2015,15 +2016,17 @@ async fn study(
         let deck = app.deck(&access, card.deck_id).await?;
         let shown =
             Shown { at: q.t.unwrap_or_else(now), revealed: true, sure: q.sure.map(|s| s == 1), typed: q.typed.clone() };
-        return Ok(study_card(&app, &access, &user.0, &msg, &card, &deck, q.deck, &shown).await?.into_response());
+        return Ok(study_card(&app, &access, &user.0, msg.as_deref(), &card, &deck, q.deck, &shown)
+            .await?
+            .into_response());
     }
 
     if let Some(until) = study::quiet_until(&user.0, now()) {
-        return Ok(rest_page(&user.0, &msg, q.deck, until).into_response());
+        return Ok(rest_page(&user.0, msg.as_deref(), q.deck, until).into_response());
     }
     if let Some(due) = app.break_due(&access).await? {
         app.break_shown(user.0.id).await?;
-        return Ok(break_page(&user.0, &msg, q.deck, due).into_response());
+        return Ok(break_page(&user.0, msg.as_deref(), q.deck, due).into_response());
     }
 
     let Some(sc) = app.next_card(&access, q.deck).await? else {
@@ -2037,7 +2040,7 @@ async fn study(
             Some(&user.0),
             Some("study-done"),
             html! {
-                (flash(&msg))
+                (flash(msg.as_deref()))
                 section.session-end {
                     @if any_cards {
                         div.end-mark aria-hidden="true" { div.line {} (done_check(26, "check")) }
@@ -2073,7 +2076,7 @@ async fn study(
         )
         .into_response());
     };
-    Ok(study_card(&app, &access, &user.0, &msg, &sc.card, &sc.deck, q.deck, &Shown::front(now()))
+    Ok(study_card(&app, &access, &user.0, msg.as_deref(), &sc.card, &sc.deck, q.deck, &Shown::front(now()))
         .await?
         .into_response())
 }
@@ -2086,7 +2089,7 @@ fn clock_time(clock: &crate::scheduler::Clock, ts: i64) -> String {
 }
 
 /// Quiet hours: a rest screen instead of cards.
-fn rest_page(user: &User, msg: &Option<String>, deck: Option<i64>, until: i64) -> Markup {
+fn rest_page(user: &User, msg: Option<&str>, deck: Option<i64>, until: i64) -> Markup {
     page(
         Some(Nav::Study),
         "Quiet hours",
@@ -2117,7 +2120,7 @@ fn rest_page(user: &User, msg: &Option<String>, deck: Option<i64>, until: i64) -
 
 /// The session has reached the length set in settings, or with smart
 /// breaks the answers show tiredness.
-fn break_page(user: &User, msg: &Option<String>, deck: Option<i64>, due: study::BreakDue) -> Markup {
+fn break_page(user: &User, msg: Option<&str>, deck: Option<i64>, due: study::BreakDue) -> Markup {
     // "a 6-minute break"
     let length = format!("{}-minute", due.length);
     page(
@@ -2331,7 +2334,7 @@ async fn lesson_page(
         &lesson.title,
         Some(&user.0),
         html! {
-            (flash(&msg))
+            (flash(msg.as_deref()))
             (parent("/learn", "Learn"))
             article.lesson {
                 h1 { (lesson.title) }
@@ -2692,7 +2695,7 @@ async fn deck_page(
         &deck_plain(&d.name),
         Some(&user.0),
         html! {
-            (flash(&msg))
+            (flash(msg.as_deref()))
             // On desktops: the deck and its one action on the left, its
             // settings beside it, the rest in a menu.
             div.deck-hero {
@@ -2799,7 +2802,7 @@ async fn deck_edit_view(
     app: &App,
     user: &User,
     id: i64,
-    msg: &Option<String>,
+    msg: Option<&str>,
     draft: Option<&Deck>,
     error: Option<&str>,
 ) -> Result<Markup, AppError> {
@@ -2880,7 +2883,7 @@ async fn deck_edit_page(
     Path(id): Path<i64>,
     Flash(msg): Flash,
 ) -> WebResult {
-    Ok(deck_edit_view(&app, &user.0, id, &msg, None, None).await?.into_response())
+    Ok(deck_edit_view(&app, &user.0, id, msg.as_deref(), None, None).await?.into_response())
 }
 
 async fn deck_update(
@@ -2903,7 +2906,7 @@ async fn deck_update(
         Ok(_) => Ok(redirect_msg(format!("/decks/{id}/edit"), "Deck saved.")),
         Err(e) => {
             let msg = fixable(&e).ok_or(e)?;
-            let page = deck_edit_view(&app, &user.0, id, &None, Some(&f.draft(id, user.0.id)), Some(&msg)).await?;
+            let page = deck_edit_view(&app, &user.0, id, None, Some(&f.draft(id, user.0.id)), Some(&msg)).await?;
             Ok(form_again(page))
         }
     }
@@ -2967,7 +2970,7 @@ async fn archived_page(State(app): State<AppState>, user: WebUser, Flash(msg): F
         "Archived decks",
         Some(&user.0),
         html! {
-            (flash(&msg))
+            (flash(msg.as_deref()))
             (parent("/", "Decks"))
             h1 { "Archived decks" }
             @if decks.is_empty() {
@@ -3075,6 +3078,7 @@ async fn read_card_form(mp: Multipart) -> Result<CardFormData, AppError> {
 /// The "Add" section: one click to a new card, a new deck, or an import.
 /// Phones keep three tabs over the page's title. On desktop the two are one
 /// title, "Add card", whose last words open a menu of the three.
+#[expect(clippy::needless_pass_by_value, reason = "maud renders by reference; callers build the markup inline")]
 fn add_head(current: &str, title: &str, notice: Markup) -> Markup {
     const PLACES: [(&str, &str, &str, &str); 3] = [
         ("card", "/cards/new", "Card", "card"),
@@ -3121,14 +3125,7 @@ const NEW_DECK: &str = "new";
 
 /// One side of the card being written: its text, and an optional image
 /// that can be picked, dropped or pasted.
-fn face_field(
-    side: &str,
-    title: &str,
-    placeholder: &str,
-    text: &str,
-    image: &Option<String>,
-    autofocus: bool,
-) -> Markup {
+fn face_field(side: &str, title: &str, placeholder: &str, text: &str, image: Option<&str>, autofocus: bool) -> Markup {
     html! {
         div.face-edit data-face=(side) {
             label.face-label for=(side) { (title) }
@@ -3238,9 +3235,9 @@ fn card_form(
                 }
             }
             div.sheet {
-                (face_field("front", "Front", "Question", c.front, c.front_image, true))
+                (face_field("front", "Front", "Question", c.front, c.front_image.as_deref(), true))
                 hr.divider;
-                (face_field("back", "Back", "Answer", c.back, c.back_image, false))
+                (face_field("back", "Back", "Answer", c.back, c.back_image.as_deref(), false))
                 // The ways the back can be split are offered; app.js keeps
                 // them up to date while you write.
                 @let splits = multi::splits(c.back);
@@ -3276,7 +3273,7 @@ struct NewCardQuery {
     deck: Option<i64>,
 }
 
-fn card_new_view(user: &User, decks: &[Deck], c: &CardDraft, msg: &Option<String>, error: Option<&str>) -> Markup {
+fn card_new_view(user: &User, decks: &[Deck], c: &CardDraft, msg: Option<&str>, error: Option<&str>) -> Markup {
     layout_in(
         Nav::Add,
         "Add card",
@@ -3312,7 +3309,7 @@ async fn card_new_page(
         back_image: &None,
         multi: None,
     };
-    Ok(card_new_view(&user.0, &decks, &draft, &msg, None).into_response())
+    Ok(card_new_view(&user.0, &decks, &draft, msg.as_deref(), None).into_response())
 }
 
 /// A picked image can't be put back into a form; say so with the problem.
@@ -3369,7 +3366,7 @@ async fn card_create(State(app): State<AppState>, user: WebUser, mp: Multipart) 
                 back_image: &None,
                 multi: f.multi,
             };
-            Ok(form_again(card_new_view(&user.0, &decks, &draft, &None, Some(&msg))))
+            Ok(form_again(card_new_view(&user.0, &decks, &draft, None, Some(&msg))))
         }
     }
 }
@@ -3406,7 +3403,7 @@ async fn card_view(
     user: &User,
     id: i64,
     from: &CardFrom,
-    msg: &Option<String>,
+    msg: Option<&str>,
     sent: Option<&CardFormData>,
     error: Option<&str>,
 ) -> Result<Markup, AppError> {
@@ -3542,7 +3539,7 @@ async fn card_page(
     Query(from): Query<CardFrom>,
     Flash(msg): Flash,
 ) -> WebResult {
-    Ok(card_view(&app, &user.0, id, &from, &msg, None, None).await?.into_response())
+    Ok(card_view(&app, &user.0, id, &from, msg.as_deref(), None, None).await?.into_response())
 }
 
 async fn card_update(
@@ -3556,14 +3553,14 @@ async fn card_update(
     let mut f = read_card_form(mp).await?;
     let result = async {
         let front_image = match f.front_upload.take() {
-            Some(d) => Some(Some(app.store_image(&access, d).await?.id)),
-            None if f.remove_front_image => Some(None),
-            None => None,
+            Some(d) => Patch::Set(Some(app.store_image(&access, d).await?.id)),
+            None if f.remove_front_image => Patch::Set(None),
+            None => Patch::Keep,
         };
         let back_image = match f.back_upload.take() {
-            Some(d) => Some(Some(app.store_image(&access, d).await?.id)),
-            None if f.remove_back_image => Some(None),
-            None => None,
+            Some(d) => Patch::Set(Some(app.store_image(&access, d).await?.id)),
+            None if f.remove_back_image => Patch::Set(None),
+            None => Patch::Keep,
         };
         app.update_card(
             &access,
@@ -3573,7 +3570,7 @@ async fn card_update(
                 back: Some(f.back.clone()),
                 front_image,
                 back_image,
-                multi: Some(f.multi),
+                multi: Patch::Set(f.multi),
             },
         )
         .await?;
@@ -3589,7 +3586,7 @@ async fn card_update(
         Ok(()) => Ok(redirect_msg(from.study_url().unwrap_or_else(|| format!("/cards/{id}")), "Card saved.")),
         Err(e) => {
             let msg = with_image_hint(fixable(&e).ok_or(e)?, &f);
-            Ok(form_again(card_view(&app, &user.0, id, &from, &None, Some(&f), Some(&msg)).await?))
+            Ok(form_again(card_view(&app, &user.0, id, &from, None, Some(&f), Some(&msg)).await?))
         }
     }
 }
@@ -3618,8 +3615,12 @@ async fn card_action(State(app): State<AppState>, user: WebUser, Path((id, actio
                     return Ok(redirect_msg(format!("/decks/{}", card.deck_id), "Card deleted."));
                 }
                 "learn-items" => {
-                    app.update_card(&access, id, CardInput { multi: Some(Some(Split::List)), ..Default::default() })
-                        .await?;
+                    app.update_card(
+                        &access,
+                        id,
+                        CardInput { multi: Patch::Set(Some(Split::List)), ..Default::default() },
+                    )
+                    .await?;
                     "Now learned item by item: you mark what you remembered, and each item keeps its own schedule."
                 }
                 keep if keep.starts_with("keep-") => {
@@ -3711,7 +3712,7 @@ async fn attention_page(
         "Needs a look",
         Some(&user.0),
         html! {
-            (flash(&msg))
+            (flash(msg.as_deref()))
             @if let Some(d) = &deck { (parent(&format!("/decks/{}", d.id), &deck_plain(&d.name))) }
             h1 { "Needs a look" }
             @if found.is_empty() {
@@ -3848,7 +3849,7 @@ async fn presets_page(State(app): State<AppState>, user: WebUser, Flash(msg): Fl
         "Presets",
         Some(&user.0),
         html! {
-            (flash(&msg))
+            (flash(msg.as_deref()))
             (parent("/settings", "Settings"))
             h1 { "Presets" }
             p {
@@ -4016,7 +4017,7 @@ async fn preset_view(
     app: &App,
     user: &User,
     id: i64,
-    msg: &Option<String>,
+    msg: Option<&str>,
     draft: Option<&crate::service::Preset>,
     error: Option<&str>,
     days: usize,
@@ -4101,7 +4102,7 @@ async fn preset_page(
     Query(q): Query<PresetQuery>,
 ) -> WebResult {
     let days = q.days.filter(|d| [30, 90, 365].contains(d)).unwrap_or(30);
-    Ok(preset_view(&app, &user.0, id, &msg, None, None, days).await?.into_response())
+    Ok(preset_view(&app, &user.0, id, msg.as_deref(), None, None, days).await?.into_response())
 }
 
 #[derive(Deserialize)]
@@ -4172,7 +4173,7 @@ async fn preset_update(
         Ok(_) => Ok(redirect_msg(format!("/presets/{id}"), "Preset saved.")),
         Err(e) => {
             let msg = fixable(&e).ok_or(e)?;
-            Ok(form_again(preset_view(&app, &user.0, id, &None, Some(&draft), Some(&msg), 30).await?))
+            Ok(form_again(preset_view(&app, &user.0, id, None, Some(&draft), Some(&msg), 30).await?))
         }
     }
 }
@@ -4200,7 +4201,7 @@ async fn settings_page(State(app): State<AppState>, user: WebUser, Flash(msg): F
         "Settings",
         Some(u),
         html! {
-            (flash(&msg))
+            (flash(msg.as_deref()))
             h1 { "Settings" }
             p.muted { "Logged in as " strong { (u.handle()) } }
             ul.list.links {
@@ -4678,7 +4679,7 @@ async fn access_page(State(app): State<AppState>, user: WebUser, headers: Header
         "Agent access",
         Some(&user.0),
         html! {
-            (flash(&msg))
+            (flash(msg.as_deref()))
             (parent("/settings", "Settings"))
             h1 { "Agent access" }
             h2 { "Connect Claude" }
@@ -4823,7 +4824,7 @@ async fn import_page(State(app): State<AppState>, user: WebUser, Flash(msg): Fla
         "Import",
         Some(&user.0),
         html! {
-            (add_head("import", "Import", flash(&msg)))
+            (add_head("import", "Import", flash(msg.as_deref())))
             h2 { "From Anki (.apkg)" }
             p { "In Anki, use " strong { "File → Export…" } ", choose " em { "Anki Deck Package (*.apkg)" } " and tick " em { "Include scheduling information" } " to keep your progress. Upload the file here and its decks are created for you." }
             p.muted.small { "Each card keeps the first two fields of its note, the first image of each side and its review history. Cloze notes become one card per gap. " code { ".colpkg" } " backups work too." }
@@ -4964,7 +4965,7 @@ async fn stats_page(
         "Stats",
         Some(&user.0),
         html! {
-            (flash(&msg))
+            (flash(msg.as_deref()))
             @if let Some(d) = &deck { (parent(&format!("/decks/{}", d.id), &deck_plain(&d.name))) }
             div.stats-title {
                 h1 { "Stats" }

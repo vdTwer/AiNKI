@@ -16,6 +16,7 @@ use crate::{
 pub const SESSION_DAYS: i64 = 90;
 
 #[derive(Debug, Clone, sqlx::FromRow, Serialize)]
+#[expect(clippy::struct_excessive_bools, reason = "one column per account setting")]
 pub struct User {
     pub id: i64,
     pub username: String,
@@ -355,10 +356,13 @@ impl App {
                     .await?
             }
         };
-        match users.len() {
-            1 => Ok(users.into_iter().next().unwrap()),
-            0 => Err(AppError::NotFound),
-            _ => Err(AppError::bad(format!("several users are called {name}; log in with your full name#tag"))),
+        let mut found = users.into_iter();
+        match (found.next(), found.next()) {
+            (Some(user), None) => Ok(user),
+            (None, _) => Err(AppError::NotFound),
+            (Some(_), Some(_)) => {
+                Err(AppError::bad(format!("several users are called {name}; log in with your full name#tag")))
+            }
         }
     }
 

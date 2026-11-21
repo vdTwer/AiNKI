@@ -56,3 +56,22 @@ nursery = { level = "warn", priority = -1 }
 unwrap_used = "warn"
 expect_used = "warn"
 indexing_slicing = "warn"
+# Turned off on purpose, each for a reason:
+# - Row structs and helper fns sit next to the query that uses them, which
+#   keeps behavior local; clippy would hoist them away from their use.
+items_after_statements = "allow"
+# - write! into a String returns a Result that can never fail; format! with
+#   push_str says the same without a fake error path.
+format_push_string = "allow"
+# - Nursery lints with known false positives in this code base.
+option_if_let_else = "allow"
+redundant_pub_crate = "allow"
+suspicious_operation_groupings = "allow"
+# - Math (edit distance, dithering) keeps the textbook's one-letter names.
+many_single_char_names = "allow"
+similar_names = "allow"
+# Turned on in later batches of the cleanup: errors sections come with
+# the core contracts, and the function length limit drops to 60 lines
+# once the handlers are split into fetch, build and render.
+missing_errors_doc = "allow"
+too_many_lines = "allow"

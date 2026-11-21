@@ -78,8 +78,7 @@ impl Client {
 fn same_loopback(registered: &str, requested: &str) -> bool {
     let strip = |u: &str| -> Option<(String, String)> {
         let rest = u.strip_prefix("http://")?;
-        let (hostport, path) =
-            rest.split_once('/').map(|(h, p)| (h, format!("/{p}"))).unwrap_or_else(|| (rest, "/".into()));
+        let (hostport, path) = rest.split_once('/').map_or_else(|| (rest, "/".into()), |(h, p)| (h, format!("/{p}")));
         let host = hostport.rsplit_once(':').map_or(hostport, |(h, _)| h);
         matches!(host, "localhost" | "127.0.0.1" | "[::1]").then(|| (host.to_string(), path))
     };
@@ -454,6 +453,7 @@ impl App {
     ) -> Result<TokenResponse, OAuthError> {
         let client = self.authenticate_client(client_id, client_secret).await?;
         #[derive(sqlx::FromRow)]
+        #[expect(clippy::struct_field_names, reason = "named after the OAuth columns")]
         struct Code {
             client_id: String,
             user_id: i64,
@@ -706,6 +706,7 @@ async fn check_authorize(
         None if redirects.len() == 1 => redirects[0].clone(),
         _ => return Err(authorize_error_page(user, "The app's redirect address doesn't match its registration.")),
     };
+    #[expect(clippy::result_large_err, reason = "the error is the redirect response itself, built once")]
     let fail = |error: &str, desc: &str| {
         let mut params = vec![("error", error), ("error_description", desc)];
         if let Some(s) = p.state.as_deref() {

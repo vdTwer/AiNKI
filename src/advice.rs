@@ -178,6 +178,7 @@ pub struct PresetSignal {
 
 /// Everything the rules look at, gathered once.
 #[derive(Debug, Clone, Default)]
+#[expect(clippy::struct_excessive_bools, reason = "independent facts the rules read")]
 pub struct Signals {
     /// The hour on the user's clock, 0 to 23.
     pub hour: u32,
@@ -284,6 +285,7 @@ pub struct Advice {
     pub catch_up_toggle: Option<bool>,
 }
 
+#[expect(clippy::unnecessary_wraps, reason = "every note takes an optional link; this keeps the rules short")]
 fn link(href: impl Into<String>, label: &str) -> Option<Link> {
     Some(Link { href: href.into(), label: label.into() })
 }

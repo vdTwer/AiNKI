@@ -253,6 +253,7 @@ mod tests {
     /// Cards back to back for `minutes`, each usually 5 s plus 2 s on the
     /// back, with the usual spread. From `slow_from` minutes of work on,
     /// fronts take `slow` (log units) longer.
+    #[expect(clippy::while_float, reason = "simulated minutes only grow; the loop ends")]
     fn study(seed: u64, start: i64, minutes: f64, slow_from: f64, slow: f64) -> Vec<Step> {
         let mut n = Noise(seed);
         let mut out = vec![];

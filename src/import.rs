@@ -583,19 +583,18 @@ impl App {
                 continue;
             }
 
-            let deck_id = match deck_map.get(&c.did) {
-                Some(id) => *id,
-                None => {
-                    let name = deck_names.get(&c.did).cloned().unwrap_or_else(|| "Imported".into());
-                    let id = if let Some(d) = self.deck_by_name(access, &name).await? {
-                        d.id
-                    } else {
-                        report.decks_created.push(name.clone());
-                        self.create_deck(access, &name, "Imported from Anki", None).await?.id
-                    };
-                    deck_map.insert(c.did, id);
-                    id
-                }
+            let deck_id = if let Some(id) = deck_map.get(&c.did) {
+                *id
+            } else {
+                let name = deck_names.get(&c.did).cloned().unwrap_or_else(|| "Imported".into());
+                let id = if let Some(d) = self.deck_by_name(access, &name).await? {
+                    d.id
+                } else {
+                    report.decks_created.push(name.clone());
+                    self.create_deck(access, &name, "Imported from Anki", None).await?.id
+                };
+                deck_map.insert(c.did, id);
+                id
             };
 
             let card_id =

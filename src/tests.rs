@@ -156,7 +156,10 @@ async fn list_cards_remember_each_item() {
     app.answer_card(&a, card.id, Rating::Again, None, None).await.unwrap();
 
     // Switching it off makes a plain card that keeps its schedule.
-    let card = app.update_card(&a, card.id, CardInput { multi: Some(None), ..Default::default() }).await.unwrap();
+    let card = app
+        .update_card(&a, card.id, CardInput { multi: crate::service::Patch::Set(None), ..Default::default() })
+        .await
+        .unwrap();
     assert!(card.multi.is_none());
     assert!(app.card_items(&card).await.unwrap().is_empty());
     assert_ne!(card.card_state(), CardState::New);
@@ -173,7 +176,11 @@ async fn a_studied_card_turned_into_a_list_keeps_its_memory() {
         .unwrap();
     let card = app.answer_card(&a, card.id, Rating::Good, None, None).await.unwrap().card;
     let list = app
-        .update_card(&a, card.id, CardInput { multi: Some(Some(crate::multi::Split::List)), ..Default::default() })
+        .update_card(
+            &a,
+            card.id,
+            CardInput { multi: crate::service::Patch::Set(Some(crate::multi::Split::List)), ..Default::default() },
+        )
         .await
         .unwrap();
     assert_eq!(list.due, card.due);
@@ -324,7 +331,7 @@ async fn optimizer_fits_parameters() {
     // What the preset costs at each retention: more remembered costs more time.
     let w = app.workload(&Access::web(user.clone()), deck.preset_id, 30).await.unwrap();
     assert_eq!(w.iter().map(|w| w.retention).collect::<Vec<_>>(), vec![0.80, 0.85, 0.90, 0.95]);
-    assert!(w.iter().filter(|w| w.current).count() == 1);
+    assert_eq!(w.iter().filter(|w| w.current).count(), 1);
     assert!(w[3].reviews_per_day > w[0].reviews_per_day, "{w:?}");
     assert!(w[3].remembered > w[0].remembered, "{w:?}");
 
@@ -436,7 +443,7 @@ async fn accepting_a_share_twice_makes_one_copy() {
     app.create_card(&kolja, deck.id, "hablar", "to speak", None, None, None).await.unwrap();
     let share = app.share_deck(&kolja, deck.id, &anna.user.handle()).await.unwrap();
     let (first, second) = tokio::join!(app.accept_share(&anna, share.id), app.accept_share(&anna, share.id));
-    assert!(first.is_ok() != second.is_ok());
+    assert_ne!(first.is_ok(), second.is_ok());
     assert_eq!(app.decks(&anna).await.unwrap().len(), 1);
 }
 
@@ -1895,7 +1902,7 @@ async fn the_week_compares_retention_with_the_aim() {
 
 /// Run with `cargo test --release big_collection -- --ignored --nocapture`.
 #[tokio::test]
-#[ignore]
+#[ignore = "slow: seeds 20,000 cards; run in release mode"]
 async fn big_collection_stays_fast() {
     let app = app().await;
     let a = user(&app, "kolja").await;
@@ -2002,7 +2009,7 @@ async fn the_coach_reads_recall_and_pace_from_the_log() {
     let s = app.signals(&a, &known).await.unwrap();
     // The fourteen days end today, so the oldest day falls out.
     assert_eq!(s.study_days_14, 13);
-    assert_eq!(s.usual_per_day, 20.0);
+    assert!((s.usual_per_day - 20.0).abs() < f64::EPSILON);
     assert_eq!(s.recall_30d.reviews, 280);
     assert_eq!(s.recall_30d.remembered, 196);
     assert_eq!(s.days_since_review, Some(1));

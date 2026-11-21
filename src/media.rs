@@ -102,7 +102,7 @@ pub fn process_image(data: &[u8]) -> Result<(Vec<u8>, u32, u32)> {
     for (x, y, p) in rgba.enumerate_pixels() {
         let [r, g, b, a] = p.0;
         let a = f32::from(a) / 255.0;
-        let l = 0.7152f32.mul_add(f32::from(g), 0.2126 * f32::from(r)) + 0.0722 * f32::from(b);
+        let l: f32 = [0.2126, 0.7152, 0.0722].iter().zip([r, g, b]).map(|(w, c)| w * f32::from(c)).sum();
         gray.put_pixel(x, y, Luma([num::f32_u8(255.0f32.mul_add(1.0 - a, l * a).round())]));
     }
     dither(&mut gray, GRAY_LEVELS);
@@ -177,7 +177,7 @@ impl App {
         .fetch_all(&self.db)
         .await?
         .into_iter()
-        .flat_map(|(f, b)| [f, b])
+        .flat_map(<[Option<String>; 2]>::from)
         .flatten()
         .collect();
         let old: Vec<String> =

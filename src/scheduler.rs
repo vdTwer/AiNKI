@@ -144,7 +144,7 @@ impl Clock {
 
     /// Unix timestamp at which the given (user-local) day starts.
     pub fn day_start(&self, date: NaiveDate) -> i64 {
-        let naive = date.and_time(NaiveTime::from_hms_opt(self.rollover_hour, 0, 0).unwrap());
+        let naive = date.and_time(NaiveTime::MIN) + Duration::hours(i64::from(self.rollover_hour));
         match self.tz.from_local_datetime(&naive) {
             chrono::LocalResult::Single(t) => t.timestamp(),
             chrono::LocalResult::Ambiguous(a, _) => a.timestamp(),

@@ -49,12 +49,10 @@ fn rhythm(user: &User) -> breaks::Rhythm {
 /// Is `hour` inside quiet hours from `from` to `to` (to not included)?
 /// The window may cross midnight; equal ends mean no quiet hours.
 pub fn in_window(from: i64, to: i64, hour: i64) -> bool {
-    if from == to {
-        false
-    } else if from < to {
-        (from..to).contains(&hour)
-    } else {
-        hour >= from || hour < to
+    match from.cmp(&to) {
+        std::cmp::Ordering::Equal => false,
+        std::cmp::Ordering::Less => (from..to).contains(&hour),
+        std::cmp::Ordering::Greater => hour >= from || hour < to,
     }
 }
 

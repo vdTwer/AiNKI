@@ -135,17 +135,17 @@ fn png() -> Vec<u8> {
     out.into_inner()
 }
 
-fn package(format: Format, collection: Vec<u8>, media: &[(&str, Vec<u8>)]) -> Vec<u8> {
+fn package(format: Format, collection: &[u8], media: &[(&str, Vec<u8>)]) -> Vec<u8> {
     let mut zip = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
     let opts = zip::write::SimpleFileOptions::default();
     match format {
         Format::Legacy => {
             zip.start_file("collection.anki2", opts).unwrap();
-            zip.write_all(&collection).unwrap();
+            zip.write_all(collection).unwrap();
         }
         Format::Modern => {
             zip.start_file("collection.anki21b", opts).unwrap();
-            zip.write_all(&zstd::encode_all(&collection[..], 3).unwrap()).unwrap();
+            zip.write_all(&zstd::encode_all(collection, 3).unwrap()).unwrap();
         }
     }
     let index: serde_json::Map<String, serde_json::Value> =
@@ -200,7 +200,7 @@ async fn a_legacy_package_brings_cards_history_and_images() {
         card(8, "|orphan back", 11),
     ];
     let col = collection(Format::Legacy, crt, &[(10, "Languages::Spanish"), (11, "Geography")], &cards).await;
-    let pkg = package(Format::Legacy, col, &[("bandera.png", png()), ("sound.mp3", vec![1, 2, 3])]);
+    let pkg = package(Format::Legacy, &col, &[("bandera.png", png()), ("sound.mp3", vec![1, 2, 3])]);
 
     let report = app.import_apkg(&a, pkg).await.unwrap();
     assert_eq!(report.decks_created, vec!["Geography".to_string()]);
@@ -247,7 +247,7 @@ async fn a_modern_package_reads_nested_deck_names() {
         &[card(1, "Mitochondria|powerhouse", 5)],
     )
     .await;
-    let report = app.import_apkg(&a, package(Format::Modern, col, &[])).await.unwrap();
+    let report = app.import_apkg(&a, package(Format::Modern, &col, &[])).await.unwrap();
     assert_eq!(report.decks_created, vec!["Uni::Biology::Cells".to_string()]);
     assert_eq!(cards_in(&app, &a, "Uni::Biology::Cells").await[0].back, "powerhouse");
 }
@@ -258,7 +258,7 @@ async fn importing_twice_adds_the_cards_twice() {
     let app = app().await;
     let a = user(&app, "kolja").await;
     let col = collection(Format::Legacy, now(), &[(1, "Default")], &[card(1, "a|b", 1)]).await;
-    let pkg = package(Format::Legacy, col, &[]);
+    let pkg = package(Format::Legacy, &col, &[]);
     app.import_apkg(&a, pkg.clone()).await.unwrap();
     let again = app.import_apkg(&a, pkg).await.unwrap();
     assert!(again.decks_created.is_empty());
@@ -285,7 +285,7 @@ async fn cards_in_a_filtered_deck_go_home() {
         ..card(1, "filtered|card", 2)
     };
     let col = collection(Format::Legacy, crt, &[(1, "Spanish"), (2, "Filtered Deck 1")], &[c]).await;
-    let report = app.import_apkg(&a, package(Format::Legacy, col, &[])).await.unwrap();
+    let report = app.import_apkg(&a, package(Format::Legacy, &col, &[])).await.unwrap();
     assert_eq!(report.decks_created, vec!["Spanish".to_string()]);
     let card = &cards_in(&app, &a, "Spanish").await[0];
     assert!(card.due > now(), "due in three days, not long ago");
@@ -295,7 +295,7 @@ async fn cards_in_a_filtered_deck_go_home() {
 async fn broken_packages_and_narrow_tokens_are_refused() {
     let app = app().await;
     let a = user(&app, "kolja").await;
-    for bad in [b"not a zip".to_vec(), package(Format::Legacy, b"not sqlite".to_vec(), &[])] {
+    for bad in [b"not a zip".to_vec(), package(Format::Legacy, b"not sqlite", &[])] {
         assert!(matches!(app.import_apkg(&a, bad).await, Err(AppError::BadRequest(_))));
     }
     let empty = {
@@ -310,7 +310,7 @@ async fn broken_packages_and_narrow_tokens_are_refused() {
     let (_, raw) = app.create_token(a.user_id(), "narrow", true, true, Some(vec![deck.id])).await.unwrap();
     let narrow = app.token_access(&raw).await.unwrap();
     let col = collection(Format::Legacy, now(), &[(1, "X")], &[card(1, "a|b", 1)]).await;
-    assert!(app.import_apkg(&narrow, package(Format::Legacy, col, &[])).await.is_err());
+    assert!(app.import_apkg(&narrow, package(Format::Legacy, &col, &[])).await.is_err());
     // Nothing was left behind in the data folder's tmp directory.
     let left = std::fs::read_dir(app.config.data_dir.join("tmp")).map_or(0, std::iter::Iterator::count);
     assert_eq!(left, 0);

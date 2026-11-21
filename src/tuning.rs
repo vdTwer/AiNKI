@@ -101,19 +101,19 @@ pub struct Fit {
 /// Fit parameters and keep them only if they predict this history better
 /// than `current` (empty: the defaults). Runs on a blocking thread.
 fn fit(
-    items: Vec<fsrs::FSRSItem>,
+    items: &[fsrs::FSRSItem],
     card_ids: Vec<i64>,
     current: Vec<f32>,
     reviews: usize,
 ) -> std::result::Result<Fit, fsrs::FSRSError> {
     let new = fsrs::compute_parameters(fsrs::ComputeParametersInput {
-        train_set: items.clone(),
+        train_set: items.to_vec(),
         card_ids: Some(card_ids),
         ..Default::default()
     })?;
     let loss = |p: &[f32]| -> Option<f32> {
         let model = fsrs::FSRS::new(p).ok()?;
-        model.evaluate(items.clone(), |_| true).ok().map(|e| e.log_loss)
+        model.evaluate(items.to_vec(), |_| true).ok().map(|e| e.log_loss)
     };
     let (old_loss, new_loss) = (loss(&current), loss(&new));
     Ok(match (old_loss, new_loss) {
@@ -264,7 +264,7 @@ impl App {
         }
         let n_items = items.len();
         let current = user.params();
-        let global = tokio::task::spawn_blocking(move || fit(items, card_ids, current, used))
+        let global = tokio::task::spawn_blocking(move || fit(&items, card_ids, current, used))
             .await
             .map_err(|e| AppError::Internal(e.into()))?
             .map_err(|e| match e {
@@ -322,7 +322,7 @@ impl App {
             }
             // A preset starts from the user's parameters: its own must beat those.
             let current = if own.is_empty() { global.parameters.clone() } else { own };
-            let result = tokio::task::spawn_blocking(move || fit(items, card_ids, current, used))
+            let result = tokio::task::spawn_blocking(move || fit(&items, card_ids, current, used))
                 .await
                 .map_err(|e| AppError::Internal(e.into()))?;
             let Ok(f) = result else { continue };

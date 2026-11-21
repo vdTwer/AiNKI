@@ -220,16 +220,34 @@ pub struct PresetInput {
     pub typed_answers: Option<bool>,
 }
 
-#[derive(Debug, Default, Deserialize)]
+/// One field of an update: keep what is stored, or replace it.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub enum Patch<T> {
+    #[default]
+    Keep,
+    Set(T),
+}
+
+impl<T> Patch<T> {
+    /// The new value, or `current` when the field is kept.
+    pub fn or(self, current: T) -> T {
+        match self {
+            Self::Keep => current,
+            Self::Set(v) => v,
+        }
+    }
+}
+
+#[derive(Debug, Default)]
 pub struct CardInput {
     pub front: Option<String>,
     pub back: Option<String>,
-    /// `Some(None)` clears the image.
-    pub front_image: Option<Option<String>>,
-    pub back_image: Option<Option<String>>,
-    /// Learn the back item by item, split this way; `Some(None)` makes it a
+    /// `Set(None)` clears the image.
+    pub front_image: Patch<Option<String>>,
+    pub back_image: Patch<Option<String>>,
+    /// Learn the back item by item, split this way; `Set(None)` makes it a
     /// plain card again.
-    pub multi: Option<Option<Split>>,
+    pub multi: Patch<Option<Split>>,
 }
 
 /// A card's text, as the quick find reads it.
@@ -846,7 +864,7 @@ impl App {
         Ok(card)
     }
 
-    async fn check_media(&self, access: &Access, id: &Option<String>) -> Result<()> {
+    async fn check_media(&self, access: &Access, id: Option<&str>) -> Result<()> {
         if let Some(id) = id {
             let found: Option<String> = sqlx::query_scalar("SELECT id FROM media WHERE id = ? AND user_id = ?")
                 .bind(id)
@@ -882,8 +900,8 @@ impl App {
         }
         check_len("front", front, MAX_CARD_TEXT)?;
         check_len("back", back, MAX_CARD_TEXT)?;
-        self.check_media(access, &front_image).await?;
-        self.check_media(access, &back_image).await?;
+        self.check_media(access, front_image.as_deref()).await?;
+        self.check_media(access, back_image.as_deref()).await?;
         let source = match access.actor {
             Actor::Web => "web",
             Actor::Agent { .. } => "agent",
@@ -941,19 +959,19 @@ impl App {
         access.require_write()?;
         let mut card = self.card(access, id).await?;
         let was = card.multi;
-        let multi = input.multi.unwrap_or(was);
+        let multi = input.multi.or(was);
         if let Some(f) = input.front {
             card.front = markdown::tidy(f.trim());
         }
         if let Some(b) = input.back {
             card.back = markdown::tidy(b.trim());
         }
-        if let Some(img) = input.front_image {
-            self.check_media(access, &img).await?;
+        if let Patch::Set(img) = input.front_image {
+            self.check_media(access, img.as_deref()).await?;
             card.front_image = img;
         }
-        if let Some(img) = input.back_image {
-            self.check_media(access, &img).await?;
+        if let Patch::Set(img) = input.back_image {
+            self.check_media(access, img.as_deref()).await?;
             card.back_image = img;
         }
         if card.front.is_empty() && card.front_image.is_none() {

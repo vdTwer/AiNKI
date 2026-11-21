@@ -20,6 +20,9 @@ use axum::{
 use crate::AppState;
 
 pub const FLASH_COOKIE: &str = "ainki_flash";
+/// Deletes the flash cookie. Spelled out, so it can be a static header;
+/// a test checks it names `FLASH_COOKIE`.
+const CLEAR_FLASH: &str = "ainki_flash=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax";
 
 /// Fixed-window counters keyed by strings like "login-ip:1.2.3.4".
 #[derive(Default)]
@@ -37,7 +40,9 @@ impl RateLimiter {
         if entry.1.elapsed() >= window {
             *entry = (0, Instant::now());
         }
-        f(entry)
+        let out = f(entry);
+        drop(map);
+        out
     }
 
     /// True if `key` has already used up `max` hits in the window.
@@ -240,11 +245,7 @@ pub async fn flash(mut req: Request, next: Next) -> Response {
         .iter()
         .any(|v| v.as_bytes().starts_with(format!("{FLASH_COOKIE}=").as_bytes()));
     if had && !res.status().is_redirection() && !sets_flash {
-        res.headers_mut().append(
-            header::SET_COOKIE,
-            HeaderValue::from_str(&format!("{FLASH_COOKIE}=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax"))
-                .expect("static header"),
-        );
+        res.headers_mut().append(header::SET_COOKIE, HeaderValue::from_static(CLEAR_FLASH));
     }
     res
 }
@@ -252,6 +253,11 @@ pub async fn flash(mut req: Request, next: Next) -> Response {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn clearing_the_flash_names_the_flash_cookie() {
+        assert!(CLEAR_FLASH.starts_with(&format!("{FLASH_COOKIE}=;")));
+    }
 
     #[test]
     fn forwarded_for_only_from_internal_peers() {

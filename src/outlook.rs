@@ -149,7 +149,7 @@ pub fn forecast(plans: &[DeckPlan], clock: &Clock) -> anyhow::Result<Outlook> {
     for plan in plans {
         for (id, card) in &plan.cards {
             let mut acc = Acc::default();
-            walk(plan, clock, *id, card.clone(), card.due.max(clock.now), 1.0, 0, &mut acc)?;
+            walk(plan, clock, *id, card, card.due.max(clock.now), 1.0, 0, &mut acc)?;
             add(&mut total, &acc, 1.0);
         }
         for (day, &n) in plan.new_cards.iter().enumerate() {
@@ -160,7 +160,7 @@ pub fn forecast(plans: &[DeckPlan], clock: &Clock) -> anyhow::Result<Outlook> {
             let at =
                 if day == 0 { clock.now } else { clock.day_start(clock.today() + Duration::days(num::usize_i64(day))) };
             let mut acc = Acc::default();
-            walk(plan, clock, 0, CardSched::new_card(), at, 1.0, 0, &mut acc)?;
+            walk(plan, clock, 0, &CardSched::new_card(), at, 1.0, 0, &mut acc)?;
             add(&mut total, &acc, f64::from(n));
         }
     }
@@ -173,7 +173,7 @@ fn add(total: &mut Acc, one: &Acc, n: f64) {
     for (t, d) in total.days.iter_mut().zip(one.days) {
         *t = n.mul_add(d, *t);
     }
-    total.m2 += n * one.m1.mul_add(-one.m1, one.m2);
+    total.m2 = n.mul_add(one.m1.mul_add(-one.m1, one.m2), total.m2);
     total.floor = n.mul_add(one.floor, total.floor);
 }
 
@@ -184,7 +184,7 @@ fn walk(
     plan: &DeckPlan,
     clock: &Clock,
     id: i64,
-    card: CardSched,
+    card: &CardSched,
     at: i64,
     p: f64,
     k: u32,
@@ -192,7 +192,8 @@ fn walk(
 ) -> anyhow::Result<()> {
     let day = num::i64_usize((clock.date_of(at) - clock.today()).num_days().max(0));
     if day >= DAYS {
-        return leaf(acc, p, k);
+        leaf(acc, p, k);
+        return Ok(());
     }
     acc.days[day] += p;
     let k = if day > 0 {
@@ -204,7 +205,8 @@ fn walk(
         k
     };
     if p < MIN_MASS {
-        return leaf(acc, p, k);
+        leaf(acc, p, k);
+        return Ok(());
     }
     let recall = match (card.state, card.memory(), card.last_review) {
         (CardState::Review, Some(memory), Some(last)) => {
@@ -218,18 +220,17 @@ fn walk(
         if q <= 0.0 {
             continue;
         }
-        let next = settle(plan, clock, id, &card, rating, at)?;
+        let next = settle(plan, clock, id, card, rating, at)?;
         let due = next.due;
-        walk(plan, clock, id, next, due, p * q, k, acc)?;
+        walk(plan, clock, id, &next, due, p * q, k, acc)?;
     }
     Ok(())
 }
 
-fn leaf(acc: &mut Acc, p: f64, k: u32) -> anyhow::Result<()> {
+fn leaf(acc: &mut Acc, p: f64, k: u32) {
     let k = f64::from(k);
     acc.m1 = p.mul_add(k, acc.m1);
     acc.m2 = (p * k).mul_add(k, acc.m2);
-    Ok(())
 }
 
 /// Answers `rating` at `at`, then Good at each step that is still due the
@@ -306,15 +307,15 @@ mod tests {
     #[test]
     fn nothing_to_forecast() {
         let o = outlook(vec![], [0; DAYS]);
-        assert_eq!(o.days, [0.0; DAYS]);
+        assert!(o.days.iter().all(|d| d.abs() < f64::EPSILON), "{:?}", o.days);
         assert_eq!(o.later_range(), (0, 0));
     }
 
     #[test]
     fn a_card_due_after_the_week_adds_nothing() {
         let o = outlook(vec![learned(50.0, 9)], [0; DAYS]);
-        assert_eq!(o.later(), 0.0);
-        assert_eq!(o.variance, 0.0);
+        assert!(o.later().abs() < f64::EPSILON);
+        assert!(o.variance.abs() < f64::EPSILON);
     }
 
     #[test]
@@ -344,7 +345,7 @@ mod tests {
     #[test]
     fn new_cards_start_on_their_day_and_return() {
         let o = outlook(vec![], [0, 0, 5, 0, 0, 0, 0]);
-        assert_eq!(o.days[1], 0.0);
+        assert!(o.days[1].abs() < f64::EPSILON);
         assert!((o.days[2] - 5.0).abs() < 1e-9, "{:?}", o.days);
         assert!(o.days[3..].iter().sum::<f64>() > 0.0, "new cards come back: {:?}", o.days);
         assert!((o.floor - 5.0).abs() < 1e-9);
