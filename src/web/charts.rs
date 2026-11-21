@@ -121,11 +121,11 @@ pub fn bars(values: &[(String, i64)], label: &str) -> Markup {
             text.axis x="0" y=(TOP + 4.0) { (most) }
             @for (i, (name, v)) in values.iter().enumerate() {
                 @let x = num::usize_f64(i) * slot;
-                rect.bar x=(x + slot * 0.15) y=(y(*v)) width=(slot * 0.7) height=((H - BOTTOM - y(*v)).max(1.0)) rx="2" {
+                rect.bar x=(slot.mul_add(0.15, x)) y=(y(*v)) width=(slot * 0.7) height=((H - BOTTOM - y(*v)).max(1.0)) rx="2" {
                     title { (name) ": " (v) (if *v == 1 { " card" } else { " cards" }) }
                 }
                 @if i == 0 || i + 1 == n || i % 7 == 0 {
-                    text.axis x=(x + slot / 2.0) y=(H - 6.0) text-anchor="middle" { (name) }
+                    text.axis x=(slot.mul_add(0.5, x)) y=(H - 6.0) text-anchor="middle" { (name) }
                 }
             }
         },
