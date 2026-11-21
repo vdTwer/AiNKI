@@ -10,10 +10,12 @@ const LIST: &str = "- one\n- two\n- three";
 async fn two_decks(app: &App, a: &Access) -> (i64, i64) {
     let spanish = app.create_deck(a, "Spanish", "", None).await.unwrap();
     let french = app.create_deck(a, "French", "", None).await.unwrap();
-    app.create_card(a, spanish.id, "hablar", "to speak", None, None, None).await.unwrap();
-    app.create_card(a, spanish.id, "Numbers?", LIST, None, None, Some(Split::List)).await.unwrap();
-    app.create_card(a, french.id, "parler", "to speak", None, None, None).await.unwrap();
-    app.create_card(a, french.id, "manger", "to eat", None, None, None).await.unwrap();
+    app.create_card(a, spanish.id, NewCard::new("hablar", "to speak")).await.unwrap();
+    app.create_card(a, spanish.id, NewCard { multi: Some(Split::List), ..NewCard::new("Numbers?", LIST) })
+        .await
+        .unwrap();
+    app.create_card(a, french.id, NewCard::new("parler", "to speak")).await.unwrap();
+    app.create_card(a, french.id, NewCard::new("manger", "to eat")).await.unwrap();
     let first = app.next_card(a, Some(spanish.id)).await.unwrap().unwrap();
     app.answer_card(a, first.card.id, Rating::Good, None, Some(0)).await.unwrap();
     (spanish.id, french.id)
@@ -132,9 +134,9 @@ async fn the_same_card_in_two_decks_is_copied_once() {
     let app = app().await;
     let a = user(&app, "kolja").await;
     let (spanish, french) = two_decks(&app, &a).await;
-    app.create_card(&a, french, "hablar", "to speak", None, None, None).await.unwrap();
+    app.create_card(&a, french, NewCard::new("hablar", "to speak")).await.unwrap();
     // Same front, other back: not the same card.
-    app.create_card(&a, french, "manger", "eating", None, None, None).await.unwrap();
+    app.create_card(&a, french, NewCard::new("manger", "eating")).await.unwrap();
 
     let merged = app.merge_decks(&a, input(vec![spanish, french], false)).await.unwrap();
     assert_eq!((merged.cards, merged.duplicates), (5, 1));
@@ -224,7 +226,7 @@ async fn copies_are_not_flagged_as_duplicates_of_their_originals() {
     assert!(app.card_flags(&a, &copies[0]).await.unwrap().is_empty());
 
     // A card written by hand with the same front is still noticed.
-    let mine = app.create_card(&a, french, "hablar", "to talk", None, None, None).await.unwrap();
+    let mine = app.create_card(&a, french, NewCard::new("hablar", "to talk")).await.unwrap();
     assert_eq!(app.card_flags(&a, &mine).await.unwrap().len(), 1);
 }
 
@@ -240,7 +242,7 @@ async fn deleting_the_old_decks_moves_their_cards_with_their_history() {
     let (old, _) = app.list_cards(&a, &filter).await.unwrap();
     let hablar_id = old.iter().find(|c| c.front == "hablar").unwrap().id;
     // A duplicate with a review of its own.
-    let dup = app.create_card(&a, french, "hablar", "to speak", None, None, None).await.unwrap();
+    let dup = app.create_card(&a, french, NewCard::new("hablar", "to speak")).await.unwrap();
     app.answer_card(&a, dup.id, Rating::Good, None, Some(0)).await.unwrap();
     let reviews = app.stats(&a, None).await.unwrap().reviews_today;
 

@@ -9,7 +9,7 @@ use crate::{
     auth::Access,
     error::{AppError, Result},
     now,
-    service::Deck,
+    service::{Deck, NewCard},
 };
 
 #[derive(Debug, Clone, Serialize, sqlx::FromRow)]
@@ -189,7 +189,12 @@ impl App {
             let front_image = self.copy_image(access.user_id(), c.front_image, &mut images).await?;
             let back_image = self.copy_image(access.user_id(), c.back_image, &mut images).await?;
             let id = self
-                .insert_card(access.user_id(), deck.id, &c.front, &c.back, front_image, back_image, "shared")
+                .insert_card(
+                    access.user_id(),
+                    deck.id,
+                    &NewCard { front_image, back_image, ..NewCard::new(&c.front, &c.back) },
+                    "shared",
+                )
                 .await?;
             if c.multi.is_some() {
                 let copy = self.card(access, id).await?;

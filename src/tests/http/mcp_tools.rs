@@ -315,8 +315,8 @@ async fn tokens_only_do_what_they_were_given() {
     let a = user(&app, "kolja").await;
     let mine = app.create_deck(&a, "Mine", "", None).await.unwrap();
     let other = app.create_deck(&a, "Private", "", None).await.unwrap();
-    let card = app.create_card(&a, mine.id, "Hund", "dog", None, None, None).await.unwrap();
-    let secret = app.create_card(&a, other.id, "secret", "diary", None, None, None).await.unwrap();
+    let card = app.create_card(&a, mine.id, NewCard::new("Hund", "dog")).await.unwrap();
+    let secret = app.create_card(&a, other.id, NewCard::new("secret", "diary")).await.unwrap();
 
     // Read only: may look (even at the next card), may not write or answer.
     let (_, ro) = app.create_token(a.user_id(), "reader", false, false, None).await.unwrap();
@@ -415,9 +415,9 @@ async fn an_agent_can_merge_decks() {
     let (_, t) = app.create_token(a.user_id(), "claude", true, true, None).await.unwrap();
     let one = app.create_deck(&a, "One", "", None).await.unwrap();
     let two = app.create_deck(&a, "Two", "", None).await.unwrap();
-    app.create_card(&a, one.id, "a", "1", None, None, None).await.unwrap();
-    app.create_card(&a, two.id, "b", "2", None, None, None).await.unwrap();
-    app.create_card(&a, two.id, "a", "1", None, None, None).await.unwrap();
+    app.create_card(&a, one.id, NewCard::new("a", "1")).await.unwrap();
+    app.create_card(&a, two.id, NewCard::new("b", "2")).await.unwrap();
+    app.create_card(&a, two.id, NewCard::new("a", "1")).await.unwrap();
     let merged = ok(&app, &t, "merge_decks", json!({ "deck_ids": [one.id, two.id], "name": "Both" })).await;
     assert_eq!(merged["deck"]["name"], "Both");
     assert_eq!((merged["cards"].as_i64(), merged["duplicates"].as_i64()), (Some(2), Some(1)));

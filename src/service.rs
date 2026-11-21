@@ -249,6 +249,35 @@ pub struct CardInput {
     pub multi: Patch<Option<Split>>,
 }
 
+/// A card to add. `NewCard::new(front, back)` for plain text; set the
+/// other fields with struct update syntax.
+#[derive(Debug, Default, Clone)]
+pub struct NewCard<'a> {
+    pub front: &'a str,
+    pub back: &'a str,
+    pub front_image: Option<String>,
+    pub back_image: Option<String>,
+    /// Learn the back item by item, split this way.
+    pub multi: Option<Split>,
+}
+
+impl<'a> NewCard<'a> {
+    pub fn new(front: &'a str, back: &'a str) -> Self {
+        Self { front, back, ..Self::default() }
+    }
+}
+
+/// The settings page's fields.
+#[derive(Debug, Clone)]
+pub struct Settings<'a> {
+    pub timezone: &'a str,
+    pub rollover_hour: i64,
+    pub four_buttons: bool,
+    pub font_scale: i64,
+    pub optimize_include_agent: bool,
+    pub desktop_look: &'a str,
+}
+
 /// A card's text, as the quick find reads it.
 #[derive(Debug, sqlx::FromRow)]
 pub struct CardText {
@@ -893,58 +922,46 @@ impl App {
         Ok(())
     }
 
-    #[allow(clippy::too_many_arguments)]
-    pub async fn create_card(
-        &self,
-        access: &Access,
-        deck_id: i64,
-        front: &str,
-        back: &str,
-        front_image: Option<String>,
-        back_image: Option<String>,
-        multi: Option<Split>,
-    ) -> Result<Card> {
+    pub async fn create_card(&self, access: &Access, deck_id: i64, new: NewCard<'_>) -> Result<Card> {
         access.require_write()?;
         self.deck(access, deck_id).await?;
-        if front.trim().is_empty() && front_image.is_none() {
+        if new.front.trim().is_empty() && new.front_image.is_none() {
             return Err(AppError::bad("the front needs text or an image"));
         }
-        let (front, back) = (&markdown::tidy(front), &markdown::tidy(back));
-        if let Some(how) = multi {
-            crate::multi::split(back, how).ok_or_else(|| crate::multi::no_items(how))?;
+        let (front, back) = (markdown::tidy(new.front), markdown::tidy(new.back));
+        if let Some(how) = new.multi {
+            crate::multi::split(&back, how).ok_or_else(|| crate::multi::no_items(how))?;
         }
-        check_len("front", front, MAX_CARD_TEXT)?;
-        check_len("back", back, MAX_CARD_TEXT)?;
-        self.check_media(access, front_image.as_deref()).await?;
-        self.check_media(access, back_image.as_deref()).await?;
+        check_len("front", &front, MAX_CARD_TEXT)?;
+        check_len("back", &back, MAX_CARD_TEXT)?;
+        self.check_media(access, new.front_image.as_deref()).await?;
+        self.check_media(access, new.back_image.as_deref()).await?;
         let source = match access.actor {
             Actor::Web => "web",
             Actor::Agent { .. } => "agent",
         };
-        let id = self.insert_card(access.user_id(), deck_id, front, back, front_image, back_image, source).await?;
+        let tidy = NewCard { front: &front, back: &back, ..new };
+        let id = self.insert_card(access.user_id(), deck_id, &tidy, source).await?;
         let card = self.card(access, id).await?;
-        if multi.is_some() {
-            self.sync_items(&card, multi).await?;
+        if tidy.multi.is_some() {
+            self.sync_items(&card, tidy.multi).await?;
             return self.card(access, id).await;
         }
         Ok(card)
     }
 
-    #[allow(clippy::too_many_arguments)]
+    /// Stores a card's text and images unchecked, for imports and copies.
+    /// It does not split a multicard: the caller syncs its items.
     pub(crate) async fn insert_card(
         &self,
         user_id: i64,
         deck_id: i64,
-        front: &str,
-        back: &str,
-        front_image: Option<String>,
-        back_image: Option<String>,
+        new: &NewCard<'_>,
         created_by: &str,
     ) -> Result<i64> {
         let t = now();
         // Imports and copies are not validated field by field; cap them here.
         let cap = |x: &str| -> String { x.trim().chars().take(MAX_CARD_TEXT).collect() };
-        let (front, back) = (cap(front), cap(back));
         Ok(sqlx::query_scalar(
             "INSERT INTO cards (user_id, deck_id, front, back, front_image, back_image, position,
                 created_by, created_at, updated_at, suspended, held)
@@ -956,10 +973,10 @@ impl App {
         )
         .bind(user_id)
         .bind(deck_id)
-        .bind(front)
-        .bind(back)
-        .bind(front_image)
-        .bind(back_image)
+        .bind(cap(new.front))
+        .bind(cap(new.back))
+        .bind(&new.front_image)
+        .bind(&new.back_image)
         .bind(user_id)
         .bind(created_by)
         .bind(t)
@@ -1687,16 +1704,9 @@ impl App {
 
     // ----- settings & FSRS ----------------------------------------------
 
-    pub async fn update_settings(
-        &self,
-        user_id: i64,
-        timezone: &str,
-        rollover_hour: i64,
-        four_buttons: bool,
-        font_scale: i64,
-        optimize_include_agent: bool,
-        desktop_look: &str,
-    ) -> Result<()> {
+    pub async fn update_settings(&self, user_id: i64, settings: &Settings<'_>) -> Result<()> {
+        let Settings { timezone, rollover_hour, four_buttons, font_scale, optimize_include_agent, desktop_look } =
+            *settings;
         if !matches!(desktop_look, "calm" | "simple") {
             return Err(AppError::bad("unknown look"));
         }

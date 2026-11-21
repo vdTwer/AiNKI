@@ -66,7 +66,7 @@ async fn deleting_a_deck_takes_its_cards_and_goes_home() {
     let a = user(&app, "kolja").await;
     let deck = app.create_deck(&a, "Old", "", None).await.unwrap();
     for i in 0..3 {
-        app.create_card(&a, deck.id, &format!("q{i}"), "a", None, None, None).await.unwrap();
+        app.create_card(&a, deck.id, NewCard::new(&format!("q{i}"), "a")).await.unwrap();
     }
     let cookie = login_cookie(&app, "kolja").await;
     let res = submit(&app, &cookie, &format!("/decks/{}/delete", deck.id), "").await;

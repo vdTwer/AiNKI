@@ -503,7 +503,7 @@ impl App {
         }
         let mut out = Vec::new();
         for (front, back) in &cards {
-            out.push(self.create_card(access, card.deck_id, front, back, None, None, None).await?);
+            out.push(self.create_card(access, card.deck_id, crate::service::NewCard::new(front, back)).await?);
         }
         if keep_original {
             self.set_suspended(access, card.id, true).await?;

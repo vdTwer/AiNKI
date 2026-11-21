@@ -85,7 +85,6 @@ pub fn quiet_until(user: &User, at: i64) -> Option<i64> {
     }
 }
 
-
 /// How long an answer took, as the browser measured it. Anything out of
 /// range is dropped rather than stored.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]

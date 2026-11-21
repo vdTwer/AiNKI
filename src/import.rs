@@ -20,6 +20,7 @@ use crate::{
     error::{AppError, Result},
     now, num,
     scheduler::{self, CardState},
+    service::NewCard,
 };
 
 pub const MAX_IMPORT_BYTES: usize = 300 * 1024 * 1024;
@@ -397,7 +398,7 @@ impl App {
                 report.skipped += 1;
                 continue;
             }
-            self.insert_card(access.user_id(), deck_id, &front, &back, None, None, "import").await?;
+            self.insert_card(access.user_id(), deck_id, &NewCard::new(&front, &back), "import").await?;
             report.cards_imported += 1;
         }
         Ok(report)
@@ -596,8 +597,14 @@ impl App {
                 id
             };
 
-            let card_id =
-                self.insert_card(access.user_id(), deck_id, &front, &back, front_image, back_image, "import").await?;
+            let card_id = self
+                .insert_card(
+                    access.user_id(),
+                    deck_id,
+                    &NewCard { front_image, back_image, ..NewCard::new(&front, &back) },
+                    "import",
+                )
+                .await?;
             report.cards_imported += 1;
 
             // History: learning/review/relearning/filtered entries only.

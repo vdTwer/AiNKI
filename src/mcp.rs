@@ -673,11 +673,12 @@ impl AinkiMcp {
                 .create_card(
                     &a,
                     deck_id,
-                    &c.front,
-                    &c.back,
-                    c.front_image_id.clone(),
-                    c.back_image_id.clone(),
-                    c.split(),
+                    crate::service::NewCard {
+                        front_image: c.front_image_id.clone(),
+                        back_image: c.back_image_id.clone(),
+                        multi: c.split(),
+                        ..crate::service::NewCard::new(&c.front, &c.back)
+                    },
                 )
                 .await
             {

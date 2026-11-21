@@ -32,7 +32,7 @@ use crate::{
     presets,
     scheduler::{self, CardState, Rating},
     security::{self, ClientIp, Flash},
-    service::{Card, CardFilter, CardInput, Deck, DeckStatus, Patch, PresetInput},
+    service::{Card, CardFilter, CardInput, Deck, DeckStatus, NewCard, Patch, PresetInput, Settings},
     study,
 };
 
@@ -2365,7 +2365,7 @@ async fn lesson_deck(State(app): State<AppState>, user: WebUser, Path(slug): Pat
         async {
             let deck = app.create_deck(&access, &name, &lesson.summary, None).await?;
             for (front, back) in &lesson.cards {
-                app.create_card(&access, deck.id, front, back, None, None, None).await?;
+                app.create_card(&access, deck.id, NewCard::new(front, back)).await?;
             }
             Ok(redirect_msg(format!("/decks/{}", deck.id), "Lesson added as a deck."))
         }
@@ -3344,7 +3344,8 @@ async fn card_create(State(app): State<AppState>, user: WebUser, mp: Multipart) 
             Some(d) => Some(app.store_image(&access, d).await?.id),
             None => None,
         };
-        app.create_card(&access, deck, &f.front, &f.back, front_image, back_image, f.multi).await?;
+        let new = NewCard { front_image, back_image, multi: f.multi, ..NewCard::new(&f.front, &f.back) };
+        app.create_card(&access, deck, new).await?;
         Ok((deck, msg))
     }
     .await;
@@ -4348,16 +4349,15 @@ async fn settings_update(State(app): State<AppState>, user: WebUser, Form(f): Fo
     or_back(
         "/settings",
         async {
-            app.update_settings(
-                user.0.id,
-                f.timezone.trim(),
-                f.rollover_hour.trim().parse().unwrap_or(user.0.rollover_hour),
-                f.four_buttons.is_some(),
-                f.font_scale.trim().parse().unwrap_or(user.0.font_scale),
-                f.optimize_include_agent.is_some(),
-                f.desktop_look.as_deref().unwrap_or("calm"),
-            )
-            .await?;
+            let settings = Settings {
+                timezone: f.timezone.trim(),
+                rollover_hour: f.rollover_hour.trim().parse().unwrap_or(user.0.rollover_hour),
+                four_buttons: f.four_buttons.is_some(),
+                font_scale: f.font_scale.trim().parse().unwrap_or(user.0.font_scale),
+                optimize_include_agent: f.optimize_include_agent.is_some(),
+                desktop_look: f.desktop_look.as_deref().unwrap_or("calm"),
+            };
+            app.update_settings(user.0.id, &settings).await?;
             Ok(redirect_msg("/settings", "Settings saved."))
         }
         .await,
