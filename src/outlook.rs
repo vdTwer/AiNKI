@@ -292,7 +292,7 @@ mod tests {
             stability: Some(stability),
             difficulty: Some(5.0),
             due,
-            last_review: Some(due - num::f32_i64(stability.max(1.0)) * DAY),
+            last_review: Some(due - num::f64_i64(f64::from(stability.max(1.0))) * DAY),
             reps: 3,
             lapses: 0,
         }

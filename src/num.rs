@@ -39,12 +39,6 @@ pub const fn f64_i64(x: f64) -> i64 {
 }
 
 #[must_use]
-#[expect(clippy::cast_possible_truncation, reason = "saturating by definition of `as`; NaN becomes 0")]
-pub const fn f32_i64(x: f32) -> i64 {
-    x as i64
-}
-
-#[must_use]
 #[expect(clippy::cast_possible_truncation, reason = "FSRS works in f32; the lost digits are far below its precision")]
 pub const fn f64_f32(x: f64) -> f32 {
     x as f32
