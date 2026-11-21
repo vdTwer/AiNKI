@@ -13,6 +13,11 @@ use crate::num;
 
 /// Stored as its number; a row with any other number fails to load
 /// instead of passing for a new card.
+///
+/// The numbers are part of the database format, like a column: the SQL
+/// writes them as literals (`state = 2` is review, `state IN (1, 3)` is
+/// learning or relearning), and so do Anki's files and the migrations.
+/// They never change; `the_stored_numbers_never_change` holds them.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, sqlx::Type)]
 #[serde(rename_all = "snake_case")]
 #[repr(i64)]
@@ -392,6 +397,12 @@ impl Outcome {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_stored_numbers_never_change() {
+        let stored = [CardState::New, CardState::Learning, CardState::Review, CardState::Relearning].map(|s| s as i64);
+        assert_eq!(stored, [0, 1, 2, 3]);
+    }
 
     fn cfg() -> SchedConfig {
         SchedConfig {
