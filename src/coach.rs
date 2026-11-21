@@ -358,10 +358,72 @@ impl App {
         }
         let in_scope = |deck: i64| deck_id.is_none_or(|d| d == deck) && access.can_see_deck(deck);
 
-        // Leech and split candidates: anything forgotten at least twice.
-        // First only what the rules need (as one row of JSON, which is much
-        // quicker to read than a row per card), then whole cards only for
-        // those that may get a flag.
+        let (candidates, secs) = self.lapse_candidates(access, &in_scope).await?;
+
+        // Each flag with the lapse count it is judged by.
+        type Flagged = (Option<Card>, Vec<(Flag, i64)>);
+        let mut found: HashMap<i64, Flagged> = HashMap::new();
+        for card in candidates {
+            let items = self.card_items(&card).await?;
+            let flags: Vec<(Flag, i64)> = leech_flag(&card, &items)
+                .into_iter()
+                .chain(split_flag(&card, secs.get(&card.id).copied()))
+                .map(|f| {
+                    let lapses = lapses_for(&card, &items, &f);
+                    (f, lapses)
+                })
+                .collect();
+            if !flags.is_empty() {
+                found.insert(card.id, (Some(card), flags));
+            }
+        }
+
+        let fronts = self.fronts(access).await?;
+        for (id, flag) in duplicate_flags(&fronts, &in_scope) {
+            found.entry(id).or_insert((None, vec![])).1.push((flag, 0));
+        }
+
+        let all_ids: Vec<i64> = found.keys().copied().collect();
+        let dismissed = self.dismissals(&all_ids).await?;
+        let mut out = Vec::new();
+        for (id, (card, flags)) in found {
+            let flags: Vec<Flag> = flags
+                .into_iter()
+                .filter(|(f, lapses)| back_again(f.kind, dismissed.get(&(id, f.kind)).copied(), *lapses))
+                .map(|(f, _)| f)
+                .collect();
+            if flags.is_empty() {
+                continue;
+            }
+            let card = match card {
+                Some(c) => c,
+                None => match self.card(access, id).await {
+                    Ok(c) if !c.suspended => c,
+                    _ => continue,
+                },
+            };
+            out.push(Attention { card, flags });
+        }
+        out.sort_by_key(|a| {
+            (
+                !a.flags.iter().any(|f| f.kind == Kind::Leech),
+                std::cmp::Reverse(a.card.lapses),
+                std::cmp::Reverse(a.card.id),
+            )
+        });
+        Ok(out)
+    }
+
+    /// Cards forgotten often enough to maybe earn a leech or split flag,
+    /// with the average thinking time of each card considered. First only
+    /// what the rules need (as one row of JSON, which is much quicker to
+    /// read than a row per card), then whole cards only for those that may
+    /// get a flag.
+    async fn lapse_candidates(
+        &self,
+        access: &Access,
+        in_scope: &(impl Fn(i64) -> bool + Sync),
+    ) -> Result<(Vec<Card>, HashMap<i64, f64>)> {
         let light: String = sqlx::query_scalar(
             "SELECT COALESCE(json_group_array(json_array(id, deck_id, lapses, multi IS NOT NULL,
                 CASE WHEN lapses >= ? AND multi IS NULL THEN back END)), '[]')
@@ -395,70 +457,7 @@ impl App {
             .fetch_all(&self.db)
             .await?;
 
-        // Each flag with the lapse count it is judged by.
-        type Flagged = (Option<Card>, Vec<(Flag, i64)>);
-        let mut found: HashMap<i64, Flagged> = HashMap::new();
-        for card in candidates {
-            let items = self.card_items(&card).await?;
-            let flags: Vec<(Flag, i64)> = leech_flag(&card, &items)
-                .into_iter()
-                .chain(split_flag(&card, secs.get(&card.id).copied()))
-                .map(|f| {
-                    let lapses = lapses_for(&card, &items, &f);
-                    (f, lapses)
-                })
-                .collect();
-            if !flags.is_empty() {
-                found.insert(card.id, (Some(card), flags));
-            }
-        }
-
-        // Near-duplicate fronts: the same words.
-        // Copies of one card (merged decks) are one family, not duplicates.
-        let fronts = self.fronts(access).await?;
-        let mut by_text: HashMap<&str, Vec<&Front>> = HashMap::new();
-        for f in &fronts {
-            if !f.text.is_empty() {
-                by_text.entry(f.text.as_str()).or_default().push(f);
-            }
-        }
-        for same in by_text.values() {
-            for me in same.iter().filter(|f| in_scope(f.deck)) {
-                if let Some(other) = same.iter().find(|o| o.family != me.family) {
-                    found.entry(me.id).or_insert((None, vec![])).1.push((duplicate_flag(other.id), 0));
-                }
-            }
-        }
-
-        let all_ids: Vec<i64> = found.keys().copied().collect();
-        let dismissed = self.dismissals(&all_ids).await?;
-        let mut out = Vec::new();
-        for (id, (card, flags)) in found {
-            let flags: Vec<Flag> = flags
-                .into_iter()
-                .filter(|(f, lapses)| back_again(f.kind, dismissed.get(&(id, f.kind)).copied(), *lapses))
-                .map(|(f, _)| f)
-                .collect();
-            if flags.is_empty() {
-                continue;
-            }
-            let card = match card {
-                Some(c) => c,
-                None => match self.card(access, id).await {
-                    Ok(c) if !c.suspended => c,
-                    _ => continue,
-                },
-            };
-            out.push(Attention { card, flags });
-        }
-        out.sort_by_key(|a| {
-            (
-                !a.flags.iter().any(|f| f.kind == Kind::Leech),
-                std::cmp::Reverse(a.card.lapses),
-                std::cmp::Reverse(a.card.id),
-            )
-        });
-        Ok(out)
+        Ok((candidates, secs))
     }
 
     /// "Keep as is": hide the flag until the card slips a few more times
@@ -529,6 +528,24 @@ fn lapses_for(card: &Card, items: &[multi::CardItem], flag: &Flag) -> i64 {
         Some(i) => i.lapses,
         None => card.lapses,
     }
+}
+
+/// Near-duplicate fronts: the same words. Copies of one card (merged
+/// decks) are one family, not duplicates. Gives each card in scope its flag.
+fn duplicate_flags(fronts: &[Front], in_scope: &impl Fn(i64) -> bool) -> Vec<(i64, Flag)> {
+    let mut by_text: HashMap<&str, Vec<&Front>> = HashMap::new();
+    for f in fronts.iter().filter(|f| !f.text.is_empty()) {
+        by_text.entry(f.text.as_str()).or_default().push(f);
+    }
+    let mut out = Vec::new();
+    for same in by_text.values() {
+        for me in same.iter().filter(|f| in_scope(f.deck)) {
+            if let Some(other) = same.iter().find(|o| o.family != me.family) {
+                out.push((me.id, duplicate_flag(other.id)));
+            }
+        }
+    }
+    out
 }
 
 #[cfg(test)]
