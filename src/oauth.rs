@@ -12,7 +12,6 @@
 //! An approved connection is stored like a manual API token, so it appears
 //! (and can be revoked) on the Agent access page.
 
-use crate::num;
 use axum::{
     Json,
     extract::{Query, State},
@@ -30,7 +29,7 @@ use crate::{
     App, AppState,
     auth::{random_hex, sha256_hex},
     error::{AppError, Result},
-    now,
+    now, num,
     web::{WebUser, layout, urlenc},
 };
 

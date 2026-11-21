@@ -5,7 +5,6 @@
 //! cloze notes become one card per cloze number. Review history is imported
 //! too, so FSRS memory states (and later the optimizer) can use it.
 
-use crate::num;
 use std::{
     collections::HashMap,
     io::{Cursor, Read},
@@ -19,7 +18,7 @@ use crate::{
     App,
     auth::Access,
     error::{AppError, Result},
-    now,
+    now, num,
     scheduler::{self, CardState},
 };
 

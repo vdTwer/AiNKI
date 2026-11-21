@@ -8,7 +8,6 @@
 //! desired retention by simulation rather than suggest one "optimal" value
 //! (Anki 25.07 removed its "compute minimum recommended retention").
 
-use crate::num;
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -19,7 +18,7 @@ use crate::{
     App,
     auth::{Access, User},
     error::{AppError, Result},
-    now,
+    now, num,
     scheduler::{self, CardState},
     service::placeholders,
 };

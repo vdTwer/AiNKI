@@ -18,7 +18,6 @@
 //! counts once a day however often it is shown, so in-day misses change
 //! the count very little.
 
-use crate::num;
 use std::collections::HashMap;
 
 use chrono::Duration;
@@ -28,6 +27,7 @@ use crate::{
     App,
     auth::Access,
     error::Result,
+    num,
     scheduler::{self, CardSched, CardState, Clock, Rating, SchedConfig},
     service::{Card, DeckSummary, sched_config_for},
 };

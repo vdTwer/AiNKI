@@ -2,7 +2,6 @@
 //! 16 gray levels, which is what most e-ink panels can show, so pictures look
 //! the same on a Kindle-style screen as on a phone.
 
-use crate::num;
 use std::path::PathBuf;
 
 use image::{GrayImage, ImageDecoder, ImageReader, Luma, imageops::FilterType};
@@ -12,7 +11,7 @@ use crate::{
     App,
     auth::Access,
     error::{AppError, Result},
-    now,
+    now, num,
 };
 
 pub const MAX_UPLOAD_BYTES: usize = 15 * 1024 * 1024;

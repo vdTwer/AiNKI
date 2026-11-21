@@ -2,7 +2,6 @@
 //! decks. The decks it is made from are only read, never changed, unless
 //! the person asks to delete them: then their cards move instead.
 
-use crate::num;
 use std::collections::{HashMap, HashSet};
 
 use serde::Serialize;
@@ -12,7 +11,7 @@ use crate::{
     auth::Access,
     error::{AppError, Result},
     multi::Split,
-    now,
+    now, num,
     service::Deck,
 };
 

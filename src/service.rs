@@ -2,7 +2,6 @@
 //! both thin layers over these functions, so agents can do whatever humans can
 //! (within the limits of their token).
 
-use crate::num;
 use std::collections::HashMap;
 
 use chrono::{Duration, NaiveDate};
@@ -15,7 +14,7 @@ use crate::{
     error::{AppError, Result},
     markdown,
     multi::{Missed, Split},
-    now, presets,
+    now, num, presets,
     scheduler::{self, CardSched, CardState, Clock, Rating, SchedConfig},
 };
 

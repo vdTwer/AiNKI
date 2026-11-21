@@ -7,7 +7,6 @@
 //! always hold a summary of its items (see [`summarize`]), so queues, counts
 //! and stats work as for any other card.
 
-use crate::num;
 use std::cmp::Ordering;
 use std::ops::Range;
 
@@ -19,7 +18,7 @@ use crate::{
     App,
     auth::Access,
     error::{AppError, Result},
-    format, markdown,
+    format, markdown, num,
     scheduler::{self, CardSched, CardState, Clock, Rating},
     service::{AnswerResult, Card},
 };

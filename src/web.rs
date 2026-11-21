@@ -1,7 +1,6 @@
 //! The website: server-rendered HTML, no JavaScript required, high contrast,
 //! no animations, big tap targets. Designed for phones and e-ink readers.
 
-use crate::num;
 use std::{collections::HashMap, time::Duration};
 
 use axum::{
@@ -28,7 +27,7 @@ use crate::{
     format::{self, count},
     fuzzy, import, insight, invites, lessons, markdown, mcp, media,
     multi::{self, Piece, Split},
-    now, oauth,
+    now, num, oauth,
     outlook::Outlook,
     presets,
     scheduler::{self, CardState, Rating},

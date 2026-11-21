@@ -9,7 +9,6 @@
 //!
 //! The card coach (`coach`) looks at single cards; this looks at the whole.
 
-use crate::num;
 use std::collections::{HashMap, HashSet};
 
 use chrono::{Duration, Timelike};
@@ -20,6 +19,7 @@ use crate::{
     auth::Access,
     coach::{Attention, Kind},
     error::Result,
+    num,
     service::{DeckSummary, Stats},
 };
 

@@ -7,7 +7,6 @@
 //! FSRS community's findings; none of them is a tested threshold, so they
 //! stay simple and explainable.
 
-use crate::num;
 use std::collections::{HashMap, HashSet};
 
 use serde::Serialize;
@@ -17,7 +16,7 @@ use crate::{
     auth::Access,
     error::{AppError, Result},
     multi::{self, Split},
-    now,
+    now, num,
     scheduler::CardState,
     service::{Card, placeholders},
 };

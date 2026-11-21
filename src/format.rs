@@ -1,9 +1,9 @@
 //! How numbers, intervals and dates are written. One place, so every page
 //! (and the MCP answers) says the same thing the same way.
 
-use crate::num;
 use chrono::Datelike;
 
+use crate::num;
 use crate::scheduler::Clock;
 
 /// "1 card", "3 cards". English plurals by adding "s"; every word we

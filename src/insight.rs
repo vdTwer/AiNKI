@@ -1,7 +1,6 @@
 //! Looking back: the week in a few numbers with one tip, and how much of
 //! each deck you really remembered against what its preset aims for.
 
-use crate::num;
 use std::collections::{HashMap, HashSet};
 
 use chrono::Duration;
@@ -10,6 +9,7 @@ use serde::Serialize;
 use crate::App;
 use crate::auth::Access;
 use crate::error::Result;
+use crate::num;
 
 /// Below this many reviews a deck's retention says little.
 pub const MIN_SAMPLE: i64 = 20;

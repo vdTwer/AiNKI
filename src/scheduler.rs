@@ -4,11 +4,12 @@
 //! card lifecycle around it: learning/relearning steps, day boundaries in the
 //! user's timezone, interval fuzz, maximum intervals and exam-date caps.
 
-use crate::num;
 use chrono::{Duration, NaiveDate, NaiveTime, TimeZone, Utc};
 use chrono_tz::Tz;
 use fsrs::{FSRS, MemoryState};
 use serde::{Deserialize, Serialize};
+
+use crate::num;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]

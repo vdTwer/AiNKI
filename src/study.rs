@@ -4,7 +4,6 @@
 //! Timed questions and typed answers are set per preset and handled on
 //! the study page; a timeout is recorded as Again (see `note_answer`).
 
-use crate::num;
 use chrono::{Duration, NaiveTime, TimeZone, Timelike};
 use serde::Serialize;
 
@@ -13,6 +12,7 @@ use crate::auth::{Access, User};
 use crate::breaks;
 use crate::error::{AppError, Result};
 use crate::now;
+use crate::num;
 
 /// A gap this long between answers ends a session.
 pub const SESSION_GAP_SECS: i64 = 10 * 60;
