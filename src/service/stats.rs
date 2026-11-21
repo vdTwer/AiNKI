@@ -199,23 +199,22 @@ impl App {
     /// has one, and doesn't break the streak before it has.
     async fn streak(&self, access: &Access, deck_ids: &[i64], clock: &Clock) -> Result<i64> {
         let today = clock.today();
-        let sql = "SELECT EXISTS (SELECT 1 FROM review_log
-                WHERE user_id = ? AND rating > 0 AND reviewed_at >= ? AND reviewed_at < ? AND deck_id IN (SELECT value FROM json_each(?)))";
-        let studied = |day: NaiveDate| {
-            let q = sqlx::query_scalar::<_, bool>(sql)
-                .bind(access.user_id())
-                .bind(clock.day_start(day))
-                .bind(clock.day_start(day + Duration::days(1)))
-                .bind(id_list(deck_ids));
-            q.fetch_one(&self.db)
-        };
-        let mut days = 0;
-        let mut day = if studied(today).await? { today } else { today - Duration::days(1) };
-        while today - day <= Duration::days(365) && studied(day).await? {
-            days += 1;
-            day -= Duration::days(1);
-        }
-        Ok(days)
+        // One query asks every day of the last year at once: each pair is a
+        // day's start and end in the user's zone, so DST is the clock's job.
+        let days: Vec<(i64, i64)> = (0..=STREAK_DAYS)
+            .map(|back| today - Duration::days(back))
+            .map(|day| (clock.day_start(day), clock.day_start(day + Duration::days(1))))
+            .collect();
+        let sql = "SELECT CAST(d.key AS INTEGER) FROM json_each(?) d WHERE EXISTS (SELECT 1 FROM review_log
+                WHERE user_id = ? AND rating > 0 AND reviewed_at >= d.value ->> 0 AND reviewed_at < d.value ->> 1
+                AND deck_id IN (SELECT value FROM json_each(?)))";
+        let studied: Vec<i64> = sqlx::query_scalar(sql)
+            .bind(sqlx::types::Json(&days))
+            .bind(access.user_id())
+            .bind(id_list(deck_ids))
+            .fetch_all(&self.db)
+            .await?;
+        Ok(streak_days(&studied))
     }
 
     /// The last twelve weeks, for the charts on the desktop stats page:
@@ -257,5 +256,32 @@ impl App {
                 .collect(),
             weeks,
         })
+    }
+}
+
+/// How far back the streak looks, in days.
+const STREAK_DAYS: i64 = 365;
+
+/// The streak from the days studied, counted back from today (0 = today):
+/// consecutive days up to yesterday, plus today once it is studied, so an
+/// unfinished today doesn't break it.
+fn streak_days(studied: &[i64]) -> i64 {
+    let set: std::collections::HashSet<i64> = studied.iter().copied().collect();
+    let first = i64::from(!set.contains(&0));
+    (first..=STREAK_DAYS).take_while(|d| set.contains(d)).fold(0, |n, _| n + 1)
+}
+
+#[cfg(test)]
+mod streak_tests {
+    use super::streak_days;
+
+    #[test]
+    fn today_counts_once_studied_and_never_breaks_the_streak() {
+        assert_eq!(streak_days(&[]), 0);
+        assert_eq!(streak_days(&[0]), 1);
+        assert_eq!(streak_days(&[1, 2, 3]), 3, "not yet studied today");
+        assert_eq!(streak_days(&[0, 1, 2, 4]), 3, "a gap ends it");
+        assert_eq!(streak_days(&[2, 3]), 0, "missed yesterday");
+        assert_eq!(streak_days(&(0..400).collect::<Vec<_>>()), 366, "capped at a year");
     }
 }
