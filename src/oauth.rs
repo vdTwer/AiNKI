@@ -29,7 +29,7 @@ use crate::{
     App, AppState,
     auth::{random_hex, sha256_hex},
     error::{AppError, Result},
-    now,
+    now, num,
     web::{WebUser, layout, urlenc},
 };
 
@@ -48,10 +48,7 @@ pub fn base_url(app: &App, headers: &HeaderMap) -> String {
         .or_else(|| headers.get(header::HOST))
         .and_then(|h| h.to_str().ok())
         .unwrap_or("localhost:8080");
-    let proto = headers
-        .get("x-forwarded-proto")
-        .and_then(|h| h.to_str().ok())
-        .unwrap_or("http");
+    let proto = headers.get("x-forwarded-proto").and_then(|h| h.to_str().ok()).unwrap_or("http");
     format!("{proto}://{host}")
 }
 
@@ -60,14 +57,14 @@ pub struct Client {
     pub id: String,
     pub secret_hash: Option<String>,
     pub name: String,
-    pub redirect_uris: String,
+    pub redirect_uris: sqlx::types::Json<Vec<String>>,
     pub metadata_url: Option<String>,
     pub created_at: i64,
 }
 
 impl Client {
-    fn redirects(&self) -> Vec<String> {
-        serde_json::from_str(&self.redirect_uris).unwrap_or_default()
+    fn redirects(&self) -> &[String] {
+        &self.redirect_uris
     }
 
     /// Exact match, except that loopback redirects may use any port
@@ -80,8 +77,8 @@ impl Client {
 fn same_loopback(registered: &str, requested: &str) -> bool {
     let strip = |u: &str| -> Option<(String, String)> {
         let rest = u.strip_prefix("http://")?;
-        let (hostport, path) = rest.split_once('/').map(|(h, p)| (h, format!("/{p}"))).unwrap_or((rest, "/".into()));
-        let host = hostport.rsplit_once(':').map(|(h, _)| h).unwrap_or(hostport);
+        let (hostport, path) = rest.split_once('/').map_or_else(|| (rest, "/".into()), |(h, p)| (h, format!("/{p}")));
+        let host = hostport.rsplit_once(':').map_or(hostport, |(h, _)| h);
         matches!(host, "localhost" | "127.0.0.1" | "[::1]").then(|| (host.to_string(), path))
     };
     matches!((strip(registered), strip(requested)), (Some(a), Some(b)) if a == b)
@@ -97,8 +94,8 @@ fn valid_redirect(uri: &str) -> bool {
         "https" => true,
         // Plain http only for apps on the user's own machine.
         "http" => same_loopback(uri, uri),
-        "javascript" | "data" | "file" | "vbscript" | "about" | "blob" | "filesystem" | "view-source"
-        | "intent" | "ws" | "wss" | "ftp" => false,
+        "javascript" | "data" | "file" | "vbscript" | "about" | "blob" | "filesystem" | "view-source" | "intent"
+        | "ws" | "wss" | "ftp" => false,
         // Custom schemes for native apps (e.g. com.example.app:/callback).
         s => s.contains('.') || s.chars().all(|c| c.is_ascii_alphanumeric() || c == '+' || c == '-'),
     }
@@ -168,7 +165,7 @@ pub struct RegistrationRequest {
     pub token_endpoint_auth_method: Option<String>,
 }
 
-/// Client metadata document fetched from a URL client_id.
+/// Client metadata document fetched from a URL `client_id`.
 #[derive(Debug, Deserialize)]
 struct MetadataDocument {
     client_id: String,
@@ -239,19 +236,19 @@ async fn fetch_metadata_document(url: &str) -> Option<MetadataDocument> {
     .ok()?
     .ok()?
     .collect();
-    if addrs.is_empty() || !addrs.iter().all(|a| is_public_ip(a.ip())) {
+    let Some(&addr) = addrs.first().filter(|_| addrs.iter().all(|a| is_public_ip(a.ip()))) else {
         tracing::warn!("refusing to fetch client metadata from non-public host {host}");
         return None;
-    }
+    };
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(10))
         .redirect(reqwest::redirect::Policy::none())
-        .resolve(&host, addrs[0])
+        .resolve(&host, addr)
         .no_proxy()
         .build()
         .ok()?;
     let mut resp = client.get(parsed).header("Accept", "application/json").send().await.ok()?;
-    if !resp.status().is_success() || resp.content_length().is_some_and(|l| l as usize > MAX_METADATA_BYTES) {
+    if !resp.status().is_success() || resp.content_length().is_some_and(|l| num::u64_usize(l) > MAX_METADATA_BYTES) {
         return None;
     }
     let mut body = Vec::new();
@@ -275,6 +272,10 @@ fn clean_name(s: &str) -> String {
 }
 
 impl App {
+    /// # Errors
+    ///
+    /// - `OAuthError` (`invalid_redirect_uri` or `invalid_client_metadata`) if the request breaks RFC 7591's rules.
+    /// - `server_error` if the database fails.
     pub async fn register_client(&self, req: RegistrationRequest) -> Result<Value, OAuthError> {
         if req.redirect_uris.is_empty() || req.redirect_uris.len() > 20 {
             return Err(OAuthError::new("invalid_redirect_uri", "give 1 to 20 redirect_uris"));
@@ -298,7 +299,7 @@ impl App {
         .bind(&id)
         .bind(secret.as_deref().map(sha256_hex))
         .bind(&name)
-        .bind(serde_json::to_string(&req.redirect_uris).unwrap_or_default())
+        .bind(sqlx::types::Json(&req.redirect_uris))
         .bind(now())
         .execute(&self.db)
         .await?;
@@ -311,20 +312,22 @@ impl App {
             "response_types": ["code"],
             "token_endpoint_auth_method": method,
         });
-        if let Some(s) = secret {
-            out["client_secret"] = json!(s);
-            out["client_secret_expires_at"] = json!(0);
+        if let (Some(s), Some(o)) = (secret, out.as_object_mut()) {
+            o.insert("client_secret".into(), json!(s));
+            o.insert("client_secret_expires_at".into(), json!(0));
         }
         Ok(out)
     }
 
     /// Look up a registered client, or fetch the metadata document for a
-    /// URL-shaped client_id.
+    /// URL-shaped `client_id`.
+    ///
+    /// # Errors
+    ///
+    /// `Internal` if the database fails or a URL client's metadata can't be fetched.
     pub async fn client(&self, client_id: &str) -> Result<Option<Client>> {
-        let stored: Option<Client> = sqlx::query_as("SELECT * FROM oauth_clients WHERE id = ?")
-            .bind(client_id)
-            .fetch_optional(&self.db)
-            .await?;
+        let stored: Option<Client> =
+            sqlx::query_as("SELECT * FROM oauth_clients WHERE id = ?").bind(client_id).fetch_optional(&self.db).await?;
         let is_url = client_id.starts_with("https://");
         match stored {
             Some(c) if !is_url || c.created_at > now() - 86_400 => Ok(Some(c)),
@@ -335,7 +338,7 @@ impl App {
 
     async fn fetch_client_metadata(&self, url: &str) -> Result<Option<Client>> {
         // Anyone can make us fetch a URL here, so bound how often.
-        if self.limiter.check_and_hit("cimd-fetch", 300, std::time::Duration::from_secs(3600)) {
+        if self.limiter.check_and_hit("cimd-fetch", 300, std::time::Duration::from_hours(1)) {
             tracing::warn!("client metadata fetches throttled");
             return Ok(None);
         }
@@ -361,17 +364,17 @@ impl App {
         )
         .bind(url)
         .bind(name.chars().take(100).collect::<String>())
-        .bind(serde_json::to_string(&doc.redirect_uris).unwrap_or_default())
+        .bind(sqlx::types::Json(&doc.redirect_uris))
         .bind(url)
         .bind(now())
         .execute(&self.db)
         .await?;
-        Ok(sqlx::query_as("SELECT * FROM oauth_clients WHERE id = ?")
-            .bind(url)
-            .fetch_optional(&self.db)
-            .await?)
+        Ok(sqlx::query_as("SELECT * FROM oauth_clients WHERE id = ?").bind(url).fetch_optional(&self.db).await?)
     }
 
+    /// # Errors
+    ///
+    /// `Internal` if the database fails.
     #[allow(clippy::too_many_arguments)]
     pub async fn create_auth_code(
         &self,
@@ -396,7 +399,7 @@ impl App {
         .bind(code_challenge)
         .bind(can_write)
         .bind(can_review)
-        .bind(decks.map(|d| serde_json::to_string(&d).unwrap_or_default()))
+        .bind(decks.map(sqlx::types::Json))
         .bind(now() + CODE_SECS)
         .execute(&self.db)
         .await?;
@@ -406,12 +409,10 @@ impl App {
     /// Check client credentials. Public clients (no secret) are fine; PKCE
     /// protects their codes.
     async fn authenticate_client(&self, client_id: &str, secret: Option<&str>) -> Result<Client, OAuthError> {
-        let client = self
-            .client(client_id)
-            .await?
-            .ok_or_else(|| OAuthError::new("invalid_client", "unknown client"))?;
+        let client =
+            self.client(client_id).await?.ok_or_else(|| OAuthError::new("invalid_client", "unknown client"))?;
         if let Some(hash) = &client.secret_hash {
-            let given = secret.map(sha256_hex).unwrap_or_default();
+            let given = secret.map_or_else(Default::default, sha256_hex);
             if !ct_eq(given.as_bytes(), hash.as_bytes()) {
                 return Err(OAuthError::new("invalid_client", "wrong client secret"));
             }
@@ -424,10 +425,7 @@ impl App {
         let refresh = format!("ainki_rt_{}", random_hex(32));
         let mut tx = self.db.begin_with("BEGIN IMMEDIATE").await?;
         // Expired tokens are garbage.
-        sqlx::query("DELETE FROM oauth_tokens WHERE expires_at < ?")
-            .bind(now())
-            .execute(&mut *tx)
-            .await?;
+        sqlx::query("DELETE FROM oauth_tokens WHERE expires_at < ?").bind(now()).execute(&mut *tx).await?;
         for (token, kind, ttl) in [(&access, "access", ACCESS_TOKEN_SECS), (&refresh, "refresh", REFRESH_TOKEN_SECS)] {
             sqlx::query("INSERT INTO oauth_tokens (token_hash, kind, api_token_id, expires_at) VALUES (?, ?, ?, ?)")
                 .bind(sha256_hex(token))
@@ -455,6 +453,12 @@ impl App {
         Ok(scope_string(w, r))
     }
 
+    /// # Errors
+    ///
+    /// - `OAuthError` `invalid_client` if the client or its secret is wrong.
+    /// - `invalid_grant` if the code is unknown, used, expired, for another client or redirect, or the PKCE
+    ///   verifier doesn't match, or a granted deck is gone.
+    /// - `server_error` if the database fails.
     pub async fn exchange_code(
         &self,
         client_id: &str,
@@ -465,6 +469,7 @@ impl App {
     ) -> Result<TokenResponse, OAuthError> {
         let client = self.authenticate_client(client_id, client_secret).await?;
         #[derive(sqlx::FromRow)]
+        #[expect(clippy::struct_field_names, reason = "named after the OAuth columns")]
         struct Code {
             client_id: String,
             user_id: i64,
@@ -472,7 +477,8 @@ impl App {
             code_challenge: String,
             can_write: bool,
             can_review: bool,
-            decks: Option<String>,
+            /// The decks the user granted; `None` means all of them.
+            decks: Option<sqlx::types::Json<Vec<i64>>>,
             expires_at: i64,
         }
         // Codes are single use: delete on read.
@@ -491,7 +497,9 @@ impl App {
         if !pkce_ok(verifier, &row.code_challenge) {
             return Err(OAuthError::new("invalid_grant", "PKCE verification failed"));
         }
-        let decks: Option<Vec<i64>> = row.decks.as_deref().and_then(|d| serde_json::from_str(d).ok());
+        // A grant that fails to parse fails the exchange: before, it became
+        // None, which is "all decks".
+        let decks: Option<Vec<i64>> = row.decks.map(|sqlx::types::Json(d)| d);
         let grant = self
             .create_grant(
                 row.user_id,
@@ -504,12 +512,19 @@ impl App {
             )
             .await
             .map_err(|e| match e {
-                AppError::NotFound | AppError::BadRequest(_) => OAuthError::new("invalid_grant", "decks no longer exist"),
+                AppError::NotFound | AppError::BadRequest(_) => {
+                    OAuthError::new("invalid_grant", "decks no longer exist")
+                }
                 e => e.into(),
             })?;
         Ok(self.issue_tokens(grant.id, scope_string(row.can_write, row.can_review)).await?)
     }
 
+    /// # Errors
+    ///
+    /// - `OAuthError` `invalid_client` if the client or its secret is wrong.
+    /// - `invalid_grant` if the refresh token is unknown, revoked or another client's, or a granted deck is gone.
+    /// - `server_error` if the database fails.
     pub async fn refresh_tokens(
         &self,
         client_id: &str,
@@ -538,28 +553,24 @@ impl App {
             .bind(&hash)
             .fetch_optional(&self.db)
             .await?;
-            if let Some((grant, used_at)) = used {
-                if now() - used_at > REFRESH_REUSE_GRACE_SECS {
-                    tracing::warn!("refresh token reuse detected; revoking connection {grant}");
-                    sqlx::query("UPDATE api_tokens SET revoked_at = ? WHERE id = ?")
-                        .bind(now())
-                        .bind(grant)
-                        .execute(&self.db)
-                        .await?;
-                    sqlx::query("DELETE FROM oauth_tokens WHERE api_token_id = ?")
-                        .bind(grant)
-                        .execute(&self.db)
-                        .await?;
-                }
+            if let Some((grant, used_at)) = used
+                && now() - used_at > REFRESH_REUSE_GRACE_SECS
+            {
+                tracing::warn!("refresh token reuse detected; revoking connection {grant}");
+                sqlx::query("UPDATE api_tokens SET revoked_at = ? WHERE id = ?")
+                    .bind(now())
+                    .bind(grant)
+                    .execute(&self.db)
+                    .await?;
+                sqlx::query("DELETE FROM oauth_tokens WHERE api_token_id = ?").bind(grant).execute(&self.db).await?;
             }
             return Err(invalid());
         };
-        let owner: Option<Option<String>> = sqlx::query_scalar(
-            "SELECT oauth_client_id FROM api_tokens WHERE id = ? AND revoked_at IS NULL",
-        )
-        .bind(grant_id)
-        .fetch_optional(&self.db)
-        .await?;
+        let owner: Option<Option<String>> =
+            sqlx::query_scalar("SELECT oauth_client_id FROM api_tokens WHERE id = ? AND revoked_at IS NULL")
+                .bind(grant_id)
+                .fetch_optional(&self.db)
+                .await?;
         if expires_at < now() || owner.flatten().as_deref() != Some(client.id.as_str()) {
             return Err(invalid());
         }
@@ -568,6 +579,10 @@ impl App {
     }
 
     /// RFC 7009: revoking either token ends the whole connection.
+    ///
+    /// # Errors
+    ///
+    /// `Internal` if the database fails. An unknown token is no error (RFC 7009).
     pub async fn revoke_oauth_token(&self, token: &str) -> Result<()> {
         let grant: Option<i64> = sqlx::query_scalar("SELECT api_token_id FROM oauth_tokens WHERE token_hash = ?")
             .bind(sha256_hex(token))
@@ -579,10 +594,7 @@ impl App {
                 .bind(id)
                 .execute(&self.db)
                 .await?;
-            sqlx::query("DELETE FROM oauth_tokens WHERE api_token_id = ?")
-                .bind(id)
-                .execute(&self.db)
-                .await?;
+            sqlx::query("DELETE FROM oauth_tokens WHERE api_token_id = ?").bind(id).execute(&self.db).await?;
         }
         Ok(())
     }
@@ -639,7 +651,7 @@ pub async fn register(
 ) -> Response {
     // Registration is open by design (MCP clients register themselves), so
     // bound how fast one address can fill the table.
-    if app.limiter.check_and_hit(&format!("oauth-register:{ip}"), 30, std::time::Duration::from_secs(3600)) {
+    if app.limiter.check_and_hit(&format!("oauth-register:{ip}"), 30, std::time::Duration::from_hours(1)) {
         return crate::security::too_many_requests(3600);
     }
     match app.register_client(req).await {
@@ -707,27 +719,32 @@ async fn check_authorize(
     p: &AuthorizeParams,
     user: Option<&crate::auth::User>,
     base: &str,
-) -> Result<(Client, String), Response> {
+) -> Result<(Client, String), Box<Response>> {
     let Some(client_id) = p.client_id.as_deref() else {
-        return Err(authorize_error_page(user, "The request is missing client_id."));
+        return Err(Box::new(authorize_error_page(user, "The request is missing client_id.")));
     };
     let client = match app.client(client_id).await {
         Ok(Some(c)) => c,
-        Ok(None) => return Err(authorize_error_page(user, "This app isn't registered with AiNKI.")),
-        Err(e) => return Err(crate::web::WebError::from(e).into_response()),
+        Ok(None) => return Err(Box::new(authorize_error_page(user, "This app isn't registered with AiNKI."))),
+        Err(e) => return Err(Box::new(crate::web::WebError::from(e).into_response())),
     };
     let redirects = client.redirects();
-    let redirect_uri = match p.redirect_uri.as_deref() {
-        Some(r) if client.allows_redirect(r) => r.to_string(),
-        None if redirects.len() == 1 => redirects[0].clone(),
-        _ => return Err(authorize_error_page(user, "The app's redirect address doesn't match its registration.")),
+    let redirect_uri = match (p.redirect_uri.as_deref(), redirects) {
+        (Some(r), _) if client.allows_redirect(r) => r.to_string(),
+        (None, [only]) => only.clone(),
+        _ => {
+            return Err(Box::new(authorize_error_page(
+                user,
+                "The app's redirect address doesn't match its registration.",
+            )));
+        }
     };
     let fail = |error: &str, desc: &str| {
         let mut params = vec![("error", error), ("error_description", desc)];
         if let Some(s) = p.state.as_deref() {
             params.push(("state", s));
         }
-        Err(redirect_with(&redirect_uri, &params))
+        Err(Box::new(redirect_with(&redirect_uri, &params)))
     };
     if p.response_type.as_deref() != Some("code") {
         return fail("unsupported_response_type", "only response_type=code is supported");
@@ -759,16 +776,15 @@ pub async fn authorize_page(
     };
     let (client, redirect_uri) = match check_authorize(&app, &p, Some(&user), &base_url(&app, &headers)).await {
         Ok(v) => v,
-        Err(r) => return r,
+        Err(r) => return *r,
     };
     let access = crate::auth::Access::web(user.clone());
-    let decks = app.decks(&access).await.unwrap_or_default();
-    let target = redirect_uri
-        .split("://")
-        .nth(1)
-        .and_then(|r| r.split('/').next())
-        .unwrap_or(&redirect_uri)
-        .to_string();
+    let decks = match app.decks(&access).await {
+        Ok(d) => d,
+        Err(e) => return crate::web::WebError::from(e).into_response(),
+    };
+    let target =
+        redirect_uri.split("://").nth(1).and_then(|r| r.split('/').next()).unwrap_or(&redirect_uri).to_string();
     let hidden = |name: &str, v: &Option<String>| {
         html! { @if let Some(v) = v { input type="hidden" name=(name) value=(v); } }
     };
@@ -793,18 +809,7 @@ pub async fn authorize_page(
                 (hidden("scope", &p.scope))
                 (hidden("resource", &p.resource))
                 p { "It can always read your decks and cards. Also allow it to:" }
-                label.check { input type="checkbox" name="can_write" value="1" checked; " " (crate::web::PERM_WRITE) }
-                label.check { input type="checkbox" name="can_review" value="1" checked; " " (crate::web::PERM_REVIEW) }
-                fieldset {
-                    legend { "Decks" }
-                    label.check { input type="radio" name="deck_scope" value="all" checked; " " (crate::web::PERM_ALL_DECKS) }
-                    @if !decks.is_empty() {
-                        label.check { input type="radio" name="deck_scope" value="some"; " " (crate::web::PERM_SOME_DECKS) }
-                        @for d in &decks {
-                            label.check.indent { input type="checkbox" name="decks" value=(d.id); " " (crate::web::deck_plain(&d.name)) }
-                        }
-                    }
-                }
+                (crate::web::permission_fields(&decks))
                 div.actions {
                     button.btn.primary type="submit" name="decision" value="allow" { "Allow" }
                     button.btn type="submit" name="decision" value="deny" { "Cancel" }
@@ -847,10 +852,15 @@ pub struct ConsentForm {
     pub decks: Vec<i64>,
 }
 
-pub async fn authorize_submit(State(app): State<AppState>, headers: HeaderMap, WebUser(user): WebUser, Form(f): Form<ConsentForm>) -> Response {
+pub async fn authorize_submit(
+    State(app): State<AppState>,
+    headers: HeaderMap,
+    WebUser(user): WebUser,
+    Form(f): Form<ConsentForm>,
+) -> Response {
     let (client, redirect_uri) = match check_authorize(&app, &f.params, Some(&user), &base_url(&app, &headers)).await {
         Ok(v) => v,
-        Err(r) => return r,
+        Err(r) => return *r,
     };
     let iss = base_url(&app, &headers);
     let mut params: Vec<(&str, &str)> = Vec::new();
@@ -859,7 +869,7 @@ pub async fn authorize_submit(State(app): State<AppState>, headers: HeaderMap, W
         params.push(("error_description", "the user declined"));
     }
     let decks = if f.deck_scope.as_deref() == Some("some") { Some(f.decks.clone()) } else { None };
-    if decks.as_ref().is_some_and(|d| d.is_empty()) {
+    if decks.as_ref().is_some_and(std::vec::Vec::is_empty) {
         return authorize_error_page(Some(&user), "Pick at least one deck, or allow all decks.");
     }
     let code;
@@ -908,24 +918,7 @@ fn basic_auth(headers: &HeaderMap) -> Option<(String, String)> {
     let s = String::from_utf8(raw).ok()?;
     let (id, secret) = s.split_once(':')?;
     // RFC 6749 2.3.1: both parts are form-urlencoded.
-    let dec = |x: &str| -> String {
-        let x = x.replace('+', " ");
-        let bytes = x.as_bytes();
-        let mut out = Vec::with_capacity(bytes.len());
-        let mut i = 0;
-        while i < bytes.len() {
-            if bytes[i] == b'%' && i + 2 < bytes.len() {
-                if let Some(b) = std::str::from_utf8(&bytes[i + 1..i + 3]).ok().and_then(|h| u8::from_str_radix(h, 16).ok()) {
-                    out.push(b);
-                    i += 3;
-                    continue;
-                }
-            }
-            out.push(bytes[i]);
-            i += 1;
-        }
-        String::from_utf8_lossy(&out).into_owned()
-    };
+    let dec = |x: &str| crate::security::percent_decode(&x.replace('+', " "));
     Some((dec(id), dec(secret)))
 }
 
@@ -954,7 +947,9 @@ pub async fn token(State(app): State<AppState>, headers: HeaderMap, Form(t): For
         _ => Err(OAuthError::new("unsupported_grant_type", "use authorization_code or refresh_token")),
     };
     match result {
-        Ok(tokens) => ([(header::CACHE_CONTROL, "no-store"), (header::PRAGMA, "no-cache")], Json(tokens)).into_response(),
+        Ok(tokens) => {
+            ([(header::CACHE_CONTROL, "no-store"), (header::PRAGMA, "no-cache")], Json(tokens)).into_response()
+        }
         Err(e) => e.into_response(),
     }
 }
@@ -989,7 +984,20 @@ mod tests {
 
     #[test]
     fn only_public_addresses_are_fetched() {
-        for ip in ["127.0.0.1", "10.1.2.3", "172.16.0.1", "192.168.1.1", "169.254.169.254", "100.64.0.1", "0.0.0.0", "::1", "fd00::1", "fe80::1", "::ffff:127.0.0.1", "64:ff9b::a00:1"] {
+        for ip in [
+            "127.0.0.1",
+            "10.1.2.3",
+            "172.16.0.1",
+            "192.168.1.1",
+            "169.254.169.254",
+            "100.64.0.1",
+            "0.0.0.0",
+            "::1",
+            "fd00::1",
+            "fe80::1",
+            "::ffff:127.0.0.1",
+            "64:ff9b::a00:1",
+        ] {
             assert!(!is_public_ip(ip.parse().unwrap()), "{ip}");
         }
         for ip in ["1.1.1.1", "160.79.104.10", "2606:4700::1111"] {
@@ -999,7 +1007,14 @@ mod tests {
 
     #[tokio::test]
     async fn metadata_urls_must_be_safe() {
-        for url in ["http://example.com/client", "https://user@example.com/c", "https://example.com:8443/c", "https://example.com/", "https://127.0.0.1/c", "https://localhost/c"] {
+        for url in [
+            "http://example.com/client",
+            "https://user@example.com/c",
+            "https://example.com:8443/c",
+            "https://example.com/",
+            "https://127.0.0.1/c",
+            "https://localhost/c",
+        ] {
             assert!(fetch_metadata_document(url).await.is_none(), "{url}");
         }
     }
@@ -1017,10 +1032,7 @@ mod tests {
     #[test]
     fn pkce() {
         // RFC 7636 appendix B
-        assert!(pkce_ok(
-            "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk",
-            "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM"
-        ));
+        assert!(pkce_ok("dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk", "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM"));
         assert!(!pkce_ok("short", "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM"));
     }
 

@@ -34,7 +34,9 @@ async fn writers_at_the_same_time_never_fail() {
             let mut failures = Vec::new();
             for n in 0..25 {
                 let multi = (n % 2 == 0).then_some(Split::List);
-                if let Err(e) = app.create_card(&a, deck, &format!("q{n}"), BACK, None, None, multi).await {
+                if let Err(e) =
+                    app.create_card(&a, deck, NewCard { multi, ..NewCard::new(&format!("q{n}"), BACK) }).await
+                {
                     failures.push(format!("{e:?}"));
                 }
             }

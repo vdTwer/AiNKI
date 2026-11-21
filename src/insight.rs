@@ -9,6 +9,8 @@ use serde::Serialize;
 use crate::App;
 use crate::auth::Access;
 use crate::error::Result;
+use crate::num;
+use crate::scheduler::CardState;
 
 /// Below this many reviews a deck's retention says little.
 pub const MIN_SAMPLE: i64 = 20;
@@ -59,8 +61,28 @@ pub struct Week {
     pub tip: Tip,
 }
 
+impl Week {
+    /// The one thing worth doing: cards that need a look first, then recall
+    /// against its aim (once the sample says something), then spreading
+    /// the reviews over more days.
+    fn best_tip(&self) -> Tip {
+        let spread = self.reviews > 0 && self.days_studied < 4;
+        match (self.attention, self.retention, self.target) {
+            (1.., _, _) => Tip::Attention,
+            (_, Some(r), Some(t)) if self.retention_sample >= MIN_SAMPLE && r < t - SHORT_BY => Tip::BelowTarget,
+            (_, Some(r), Some(t)) if self.retention_sample >= 100 && r > t + 0.04 => Tip::AboveTarget,
+            _ if spread => Tip::Spread,
+            _ => Tip::Nothing,
+        }
+    }
+}
+
 impl App {
     /// How much of each deck was remembered when due over the last 30 days.
+    ///
+    /// # Errors
+    ///
+    /// `Internal` if the database fails.
     pub async fn deck_retention(&self, access: &Access) -> Result<Vec<DeckRetention>> {
         let decks = self.decks(access).await?;
         let presets: HashMap<i64, f64> =
@@ -86,7 +108,7 @@ impl App {
                     deck_id: d.id,
                     deck_name: d.name,
                     target: presets.get(&d.preset_id).copied().unwrap_or(0.9),
-                    actual: (n > 0).then(|| ok as f64 / n as f64),
+                    actual: (n > 0).then(|| num::i64_f64(ok) / num::i64_f64(n)),
                     reviews: n,
                 }
             })
@@ -94,6 +116,10 @@ impl App {
     }
 
     /// The last seven days, today included.
+    ///
+    /// # Errors
+    ///
+    /// `Internal` if the database fails.
     pub async fn week(&self, access: &Access) -> Result<Week> {
         let clock = access.user.clock();
         let today = clock.today();
@@ -108,23 +134,7 @@ impl App {
             .map(|d| (d.id, presets.get(&d.preset_id).copied().unwrap_or(0.9)))
             .collect();
 
-        #[derive(sqlx::FromRow)]
-        struct Row {
-            deck_id: i64,
-            card_id: i64,
-            rating: i64,
-            state_before: i64,
-            reviewed_at: i64,
-            duration_ms: Option<i64>,
-        }
-        let rows: Vec<Row> = sqlx::query_as(
-            "SELECT deck_id, card_id, rating, state_before, reviewed_at, duration_ms FROM review_log
-             WHERE user_id = ? AND rating > 0 AND source != 'import' AND reviewed_at >= ?",
-        )
-        .bind(access.user_id())
-        .bind(start)
-        .fetch_all(&self.db)
-        .await?;
+        let rows = self.answers_since(access, start).await?;
 
         let (mut reviews, mut ms, mut sample, mut passed, mut target_sum) = (0, 0, 0, 0, 0.0);
         let mut days = HashSet::new();
@@ -133,45 +143,30 @@ impl App {
             reviews += 1;
             ms += r.duration_ms.unwrap_or(0);
             days.insert((r.reviewed_at - start).div_euclid(86_400));
-            if r.state_before == 0 {
+            if r.state_before == CardState::New {
                 new_cards.insert(r.card_id);
             }
-            if r.state_before == 2 {
+            if r.state_before == CardState::Review {
                 sample += 1;
-                passed += (r.rating > 1) as i64;
+                passed += i64::from(r.rating > 1);
                 target_sum += targets.get(&r.deck_id).copied().unwrap_or(0.9);
             }
         }
-        let attention = self.attention(access, None).await?.len() as i64;
-        let retention = (sample > 0).then(|| passed as f64 / sample as f64);
-        let target = (sample > 0).then(|| target_sum / sample as f64);
-        let tip = if attention > 0 {
-            Tip::Attention
-        } else if let (true, Some(r), Some(t)) = (sample >= MIN_SAMPLE, retention, target) {
-            if r < t - SHORT_BY {
-                Tip::BelowTarget
-            } else if r > t + 0.04 && sample >= 100 {
-                Tip::AboveTarget
-            } else if reviews > 0 && days.len() < 4 {
-                Tip::Spread
-            } else {
-                Tip::Nothing
-            }
-        } else if reviews > 0 && days.len() < 4 {
-            Tip::Spread
-        } else {
-            Tip::Nothing
-        };
-        Ok(Week {
+        let attention = num::usize_i64(self.attention(access, None).await?.len());
+        let retention = (sample > 0).then(|| num::i64_f64(passed) / num::i64_f64(sample));
+        let target = (sample > 0).then(|| target_sum / num::i64_f64(sample));
+        let mut week = Week {
             reviews,
-            minutes: ms as f64 / 60_000.0,
-            days_studied: days.len() as i64,
-            new_cards: new_cards.len() as i64,
+            minutes: num::i64_f64(ms) / 60_000.0,
+            days_studied: num::usize_i64(days.len()),
+            new_cards: num::usize_i64(new_cards.len()),
             retention,
             target,
             retention_sample: sample,
             attention,
-            tip,
-        })
+            tip: Tip::Nothing,
+        };
+        week.tip = week.best_tip();
+        Ok(week)
     }
 }

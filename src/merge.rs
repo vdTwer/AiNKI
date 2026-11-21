@@ -11,7 +11,7 @@ use crate::{
     auth::Access,
     error::{AppError, Result},
     multi::Split,
-    now,
+    now, num,
     service::Deck,
 };
 
@@ -71,6 +71,14 @@ impl Source {
 
 impl App {
     /// Make a new deck from the cards of `input.sources`.
+    ///
+    /// # Errors
+    ///
+    /// - `Forbidden` if the token is read-only or limited to some decks.
+    /// - `NotFound` if a deck isn't the user's.
+    /// - `BadRequest` if fewer than two decks are picked, or the name breaks the deck rules.
+    /// - `Conflict` if another deck already has the name.
+    /// - `Internal` if the database fails.
     pub async fn merge_decks(&self, access: &Access, input: MergeInput) -> Result<Merged> {
         access.require_write()?;
         access.require_all_decks()?;
@@ -83,12 +91,13 @@ impl App {
         for id in &sources {
             decks.push(self.deck(access, *id).await?);
         }
-        let preset_id = input.preset_id.unwrap_or(decks[0].preset_id);
+        let first = decks.first().ok_or_else(|| AppError::bad("pick decks to merge"))?;
+        let preset_id = input.preset_id.unwrap_or(first.preset_id);
         let deck = self.create_deck(access, &input.name, &input.description, Some(preset_id)).await?;
         let how = Fill { keep_progress: input.keep_progress, delete_sources: input.delete_sources };
         match self.fill(access, &deck, &sources, how).await {
             Ok((cards, duplicates)) => {
-                let deleted_decks = if how.delete_sources { sources.len() as i64 } else { 0 };
+                let deleted_decks = if how.delete_sources { num::usize_i64(sources.len()) } else { 0 };
                 Ok(Merged { deck, cards, duplicates, deleted_decks })
             }
             Err(e) => {

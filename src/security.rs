@@ -1,7 +1,7 @@
 //! Cross-cutting protections: rate limiting, client IPs behind a reverse
 //! proxy, security headers, Origin checks for cookie-authenticated requests,
 //! and flash messages (kept in a cookie instead of the URL so nobody can
-//! put arbitrary text on an AiNKI page with a crafted link).
+//! put arbitrary text on an `AiNKI` page with a crafted link).
 
 use std::{
     collections::HashMap,
@@ -20,6 +20,9 @@ use axum::{
 use crate::AppState;
 
 pub const FLASH_COOKIE: &str = "ainki_flash";
+/// Deletes the flash cookie. Spelled out, so it can be a static header;
+/// a test checks it names `FLASH_COOKIE`.
+const CLEAR_FLASH: &str = "ainki_flash=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax";
 
 /// Fixed-window counters keyed by strings like "login-ip:1.2.3.4".
 #[derive(Default)]
@@ -29,15 +32,17 @@ pub struct RateLimiter {
 
 impl RateLimiter {
     fn with_bucket<T>(&self, key: &str, window: Duration, f: impl FnOnce(&mut (u32, Instant)) -> T) -> T {
-        let mut map = self.buckets.lock().unwrap_or_else(|e| e.into_inner());
+        let mut map = self.buckets.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         if map.len() > 50_000 {
-            map.retain(|_, (_, start)| start.elapsed() < Duration::from_secs(3600));
+            map.retain(|_, (_, start)| start.elapsed() < Duration::from_hours(1));
         }
-        let entry = map.entry(key.to_string()).or_insert((0, Instant::now()));
+        let entry = map.entry(key.to_string()).or_insert_with(|| (0, Instant::now()));
         if entry.1.elapsed() >= window {
             *entry = (0, Instant::now());
         }
-        f(entry)
+        let out = f(entry);
+        drop(map);
+        out
     }
 
     /// True if `key` has already used up `max` hits in the window.
@@ -58,7 +63,7 @@ impl RateLimiter {
     }
 
     pub fn reset(&self, key: &str) {
-        self.buckets.lock().unwrap_or_else(|e| e.into_inner()).remove(key);
+        self.buckets.lock().unwrap_or_else(std::sync::PoisonError::into_inner).remove(key);
     }
 }
 
@@ -100,19 +105,17 @@ pub struct ClientIp(pub String);
 impl<S: Send + Sync> FromRequestParts<S> for ClientIp {
     type Rejection = std::convert::Infallible;
 
-    async fn from_request_parts(parts: &mut Parts, _: &S) -> Result<Self, Self::Rejection> {
+    fn from_request_parts(parts: &mut Parts, _: &S) -> impl Future<Output = Result<Self, Self::Rejection>> + Send {
         let peer = parts.extensions.get::<ConnectInfo<SocketAddr>>().map(|c| c.0.ip());
-        Ok(ClientIp(
-            client_ip(&parts.headers, peer).map(|ip| ip.to_string()).unwrap_or_else(|| "unknown".into()),
-        ))
+        std::future::ready(Ok(Self(
+            client_ip(&parts.headers, peer).map_or_else(|| "unknown".into(), |ip| ip.to_string()),
+        )))
     }
 }
 
 pub fn too_many_requests(retry_after_secs: u64) -> Response {
-    let mut res = crate::web::sorry(
-        StatusCode::TOO_MANY_REQUESTS,
-        "Too many attempts. Please wait a while and try again.",
-    );
+    let mut res =
+        crate::web::sorry(StatusCode::TOO_MANY_REQUESTS, "Too many attempts. Please wait a while and try again.");
     res.headers_mut().insert(header::RETRY_AFTER, retry_after_secs.into());
     res
 }
@@ -136,10 +139,7 @@ pub async fn headers(State(app): State<AppState>, req: Request, next: Next) -> R
         HeaderValue::from_static("camera=(), microphone=(), geolocation=(), payment=(), usb=()"),
     );
     if app.config.secure() {
-        h.insert(
-            header::STRICT_TRANSPORT_SECURITY,
-            HeaderValue::from_static("max-age=31536000"),
-        );
+        h.insert(header::STRICT_TRANSPORT_SECURITY, HeaderValue::from_static("max-age=31536000"));
     }
     if !h.contains_key(header::CACHE_CONTROL) {
         h.insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
@@ -154,7 +154,7 @@ fn origin_of(url: &str) -> Option<String> {
 }
 
 fn host_of(origin: &str) -> &str {
-    origin.split_once("://").map(|(_, h)| h).unwrap_or(origin)
+    origin.split_once("://").map_or(origin, |(_, h)| h)
 }
 
 /// Hosts a legitimate same-origin request can come from: the Host the
@@ -202,25 +202,28 @@ pub struct Flash(pub Option<String>);
 impl<S: Send + Sync> FromRequestParts<S> for Flash {
     type Rejection = std::convert::Infallible;
 
-    async fn from_request_parts(parts: &mut Parts, _: &S) -> Result<Self, Self::Rejection> {
-        Ok(parts.extensions.get::<Flash>().cloned().unwrap_or_default())
+    fn from_request_parts(parts: &mut Parts, _: &S) -> impl Future<Output = Result<Self, Self::Rejection>> + Send {
+        std::future::ready(Ok(parts.extensions.get::<Self>().cloned().unwrap_or_default()))
     }
 }
 
+/// Decodes `%XX` escapes; anything else, a broken escape included, stays as
+/// it is. Invalid UTF-8 becomes U+FFFD.
 pub(crate) fn percent_decode(s: &str) -> String {
-    let b = s.as_bytes();
-    let mut out = Vec::with_capacity(b.len());
-    let mut i = 0;
-    while i < b.len() {
-        if b[i] == b'%' && i + 2 < b.len() {
-            if let Some(v) = std::str::from_utf8(&b[i + 1..i + 3]).ok().and_then(|h| u8::from_str_radix(h, 16).ok()) {
-                out.push(v);
-                i += 3;
-                continue;
-            }
+    let hex = |c: &u8| char::from(*c).to_digit(16);
+    let mut out = Vec::with_capacity(s.len());
+    let mut rest = s.as_bytes();
+    while let Some((&b, tail)) = rest.split_first() {
+        if let (b'%', [h, l, after @ ..]) = (b, tail)
+            && let (Some(h), Some(l)) = (hex(h), hex(l))
+            && let Ok(v) = u8::try_from(h * 16 + l)
+        {
+            out.push(v);
+            rest = after;
+        } else {
+            out.push(b);
+            rest = tail;
         }
-        out.push(b[i]);
-        i += 1;
     }
     String::from_utf8_lossy(&out).into_owned()
 }
@@ -234,8 +237,7 @@ pub async fn flash(mut req: Request, next: Next) -> Response {
         .iter()
         .filter_map(|v| v.to_str().ok())
         .flat_map(|v| v.split(';'))
-        .filter_map(|c| c.trim().strip_prefix(&format!("{FLASH_COOKIE}=")).map(str::to_string))
-        .next()
+        .find_map(|c| c.trim().strip_prefix(&format!("{FLASH_COOKIE}=")).map(str::to_string))
         .map(|v| percent_decode(&v))
         .filter(|m| !m.is_empty());
     let had = msg.is_some();
@@ -247,11 +249,7 @@ pub async fn flash(mut req: Request, next: Next) -> Response {
         .iter()
         .any(|v| v.as_bytes().starts_with(format!("{FLASH_COOKIE}=").as_bytes()));
     if had && !res.status().is_redirection() && !sets_flash {
-        res.headers_mut().append(
-            header::SET_COOKIE,
-            HeaderValue::from_str(&format!("{FLASH_COOKIE}=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax"))
-                .expect("static header"),
-        );
+        res.headers_mut().append(header::SET_COOKIE, HeaderValue::from_static(CLEAR_FLASH));
     }
     res
 }
@@ -259,6 +257,11 @@ pub async fn flash(mut req: Request, next: Next) -> Response {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn clearing_the_flash_names_the_flash_cookie() {
+        assert!(CLEAR_FLASH.starts_with(&format!("{FLASH_COOKIE}=;")));
+    }
 
     #[test]
     fn forwarded_for_only_from_internal_peers() {
@@ -276,7 +279,7 @@ mod tests {
     #[test]
     fn limiter() {
         let l = RateLimiter::default();
-        let w = Duration::from_secs(60);
+        let w = Duration::from_mins(1);
         for _ in 0..3 {
             assert!(!l.check_and_hit("k", 3, w));
         }
@@ -292,5 +295,7 @@ mod tests {
         assert_eq!(origin_of("http://localhost:8080"), Some("http://localhost:8080".into()));
         assert_eq!(percent_decode("Deck%20deleted%20(3%20cards)."), "Deck deleted (3 cards).");
         assert_eq!(percent_decode("100%"), "100%");
+        assert_eq!(percent_decode("%+1%4"), "%+1%4");
+        assert_eq!(percent_decode("%e2%9C%93"), "\u{2713}");
     }
 }

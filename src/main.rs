@@ -7,9 +7,9 @@ use sqlx::{
 };
 use tracing_subscriber::EnvFilter;
 
+mod advice;
 mod auth;
 mod breaks;
-mod advice;
 mod coach;
 mod error;
 mod format;
@@ -18,13 +18,14 @@ mod import;
 mod insight;
 mod invites;
 mod lessons;
-mod multi;
-mod outlook;
 mod markdown;
 mod mcp;
-mod oauth;
 mod media;
 mod merge;
+mod multi;
+mod num;
+mod oauth;
+mod outlook;
 mod presets;
 mod scheduler;
 mod security;
@@ -52,12 +53,14 @@ pub struct Config {
 
 impl Config {
     /// Served over HTTPS: cookies get the Secure flag and HSTS is sent.
+    #[must_use]
     pub fn secure(&self) -> bool {
         self.secure_cookies || self.public_url.as_deref().is_some_and(|u| u.starts_with("https://"))
     }
 
     /// `__Host-` cookies are only accepted over HTTPS, for this exact host,
     /// with Path=/ — so a subdomain can't plant or overwrite them.
+    #[must_use]
     pub fn session_cookie_name(&self) -> &'static str {
         if self.secure() { "__Host-ainki_session" } else { "ainki_session" }
     }
@@ -66,13 +69,9 @@ impl Config {
 /// Accept only a bare origin like `https://cards.example.com`.
 fn parse_public_url(raw: &str) -> anyhow::Result<String> {
     let url = raw.trim().trim_end_matches('/');
-    let (scheme, host) = url
-        .split_once("://")
-        .ok_or_else(|| anyhow::anyhow!("AINKI_PUBLIC_URL must start with https:// or http://"))?;
-    anyhow::ensure!(
-        matches!(scheme, "https" | "http"),
-        "AINKI_PUBLIC_URL must start with https:// or http://"
-    );
+    let (scheme, host) =
+        url.split_once("://").ok_or_else(|| anyhow::anyhow!("AINKI_PUBLIC_URL must start with https:// or http://"))?;
+    anyhow::ensure!(matches!(scheme, "https" | "http"), "AINKI_PUBLIC_URL must start with https:// or http://");
     anyhow::ensure!(
         !host.is_empty() && !host.contains(['/', '?', '#', '@', ' ']),
         "AINKI_PUBLIC_URL must be just scheme and host, like https://cards.example.com"
@@ -84,9 +83,7 @@ impl Config {
     fn from_env() -> anyhow::Result<Self> {
         let env = |k: &str| std::env::var(k).ok().filter(|v| !v.trim().is_empty());
         let flag = |k: &str, default: bool| {
-            env(k)
-                .map(|v| matches!(v.to_ascii_lowercase().as_str(), "1" | "true" | "yes" | "on"))
-                .unwrap_or(default)
+            env(k).map_or(default, |v| matches!(v.to_ascii_lowercase().as_str(), "1" | "true" | "yes" | "on"))
         };
         let tz = env("AINKI_TIMEZONE")
             .or_else(|| env("TZ"))
@@ -110,8 +107,9 @@ pub struct App {
 }
 
 impl App {
+    #[must_use]
     pub fn new(db: SqlitePool, config: Config) -> Self {
-        Self { db, config, limiter: Default::default() }
+        Self { db, config, limiter: security::RateLimiter::default() }
     }
 
     /// Whether the signup page is open right now.
@@ -119,14 +117,15 @@ impl App {
         if self.config.allow_signup {
             return true;
         }
-        let users: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM users")
-            .fetch_one(&self.db)
-            .await
-            .unwrap_or(1);
+        let users: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM users").fetch_one(&self.db).await.unwrap_or(1);
         users == 0
     }
 
     /// Delete expired sessions, codes, tokens and leftover import files.
+    ///
+    /// # Errors
+    ///
+    /// An error if the database or the data folder fails; the caller logs it and tries again on the next round.
     pub async fn cleanup(&self) -> anyhow::Result<()> {
         let t = now();
         sqlx::query("DELETE FROM sessions WHERE expires_at < ?").bind(t).execute(&self.db).await?;
@@ -154,6 +153,7 @@ impl App {
 
 pub type AppState = Arc<App>;
 
+#[must_use]
 pub fn now() -> i64 {
     chrono::Utc::now().timestamp()
 }
@@ -170,9 +170,16 @@ async fn open_db(config: &Config) -> anyhow::Result<SqlitePool> {
         // the last moment of writes is lost on a power cut.
         .synchronous(SqliteSynchronous::Normal)
         .foreign_keys(true)
+        // Keeps the planner's statistics fresh as decks grow (see below).
+        .optimize_on_close(true, None)
         .busy_timeout(std::time::Duration::from_secs(10));
     let pool = SqlitePoolOptions::new().max_connections(8).connect_with(opts).await?;
     sqlx::migrate!("./migrations").run(&pool).await?;
+    // Table statistics for the query planner. Deck filters bind their ids
+    // as one JSON array, whose size the planner can't guess; without
+    // statistics it walks all of a user's cards instead of the queue index.
+    // Cheap: SQLite only analyzes tables that changed a lot.
+    sqlx::query("PRAGMA optimize=0x10002").execute(&pool).await?;
     Ok(pool)
 }
 
@@ -200,9 +207,7 @@ const USAGE: &str = "usage:
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt()
-        .with_env_filter(
-            EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info,sqlx=warn")),
-        )
+        .with_env_filter(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info,sqlx=warn")))
         .init();
     let config = Config::from_env()?;
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -214,24 +219,7 @@ async fn main() -> anyhow::Result<()> {
     app.resplit_multicards().await?;
 
     match args.iter().map(String::as_str).collect::<Vec<_>>().as_slice() {
-        [] | ["serve"] => {
-            if app.config.public_url.is_none() {
-                tracing::warn!(
-                    "AINKI_PUBLIC_URL is not set; the public address is taken from request headers. \
-                     Set it (e.g. https://cards.example.com) before exposing AiNKI or connecting Claude."
-                );
-            }
-            let cleaner = app.clone();
-            tokio::spawn(async move {
-                loop {
-                    if let Err(e) = cleaner.cleanup().await {
-                        tracing::warn!("cleanup failed: {e}");
-                    }
-                    tokio::time::sleep(std::time::Duration::from_secs(3600)).await;
-                }
-            });
-            web::serve(app).await
-        }
+        [] | ["serve"] => serve(app).await,
         ["create-user", name, password] => {
             let user = app
                 .create_user(name, password, &app.config.default_timezone.clone())
@@ -251,17 +239,12 @@ async fn main() -> anyhow::Result<()> {
         ["reset-password", handle, password] => {
             let user = app.find_user(handle).await.map_err(|e| anyhow::anyhow!("{e}"))?;
             app.set_password(user.id, password).await.map_err(|e| anyhow::anyhow!("{e}"))?;
-            sqlx::query("DELETE FROM sessions WHERE user_id = ?")
-                .bind(user.id)
-                .execute(&app.db)
-                .await?;
+            sqlx::query("DELETE FROM sessions WHERE user_id = ?").bind(user.id).execute(&app.db).await?;
             println!("password updated for {}", user.handle());
             Ok(())
         }
         ["list-users"] => {
-            let users: Vec<auth::User> = sqlx::query_as("SELECT * FROM users ORDER BY id")
-                .fetch_all(&app.db)
-                .await?;
+            let users: Vec<auth::User> = sqlx::query_as("SELECT * FROM users ORDER BY id").fetch_all(&app.db).await?;
             for u in users {
                 println!("{}{}", u.handle(), if u.is_admin { " (admin)" } else { "" });
             }
@@ -272,4 +255,24 @@ async fn main() -> anyhow::Result<()> {
             std::process::exit(2);
         }
     }
+}
+
+/// Runs the website, with an hourly cleanup beside it.
+async fn serve(app: Arc<App>) -> anyhow::Result<()> {
+    if app.config.public_url.is_none() {
+        tracing::warn!(
+            "AINKI_PUBLIC_URL is not set; the public address is taken from request headers. \
+             Set it (e.g. https://cards.example.com) before exposing AiNKI or connecting Claude."
+        );
+    }
+    let cleaner = app.clone();
+    tokio::spawn(async move {
+        loop {
+            if let Err(e) = cleaner.cleanup().await {
+                tracing::warn!("cleanup failed: {e}");
+            }
+            tokio::time::sleep(std::time::Duration::from_hours(1)).await;
+        }
+    });
+    web::serve(app).await
 }

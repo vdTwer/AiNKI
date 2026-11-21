@@ -3,22 +3,23 @@
 //! schedule. The coach never changes a card by itself; it says what it
 //! noticed and the user decides.
 //!
-//! The rules follow common practice (Anki, SuperMemo, RemNote) and the
+//! The rules follow common practice (Anki, `SuperMemo`, `RemNote`) and the
 //! FSRS community's findings; none of them is a tested threshold, so they
 //! stay simple and explainable.
 
 use std::collections::{HashMap, HashSet};
 
 use serde::Serialize;
+use sqlx::types::Json;
 
 use crate::{
     App,
     auth::Access,
     error::{AppError, Result},
     multi::{self, Split},
-    now,
+    now, num,
     scheduler::CardState,
-    service::{Card, placeholders},
+    service::{CARD_JSON, Card, id_list},
 };
 
 /// A card is a leech after this many lapses...
@@ -57,29 +58,29 @@ pub enum Kind {
 }
 
 impl Kind {
-    pub fn as_str(self) -> &'static str {
+    pub const fn as_str(self) -> &'static str {
         match self {
-            Kind::Leech => "leech",
-            Kind::Split => "split",
-            Kind::Duplicate => "duplicate",
+            Self::Leech => "leech",
+            Self::Split => "split",
+            Self::Duplicate => "duplicate",
         }
     }
 
-    pub fn parse(s: &str) -> Option<Kind> {
+    pub fn parse(s: &str) -> Option<Self> {
         match s {
-            "leech" => Some(Kind::Leech),
-            "split" => Some(Kind::Split),
-            "duplicate" => Some(Kind::Duplicate),
+            "leech" => Some(Self::Leech),
+            "split" => Some(Self::Split),
+            "duplicate" => Some(Self::Duplicate),
             _ => None,
         }
     }
 
     /// A short label for lists.
-    pub fn label(self) -> &'static str {
+    pub const fn label(self) -> &'static str {
         match self {
-            Kind::Leech => "Keeps slipping",
-            Kind::Split => "Asks a lot at once",
-            Kind::Duplicate => "Looks like another card",
+            Self::Leech => "Keeps slipping",
+            Self::Split => "Asks a lot at once",
+            Self::Duplicate => "Looks like another card",
         }
     }
 }
@@ -109,10 +110,7 @@ pub struct Attention {
 /// fronts that read the same compare equal.
 pub fn normalize(text: &str) -> String {
     let mut out = String::new();
-    for word in text
-        .split(|c: char| !c.is_alphanumeric())
-        .filter(|w| !w.is_empty())
-    {
+    for word in text.split(|c: char| !c.is_alphanumeric()).filter(|w| !w.is_empty()) {
         if !out.is_empty() {
             out.push(' ');
         }
@@ -123,7 +121,7 @@ pub fn normalize(text: &str) -> String {
 
 fn trigrams(s: &str) -> HashSet<[char; 3]> {
     let padded: Vec<char> = format!("  {s} ").chars().collect();
-    padded.windows(3).map(|w| [w[0], w[1], w[2]]).collect()
+    padded.windows(3).filter_map(|w| <[char; 3]>::try_from(w).ok()).collect()
 }
 
 /// How alike two normalized fronts are, from 0 to 1: the share of their
@@ -135,7 +133,7 @@ pub fn similarity(a: &str, b: &str) -> f64 {
     let (x, y) = (trigrams(a), trigrams(b));
     let shared = x.intersection(&y).count();
     let all = x.union(&y).count();
-    if all == 0 { 0.0 } else { shared as f64 / all as f64 }
+    if all == 0 { 0.0 } else { num::usize_f64(shared) / num::usize_f64(all) }
 }
 
 /// Very short fronts ("Hund") only count when they are the same; three
@@ -152,7 +150,7 @@ fn near_duplicate(a: &str, b: &str) -> bool {
 
 /// How many list items the back has (0 when it has no list of two or more).
 pub fn list_items(back: &str) -> usize {
-    multi::items(back, Split::List).map(|i| i.len()).unwrap_or(0)
+    multi::items(back, Split::List).map_or(0, |i| i.len())
 }
 
 fn is_leech(lapses: i64, stability: Option<f64>, state: CardState) -> bool {
@@ -202,7 +200,9 @@ fn split_flag(card: &Card, avg_secs: Option<f64>) -> Option<Flag> {
     let lapses = card.lapses;
     let items = if card.multi.is_none() { list_items(&card.back) } else { 0 };
     let reason = if items >= 2 && lapses >= SPLIT_LAPSES {
-        format!("The back lists {items} things and the card was forgotten {lapses} times. Each thing on its own is easier to remember.")
+        format!(
+            "The back lists {items} things and the card was forgotten {lapses} times. Each thing on its own is easier to remember."
+        )
     } else if lapses >= SLOW_LAPSES && avg_secs.is_some_and(|s| s >= SLOW_SECS) {
         format!(
             "Answers take about {:.0} seconds and the card was forgotten {lapses} times. A card that asks for less is quicker and sticks better.",
@@ -253,48 +253,32 @@ pub struct Similar {
 
 impl App {
     async fn dismissals(&self, card_ids: &[i64]) -> Result<HashMap<(i64, Kind), i64>> {
-        let mut out = HashMap::new();
-        for chunk in card_ids.chunks(500) {
-            let sql = format!(
-                "SELECT card_id, kind, lapses FROM coach_dismissals WHERE card_id IN ({})",
-                placeholders(chunk.len())
-            );
-            let mut q = sqlx::query_as::<_, (i64, String, i64)>(&sql);
-            for id in chunk {
-                q = q.bind(id);
-            }
-            for (id, kind, lapses) in q.fetch_all(&self.db).await? {
-                if let Some(k) = Kind::parse(&kind) {
-                    out.insert((id, k), lapses);
-                }
-            }
-        }
-        Ok(out)
+        let rows: Vec<(i64, String, i64)> = sqlx::query_as(
+            "SELECT card_id, kind, lapses FROM coach_dismissals WHERE card_id IN (SELECT value FROM json_each(?))",
+        )
+        .bind(id_list(card_ids))
+        .fetch_all(&self.db)
+        .await?;
+        Ok(rows.into_iter().filter_map(|(id, kind, lapses)| Some(((id, Kind::parse(&kind)?), lapses))).collect())
     }
 
     /// Average thinking time over each card's last five timed answers, for
     /// cards with at least three.
     async fn answer_seconds(&self, card_ids: &[i64]) -> Result<HashMap<i64, f64>> {
-        let mut out = HashMap::new();
-        for chunk in card_ids.chunks(500) {
-            let sql = format!(
-                "SELECT card_id, AVG(duration_ms) FROM (
-                    SELECT card_id, duration_ms,
-                        ROW_NUMBER() OVER (PARTITION BY card_id ORDER BY reviewed_at DESC, id DESC) AS n
-                    FROM review_log
-                    WHERE card_id IN ({}) AND rating > 0 AND duration_ms > 0 AND source != 'import')
-                 WHERE n <= 5 GROUP BY card_id HAVING COUNT(*) >= 3",
-                placeholders(chunk.len())
-            );
-            let mut q = sqlx::query_as::<_, (i64, f64)>(&sql);
-            for id in chunk {
-                q = q.bind(id);
-            }
-            for (id, ms) in q.fetch_all(&self.db).await? {
-                out.insert(id, ms / 1000.0);
-            }
-        }
-        Ok(out)
+        // One JSON array: a heavy user has thousands of such cards.
+        let Json(rows): Json<Vec<(i64, f64)>> = sqlx::query_scalar(
+            "SELECT json_group_array(json_array(card_id, ms)) FROM (SELECT card_id, AVG(duration_ms) AS ms FROM (
+                SELECT card_id, duration_ms,
+                    ROW_NUMBER() OVER (PARTITION BY card_id ORDER BY reviewed_at DESC, id DESC) AS n
+                FROM review_log
+                WHERE card_id IN (SELECT value FROM json_each(?))
+                  AND rating > 0 AND duration_ms > 0 AND source != 'import')
+             WHERE n <= 5 GROUP BY card_id HAVING COUNT(*) >= 3)",
+        )
+        .bind(id_list(card_ids))
+        .fetch_one(&self.db)
+        .await?;
+        Ok(rows.into_iter().map(|(id, ms)| (id, ms / 1000.0)).collect())
     }
 
     /// Every visible card's id, deck and normalized front, with the card
@@ -319,6 +303,10 @@ impl App {
     }
 
     /// Cards whose front reads (almost) like `front`, other than `except`.
+    ///
+    /// # Errors
+    ///
+    /// `Internal` if the database fails.
     pub async fn similar_cards(&self, access: &Access, front: &str, except: Option<i64>) -> Result<Vec<Similar>> {
         let want = normalize(front);
         if want.is_empty() {
@@ -335,24 +323,24 @@ impl App {
         hits.truncate(3);
         let mut out = Vec::new();
         for (_, id, deck_id) in hits {
-            let front: String = sqlx::query_scalar("SELECT front FROM cards WHERE id = ?")
-                .bind(id)
-                .fetch_one(&self.db)
-                .await?;
+            let front: String =
+                sqlx::query_scalar("SELECT front FROM cards WHERE id = ?").bind(id).fetch_one(&self.db).await?;
             out.push(Similar { card_id: id, deck_id, front });
         }
         Ok(out)
     }
 
     /// What the coach notices about one card.
+    ///
+    /// # Errors
+    ///
+    /// `Internal` if the database fails.
     pub async fn card_flags(&self, access: &Access, card: &Card) -> Result<Vec<Flag>> {
         let items = self.card_items(card).await?;
         let secs = self.answer_seconds(&[card.id]).await?;
         let dismissed = self.dismissals(&[card.id]).await?;
-        let mut flags: Vec<Flag> = leech_flag(card, &items)
-            .into_iter()
-            .chain(split_flag(card, secs.get(&card.id).copied()))
-            .collect();
+        let mut flags: Vec<Flag> =
+            leech_flag(card, &items).into_iter().chain(split_flag(card, secs.get(&card.id).copied())).collect();
         let me = normalize(&card.front);
         let fronts = self.fronts(access).await?;
         let family = fronts.iter().find(|f| f.id == card.id).map_or(card.id, |f| f.family);
@@ -364,6 +352,10 @@ impl App {
     }
 
     /// Only the leech flag, cheap enough for every studied card.
+    ///
+    /// # Errors
+    ///
+    /// `Internal` if the database fails.
     pub async fn leech_note(&self, card: &Card) -> Result<Option<Flag>> {
         let items = self.card_items(card).await?;
         let Some(flag) = leech_flag(card, &items) else { return Ok(None) };
@@ -374,56 +366,22 @@ impl App {
 
     /// Every flagged card, in one deck or all visible decks: leeches first,
     /// then the rest, newest problems first.
+    ///
+    /// # Errors
+    ///
+    /// - `NotFound` if a deck is given that the access doesn't see.
+    /// - `Internal` if the database fails.
     pub async fn attention(&self, access: &Access, deck_id: Option<i64>) -> Result<Vec<Attention>> {
         if let Some(id) = deck_id {
             self.deck(access, id).await?;
         }
         let in_scope = |deck: i64| deck_id.is_none_or(|d| d == deck) && access.can_see_deck(deck);
 
-        // Leech and split candidates: anything forgotten at least twice.
-        // First only what the rules need (as one row of JSON, which is much
-        // quicker to read than a row per card), then whole cards only for
-        // those that may get a flag.
-        let light: String = sqlx::query_scalar(
-            "SELECT COALESCE(json_group_array(json_array(id, deck_id, lapses, multi IS NOT NULL,
-                CASE WHEN lapses >= ? AND multi IS NULL THEN back END)), '[]')
-             FROM cards WHERE user_id = ? AND suspended = 0
-             AND (lapses >= ? OR (multi IS NOT NULL AND EXISTS
-                 (SELECT 1 FROM card_items i WHERE i.card_id = cards.id AND i.lapses >= ?)))",
-        )
-        .bind(SPLIT_LAPSES)
-        .bind(access.user_id())
-        .bind(SLOW_LAPSES.min(SPLIT_LAPSES))
-        .bind(LEECH_LAPSES)
-        .fetch_one(&self.db)
-        .await?;
-        let light: Vec<(i64, i64, i64, i64, Option<String>)> =
-            serde_json::from_str(&light).map_err(|e| AppError::Internal(anyhow::anyhow!("coach candidates: {e}")))?;
-        let light: Vec<_> = light.into_iter().filter(|c| in_scope(c.1)).collect();
-        let ids: Vec<i64> = light.iter().map(|c| c.0).collect();
-        let secs = self.answer_seconds(&ids).await?;
-        let maybe: Vec<i64> = light
-            .iter()
-            .filter(|(id, _, lapses, multi, back)| {
-                *lapses >= LEECH_LAPSES
-                    || *multi == 1
-                    || back.as_deref().is_some_and(|b| list_items(b) >= 2)
-                    || secs.get(id).is_some_and(|s| *s >= SLOW_SECS)
-            })
-            .map(|c| c.0)
-            .collect();
-        let mut candidates: Vec<Card> = Vec::new();
-        for chunk in maybe.chunks(500) {
-            let sql = format!("SELECT * FROM cards WHERE id IN ({})", placeholders(chunk.len()));
-            let mut q = sqlx::query_as::<_, Card>(&sql);
-            for id in chunk {
-                q = q.bind(id);
-            }
-            candidates.extend(q.fetch_all(&self.db).await?);
-        }
+        let (candidates, secs) = self.lapse_candidates(access, &in_scope).await?;
 
         // Each flag with the lapse count it is judged by.
-        let mut found: HashMap<i64, (Option<Card>, Vec<(Flag, i64)>)> = HashMap::new();
+        type Flagged = (Option<Card>, Vec<(Flag, i64)>);
+        let mut found: HashMap<i64, Flagged> = HashMap::new();
         for card in candidates {
             let items = self.card_items(&card).await?;
             let flags: Vec<(Flag, i64)> = leech_flag(&card, &items)
@@ -439,21 +397,9 @@ impl App {
             }
         }
 
-        // Near-duplicate fronts: the same words.
-        // Copies of one card (merged decks) are one family, not duplicates.
         let fronts = self.fronts(access).await?;
-        let mut by_text: HashMap<&str, Vec<&Front>> = HashMap::new();
-        for f in &fronts {
-            if !f.text.is_empty() {
-                by_text.entry(f.text.as_str()).or_default().push(f);
-            }
-        }
-        for same in by_text.values() {
-            for me in same.iter().filter(|f| in_scope(f.deck)) {
-                if let Some(other) = same.iter().find(|o| o.family != me.family) {
-                    found.entry(me.id).or_insert((None, vec![])).1.push((duplicate_flag(other.id), 0));
-                }
-            }
+        for (id, flag) in duplicate_flags(&fronts, &in_scope) {
+            found.entry(id).or_insert((None, vec![])).1.push((flag, 0));
         }
 
         let all_ids: Vec<i64> = found.keys().copied().collect();
@@ -487,17 +433,67 @@ impl App {
         Ok(out)
     }
 
+    /// Cards forgotten often enough to maybe earn a leech or split flag,
+    /// with the average thinking time of each card considered. First only
+    /// what the rules need (as one row of JSON, which is much quicker to
+    /// read than a row per card), then whole cards only for those that may
+    /// get a flag.
+    async fn lapse_candidates(
+        &self,
+        access: &Access,
+        in_scope: &(impl Fn(i64) -> bool + Sync),
+    ) -> Result<(Vec<Card>, HashMap<i64, f64>)> {
+        let light: String = sqlx::query_scalar(
+            "SELECT COALESCE(json_group_array(json_array(id, deck_id, lapses, multi IS NOT NULL,
+                CASE WHEN lapses >= ? AND multi IS NULL THEN back END)), '[]')
+             FROM cards WHERE user_id = ? AND suspended = 0
+             AND (lapses >= ? OR (multi IS NOT NULL AND EXISTS
+                 (SELECT 1 FROM card_items i WHERE i.card_id = cards.id AND i.lapses >= ?)))",
+        )
+        .bind(SPLIT_LAPSES)
+        .bind(access.user_id())
+        .bind(SLOW_LAPSES.min(SPLIT_LAPSES))
+        .bind(LEECH_LAPSES)
+        .fetch_one(&self.db)
+        .await?;
+        let light: Vec<(i64, i64, i64, i64, Option<String>)> =
+            serde_json::from_str(&light).map_err(|e| AppError::Internal(anyhow::anyhow!("coach candidates: {e}")))?;
+        let light: Vec<_> = light.into_iter().filter(|c| in_scope(c.1)).collect();
+        let ids: Vec<i64> = light.iter().map(|c| c.0).collect();
+        let secs = self.answer_seconds(&ids).await?;
+        let maybe: Vec<i64> = light
+            .iter()
+            .filter(|(id, _, lapses, multi, back)| {
+                *lapses >= LEECH_LAPSES
+                    || *multi == 1
+                    || back.as_deref().is_some_and(|b| list_items(b) >= 2)
+                    || secs.get(id).is_some_and(|s| *s >= SLOW_SECS)
+            })
+            .map(|c| c.0)
+            .collect();
+        let Json(candidates): Json<Vec<Card>> = sqlx::query_scalar(&format!(
+            "SELECT json_group_array({CARD_JSON}) FROM cards WHERE id IN (SELECT value FROM json_each(?))"
+        ))
+        .bind(id_list(&maybe))
+        .fetch_one(&self.db)
+        .await?;
+
+        Ok((candidates, secs))
+    }
+
     /// "Keep as is": hide the flag until the card slips a few more times
     /// (a duplicate stays hidden).
+    ///
+    /// # Errors
+    ///
+    /// - `Forbidden` if the token is read-only.
+    /// - `NotFound` if the card isn't the user's or lies outside the token's decks.
+    /// - `Internal` if the database fails.
     pub async fn dismiss_flag(&self, access: &Access, card_id: i64, kind: Kind) -> Result<()> {
         access.require_write()?;
         let card = self.card(access, card_id).await?;
         let items = self.card_items(&card).await?;
-        let lapses = if card.multi.is_some() {
-            items.iter().map(|i| i.lapses).max().unwrap_or(0)
-        } else {
-            card.lapses
-        };
+        let lapses = if card.multi.is_some() { items.iter().map(|i| i.lapses).max().unwrap_or(0) } else { card.lapses };
         sqlx::query(
             "INSERT INTO coach_dismissals (card_id, kind, lapses, created_at) VALUES (?, ?, ?, ?)
              ON CONFLICT (card_id, kind) DO UPDATE SET lapses = excluded.lapses, created_at = excluded.created_at",
@@ -514,6 +510,13 @@ impl App {
     /// Replace a card by one card per item of its back: the same front, each
     /// item as a back, fresh progress. The original is deleted, or kept and
     /// suspended. Returns the new cards.
+    ///
+    /// # Errors
+    ///
+    /// - `Forbidden` if the token is read-only.
+    /// - `NotFound` if the card isn't the user's or lies outside the token's decks.
+    /// - `BadRequest` if fewer than two cards are given or one has no front.
+    /// - `Internal` if the database fails.
     pub async fn split_card(
         &self,
         access: &Access,
@@ -523,10 +526,8 @@ impl App {
     ) -> Result<Vec<Card>> {
         access.require_write()?;
         let card = self.card(access, card_id).await?;
-        let cards: Vec<(String, String)> = cards
-            .into_iter()
-            .filter(|(f, b)| !f.trim().is_empty() || !b.trim().is_empty())
-            .collect();
+        let cards: Vec<(String, String)> =
+            cards.into_iter().filter(|(f, b)| !f.trim().is_empty() || !b.trim().is_empty()).collect();
         if cards.len() < 2 {
             return Err(AppError::bad("a split needs at least two cards"));
         }
@@ -535,7 +536,7 @@ impl App {
         }
         let mut out = Vec::new();
         for (front, back) in &cards {
-            out.push(self.create_card(access, card.deck_id, front, back, None, None, None).await?);
+            out.push(self.create_card(access, card.deck_id, crate::service::NewCard::new(front, back)).await?);
         }
         if keep_original {
             self.set_suspended(access, card.id, true).await?;
@@ -561,6 +562,24 @@ fn lapses_for(card: &Card, items: &[multi::CardItem], flag: &Flag) -> i64 {
         Some(i) => i.lapses,
         None => card.lapses,
     }
+}
+
+/// Near-duplicate fronts: the same words. Copies of one card (merged
+/// decks) are one family, not duplicates. Gives each card in scope its flag.
+fn duplicate_flags(fronts: &[Front], in_scope: &impl Fn(i64) -> bool) -> Vec<(i64, Flag)> {
+    let mut by_text: HashMap<&str, Vec<&Front>> = HashMap::new();
+    for f in fronts.iter().filter(|f| !f.text.is_empty()) {
+        by_text.entry(f.text.as_str()).or_default().push(f);
+    }
+    let mut out = Vec::new();
+    for same in by_text.values() {
+        for me in same.iter().filter(|f| in_scope(f.deck)) {
+            if let Some(other) = same.iter().find(|o| o.family != me.family) {
+                out.push((me.id, duplicate_flag(other.id)));
+            }
+        }
+    }
+    out
 }
 
 #[cfg(test)]
@@ -603,8 +622,8 @@ mod tests {
 
     #[test]
     fn hints_for_long_lists() {
-        assert!(write_hints("- a\n- b", None).is_empty());
+        assert_eq!(write_hints("- a\n- b", None), [] as [String; 0]);
         assert_eq!(write_hints("- a\n- b\n- c", None).len(), 1);
-        assert!(write_hints("- a\n- b\n- c", Some(Split::List)).is_empty());
+        assert_eq!(write_hints("- a\n- b\n- c", Some(Split::List)), [] as [String; 0]);
     }
 }

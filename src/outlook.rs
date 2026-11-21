@@ -22,13 +22,15 @@ use std::collections::HashMap;
 
 use chrono::Duration;
 use fsrs::FSRS;
+use sqlx::types::Json;
 
 use crate::{
     App,
     auth::Access,
-    error::Result,
+    error::{AppError, Result},
+    num,
     scheduler::{self, CardSched, CardState, Clock, Rating, SchedConfig},
-    service::{Card, DeckSummary, sched_config_for},
+    service::{DeckSummary, sched_config_for},
 };
 
 /// Days in the outlook, today included.
@@ -76,8 +78,8 @@ impl Outlook {
     pub fn later_range(&self) -> (i64, i64) {
         let mean = self.later();
         let spread = 1.645 * self.variance.max(0.0).sqrt();
-        let low = (mean - spread).max(self.floor).floor() as i64;
-        let high = (mean + spread).ceil() as i64;
+        let low = num::f64_i64((mean - spread).max(self.floor).floor());
+        let high = num::f64_i64((mean + spread).ceil());
         (low, high.max(low))
     }
 }
@@ -85,23 +87,35 @@ impl Outlook {
 impl App {
     /// The coming week for these decks (as the home lists them), if you
     /// study every day. Paused and archived decks rest, so they add nothing.
+    ///
+    /// # Errors
+    ///
+    /// `Internal` if the database fails. Also `Internal` if stored FSRS parameters are broken.
     pub async fn outlook(&self, access: &Access, decks: &[DeckSummary]) -> Result<Outlook> {
         let clock = access.user.clock();
         let presets: HashMap<i64, _> = self.list_presets(access).await?.into_iter().map(|p| (p.id, p)).collect();
         let book = self.param_book(access).await?;
-        let horizon = clock.day_start(clock.today() + Duration::days(DAYS as i64));
-        let cards: Vec<Card> = sqlx::query_as(
-            "SELECT * FROM cards WHERE user_id = ? AND state != 0 AND suspended = 0 AND due < ?",
+        let horizon = clock.day_start(clock.today() + Duration::days(num::usize_i64(DAYS)));
+        // Read as one JSON array: sqlx hands rows over one by one, which
+        // costs more than the query once there are thousands.
+        type Row = (i64, i64, i64, i64, Option<f32>, Option<f32>, i64, Option<i64>, i64, i64);
+        let Json(rows): Json<Vec<Row>> = sqlx::query_scalar(
+            "SELECT json_group_array(json_array(id, deck_id, state, step, stability, difficulty, due, last_review,
+                 reps, lapses))
+             FROM cards WHERE user_id = ? AND state != 0 AND suspended = 0 AND due < ?",
         )
         .bind(access.user_id())
         .bind(horizon)
-        .fetch_all(&self.db)
+        .fetch_one(&self.db)
         .await?;
         let mut by_deck: HashMap<i64, Vec<(i64, CardSched)>> = HashMap::new();
-        for card in cards {
-            by_deck.entry(card.deck_id).or_default().push((card.id, card.sched()));
+        for (id, deck, state, step, stability, difficulty, due, last_review, reps, lapses) in rows {
+            let state = CardState::from_stored(state)
+                .ok_or_else(|| AppError::Internal(anyhow::anyhow!("card {id} has the unknown state {state}")))?;
+            let sched = CardSched { state, step, stability, difficulty, due, last_review, reps, lapses };
+            by_deck.entry(deck).or_default().push((id, sched));
         }
-        let plans: Vec<DeckPlan> = decks
+        let plans = decks
             .iter()
             .filter(|s| s.deck.status.is_active())
             .filter_map(|s| {
@@ -119,15 +133,18 @@ impl App {
                         *n = u32::try_from(today).unwrap_or(0);
                     }
                 }
-                Some(DeckPlan {
-                    fsrs: scheduler::fsrs_for(params),
-                    cfg: sched_config_for(preset, &s.deck),
-                    decay: scheduler::decay_for(params),
-                    cards: by_deck.remove(&s.deck.id).unwrap_or_default(),
-                    new_cards,
-                })
+                let mut plan = || -> Result<DeckPlan> {
+                    Ok(DeckPlan {
+                        fsrs: scheduler::fsrs_for(params)?,
+                        cfg: sched_config_for(preset, &s.deck)?,
+                        decay: scheduler::decay_for(params)?,
+                        cards: by_deck.remove(&s.deck.id).unwrap_or_default(),
+                        new_cards,
+                    })
+                };
+                Some(plan())
             })
-            .collect();
+            .collect::<Result<Vec<DeckPlan>>>()?;
         Ok(tokio::task::spawn_blocking(move || forecast(&plans, &clock))
             .await
             .map_err(|e| crate::error::AppError::Internal(e.into()))??)
@@ -149,7 +166,7 @@ pub fn forecast(plans: &[DeckPlan], clock: &Clock) -> anyhow::Result<Outlook> {
     for plan in plans {
         for (id, card) in &plan.cards {
             let mut acc = Acc::default();
-            walk(plan, clock, *id, card.clone(), card.due.max(clock.now), 1.0, 0, &mut acc)?;
+            walk(plan, clock, *id, card, card.due.max(clock.now), 1.0, 0, &mut acc)?;
             add(&mut total, &acc, 1.0);
         }
         for (day, &n) in plan.new_cards.iter().enumerate() {
@@ -157,9 +174,10 @@ pub fn forecast(plans: &[DeckPlan], clock: &Clock) -> anyhow::Result<Outlook> {
                 continue;
             }
             // New cards are alike, so one walk stands for all of them.
-            let at = if day == 0 { clock.now } else { clock.day_start(clock.today() + Duration::days(day as i64)) };
+            let at =
+                if day == 0 { clock.now } else { clock.day_start(clock.today() + Duration::days(num::usize_i64(day))) };
             let mut acc = Acc::default();
-            walk(plan, clock, 0, CardSched::new_card(), at, 1.0, 0, &mut acc)?;
+            walk(plan, clock, 0, &CardSched::new_card(), at, 1.0, 0, &mut acc)?;
             add(&mut total, &acc, f64::from(n));
         }
     }
@@ -170,21 +188,31 @@ pub fn forecast(plans: &[DeckPlan], clock: &Clock) -> anyhow::Result<Outlook> {
 /// total holds the summed variance, not a second moment.
 fn add(total: &mut Acc, one: &Acc, n: f64) {
     for (t, d) in total.days.iter_mut().zip(one.days) {
-        *t += n * d;
+        *t = n.mul_add(d, *t);
     }
-    total.m2 += n * (one.m2 - one.m1 * one.m1);
-    total.floor += n * one.floor;
+    total.m2 = n.mul_add(one.m1.mul_add(-one.m1, one.m2), total.m2);
+    total.floor = n.mul_add(one.floor, total.floor);
 }
 
 /// Follows one card from a review at `at`, carrying probability `p` and
 /// `k` visits so far after today.
 #[allow(clippy::too_many_arguments)]
-fn walk(plan: &DeckPlan, clock: &Clock, id: i64, card: CardSched, at: i64, p: f64, k: u32, acc: &mut Acc) -> anyhow::Result<()> {
-    let day = (clock.date_of(at) - clock.today()).num_days().max(0) as usize;
-    if day >= DAYS {
-        return leaf(acc, p, k);
-    }
-    acc.days[day] += p;
+fn walk(
+    plan: &DeckPlan,
+    clock: &Clock,
+    id: i64,
+    card: &CardSched,
+    at: i64,
+    p: f64,
+    k: u32,
+    acc: &mut Acc,
+) -> anyhow::Result<()> {
+    let day = num::i64_usize((clock.date_of(at) - clock.today()).num_days().max(0));
+    let Some(slot) = acc.days.get_mut(day) else {
+        leaf(acc, p, k);
+        return Ok(());
+    };
+    *slot += p;
     let k = if day > 0 {
         if k == 0 && (p - 1.0).abs() < f64::EPSILON {
             acc.floor += 1.0;
@@ -194,11 +222,12 @@ fn walk(plan: &DeckPlan, clock: &Clock, id: i64, card: CardSched, at: i64, p: f6
         k
     };
     if p < MIN_MASS {
-        return leaf(acc, p, k);
+        leaf(acc, p, k);
+        return Ok(());
     }
     let recall = match (card.state, card.memory(), card.last_review) {
         (CardState::Review, Some(memory), Some(last)) => {
-            let elapsed = ((at - last).max(0) as f32) / 86_400.0;
+            let elapsed = num::i64_f32((at - last).max(0)) / 86_400.0;
             f64::from(fsrs::current_retrievability(memory, elapsed, plan.decay)).clamp(0.0, 1.0)
         }
         // Learning cards are followed through their steps with Good.
@@ -208,23 +237,29 @@ fn walk(plan: &DeckPlan, clock: &Clock, id: i64, card: CardSched, at: i64, p: f6
         if q <= 0.0 {
             continue;
         }
-        let next = settle(plan, clock, id, &card, rating, at)?;
+        let next = settle(plan, clock, id, card, rating, at)?;
         let due = next.due;
-        walk(plan, clock, id, next, due, p * q, k, acc)?;
+        walk(plan, clock, id, &next, due, p * q, k, acc)?;
     }
     Ok(())
 }
 
-fn leaf(acc: &mut Acc, p: f64, k: u32) -> anyhow::Result<()> {
+fn leaf(acc: &mut Acc, p: f64, k: u32) {
     let k = f64::from(k);
-    acc.m1 += p * k;
-    acc.m2 += p * k * k;
-    Ok(())
+    acc.m1 = p.mul_add(k, acc.m1);
+    acc.m2 = (p * k).mul_add(k, acc.m2);
 }
 
 /// Answers `rating` at `at`, then Good at each step that is still due the
 /// same day, so the card leaves the day the way studying would let it.
-fn settle(plan: &DeckPlan, clock: &Clock, id: i64, card: &CardSched, rating: Rating, at: i64) -> anyhow::Result<CardSched> {
+fn settle(
+    plan: &DeckPlan,
+    clock: &Clock,
+    id: i64,
+    card: &CardSched,
+    rating: Rating,
+    at: i64,
+) -> anyhow::Result<CardSched> {
     let at_clock = |t: i64| Clock::new(t, clock.tz, clock.rollover_hour);
     let day = clock.date_of(at);
     let mut out = scheduler::answer(&plan.fsrs, &plan.cfg, id, card, rating, &at_clock(at))?.card;
@@ -275,29 +310,29 @@ mod tests {
             stability: Some(stability),
             difficulty: Some(5.0),
             due,
-            last_review: Some(due - (stability.max(1.0) as i64) * DAY),
+            last_review: Some(due - num::f64_i64(f64::from(stability.max(1.0))) * DAY),
             reps: 3,
             lapses: 0,
         }
     }
 
     fn outlook(cards: Vec<CardSched>, new_cards: [u32; DAYS]) -> Outlook {
-        let cards = cards.into_iter().enumerate().map(|(i, c)| (i as i64 + 1, c)).collect();
+        let cards = cards.into_iter().enumerate().map(|(i, c)| (num::usize_i64(i) + 1, c)).collect();
         forecast(&[plan(cards, new_cards)], &clock()).unwrap()
     }
 
     #[test]
     fn nothing_to_forecast() {
         let o = outlook(vec![], [0; DAYS]);
-        assert_eq!(o.days, [0.0; DAYS]);
+        assert!(o.days.iter().all(|d| d.abs() < f64::EPSILON), "{:?}", o.days);
         assert_eq!(o.later_range(), (0, 0));
     }
 
     #[test]
     fn a_card_due_after_the_week_adds_nothing() {
         let o = outlook(vec![learned(50.0, 9)], [0; DAYS]);
-        assert_eq!(o.later(), 0.0);
-        assert_eq!(o.variance, 0.0);
+        assert!(o.later().abs() < f64::EPSILON);
+        assert!(o.variance.abs() < f64::EPSILON);
     }
 
     #[test]
@@ -327,7 +362,7 @@ mod tests {
     #[test]
     fn new_cards_start_on_their_day_and_return() {
         let o = outlook(vec![], [0, 0, 5, 0, 0, 0, 0]);
-        assert_eq!(o.days[1], 0.0);
+        assert!(o.days[1].abs() < f64::EPSILON);
         assert!((o.days[2] - 5.0).abs() < 1e-9, "{:?}", o.days);
         assert!(o.days[3..].iter().sum::<f64>() > 0.0, "new cards come back: {:?}", o.days);
         assert!((o.floor - 5.0).abs() < 1e-9);
@@ -335,12 +370,12 @@ mod tests {
 
     #[test]
     fn the_range_holds_the_mean_and_never_dips_below_the_certain() {
-        let cards = (1..=40).map(|i| learned(1.0 + f32::from(i as u8) / 4.0, i % 6 + 1)).collect();
+        let cards = (1..=40).map(|i| learned(1.0 + num::i64_f32(i) / 4.0, i % 6 + 1)).collect();
         let o = outlook(cards, [0, 3, 3, 3, 3, 3, 3]);
         let (low, high) = o.later_range();
         let mean = o.later();
-        assert!((low as f64) <= mean && mean <= high as f64, "{low} {mean} {high}");
-        assert!(low as f64 >= o.floor.floor(), "{low} below {}", o.floor);
+        assert!(num::i64_f64(low) <= mean && mean <= num::i64_f64(high), "{low} {mean} {high}");
+        assert!(num::i64_f64(low) >= o.floor.floor(), "{low} below {}", o.floor);
         assert!(high > low);
     }
 

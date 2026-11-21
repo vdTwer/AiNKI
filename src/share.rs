@@ -9,7 +9,7 @@ use crate::{
     auth::Access,
     error::{AppError, Result},
     now,
-    service::Deck,
+    service::{Deck, NewCard},
 };
 
 #[derive(Debug, Clone, Serialize, sqlx::FromRow)]
@@ -33,6 +33,13 @@ pub struct OutgoingShare {
 
 impl App {
     /// Offer a copy of a deck to another user (by `name#1234`, or a unique name).
+    ///
+    /// # Errors
+    ///
+    /// - `Forbidden` if the token is read-only or limited to some decks.
+    /// - `NotFound` if the deck isn't the user's or lies outside the token's decks.
+    /// - `BadRequest` if no user has the recipient's name or it is the sender.
+    /// - `Internal` if the database fails.
     pub async fn share_deck(&self, access: &Access, deck_id: i64, recipient: &str) -> Result<OutgoingShare> {
         access.require_write()?;
         // Sending data to another account is an account-wide decision: a
@@ -64,6 +71,10 @@ impl App {
         shares.pop().ok_or(AppError::NotFound)
     }
 
+    /// # Errors
+    ///
+    /// - `NotFound` if the deck isn't the user's or lies outside the token's decks.
+    /// - `Internal` if the database fails.
     pub async fn outgoing_shares(&self, access: &Access, deck_id: i64) -> Result<Vec<OutgoingShare>> {
         self.deck(access, deck_id).await?;
         Ok(sqlx::query_as(
@@ -78,6 +89,12 @@ impl App {
     }
 
     /// Withdraw a pending offer. Returns the deck it was for.
+    ///
+    /// # Errors
+    ///
+    /// - `Forbidden` if the token is read-only.
+    /// - `NotFound` if the share isn't one of the user's decks'.
+    /// - `Internal` if the database fails.
     pub async fn cancel_share(&self, access: &Access, share_id: i64) -> Result<i64> {
         access.require_write()?;
         let deck_id: i64 = sqlx::query_scalar("SELECT deck_id FROM deck_shares WHERE id = ? AND from_user = ?")
@@ -94,6 +111,9 @@ impl App {
         Ok(deck_id)
     }
 
+    /// # Errors
+    ///
+    /// `Internal` if the database fails.
     pub async fn incoming_shares(&self, access: &Access) -> Result<Vec<IncomingShare>> {
         Ok(sqlx::query_as(
             "SELECT s.id, s.deck_id, d.name AS deck_name, d.description AS deck_description,
@@ -107,6 +127,11 @@ impl App {
         .await?)
     }
 
+    /// # Errors
+    ///
+    /// - `Forbidden` if the token is read-only.
+    /// - `NotFound` if the share isn't open for this user.
+    /// - `Internal` if the database fails.
     pub async fn decline_share(&self, access: &Access, share_id: i64) -> Result<()> {
         access.require_write()?;
         let n = sqlx::query("DELETE FROM deck_shares WHERE id = ? AND to_user = ?")
@@ -119,15 +144,17 @@ impl App {
     }
 
     /// Copy the shared deck into the recipient's account.
+    ///
+    /// # Errors
+    ///
+    /// - `Forbidden` if the token is read-only or limited to some decks.
+    /// - `NotFound` if the share isn't open for this user.
+    /// - `Internal` if the database fails.
     pub async fn accept_share(&self, access: &Access, share_id: i64) -> Result<Deck> {
         access.require_write()?;
         access.require_all_decks()?;
-        let share = self
-            .incoming_shares(access)
-            .await?
-            .into_iter()
-            .find(|s| s.id == share_id)
-            .ok_or(AppError::NotFound)?;
+        let share =
+            self.incoming_shares(access).await?.into_iter().find(|s| s.id == share_id).ok_or(AppError::NotFound)?;
         // Claim the offer first, so a second press (a double click, a slow
         // phone) finds nothing instead of making a second copy.
         let claimed = sqlx::query("DELETE FROM deck_shares WHERE id = ? AND to_user = ?")
@@ -142,7 +169,7 @@ impl App {
         let copied = self.copy_shared_deck(access, &share).await;
         if copied.is_err() {
             // Offer it again, so it can be tried once more.
-            let _ = sqlx::query(
+            let offered_again = sqlx::query(
                 "INSERT OR IGNORE INTO deck_shares (id, deck_id, from_user, to_user, created_at)
                  SELECT ?, ?, id, ?, ? FROM users WHERE id = (SELECT user_id FROM decks WHERE id = ?)",
             )
@@ -153,6 +180,9 @@ impl App {
             .bind(share.deck_id)
             .execute(&self.db)
             .await;
+            if let Err(e) = offered_again {
+                tracing::warn!("share {share_id} failed to copy and could not be offered again: {e}");
+            }
         }
         copied
     }
@@ -183,16 +213,19 @@ impl App {
                 i += 1;
             }
         }
-        let deck = self
-            .create_deck(access, &name, &share.deck_description, None)
-            .await?;
+        let deck = self.create_deck(access, &name, &share.deck_description, None).await?;
 
         let mut images = std::collections::HashMap::new();
         for c in cards {
             let front_image = self.copy_image(access.user_id(), c.front_image, &mut images).await?;
             let back_image = self.copy_image(access.user_id(), c.back_image, &mut images).await?;
             let id = self
-                .insert_card(access.user_id(), deck.id, &c.front, &c.back, front_image, back_image, "shared")
+                .insert_card(
+                    access.user_id(),
+                    deck.id,
+                    &NewCard { front_image, back_image, ..NewCard::new(&c.front, &c.back) },
+                    "shared",
+                )
                 .await?;
             if c.multi.is_some() {
                 let copy = self.card(access, id).await?;

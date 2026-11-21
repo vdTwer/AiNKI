@@ -8,6 +8,8 @@
 //! match a word of the text with a typo or two ("neuroantomy" finds
 //! "Neuroanatomy"), for a lower score. Case and common accents are ignored.
 
+use crate::num;
+
 /// Letters looked at per text. Longer texts are cut; the start is what counts.
 const MAX_TEXT: usize = 400;
 const MAX_WORD: usize = 48;
@@ -32,7 +34,7 @@ pub fn score(query: &str, text: &str) -> Option<i32> {
     let folded: Vec<char> = raw.iter().map(|&c| fold_char(c)).collect();
     let mut total = 0;
     for w in &words {
-        let w = &w[..w.len().min(MAX_WORD)];
+        let w = w.get(..MAX_WORD).unwrap_or(w);
         total += in_order(w, &raw, &folded).or_else(|| with_typos(w, &folded))?;
     }
     Some(total)
@@ -71,10 +73,7 @@ fn is_word_char(c: char) -> bool {
 
 /// What a match at position i is worth beyond MATCH.
 fn position_bonus(raw: &[char], i: usize) -> i32 {
-    if i == 0 {
-        return START;
-    }
-    let (prev, here) = (raw[i - 1], raw[i]);
+    let (Some(&prev), Some(&here)) = (i.checked_sub(1).and_then(|p| raw.get(p)), raw.get(i)) else { return START };
     if !is_word_char(prev) && is_word_char(here) {
         BOUNDARY
     } else if prev.is_lowercase() && here.is_uppercase() {
@@ -86,6 +85,7 @@ fn position_bonus(raw: &[char], i: usize) -> i32 {
 
 /// Best in-order match of `q` in the text, by dynamic programming over
 /// (query letter, text position). None when the letters are not all there.
+#[expect(clippy::indexing_slicing, reason = "dynamic programming: every index stays inside the tables sized above")]
 fn in_order(q: &[char], raw: &[char], t: &[char]) -> Option<i32> {
     let (m, n) = (q.len(), t.len());
     if m > n {
@@ -107,11 +107,11 @@ fn in_order(q: &[char], raw: &[char], t: &[char]) -> Option<i32> {
     for j in 0..n {
         if t[j] == q[0] {
             // Letters skipped before the first match cost a little too.
-            let lead = if j == 0 { 0 } else { (GAP_OPEN + (j as i32 - 1) * GAP).min(GAP_MAX) };
+            let lead = if j == 0 { 0 } else { (GAP_OPEN + (num::usize_i32(j) - 1) * GAP).min(GAP_MAX) };
             prev[j] = MATCH + position_bonus(raw, j) - lead;
         }
     }
-    for qi in 1..m {
+    for &qc in q.iter().take(m).skip(1) {
         let mut cur = vec![NONE; n];
         // Best earlier matches at least one letter back, with what the gap
         // costs: growing by GAP per letter, but never more than GAP_MAX.
@@ -121,7 +121,7 @@ fn in_order(q: &[char], raw: &[char], t: &[char]) -> Option<i32> {
                 decay = decay.max(prev[j - 2] - GAP_OPEN);
                 capped = capped.max(prev[j - 2] - GAP_MAX);
             }
-            if t[j] == q[qi] {
+            if t[j] == qc {
                 let mut best = decay.max(capped);
                 if best > NONE {
                     best += MATCH + position_bonus(raw, j);
@@ -149,20 +149,18 @@ fn with_typos(q: &[char], t: &[char]) -> Option<i32> {
         4..=7 => 1,
         _ => 2,
     };
+    let mut start = 0;
     let mut best: Option<i32> = None;
-    let mut i = 0;
-    while i < t.len() {
-        if !is_word_char(t[i]) {
-            i += 1;
+    for word in t.split(|c| !is_word_char(*c)) {
+        let at = start;
+        start += word.len() + 1;
+        if word.is_empty() {
             continue;
         }
-        let start = i;
-        while i < t.len() && is_word_char(t[i]) {
-            i += 1;
-        }
-        let word = &t[start..i.min(start + MAX_WORD)];
+        let word = word.get(..MAX_WORD).unwrap_or(word);
         if let Some(edits) = prefix_distance(q, word, allowed) {
-            let s = q.len() as i32 * MATCH / 2 - edits as i32 * 12 + if start == 0 { START } else { BOUNDARY };
+            let s = num::usize_i32(q.len()) * MATCH / 2 - num::usize_i32(edits) * 12
+                + if at == 0 { START } else { BOUNDARY };
             best = Some(best.map_or(s, |b| b.max(s)));
         }
     }
@@ -172,6 +170,7 @@ fn with_typos(q: &[char], t: &[char]) -> Option<i32> {
 /// The fewest edits that turn `q` into some prefix of `w` (optimal string
 /// alignment: insert, delete, replace, swap two neighbours), if at most
 /// `allowed`.
+#[expect(clippy::indexing_slicing, reason = "dynamic programming: every index stays inside the tables sized above")]
 fn prefix_distance(q: &[char], w: &[char], allowed: usize) -> Option<usize> {
     let (m, n) = (q.len(), w.len());
     if n + allowed < m {
@@ -179,16 +178,15 @@ fn prefix_distance(q: &[char], w: &[char], allowed: usize) -> Option<usize> {
     }
     let width = n + 1;
     let mut d = vec![0usize; (m + 1) * width];
-    for j in 0..=n {
-        d[j] = j;
+    for (j, cell) in d.iter_mut().enumerate().take(n + 1) {
+        *cell = j;
     }
     for i in 1..=m {
         d[i * width] = i;
         for j in 1..=n {
             let cost = usize::from(q[i - 1] != w[j - 1]);
-            let mut v = (d[(i - 1) * width + j] + 1)
-                .min(d[i * width + j - 1] + 1)
-                .min(d[(i - 1) * width + j - 1] + cost);
+            let mut v =
+                (d[(i - 1) * width + j] + 1).min(d[i * width + j - 1] + 1).min(d[(i - 1) * width + j - 1] + cost);
             if i > 1 && j > 1 && q[i - 1] == w[j - 2] && q[i - 2] == w[j - 1] {
                 v = v.min(d[(i - 2) * width + j - 2] + 1);
             }
@@ -206,7 +204,7 @@ mod tests {
 
     fn rank<'a>(q: &str, texts: &[&'a str]) -> Vec<&'a str> {
         let mut scored: Vec<(i32, &str)> = texts.iter().filter_map(|t| score(q, t).map(|s| (s, *t))).collect();
-        scored.sort_by(|a, b| b.0.cmp(&a.0));
+        scored.sort_by_key(|b| std::cmp::Reverse(b.0));
         scored.into_iter().map(|(_, t)| t).collect()
     }
 
