@@ -779,18 +779,7 @@ pub async fn authorize_page(
                 (hidden("scope", &p.scope))
                 (hidden("resource", &p.resource))
                 p { "It can always read your decks and cards. Also allow it to:" }
-                label.check { input type="checkbox" name="can_write" value="1" checked; " " (crate::web::PERM_WRITE) }
-                label.check { input type="checkbox" name="can_review" value="1" checked; " " (crate::web::PERM_REVIEW) }
-                fieldset {
-                    legend { "Decks" }
-                    label.check { input type="radio" name="deck_scope" value="all" checked; " " (crate::web::PERM_ALL_DECKS) }
-                    @if !decks.is_empty() {
-                        label.check { input type="radio" name="deck_scope" value="some"; " " (crate::web::PERM_SOME_DECKS) }
-                        @for d in &decks {
-                            label.check.indent { input type="checkbox" name="decks" value=(d.id); " " (crate::web::deck_plain(&d.name)) }
-                        }
-                    }
-                }
+                (crate::web::permission_fields(&decks))
                 div.actions {
                     button.btn.primary type="submit" name="decision" value="allow" { "Allow" }
                     button.btn type="submit" name="decision" value="deny" { "Cancel" }

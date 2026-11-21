@@ -67,8 +67,8 @@ use pages::{
     admin::*, auth::*, cards::*, coach::*, decks::*, find::*, home::*, import::*, invites::*, lessons::*, media::*,
     presets::*, settings::*, sharing::*, stats::*, study::*, tokens::*,
 };
-// The consent page for OAuth clients names permissions the same way.
-pub(crate) use pages::tokens::{PERM_ALL_DECKS, PERM_REVIEW, PERM_SOME_DECKS, PERM_WRITE};
+// The consent page for OAuth clients asks for permissions the same way.
+pub(crate) use pages::tokens::permission_fields;
 
 const CSS: &str = include_str!("../style.css");
 const CALM_CSS: &str = include_str!("../static/calm.css");

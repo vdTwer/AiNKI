@@ -8,10 +8,10 @@ use crate::web::*;
 
 // What an agent may do, worded once for the token form and the OAuth
 // consent page.
-pub const PERM_WRITE: &str = "Add, edit and delete cards and decks";
-pub const PERM_REVIEW: &str = "Quiz you and record your answers";
-pub const PERM_ALL_DECKS: &str = "All decks (also lets it create decks, change presets and share)";
-pub const PERM_SOME_DECKS: &str = "Only these:";
+const PERM_WRITE: &str = "Add, edit and delete cards and decks";
+const PERM_REVIEW: &str = "Quiz you and record your answers";
+const PERM_ALL_DECKS: &str = "All decks (also lets it create decks, change presets and share)";
+const PERM_SOME_DECKS: &str = "Only these:";
 
 pub(crate) fn mcp_url(app: &AppState, headers: &HeaderMap) -> String {
     format!("{}/mcp", oauth::base_url(app, headers))
@@ -98,6 +98,25 @@ fn connected_tokens(tokens: &[(crate::auth::ApiToken, Vec<String>)], clock: &sch
     }
 }
 
+/// What an agent may do, the same on the token form and the OAuth consent
+/// page: write, review, and all decks or some.
+pub(crate) fn permission_fields(decks: &[Deck]) -> Markup {
+    html! {
+        label.check { input type="checkbox" name="can_write" value="1" checked; " " (PERM_WRITE) }
+        label.check { input type="checkbox" name="can_review" value="1" checked; " " (PERM_REVIEW) }
+        fieldset {
+            legend { "Decks" }
+            label.check { input type="radio" name="deck_scope" value="all" checked; " " (PERM_ALL_DECKS) }
+            @if !decks.is_empty() {
+                label.check { input type="radio" name="deck_scope" value="some"; " " (PERM_SOME_DECKS) }
+                @for d in decks {
+                    label.check.indent { input type="checkbox" name="decks" value=(d.id); " " (deck_plain(&d.name)) }
+                }
+            }
+        }
+    }
+}
+
 fn token_form(decks: &[Deck]) -> Markup {
     html! {
         details {
@@ -105,16 +124,7 @@ fn token_form(decks: &[Deck]) -> Markup {
             p.small { "For agents without OAuth support: they send the token as " code { "Authorization: Bearer <token>" } "." }
             form method="post" action="/access/new" {
                 label { "Name" input type="text" name="name" required placeholder="e.g. Claude"; }
-                label.check { input type="checkbox" name="can_write" value="1" checked; " " (PERM_WRITE) }
-                label.check { input type="checkbox" name="can_review" value="1" checked; " " (PERM_REVIEW) }
-                fieldset {
-                    legend { "Decks" }
-                    label.check { input type="radio" name="deck_scope" value="all" checked; " " (PERM_ALL_DECKS) }
-                    label.check { input type="radio" name="deck_scope" value="some"; " " (PERM_SOME_DECKS) }
-                    @for d in decks {
-                        label.check.indent { input type="checkbox" name="decks" value=(d.id); " " (deck_plain(&d.name)) }
-                    }
-                }
+                (permission_fields(decks))
                 button.btn type="submit" { "Create token" }
             }
         }
