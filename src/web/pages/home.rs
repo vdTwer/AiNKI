@@ -310,9 +310,7 @@ pub(crate) fn week_home(user: &User, today_due: i64, outlook: &Outlook, seconds_
                         }
                         " Probably "
                         span.forecast
-                            data-tip=(format!("Forecast: {}", count(total, "card")))
-                            data-tip-label=(format!("Likely {} to {}", format::number(low), format::number(high)))
-                            data-why=(WHY_OUTLOOK) {
+                            title=(format!("Likely {} to {}. {WHY_OUTLOOK}", format::number(low), format::number(high))) {
                             "about " (format::number(about(week)))
                         }
                         " in the next week"

@@ -43,6 +43,7 @@ use crate::{
 
 /// One module per area of the site. Each sees everything here and in its
 /// siblings, so moving a function between pages changes no imports.
+pub mod charts;
 mod pages {
     pub mod admin;
     pub mod auth;
