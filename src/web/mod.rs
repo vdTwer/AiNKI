@@ -479,7 +479,8 @@ fn page(nav: Option<Nav>, title: &str, user: Option<&User>, page_kind: Option<&s
             body data-user=[user.map(|u| u.id)] data-page=[page_kind] {
                 @if user.is_some_and(|u| !u.is_admin) { (main_nav(nav)) }
                 @if let Some(u) = user { (sleep_wall(u)) }
-                main {
+                // Under the quiet-hours wall the page can't be reached.
+                main inert[user.is_some_and(|u| study::quiet_until(u, now()).is_some())] {
                     (body)
                     @if user.is_some_and(|u| !u.is_admin) {
                         p.keys-hint { "Press " button.link type="button" popovertarget="keys" { "?" } " for keys" }
@@ -542,7 +543,7 @@ fn main_nav(nav: Option<Nav>) -> Markup {
     }
 }
 
-/// The desktop look in quiet hours: one dark screen over everything. The
+/// Quiet hours: one dark screen over everything. The
 /// only way past is a faint "study anyway" at the bottom that asks twice.
 /// Two folds, so it works without JavaScript.
 fn sleep_wall(u: &User) -> Markup {

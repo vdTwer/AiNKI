@@ -273,6 +273,19 @@
     & .bar { width: 100%; max-width: 2rem; background: var(--line); border-radius: 2px; }
     & .today .bar { background: var(--accent); }
     & .letter { font-size: .75rem; color: var(--muted); }
+    /* Hovering a day names its count just above its bar. */
+    & .bar { position: relative; }
+    & .bar::before {
+      content: attr(data-n);
+      position: absolute;
+      bottom: 100%;
+      inset-inline: 0;
+      font-size: .75rem;
+      text-align: center;
+      color: var(--ink);
+      opacity: 0;
+    }
+    & .day:hover .bar::before { opacity: 1; }
   }
 
   /* Studying */
@@ -438,7 +451,12 @@
     place-content: center;
     gap: 1rem;
     padding: 1rem;
-    background: var(--bg);
+    background: #111114;
+    color: #e4e4e8;
+    color-scheme: dark;
     text-align: center;
+    & h1 { font-size: 2.5rem; font-weight: 300; }
+    & summary { justify-content: center; color: rgb(140 140 150 / .35); }
+    & button { margin-top: 1rem; }
   }
 }
