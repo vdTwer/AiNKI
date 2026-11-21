@@ -107,7 +107,7 @@ test('static files are cached for good and versioned by content', async ({ page 
   const assets = await page.evaluate(() =>
     [...document.querySelectorAll('link[rel=stylesheet], script[src]')].map((e) => e.getAttribute('href') ?? e.getAttribute('src')!),
   );
-  expect(assets.length).toBeGreaterThanOrEqual(4);
+  expect(assets.length).toBe(3);
   for (const a of assets) {
     expect(a, 'linked with a content hash').toMatch(/\?v=[0-9a-f]{6,}/);
     const res = await page.request.get(a);

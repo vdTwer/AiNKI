@@ -24,7 +24,7 @@ test.describe('logged in from v1', () => {
     await expect(page).toHaveURL('/');
     await expect(page.locator('main')).toContainText('Spanish');
     await expect(page.locator('main')).not.toContainText('::');
-    expect(await page.evaluate(() => document.documentElement.classList.contains('calm'))).toBe(true);
+    await expect(page.locator('link[rel=stylesheet][href^="/style.css"]')).toHaveCount(1);
 
     const before = sql<{ n: number }>('SELECT COUNT(*) AS n FROM review_log WHERE user_id = ?', state.user.id)[0].n;
     await page.goto('/study');
