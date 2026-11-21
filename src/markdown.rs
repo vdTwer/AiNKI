@@ -3,7 +3,7 @@
 
 use pulldown_cmark::{Event, Options, Parser, html};
 
-/// The Markdown dialect of cards: CommonMark plus tables, strikethrough and
+/// The Markdown dialect of cards: `CommonMark` plus tables, strikethrough and
 /// task lists. Splitting a multicard parses with the same options.
 pub fn options() -> Options {
     let mut opts = Options::empty();

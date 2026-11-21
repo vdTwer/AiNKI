@@ -165,7 +165,7 @@ pub struct RegistrationRequest {
     pub token_endpoint_auth_method: Option<String>,
 }
 
-/// Client metadata document fetched from a URL client_id.
+/// Client metadata document fetched from a URL `client_id`.
 #[derive(Debug, Deserialize)]
 struct MetadataDocument {
     client_id: String,
@@ -316,7 +316,7 @@ impl App {
     }
 
     /// Look up a registered client, or fetch the metadata document for a
-    /// URL-shaped client_id.
+    /// URL-shaped `client_id`.
     pub async fn client(&self, client_id: &str) -> Result<Option<Client>> {
         let stored: Option<Client> =
             sqlx::query_as("SELECT * FROM oauth_clients WHERE id = ?").bind(client_id).fetch_optional(&self.db).await?;
@@ -527,19 +527,16 @@ impl App {
             .bind(&hash)
             .fetch_optional(&self.db)
             .await?;
-            if let Some((grant, used_at)) = used {
-                if now() - used_at > REFRESH_REUSE_GRACE_SECS {
-                    tracing::warn!("refresh token reuse detected; revoking connection {grant}");
-                    sqlx::query("UPDATE api_tokens SET revoked_at = ? WHERE id = ?")
-                        .bind(now())
-                        .bind(grant)
-                        .execute(&self.db)
-                        .await?;
-                    sqlx::query("DELETE FROM oauth_tokens WHERE api_token_id = ?")
-                        .bind(grant)
-                        .execute(&self.db)
-                        .await?;
-                }
+            if let Some((grant, used_at)) = used
+                && now() - used_at > REFRESH_REUSE_GRACE_SECS
+            {
+                tracing::warn!("refresh token reuse detected; revoking connection {grant}");
+                sqlx::query("UPDATE api_tokens SET revoked_at = ? WHERE id = ?")
+                    .bind(now())
+                    .bind(grant)
+                    .execute(&self.db)
+                    .await?;
+                sqlx::query("DELETE FROM oauth_tokens WHERE api_token_id = ?").bind(grant).execute(&self.db).await?;
             }
             return Err(invalid());
         };
@@ -845,7 +842,7 @@ pub async fn authorize_submit(
         params.push(("error_description", "the user declined"));
     }
     let decks = if f.deck_scope.as_deref() == Some("some") { Some(f.decks.clone()) } else { None };
-    if decks.as_ref().is_some_and(|d| d.is_empty()) {
+    if decks.as_ref().is_some_and(std::vec::Vec::is_empty) {
         return authorize_error_page(Some(&user), "Pick at least one deck, or allow all decks.");
     }
     let code;
@@ -900,14 +897,14 @@ fn basic_auth(headers: &HeaderMap) -> Option<(String, String)> {
         let mut out = Vec::with_capacity(bytes.len());
         let mut i = 0;
         while i < bytes.len() {
-            if bytes[i] == b'%' && i + 2 < bytes.len() {
-                if let Some(b) =
+            if bytes[i] == b'%'
+                && i + 2 < bytes.len()
+                && let Some(b) =
                     std::str::from_utf8(&bytes[i + 1..i + 3]).ok().and_then(|h| u8::from_str_radix(h, 16).ok())
-                {
-                    out.push(b);
-                    i += 3;
-                    continue;
-                }
+            {
+                out.push(b);
+                i += 3;
+                continue;
             }
             out.push(bytes[i]);
             i += 1;

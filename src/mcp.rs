@@ -178,7 +178,7 @@ fn empty_to_none(s: Option<String>) -> Option<Option<String>> {
 
 #[derive(Deserialize, JsonSchema)]
 pub struct DeckIdParam {
-    /// Deck id (see list_decks).
+    /// Deck id (see `list_decks`).
     pub deck_id: i64,
 }
 
@@ -213,7 +213,7 @@ pub struct WorkloadParams {
 
 #[derive(Deserialize, JsonSchema)]
 pub struct LessonParams {
-    /// From list_lessons, e.g. "spacing".
+    /// From `list_lessons`, e.g. "spacing".
     pub slug: String,
 }
 
@@ -227,19 +227,19 @@ pub struct OptionalDeckParam {
 pub struct CreateDeckParams {
     pub name: String,
     pub description: Option<String>,
-    /// Preset id (see list_presets). Defaults to the user's first preset ("Standard").
+    /// Preset id (see `list_presets`). Defaults to the user's first preset ("Standard").
     pub preset_id: Option<i64>,
 }
 
 #[derive(Deserialize, JsonSchema)]
 pub struct MergeDecksParams {
-    /// Two or more deck ids (see list_decks). Their cards go into the new
+    /// Two or more deck ids (see `list_decks`). Their cards go into the new
     /// deck in this order.
     pub deck_ids: Vec<i64>,
     /// Name of the new deck.
     pub name: String,
     pub description: Option<String>,
-    /// Preset id (see list_presets). Defaults to the first deck's preset.
+    /// Preset id (see `list_presets`). Defaults to the first deck's preset.
     pub preset_id: Option<i64>,
     /// Copy each card's review progress, so known cards stay known (a card may
     /// then come due in both decks). Default false: the copies are new cards.
@@ -300,9 +300,9 @@ pub struct NewCard {
     /// Back (answer) in Markdown.
     #[serde(default)]
     pub back: String,
-    /// Image id from upload_image to show on the front.
+    /// Image id from `upload_image` to show on the front.
     pub front_image_id: Option<String>,
-    /// Image id from upload_image to show on the back.
+    /// Image id from `upload_image` to show on the back.
     pub back_image_id: Option<String>,
     /// Learn the back item by item, split this way (needs at least two items).
     pub multi: Option<Split>,
@@ -319,7 +319,7 @@ impl NewCard {
 
 #[derive(Deserialize, JsonSchema)]
 pub struct CreateCardsParams {
-    /// Target deck id. Give this or deck_name.
+    /// Target deck id. Give this or `deck_name`.
     pub deck_id: Option<i64>,
     /// Target deck name; the deck is created if it doesn't exist (needs an all-decks token).
     pub deck_name: Option<String>,
@@ -407,7 +407,7 @@ pub struct PresetFields {
 
 impl From<PresetFields> for PresetInput {
     fn from(p: PresetFields) -> Self {
-        PresetInput {
+        Self {
             name: p.name,
             description: p.description,
             desired_retention: p.desired_retention,
@@ -464,7 +464,7 @@ pub struct ShareDeckParams {
 
 #[derive(Deserialize, JsonSchema)]
 pub struct ShareIdParam {
-    /// Id from list_shares.
+    /// Id from `list_shares`.
     pub share_id: i64,
 }
 
@@ -478,7 +478,7 @@ impl AinkiMcp {
     async fn get_overview(&self, Extension(parts): Extension<Parts>) -> ToolResult {
         let a = access(&parts)?;
         let decks = self.app.deck_summaries(&a).await.map_err(err)?;
-        let due: i64 = decks.iter().map(|d| d.due_total()).sum();
+        let due: i64 = decks.iter().map(super::service::DeckSummary::due_total).sum();
         let permissions = match &a.actor {
             Actor::Agent { can_write, can_review, decks, .. } => json!({
                 "can_write": can_write,
@@ -699,10 +699,10 @@ impl AinkiMcp {
             },
         };
         let mut card = self.app.update_card(&a, p.card_id, input).await.map_err(err)?;
-        if let Some(deck) = p.deck_id {
-            if deck != card.deck_id {
-                card = self.app.move_card(&a, p.card_id, deck).await.map_err(err)?;
-            }
+        if let Some(deck) = p.deck_id
+            && deck != card.deck_id
+        {
+            card = self.app.move_card(&a, p.card_id, deck).await.map_err(err)?;
         }
         out(self.card_json(&a, &card, false).await?)
     }

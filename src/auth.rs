@@ -119,15 +119,15 @@ pub struct Access {
 }
 
 impl Access {
-    pub fn web(user: User) -> Self {
+    pub const fn web(user: User) -> Self {
         Self { user, actor: Actor::Web }
     }
 
-    pub fn user_id(&self) -> i64 {
+    pub const fn user_id(&self) -> i64 {
         self.user.id
     }
 
-    pub fn source(&self) -> &'static str {
+    pub const fn source(&self) -> &'static str {
         match self.actor {
             Actor::Web => "web",
             Actor::Agent { .. } => "agent",

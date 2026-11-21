@@ -1,4 +1,4 @@
-//! Built-in lessons: how AiNKI schedules, how memory works, and how to
+//! Built-in lessons: how `AiNKI` schedules, how memory works, and how to
 //! write good cards. Each is a Markdown file in `lessons/` with a short
 //! header and a few cards at the end, so a lesson can be added as a deck.
 //!
@@ -47,7 +47,7 @@ impl Evidence {
         })
     }
 
-    pub fn label(self) -> &'static str {
+    pub const fn label(self) -> &'static str {
         match self {
             Self::Strong => "Strong evidence",
             Self::Moderate => "Moderate evidence",
@@ -58,7 +58,7 @@ impl Evidence {
         }
     }
 
-    pub fn class(self) -> &'static str {
+    pub const fn class(self) -> &'static str {
         match self {
             Self::Strong => "strong",
             Self::Moderate => "moderate",

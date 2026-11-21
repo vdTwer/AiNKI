@@ -19,7 +19,7 @@ pub enum CardState {
 }
 
 impl CardState {
-    pub fn from_i64(v: i64) -> Self {
+    pub const fn from_i64(v: i64) -> Self {
         match v {
             1 => Self::Learning,
             2 => Self::Review,
@@ -28,7 +28,7 @@ impl CardState {
         }
     }
 
-    pub fn as_str(self) -> &'static str {
+    pub const fn as_str(self) -> &'static str {
         match self {
             Self::New => "new",
             Self::Learning => "learning",
@@ -48,7 +48,7 @@ pub enum Rating {
 }
 
 impl Rating {
-    pub fn from_i64(v: i64) -> Option<Self> {
+    pub const fn from_i64(v: i64) -> Option<Self> {
         match v {
             1 => Some(Self::Again),
             2 => Some(Self::Hard),
@@ -68,7 +68,7 @@ impl Rating {
         }
     }
 
-    pub const ALL: [Rating; 4] = [Rating::Again, Rating::Hard, Rating::Good, Rating::Easy];
+    pub const ALL: [Self; 4] = [Self::Again, Self::Hard, Self::Good, Self::Easy];
 }
 
 /// The scheduling-relevant part of a card.
@@ -85,7 +85,7 @@ pub struct CardSched {
 }
 
 impl CardSched {
-    pub fn new_card() -> Self {
+    pub const fn new_card() -> Self {
         Self {
             state: CardState::New,
             step: 0,
@@ -98,7 +98,7 @@ impl CardSched {
         }
     }
 
-    pub fn memory(&self) -> Option<MemoryState> {
+    pub const fn memory(&self) -> Option<MemoryState> {
         match (self.stability, self.difficulty) {
             (Some(stability), Some(difficulty)) => Some(MemoryState { stability, difficulty }),
             _ => None,
@@ -134,7 +134,7 @@ impl Clock {
     pub fn date_of(&self, ts: i64) -> NaiveDate {
         let utc = Utc.timestamp_opt(ts, 0).single().unwrap_or_else(Utc::now);
         let local = utc.with_timezone(&self.tz).naive_local();
-        (local - Duration::hours(self.rollover_hour as i64)).date()
+        (local - Duration::hours(i64::from(self.rollover_hour))).date()
     }
 
     pub fn today(&self) -> NaiveDate {
@@ -246,7 +246,7 @@ pub fn answer(
     clock: &Clock,
 ) -> anyhow::Result<Outcome> {
     let elapsed_days = card.last_review.map(|last| clock.days_between(last, clock.now).max(0)).unwrap_or(0);
-    let next = fsrs.next_states(card.memory(), cfg.desired_retention, elapsed_days.min(u32::MAX as i64) as u32)?;
+    let next = fsrs.next_states(card.memory(), cfg.desired_retention, elapsed_days.min(i64::from(u32::MAX)) as u32)?;
     let chosen = match rating {
         Rating::Again => &next.again,
         Rating::Hard => &next.hard,
@@ -264,10 +264,10 @@ pub fn answer(
 
     let mut graduated_days = None;
     let mut graduate = |out: &mut CardSched| -> i64 {
-        let mut days = fuzzed_interval(chosen.interval as f64, max_interval, seed);
+        let mut days = fuzzed_interval(f64::from(chosen.interval), max_interval, seed);
         // Keep the button order sensible: Easy should never be sooner than Good.
         if rating == Rating::Easy {
-            let good_days = (next.good.interval as f64).round().max(1.0) as i64;
+            let good_days = f64::from(next.good.interval).round().max(1.0) as i64;
             days = days.max((good_days + 1).min(max_interval));
         }
         out.state = CardState::Review;
@@ -314,7 +314,7 @@ pub fn answer(
                         let delay = if idx == 0 && steps.len() == 1 {
                             ((steps[0] as f64 * 1.5) as i64).min(steps[0] + 86_400)
                         } else if idx == 0 {
-                            (steps[0] + steps[1]) / 2
+                            i64::midpoint(steps[0], steps[1])
                         } else {
                             steps[idx]
                         };

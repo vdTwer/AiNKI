@@ -1,7 +1,7 @@
 //! Cross-cutting protections: rate limiting, client IPs behind a reverse
 //! proxy, security headers, Origin checks for cookie-authenticated requests,
 //! and flash messages (kept in a cookie instead of the URL so nobody can
-//! put arbitrary text on an AiNKI page with a crafted link).
+//! put arbitrary text on an `AiNKI` page with a crafted link).
 
 use std::{
     collections::HashMap,
@@ -29,7 +29,7 @@ pub struct RateLimiter {
 
 impl RateLimiter {
     fn with_bucket<T>(&self, key: &str, window: Duration, f: impl FnOnce(&mut (u32, Instant)) -> T) -> T {
-        let mut map = self.buckets.lock().unwrap_or_else(|e| e.into_inner());
+        let mut map = self.buckets.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         if map.len() > 50_000 {
             map.retain(|_, (_, start)| start.elapsed() < Duration::from_secs(3600));
         }
@@ -58,7 +58,7 @@ impl RateLimiter {
     }
 
     pub fn reset(&self, key: &str) {
-        self.buckets.lock().unwrap_or_else(|e| e.into_inner()).remove(key);
+        self.buckets.lock().unwrap_or_else(std::sync::PoisonError::into_inner).remove(key);
     }
 }
 
@@ -102,7 +102,7 @@ impl<S: Send + Sync> FromRequestParts<S> for ClientIp {
 
     async fn from_request_parts(parts: &mut Parts, _: &S) -> Result<Self, Self::Rejection> {
         let peer = parts.extensions.get::<ConnectInfo<SocketAddr>>().map(|c| c.0.ip());
-        Ok(ClientIp(client_ip(&parts.headers, peer).map(|ip| ip.to_string()).unwrap_or_else(|| "unknown".into())))
+        Ok(Self(client_ip(&parts.headers, peer).map(|ip| ip.to_string()).unwrap_or_else(|| "unknown".into())))
     }
 }
 
@@ -196,7 +196,7 @@ impl<S: Send + Sync> FromRequestParts<S> for Flash {
     type Rejection = std::convert::Infallible;
 
     async fn from_request_parts(parts: &mut Parts, _: &S) -> Result<Self, Self::Rejection> {
-        Ok(parts.extensions.get::<Flash>().cloned().unwrap_or_default())
+        Ok(parts.extensions.get::<Self>().cloned().unwrap_or_default())
     }
 }
 
@@ -205,12 +205,13 @@ pub(crate) fn percent_decode(s: &str) -> String {
     let mut out = Vec::with_capacity(b.len());
     let mut i = 0;
     while i < b.len() {
-        if b[i] == b'%' && i + 2 < b.len() {
-            if let Some(v) = std::str::from_utf8(&b[i + 1..i + 3]).ok().and_then(|h| u8::from_str_radix(h, 16).ok()) {
-                out.push(v);
-                i += 3;
-                continue;
-            }
+        if b[i] == b'%'
+            && i + 2 < b.len()
+            && let Some(v) = std::str::from_utf8(&b[i + 1..i + 3]).ok().and_then(|h| u8::from_str_radix(h, 16).ok())
+        {
+            out.push(v);
+            i += 3;
+            continue;
         }
         out.push(b[i]);
         i += 1;

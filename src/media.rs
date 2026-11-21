@@ -44,8 +44,8 @@ pub struct Media {
 fn dither(img: &mut GrayImage, levels: u8) {
     let (w, h) = img.dimensions();
     let (w, h) = (w as usize, h as usize);
-    let step = 255.0 / (levels - 1) as f32;
-    let mut buf: Vec<f32> = img.pixels().map(|p| p.0[0] as f32).collect();
+    let step = 255.0 / f32::from(levels - 1);
+    let mut buf: Vec<f32> = img.pixels().map(|p| f32::from(p.0[0])).collect();
     for y in 0..h {
         for x in 0..w {
             let i = y * w + x;
@@ -100,8 +100,8 @@ pub fn process_image(data: &[u8]) -> Result<(Vec<u8>, u32, u32)> {
     let mut gray = GrayImage::new(rgba.width(), rgba.height());
     for (x, y, p) in rgba.enumerate_pixels() {
         let [r, g, b, a] = p.0;
-        let a = a as f32 / 255.0;
-        let l = 0.2126 * r as f32 + 0.7152 * g as f32 + 0.0722 * b as f32;
+        let a = f32::from(a) / 255.0;
+        let l = 0.2126 * f32::from(r) + 0.7152 * f32::from(g) + 0.0722 * f32::from(b);
         gray.put_pixel(x, y, Luma([(l * a + 255.0 * (1.0 - a)).round() as u8]));
     }
     dither(&mut gray, GRAY_LEVELS);
@@ -138,8 +138,8 @@ impl App {
         )
         .bind(&id)
         .bind(user_id)
-        .bind(w as i64)
-        .bind(h as i64)
+        .bind(i64::from(w))
+        .bind(i64::from(h))
         .bind(png.len() as i64)
         .bind(now())
         .execute(&self.db)
@@ -228,8 +228,8 @@ mod tests {
         let (out, w, h) = process_image(&png).unwrap();
         assert_eq!((w, h), (1200, 600));
         let decoded = image::load_from_memory(&out).unwrap().to_luma8();
-        let step = 255 / (GRAY_LEVELS as u32 - 1);
-        assert!(decoded.pixels().all(|p| p.0[0] as u32 % step == 0));
+        let step = 255 / (u32::from(GRAY_LEVELS) - 1);
+        assert!(decoded.pixels().all(|p| u32::from(p.0[0]) % step == 0));
     }
 
     #[test]

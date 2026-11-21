@@ -52,12 +52,14 @@ pub struct Config {
 
 impl Config {
     /// Served over HTTPS: cookies get the Secure flag and HSTS is sent.
+    #[must_use]
     pub fn secure(&self) -> bool {
         self.secure_cookies || self.public_url.as_deref().is_some_and(|u| u.starts_with("https://"))
     }
 
     /// `__Host-` cookies are only accepted over HTTPS, for this exact host,
     /// with Path=/ — so a subdomain can't plant or overwrite them.
+    #[must_use]
     pub fn session_cookie_name(&self) -> &'static str {
         if self.secure() { "__Host-ainki_session" } else { "ainki_session" }
     }
@@ -104,6 +106,7 @@ pub struct App {
 }
 
 impl App {
+    #[must_use]
     pub fn new(db: SqlitePool, config: Config) -> Self {
         Self { db, config, limiter: Default::default() }
     }
@@ -145,6 +148,7 @@ impl App {
 
 pub type AppState = Arc<App>;
 
+#[must_use]
 pub fn now() -> i64 {
     chrono::Utc::now().timestamp()
 }

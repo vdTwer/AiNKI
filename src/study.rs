@@ -66,7 +66,7 @@ pub fn quiet_until(user: &User, at: i64) -> Option<i64> {
     }
     let tz = user.tz();
     let local = tz.timestamp_opt(at, 0).single()?;
-    if !in_window(from, to, local.hour() as i64) {
+    if !in_window(from, to, i64::from(local.hour())) {
         return None;
     }
     let end_time = NaiveTime::from_hms_opt(to.clamp(0, 23) as u32, 0, 0)?;
@@ -114,7 +114,7 @@ impl Timing {
         input: Option<&str>,
     ) -> Self {
         let ms = |v: Option<i64>| v.filter(|v| (0..=TIMING_MAX_MS).contains(v));
-        Timing {
+        Self {
             think_ms: ms(think_ms),
             answer_ms: ms(answer_ms),
             away_ms: ms(away_ms),
@@ -422,10 +422,10 @@ impl App {
         confidence_check: bool,
     ) -> Result<()> {
         let quiet = quiet.filter(|(f, t)| f != t);
-        if let Some((f, t)) = quiet {
-            if !(0..24).contains(&f) || !(0..24).contains(&t) {
-                return Err(AppError::bad("quiet hours must be whole hours from 0 to 23"));
-            }
+        if let Some((f, t)) = quiet
+            && (!(0..24).contains(&f) || !(0..24).contains(&t))
+        {
+            return Err(AppError::bad("quiet hours must be whole hours from 0 to 23"));
         }
         if !(SMART_BREAKS..=240).contains(&session_minutes) {
             return Err(AppError::bad("session length must be -1 (smart breaks), 0 (off) or up to 240 minutes"));

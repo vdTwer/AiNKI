@@ -62,63 +62,63 @@ pub enum Rule {
 }
 
 impl Rule {
-    pub const ALL: [Rule; 21] = [
-        Rule::ExamClose,
-        Rule::PileUp,
-        Rule::CaughtUp,
-        Rule::Late,
-        Rule::Leeches,
-        Rule::DeckLags,
-        Rule::BelowTarget,
-        Rule::Sliding,
-        Rule::TooSure,
-        Rule::WaveComing,
-        Rule::TooFast,
-        Rule::HeavyDay,
-        Rule::BackAfterGap,
-        Rule::FewDays,
-        Rule::LongSittings,
-        Rule::SlowAnswers,
-        Rule::NeverFitted,
-        Rule::AboveTarget,
-        Rule::OddTarget,
-        Rule::TightLimit,
-        Rule::ForgottenDeck,
+    pub const ALL: [Self; 21] = [
+        Self::ExamClose,
+        Self::PileUp,
+        Self::CaughtUp,
+        Self::Late,
+        Self::Leeches,
+        Self::DeckLags,
+        Self::BelowTarget,
+        Self::Sliding,
+        Self::TooSure,
+        Self::WaveComing,
+        Self::TooFast,
+        Self::HeavyDay,
+        Self::BackAfterGap,
+        Self::FewDays,
+        Self::LongSittings,
+        Self::SlowAnswers,
+        Self::NeverFitted,
+        Self::AboveTarget,
+        Self::OddTarget,
+        Self::TightLimit,
+        Self::ForgottenDeck,
     ];
 
-    pub fn as_str(self) -> &'static str {
+    pub const fn as_str(self) -> &'static str {
         match self {
-            Rule::ExamClose => "exam_close",
-            Rule::PileUp => "pile_up",
-            Rule::CaughtUp => "caught_up",
-            Rule::Late => "late",
-            Rule::Leeches => "leeches",
-            Rule::DeckLags => "deck_lags",
-            Rule::BelowTarget => "below_target",
-            Rule::Sliding => "sliding",
-            Rule::TooSure => "too_sure",
-            Rule::WaveComing => "wave_coming",
-            Rule::TooFast => "too_fast",
-            Rule::HeavyDay => "heavy_day",
-            Rule::BackAfterGap => "back_after_gap",
-            Rule::FewDays => "few_days",
-            Rule::LongSittings => "long_sittings",
-            Rule::SlowAnswers => "slow_answers",
-            Rule::NeverFitted => "never_fitted",
-            Rule::AboveTarget => "above_target",
-            Rule::OddTarget => "odd_target",
-            Rule::TightLimit => "tight_limit",
-            Rule::ForgottenDeck => "forgotten_deck",
+            Self::ExamClose => "exam_close",
+            Self::PileUp => "pile_up",
+            Self::CaughtUp => "caught_up",
+            Self::Late => "late",
+            Self::Leeches => "leeches",
+            Self::DeckLags => "deck_lags",
+            Self::BelowTarget => "below_target",
+            Self::Sliding => "sliding",
+            Self::TooSure => "too_sure",
+            Self::WaveComing => "wave_coming",
+            Self::TooFast => "too_fast",
+            Self::HeavyDay => "heavy_day",
+            Self::BackAfterGap => "back_after_gap",
+            Self::FewDays => "few_days",
+            Self::LongSittings => "long_sittings",
+            Self::SlowAnswers => "slow_answers",
+            Self::NeverFitted => "never_fitted",
+            Self::AboveTarget => "above_target",
+            Self::OddTarget => "odd_target",
+            Self::TightLimit => "tight_limit",
+            Self::ForgottenDeck => "forgotten_deck",
         }
     }
 
-    pub fn parse(s: &str) -> Option<Rule> {
-        Rule::ALL.into_iter().find(|r| r.as_str() == s)
+    pub fn parse(s: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|r| r.as_str() == s)
     }
 }
 
 /// Recall of learned cards: how many were remembered, out of how many.
-#[derive(Debug, Clone, Copy, Default, PartialEq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct Recall {
     pub reviews: i64,
     pub remembered: i64,
@@ -287,7 +287,7 @@ fn link(href: impl Into<String>, label: &str) -> Option<Link> {
     Some(Link { href: href.into(), label: label.into() })
 }
 
-fn note(rule: Rule, text: String, link: Option<Link>) -> Advice {
+const fn note(rule: Rule, text: String, link: Option<Link>) -> Advice {
     Advice { rule, text, link, catch_up_toggle: None }
 }
 
@@ -788,7 +788,7 @@ fn median(mut v: Vec<f64>) -> Option<f64> {
     }
     v.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
     let n = v.len();
-    Some(if n % 2 == 1 { v[n / 2] } else { (v[n / 2 - 1] + v[n / 2]) / 2.0 })
+    Some(if n % 2 == 1 { v[n / 2] } else { f64::midpoint(v[n / 2 - 1], v[n / 2]) })
 }
 
 /// Sessions from answer times (oldest first): each one's length in
@@ -935,7 +935,7 @@ impl App {
             if r.state_before != 2 {
                 continue;
             }
-            let ok = (r.rating > 1) as i64;
+            let ok = i64::from(r.rating > 1);
             let add = |c: &mut Recall| {
                 c.reviews += 1;
                 c.remembered += ok;

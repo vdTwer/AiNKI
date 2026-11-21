@@ -1,5 +1,5 @@
 //! Importing Anki packages (.apkg), end to end: a real collection file is
-//! written with SQLite, zipped with its media and handed to the importer.
+//! written with `SQLite`, zipped with its media and handed to the importer.
 
 use std::{io::Write, str::FromStr};
 
@@ -310,6 +310,6 @@ async fn broken_packages_and_narrow_tokens_are_refused() {
     let col = collection(Format::Legacy, now(), &[(1, "X")], &[card(1, "a|b", 1)]).await;
     assert!(app.import_apkg(&narrow, package(Format::Legacy, col, &[])).await.is_err());
     // Nothing was left behind in the data folder's tmp directory.
-    let left = std::fs::read_dir(app.config.data_dir.join("tmp")).map(|d| d.count()).unwrap_or(0);
+    let left = std::fs::read_dir(app.config.data_dir.join("tmp")).map(std::iter::Iterator::count).unwrap_or(0);
     assert_eq!(left, 0);
 }

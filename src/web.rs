@@ -77,8 +77,8 @@ async fn shutdown_signal() {
     #[cfg(not(unix))]
     let term = std::future::pending::<()>();
     tokio::select! {
-        _ = ctrl_c => {}
-        _ = term => {}
+        () = ctrl_c => {}
+        () = term => {}
     }
 }
 
@@ -222,7 +222,7 @@ fn admin_may(path: &str) -> bool {
 
 /// The login page, coming back here afterwards when this was a page view.
 fn login_url(parts: &Parts) -> String {
-    let here = parts.uri.path_and_query().map(|p| p.as_str()).unwrap_or("/");
+    let here = parts.uri.path_and_query().map(http::uri::PathAndQuery::as_str).unwrap_or("/");
     match safe_next(Some(here)) {
         Some(next) if parts.method == axum::http::Method::GET && next != "/" => {
             format!("/login?next={}", urlenc(next))
@@ -238,7 +238,7 @@ impl FromRequestParts<AppState> for WebUser {
         match session_from_parts(parts, app).await {
             // The admin account has no decks: it sees the admin panel only.
             Some(user) if user.is_admin && !admin_may(parts.uri.path()) => Err(redirect("/admin")),
-            Some(user) => Ok(WebUser(user)),
+            Some(user) => Ok(Self(user)),
             None => Err(Redirect::to(&login_url(parts)).into_response()),
         }
     }
@@ -377,7 +377,7 @@ fn asset_version() -> &'static str {
 /// Where the Calm look may apply. theme.js reads it from the stylesheet link.
 const DESKTOP_MEDIA: &str = "(min-width: 60em) and (hover: hover) and (pointer: fine)";
 
-/// Nested Anki decks arrive as "Languages::Spanish". The parents are shown
+/// Nested Anki decks arrive as "`Languages::Spanish`". The parents are shown
 /// as a quiet path, the deck's own name last: "Languages › Spanish".
 fn deck_parts(name: &str) -> Vec<&str> {
     let parts: Vec<&str> = name.split("::").map(str::trim).filter(|p| !p.is_empty()).collect();
@@ -550,7 +550,7 @@ const DROP_ICON: u32 = 34;
 /// ones next to words with finer 1.5px lines, so they don't look heavy.
 fn icon(paths: &'static str, size: u32) -> Markup {
     let line = if size < 24 { 1.5 } else { 2.0 };
-    let stroke = format!("{:.2}", line * 24.0 / size as f64);
+    let stroke = format!("{:.2}", line * 24.0 / f64::from(size));
     let layer = |class: &'static str, depth: u8| {
         html! {
             svg class=(class) style=(format!("--z:{depth}")) viewBox="0 0 24 24" width=(size) height=(size) fill="none" stroke="currentColor" stroke-width=(stroke) stroke-linecap="round" stroke-linejoin="round" {
@@ -581,7 +581,7 @@ fn icon_link(href: &str, paths: &'static str, label: &str) -> Markup {
 /// at any size.
 fn done_check(size: u32, class: &'static str) -> Markup {
     html! {
-        svg class=(class) viewBox="0 0 24 24" width=(size) height=(size) fill="none" stroke="currentColor" stroke-width=(format!("{:.2}", 52.0 / size as f64)) stroke-linecap="square" stroke-linejoin="miter" aria-hidden="true" {
+        svg class=(class) viewBox="0 0 24 24" width=(size) height=(size) fill="none" stroke="currentColor" stroke-width=(format!("{:.2}", 52.0 / f64::from(size))) stroke-linecap="square" stroke-linejoin="miter" aria-hidden="true" {
             path d="M4.5 12.5 9.5 17.5 19.5 6.5" pathLength="1" {}
         }
     }
@@ -627,7 +627,7 @@ fn session_cookie(app: &AppState, token: String) -> Cookie<'static> {
         .build()
 }
 
-/// Someone who keeps using AiNKI stays logged in: once a day their session
+/// Someone who keeps using `AiNKI` stays logged in: once a day their session
 /// and its cookie get the full lifetime again.
 async fn renew_session(
     State(app): State<AppState>,
@@ -636,17 +636,16 @@ async fn renew_session(
     next: middleware::Next,
 ) -> Response {
     let mut res = next.run(req).await;
-    if let Some(c) = jar.get(app.config.session_cookie_name()) {
-        if app.renew_session(c.value()).await.unwrap_or(false) {
-            if let Ok(v) = HeaderValue::from_str(&session_cookie(&app, c.value().to_string()).to_string()) {
-                res.headers_mut().append(header::SET_COOKIE, v);
-            }
-        }
+    if let Some(c) = jar.get(app.config.session_cookie_name())
+        && app.renew_session(c.value()).await.unwrap_or(false)
+        && let Ok(v) = HeaderValue::from_str(&session_cookie(&app, c.value().to_string()).to_string())
+    {
+        res.headers_mut().append(header::SET_COOKIE, v);
     }
     res
 }
 
-fn time_days(days: i64) -> time::Duration {
+const fn time_days(days: i64) -> time::Duration {
     time::Duration::days(days)
 }
 
@@ -910,12 +909,12 @@ async fn invite_create(State(app): State<AppState>, user: WebUser) -> WebResult 
 
 async fn invite_cancel(State(app): State<AppState>, user: WebUser, Path(id): Path<i64>) -> WebResult {
     let to = if user.0.is_admin { "/admin" } else { "/invites" };
-    let done = app.cancel_invite(&user.0, id).await.map(|_| redirect_msg(to, "The link no longer works."));
+    let done = app.cancel_invite(&user.0, id).await.map(|()| redirect_msg(to, "The link no longer works."));
     or_back(to, done)
 }
 
 /// The page behind an invite link: the first thing a new person sees.
-/// Quiet on purpose: who invited them, one sentence on what AiNKI is, a
+/// Quiet on purpose: who invited them, one sentence on what `AiNKI` is, a
 /// name and a password, and one button.
 fn invite_form(token: &str, from: &User, error: Option<&str>, name: &str) -> Markup {
     layout(
@@ -1163,7 +1162,7 @@ async fn home(State(app): State<AppState>, user: WebUser, Flash(msg): Flash) -> 
         app.deck_summaries(&access).await?.into_iter().partition(|d| d.deck.status == DeckStatus::Archived);
     let shares = app.incoming_shares(&access).await?;
     let stats = app.stats(&access, None).await?;
-    let total_due: i64 = decks.iter().map(|d| d.due_total()).sum();
+    let total_due: i64 = decks.iter().map(super::service::DeckSummary::due_total).sum();
     let flagged = app.attention(&access, None).await?;
     let attention = flagged.len() as i64;
     let overdue = app.overdue(&access).await?;
@@ -1342,8 +1341,8 @@ struct Shown {
 }
 
 impl Shown {
-    fn front(at: i64) -> Self {
-        Shown { at, revealed: false, sure: None, typed: None }
+    const fn front(at: i64) -> Self {
+        Self { at, revealed: false, sure: None, typed: None }
     }
 }
 
@@ -1414,7 +1413,7 @@ fn study_foot(
 
 /// What people see for a card's state. Relearning counts as learning,
 /// as in the filter and the stats.
-fn state_label(state: CardState) -> &'static str {
+const fn state_label(state: CardState) -> &'static str {
     match state {
         CardState::New => "New",
         CardState::Learning | CardState::Relearning => "Learning",
@@ -1893,7 +1892,7 @@ fn find_line(text: &str, max: usize) -> String {
 }
 
 /// A deck's label in quick find.
-fn deck_kind(status: DeckStatus) -> &'static str {
+const fn deck_kind(status: DeckStatus) -> &'static str {
     match status {
         DeckStatus::Active => "Deck",
         DeckStatus::Paused => "Paused deck",
@@ -2928,7 +2927,7 @@ fn open_decks(decks: Vec<Deck>, keep: Option<i64>) -> Vec<Deck> {
 }
 
 /// What resting means for a deck, said on its pages.
-fn rest_words(status: DeckStatus) -> &'static str {
+const fn rest_words(status: DeckStatus) -> &'static str {
     match status {
         DeckStatus::Active => {
             "Pausing stops a deck's cards until you resume it; the deck stays on your list. Archiving also puts it away. Progress is kept either way."
@@ -3387,8 +3386,8 @@ struct CardFrom {
 }
 
 impl CardFrom {
-    fn study(deck: Option<i64>) -> Self {
-        CardFrom { study: Some(1), deck }
+    const fn study(deck: Option<i64>) -> Self {
+        Self { study: Some(1), deck }
     }
 
     fn query(&self) -> String {
@@ -3473,7 +3472,7 @@ async fn card_view(
                 @if card.card_state() != CardState::New {
                     dt { "Due" } dd { (capitalize(&format::when(&clock, card.due))) }
                 }
-                @if let Some(r) = r { dt { @if card.multi.is_some() { "Weakest item now" } @else { "Recall chance now" } } dd { (format::percent(Some(r as f64))) } }
+                @if let Some(r) = r { dt { @if card.multi.is_some() { "Weakest item now" } @else { "Recall chance now" } } dd { (format::percent(Some(f64::from(r)))) } }
             }
             @if !items.is_empty() {
                 h2 { "Items" }
@@ -3483,7 +3482,7 @@ async fn card_view(
                             span.text { (multi::title(&i.text)) }
                             span.chance {
                                 @match scheduler::retrievability(&i.sched(), &params, &clock) {
-                                    Some(r) => (format::percent(Some(r as f64))),
+                                    Some(r) => (format::percent(Some(f64::from(r)))),
                                     None => "New",
                                 }
                             }
@@ -3581,10 +3580,10 @@ async fn card_update(
             },
         )
         .await?;
-        if let Some(deck) = f.deck {
-            if deck != app.card(&access, id).await?.deck_id {
-                app.move_card(&access, id, deck).await?;
-            }
+        if let Some(deck) = f.deck
+            && deck != app.card(&access, id).await?.deck_id
+        {
+            app.move_card(&access, id, deck).await?;
         }
         Ok::<_, AppError>(())
     }
@@ -3643,7 +3642,7 @@ async fn card_action(State(app): State<AppState>, user: WebUser, Path((id, actio
 // ----- the card coach -----------------------------------------------------
 
 /// Where to read why a flag matters.
-fn coach_lesson(kind: coach::Kind) -> &'static str {
+const fn coach_lesson(kind: coach::Kind) -> &'static str {
     match kind {
         coach::Kind::Leech => "/learn/leeches",
         coach::Kind::Split => "/learn/good-cards",
@@ -4394,7 +4393,7 @@ async fn password_update(
 
 /// Rounds a forecast the way people say it: whole cards below a hundred,
 /// two significant figures above.
-fn about(n: f64) -> i64 {
+const fn about(n: f64) -> i64 {
     let n = n.max(0.0).round() as i64;
     if n < 100 {
         return n;

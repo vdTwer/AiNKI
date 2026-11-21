@@ -30,7 +30,7 @@ pub struct Invite {
 }
 
 impl Invite {
-    pub fn open(&self, at: i64) -> bool {
+    pub const fn open(&self, at: i64) -> bool {
         self.used_at.is_none() && self.expires_at > at
     }
 }

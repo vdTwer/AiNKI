@@ -94,7 +94,7 @@ pub enum DeckStatus {
 
 impl DeckStatus {
     pub fn is_active(self) -> bool {
-        self == DeckStatus::Active
+        self == Self::Active
     }
 }
 
@@ -146,7 +146,7 @@ impl Card {
         }
     }
 
-    pub fn card_state(&self) -> CardState {
+    pub const fn card_state(&self) -> CardState {
         CardState::from_i64(self.state)
     }
 
@@ -168,7 +168,7 @@ impl Card {
             "stability_days": self.stability.map(|s| (s * 100.0).round() / 100.0),
             "difficulty": self.difficulty.map(|d| (d * 100.0).round() / 100.0),
             "retrievability": scheduler::retrievability(&self.sched(), params, clock)
-                .map(|r| (r as f64 * 1000.0).round() / 1000.0),
+                .map(|r| (f64::from(r) * 1000.0).round() / 1000.0),
             "reps": self.reps,
             "lapses": self.lapses,
             "created_by": self.created_by,
@@ -200,7 +200,7 @@ pub struct DeckSummary {
 }
 
 impl DeckSummary {
-    pub fn due_total(&self) -> i64 {
+    pub const fn due_total(&self) -> i64 {
         self.learning_due + self.review_due + self.new_today
     }
 }
@@ -697,7 +697,7 @@ impl App {
                 _ => done += 2,
             }
         }
-        let waiting: i64 = summaries.iter().map(|s| s.due_total()).sum();
+        let waiting: i64 = summaries.iter().map(DeckSummary::due_total).sum();
         Ok((done, total + (waiting - touched_due_now).max(0)))
     }
 
@@ -755,10 +755,10 @@ impl App {
                 return Err(AppError::bad("deck name is empty"));
             }
             check_len("deck name", n, MAX_NAME)?;
-            if let Some(other) = self.deck_by_name(access, n).await? {
-                if other.id != id {
-                    return Err(AppError::Conflict(format!("a deck called '{n}' already exists")));
-                }
+            if let Some(other) = self.deck_by_name(access, n).await?
+                && other.id != id
+            {
+                return Err(AppError::Conflict(format!("a deck called '{n}' already exists")));
             }
             deck.name = n.to_string();
         }
@@ -1148,12 +1148,12 @@ impl App {
             .into_iter()
             .filter(|s| deck_id.is_none_or(|id| s.deck.id == id))
             .collect();
-        if let Some(id) = deck_id {
-            if summaries.is_empty() {
-                self.deck(access, id).await?;
-            }
+        if let Some(id) = deck_id
+            && summaries.is_empty()
+        {
+            self.deck(access, id).await?;
         }
-        let remaining: i64 = summaries.iter().map(|s| s.due_total()).sum();
+        let remaining: i64 = summaries.iter().map(DeckSummary::due_total).sum();
         let n = now();
         let all_ids: Vec<i64> = summaries.iter().map(|s| s.deck.id).collect();
         let review_ids: Vec<i64> = summaries.iter().filter(|s| s.review_due > 0).map(|s| s.deck.id).collect();
@@ -1244,10 +1244,10 @@ impl App {
     ) -> Result<AnswerResult> {
         access.require_review()?;
         let card = self.card(access, card_id).await?;
-        if let Some(reps) = expected_reps {
-            if reps != card.reps {
-                return Err(AppError::Conflict("this card was already answered".into()));
-            }
+        if let Some(reps) = expected_reps
+            && reps != card.reps
+        {
+            return Err(AppError::Conflict("this card was already answered".into()));
         }
         if card.multi.is_some() {
             // A plain rating on a multicard: Again missed every asked item,
@@ -1272,8 +1272,8 @@ impl App {
         )
         .bind(c.state as i64)
         .bind(c.step)
-        .bind(c.stability.map(|v| v as f64))
-        .bind(c.difficulty.map(|v| v as f64))
+        .bind(c.stability.map(f64::from))
+        .bind(c.difficulty.map(f64::from))
         .bind(c.due)
         .bind(c.last_review)
         .bind(c.reps)
@@ -1300,8 +1300,8 @@ impl App {
         .bind(card.state)
         .bind(out.elapsed_days)
         .bind(out.interval_secs)
-        .bind(c.stability.map(|v| v as f64))
-        .bind(c.difficulty.map(|v| v as f64))
+        .bind(c.stability.map(f64::from))
+        .bind(c.difficulty.map(f64::from))
         .bind(duration_ms.map(|d| d.clamp(0, 3_600_000)))
         .bind(access.source())
         .bind(serde_json::to_string(&before).ok())
@@ -1331,10 +1331,10 @@ impl App {
         if card.multi.is_none() {
             return Err(AppError::bad("this card is not learned item by item; answer it with a rating"));
         }
-        if let Some(reps) = expected_reps {
-            if reps != card.reps {
-                return Err(AppError::Conflict("this card was already answered".into()));
-            }
+        if let Some(reps) = expected_reps
+            && reps != card.reps
+        {
+            return Err(AppError::Conflict("this card was already answered".into()));
         }
         self.answer_items(access, &card, Missed::These(missed), duration_ms).await
     }
@@ -1379,8 +1379,8 @@ impl App {
         )
         .bind(prev.state as i64)
         .bind(prev.step)
-        .bind(prev.stability.map(|v| v as f64))
-        .bind(prev.difficulty.map(|v| v as f64))
+        .bind(prev.stability.map(f64::from))
+        .bind(prev.difficulty.map(f64::from))
         // Make it due right away so it comes up next.
         .bind(if prev.state == CardState::New { 0 } else { prev.due.min(now()) })
         .bind(prev.last_review)
@@ -1557,7 +1557,7 @@ impl App {
             if let (Some(s), Some(last)) = (stability, last_review) {
                 let elapsed = ((clock.now - last).max(0) as f32) / 86_400.0;
                 let memory = fsrs::MemoryState { stability: s as f32, difficulty: 5.0 };
-                r_sum += fsrs::current_retrievability(memory, elapsed, decay) as f64;
+                r_sum += f64::from(fsrs::current_retrievability(memory, elapsed, decay));
                 r_n += 1;
             }
         }
@@ -1567,7 +1567,7 @@ impl App {
             .map(|(i, n)| ((today + Duration::days(i as i64)).format("%Y-%m-%d").to_string(), n))
             .collect();
         if r_n > 0 {
-            stats.average_retrievability = Some(r_sum / r_n as f64);
+            stats.average_retrievability = Some(r_sum / f64::from(r_n));
         }
 
         // Reviews: today, the last 30 days, and the streak.
@@ -1665,7 +1665,7 @@ impl App {
                 if was_review {
                     let w = &mut weeks[(i / 7) as usize];
                     w.0 += 1;
-                    w.1 += passed as i64;
+                    w.1 += i64::from(passed);
                 }
             }
         }

@@ -3,7 +3,7 @@
 //! schedule. The coach never changes a card by itself; it says what it
 //! noticed and the user decides.
 //!
-//! The rules follow common practice (Anki, SuperMemo, RemNote) and the
+//! The rules follow common practice (Anki, `SuperMemo`, `RemNote`) and the
 //! FSRS community's findings; none of them is a tested threshold, so they
 //! stay simple and explainable.
 
@@ -57,29 +57,29 @@ pub enum Kind {
 }
 
 impl Kind {
-    pub fn as_str(self) -> &'static str {
+    pub const fn as_str(self) -> &'static str {
         match self {
-            Kind::Leech => "leech",
-            Kind::Split => "split",
-            Kind::Duplicate => "duplicate",
+            Self::Leech => "leech",
+            Self::Split => "split",
+            Self::Duplicate => "duplicate",
         }
     }
 
-    pub fn parse(s: &str) -> Option<Kind> {
+    pub fn parse(s: &str) -> Option<Self> {
         match s {
-            "leech" => Some(Kind::Leech),
-            "split" => Some(Kind::Split),
-            "duplicate" => Some(Kind::Duplicate),
+            "leech" => Some(Self::Leech),
+            "split" => Some(Self::Split),
+            "duplicate" => Some(Self::Duplicate),
             _ => None,
         }
     }
 
     /// A short label for lists.
-    pub fn label(self) -> &'static str {
+    pub const fn label(self) -> &'static str {
         match self {
-            Kind::Leech => "Keeps slipping",
-            Kind::Split => "Asks a lot at once",
-            Kind::Duplicate => "Looks like another card",
+            Self::Leech => "Keeps slipping",
+            Self::Split => "Asks a lot at once",
+            Self::Duplicate => "Looks like another card",
         }
     }
 }

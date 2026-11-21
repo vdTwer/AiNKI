@@ -1494,7 +1494,7 @@ mod http {
 
         let next = mcp_tool(&app, &token, "get_next_card", serde_json::json!({})).await;
         assert_eq!(next["done"], false);
-        let hour = a.user.tz().timestamp_opt(now(), 0).unwrap().hour() as i64;
+        let hour = i64::from(a.user.tz().timestamp_opt(now(), 0).unwrap().hour());
         app.update_study_settings(a.user_id(), Some((hour, (hour + 1) % 24)), 0, false, 100, false).await.unwrap();
         let next = mcp_tool(&app, &token, "get_next_card", serde_json::json!({})).await;
         assert_eq!(
@@ -1700,7 +1700,7 @@ async fn quiet_hours_rest_until_they_end_or_are_lifted() {
     use chrono::{TimeZone, Timelike};
     let app = app().await;
     let a = user(&app, "kolja").await;
-    let hour = a.user.tz().timestamp_opt(now(), 0).unwrap().hour() as i64;
+    let hour = i64::from(a.user.tz().timestamp_opt(now(), 0).unwrap().hour());
     sqlx::query("UPDATE users SET quiet_from = ?, quiet_to = ? WHERE id = ?")
         .bind(hour)
         .bind((hour + 2) % 24)

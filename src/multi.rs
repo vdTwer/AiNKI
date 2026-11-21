@@ -42,33 +42,33 @@ pub enum Split {
 }
 
 impl Split {
-    pub const ALL: [Split; 3] = [Split::List, Split::Sections, Split::Parts];
+    pub const ALL: [Self; 3] = [Self::List, Self::Sections, Self::Parts];
 
-    pub fn as_str(self) -> &'static str {
+    pub const fn as_str(self) -> &'static str {
         match self {
-            Split::List => "list",
-            Split::Sections => "sections",
-            Split::Parts => "parts",
+            Self::List => "list",
+            Self::Sections => "sections",
+            Self::Parts => "parts",
         }
     }
 
-    pub fn parse(s: &str) -> Option<Split> {
-        Split::ALL.into_iter().find(|k| k.as_str() == s)
+    pub fn parse(s: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|k| k.as_str() == s)
     }
 
     /// What the editor calls it.
-    pub fn label(self) -> &'static str {
+    pub const fn label(self) -> &'static str {
         match self {
-            Split::List => "List items",
-            Split::Sections => "Sections",
-            Split::Parts => "Parts",
+            Self::List => "List items",
+            Self::Sections => "Sections",
+            Self::Parts => "Parts",
         }
     }
 }
 
 /// A piece of a multicard's back, in order: text shown as it is, or an
 /// item to recall. Both are Markdown.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Piece {
     Text(String),
     Item(String),
@@ -251,7 +251,7 @@ pub struct CardItem {
 }
 
 impl CardItem {
-    pub fn card_state(&self) -> CardState {
+    pub const fn card_state(&self) -> CardState {
         CardState::from_i64(self.state)
     }
 
@@ -271,8 +271,8 @@ impl CardItem {
     fn set(&mut self, s: &CardSched) {
         self.state = s.state as i64;
         self.step = s.step;
-        self.stability = s.stability.map(|v| v as f64);
-        self.difficulty = s.difficulty.map(|v| v as f64);
+        self.stability = s.stability.map(f64::from);
+        self.difficulty = s.difficulty.map(f64::from);
         self.due = s.due;
         self.last_review = s.last_review;
         self.reps = s.reps;
@@ -415,8 +415,8 @@ impl App {
                     .bind(text)
                     .bind(s.state as i64)
                     .bind(s.step)
-                    .bind(s.stability.map(|v| v as f64))
-                    .bind(s.difficulty.map(|v| v as f64))
+                    .bind(s.stability.map(f64::from))
+                    .bind(s.difficulty.map(f64::from))
                     .bind(s.due)
                     .bind(s.last_review)
                     .bind(s.reps)
@@ -442,8 +442,8 @@ impl App {
         .bind(how)
         .bind(s.state as i64)
         .bind(s.step)
-        .bind(s.stability.map(|v| v as f64))
-        .bind(s.difficulty.map(|v| v as f64))
+        .bind(s.stability.map(f64::from))
+        .bind(s.difficulty.map(f64::from))
         .bind(s.due)
         .bind(card.id)
         .execute(&mut *tx)
@@ -516,8 +516,8 @@ impl App {
         )
         .bind(c.state as i64)
         .bind(c.step)
-        .bind(c.stability.map(|v| v as f64))
-        .bind(c.difficulty.map(|v| v as f64))
+        .bind(c.stability.map(f64::from))
+        .bind(c.difficulty.map(f64::from))
         .bind(c.due)
         .bind(c.last_review)
         .bind(c.reps)
@@ -566,8 +566,8 @@ impl App {
         .bind(card.state)
         .bind(elapsed_days)
         .bind(interval_secs)
-        .bind(c.stability.map(|v| v as f64))
-        .bind(c.difficulty.map(|v| v as f64))
+        .bind(c.stability.map(f64::from))
+        .bind(c.difficulty.map(f64::from))
         .bind(duration_ms.map(|d| d.clamp(0, 3_600_000)))
         .bind(access.source())
         .bind(serde_json::to_string(&before).ok())
@@ -671,7 +671,7 @@ pub fn items_json(items: &[CardItem], asked: Option<&[bool]>, clock: &Clock, par
                 "text": i.text,
                 "state": i.card_state().as_str(),
                 "retrievability": scheduler::retrievability(&i.sched(), params, clock)
-                    .map(|r| (r as f64 * 1000.0).round() / 1000.0),
+                    .map(|r| (f64::from(r) * 1000.0).round() / 1000.0),
             });
             if let Some(a) = asked {
                 v["asked"] = json!(a[n]);

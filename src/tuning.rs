@@ -117,7 +117,7 @@ fn fit(
     let (old_loss, new_loss) = (loss(&current), loss(&new));
     Ok(match (old_loss, new_loss) {
         (Some(o), Some(n)) if n < o => {
-            Fit { parameters: new, changed: true, improvement: Some(((o - n) / o) as f64), reviews }
+            Fit { parameters: new, changed: true, improvement: Some(f64::from((o - n) / o)), reviews }
         }
         // A fit that could not be scored at all is kept, as before.
         (None, Some(_)) => Fit { parameters: new, changed: true, improvement: None, reviews },
@@ -468,7 +468,7 @@ impl App {
                     relearning_step_count: relearning_steps,
                     ..Default::default()
                 };
-                for row in config.state_rating_costs.iter_mut() {
+                for row in &mut config.state_rating_costs {
                     for c in row.iter_mut() {
                         *c *= scale;
                     }
@@ -502,9 +502,9 @@ impl App {
                 let n = days.max(1) as f64;
                 out.push(Workload {
                     retention: r,
-                    minutes_per_day: sim.cost_per_day.iter().map(|c| *c as f64).sum::<f64>() / 60.0 / n,
+                    minutes_per_day: sim.cost_per_day.iter().map(|c| f64::from(*c)).sum::<f64>() / 60.0 / n,
                     reviews_per_day: sim.review_cnt_per_day.iter().sum::<usize>() as f64 / n,
-                    remembered: sim.memorized_cnt_per_day.last().copied().unwrap_or(0.0) as f64,
+                    remembered: f64::from(sim.memorized_cnt_per_day.last().copied().unwrap_or(0.0)),
                     current: (r - current).abs() < 0.005,
                 });
             }
@@ -548,11 +548,11 @@ impl App {
             let (Some(s), Some(last)) = (s, last) else { continue };
             let elapsed = ((at - last).max(0) as f32) / 86_400.0;
             let memory = fsrs::MemoryState { stability: s as f32, difficulty: 5.0 };
-            let r = fsrs::current_retrievability(memory, elapsed, scheduler::decay_for(book.for_deck(deck))) as f64;
+            let r = f64::from(fsrs::current_retrievability(memory, elapsed, scheduler::decay_for(book.for_deck(deck))));
             let pct = (r * 100.0).clamp(0.0, 99.999) as u32;
             let band = BANDS.iter().position(|(from, to)| pct >= *from && pct < *to).unwrap_or(0);
             sums[band].0 += r;
-            sums[band].1 += (rating > 1) as i64;
+            sums[band].1 += i64::from(rating > 1);
             sums[band].2 += 1;
         }
         let total: i64 = sums.iter().map(|s| s.2).sum();

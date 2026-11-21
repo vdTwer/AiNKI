@@ -195,7 +195,7 @@ fn render_cloze(text: &str, hide: Option<u32>) -> String {
     while let Some(start) = rest.find("{{c") {
         out.push_str(&rest[..start]);
         let after = &rest[start + 3..];
-        let num_len = after.chars().take_while(|c| c.is_ascii_digit()).count();
+        let num_len = after.chars().take_while(char::is_ascii_digit).count();
         let num: Option<u32> = after[..num_len].parse().ok();
         let body_start = num_len + 2;
         if num.is_none() || !after[num_len..].starts_with("::") {
@@ -234,7 +234,7 @@ fn cloze_numbers(text: &str) -> Vec<u32> {
         .match_indices("{{c")
         .filter_map(|(i, _)| {
             let after = &text[i + 3..];
-            let n = after.chars().take_while(|c| c.is_ascii_digit()).count();
+            let n = after.chars().take_while(char::is_ascii_digit).count();
             if after[n..].starts_with("::") { after[..n].parse().ok() } else { None }
         })
         .collect();
@@ -250,7 +250,7 @@ fn read_varint(buf: &[u8], pos: &mut usize) -> Option<u64> {
     for shift in (0..64).step_by(7) {
         let b = *buf.get(*pos)?;
         *pos += 1;
-        v |= ((b & 0x7f) as u64) << shift;
+        v |= u64::from(b & 0x7f) << shift;
         if b & 0x80 == 0 {
             return Some(v);
         }
@@ -678,8 +678,8 @@ impl App {
                     reps = ?, lapses = ?, suspended = MAX(?, held) WHERE id = ?",
             )
             .bind(state as i64)
-            .bind(memory.map(|m| m.stability as f64))
-            .bind(memory.map(|m| m.difficulty as f64))
+            .bind(memory.map(|m| f64::from(m.stability)))
+            .bind(memory.map(|m| f64::from(m.difficulty)))
             .bind(due)
             .bind(last_review)
             .bind(c.reps)

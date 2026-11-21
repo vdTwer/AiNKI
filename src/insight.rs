@@ -138,7 +138,7 @@ impl App {
             }
             if r.state_before == 2 {
                 sample += 1;
-                passed += (r.rating > 1) as i64;
+                passed += i64::from(r.rating > 1);
                 target_sum += targets.get(&r.deck_id).copied().unwrap_or(0.9);
             }
         }
