@@ -1022,7 +1022,7 @@ impl App {
                 due: d.learning_due + uncapped.get(&d.deck.id).copied().unwrap_or(0),
                 new_left: d.new,
                 new_started_7d: new_7d.get(&d.deck.id).map_or(0, |c| num::usize_i64(c.len())),
-                exam_in_days: d.deck.exam().map(|e| (e - today).num_days()).filter(|n| *n >= 0),
+                exam_in_days: d.deck.exam_date.map(|e| (e - today).num_days()).filter(|n| *n >= 0),
                 days_since_review: last.get(&d.deck.id).map(|at| day_of(*at)),
                 flagged: flagged.get(&d.deck.id).copied().unwrap_or(0),
             });
@@ -1039,7 +1039,7 @@ impl App {
                 new_per_day: p.new_per_day,
                 reviews_per_day: p.reviews_per_day,
                 fitted: p.fsrs_params_updated_at.is_some() || s.ever_optimized,
-                has_exam: decks.iter().any(|d| d.deck.exam().is_some()),
+                has_exam: decks.iter().any(|d| d.deck.exam_date.is_some()),
                 used: !decks.is_empty(),
             });
         }

@@ -26,7 +26,8 @@ pub struct User {
     pub rollover_hour: i64,
     pub four_buttons: bool,
     pub font_scale: i64,
-    pub fsrs_params: String,
+    /// FSRS parameters as stored JSON; empty means the defaults.
+    pub fsrs_params: sqlx::types::Json<Vec<f32>>,
     pub fsrs_params_updated_at: Option<i64>,
     pub optimize_include_agent: bool,
     /// 'calm' or 'simple'; only matters on desktop computers.
@@ -69,7 +70,7 @@ impl User {
     }
 
     pub fn params(&self) -> Vec<f32> {
-        serde_json::from_str(&self.fsrs_params).unwrap_or_default()
+        self.fsrs_params.0.clone()
     }
 
     pub fn tz(&self) -> chrono_tz::Tz {

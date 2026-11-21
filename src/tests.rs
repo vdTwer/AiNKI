@@ -351,7 +351,7 @@ async fn csv_round_trip_and_exam_date() {
 
     assert!(app.update_deck(&a, deck.id, None, None, None, Some("not a date")).await.is_err());
     let d = app.update_deck(&a, deck.id, None, None, None, Some("2030-01-31")).await.unwrap();
-    assert_eq!(d.exam_date.as_deref(), Some("2030-01-31"));
+    assert_eq!(d.exam_date.map(|e| e.to_string()).as_deref(), Some("2030-01-31"));
     let d = app.update_deck(&a, deck.id, None, None, None, Some("")).await.unwrap();
     assert!(d.exam_date.is_none());
 }

@@ -401,13 +401,10 @@ pub fn deck_plain(name: &str) -> String {
 }
 
 /// "on Friday, 18 December" for a stored exam date.
-fn exam_words(user: &User, date: &str) -> String {
-    match chrono::NaiveDate::parse_from_str(date, "%Y-%m-%d") {
-        Ok(d) => match format::day(&user.clock(), d).as_str() {
-            w @ ("today" | "tomorrow" | "yesterday") => w.to_string(),
-            w => format!("on {w}"),
-        },
-        Err(_) => date.to_string(),
+fn exam_words(user: &User, date: chrono::NaiveDate) -> String {
+    match format::day(&user.clock(), date).as_str() {
+        w @ ("today" | "tomorrow" | "yesterday") => w.to_string(),
+        w => format!("on {w}"),
     }
 }
 
@@ -1280,7 +1277,7 @@ async fn home(State(app): State<AppState>, user: WebUser, Flash(msg): Flash) -> 
                                     @if d.deck.status == DeckStatus::Paused {
                                         span.sub { "Paused" }
                                     } @else if let Some(exam) = &d.deck.exam_date {
-                                        span.sub { "Exam " (exam_words(&user.0, exam)) }
+                                        span.sub { "Exam " (exam_words(&user.0, *exam)) }
                                     }
                                 }
                                 @if d.due_total() == 0 && d.total > d.suspended {
@@ -2455,7 +2452,7 @@ fn deck_sheet(
                 p.hint.muted.small { "How much you want to remember and how many cards a day. " a href="/presets" { "About presets" } }
             }
             label.line { span { "Exam date " span.muted.optional { "(optional)" } }
-                input type="date" name="exam_date" value=(deck.and_then(|d| d.exam_date.clone()).unwrap_or_default());
+                input type="date" name="exam_date" value=(deck.and_then(|d| d.exam_date).map(|d| d.to_string()).unwrap_or_default());
             }
             p.hint.muted.small { "With an exam date, no card in this deck is scheduled after the exam." }
         }
@@ -2508,7 +2505,10 @@ impl DeckCreateForm {
             name: self.name.clone(),
             description: self.description.clone(),
             preset_id: self.preset_id.unwrap_or(0),
-            exam_date: self.exam_date.clone().filter(|e| !e.trim().is_empty()),
+            exam_date: self
+                .exam_date
+                .as_deref()
+                .and_then(|e| chrono::NaiveDate::parse_from_str(e.trim(), "%Y-%m-%d").ok()),
             created_at: 0,
             status: crate::service::DeckStatus::Active,
         }
@@ -2709,7 +2709,7 @@ async fn deck_page(
                 div { dt { "Due" } dd { (format::number(summary.learning_due + summary.review_due)) } }
                 div { dt { "Cards" } dd { (format::number(summary.total)) } }
             }
-            @if let Some(exam) = &d.exam_date { p.muted { "Exam " (exam_words(&user.0, exam)) } }
+            @if let Some(exam) = &d.exam_date { p.muted { "Exam " (exam_words(&user.0, *exam)) } }
             @if !d.status.is_active() {
                 // At rest, waking the deck is what this page is for.
                 p.rest-note.muted { (rest_words(d.status)) }
@@ -3966,7 +3966,7 @@ fn preset_draft(t: &presets::PresetTemplate, user_id: i64) -> crate::service::Pr
         max_interval: t.max_interval,
         created_at: 0,
         template: None,
-        fsrs_params: "[]".into(),
+        fsrs_params: sqlx::types::Json(Vec::new()),
         fsrs_params_updated_at: None,
         time_limit: 0,
         typed_answers: false,
@@ -4153,7 +4153,7 @@ impl PresetForm {
             max_interval: self.max_interval,
             created_at: 0,
             template: None,
-            fsrs_params: "[]".into(),
+            fsrs_params: sqlx::types::Json(Vec::new()),
             fsrs_params_updated_at: None,
             time_limit: self.time_limit,
             typed_answers: self.typed_answers.is_some(),

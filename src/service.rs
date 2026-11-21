@@ -25,7 +25,7 @@ pub(crate) fn sched_config_for(p: &Preset, deck: &Deck) -> SchedConfig {
         learning_steps: scheduler::parse_steps(&p.learning_steps).unwrap_or_default(),
         relearning_steps: scheduler::parse_steps(&p.relearning_steps).unwrap_or_default(),
         max_interval: p.max_interval,
-        exam_date: deck.exam(),
+        exam_date: deck.exam_date,
     }
 }
 
@@ -51,7 +51,8 @@ pub struct Preset {
     /// FSRS parameters of its own, when it has enough reviews; otherwise
     /// the user's apply (see `tuning`).
     #[serde(skip)]
-    pub fsrs_params: String,
+    /// Empty: the account's parameters schedule this preset.
+    pub fsrs_params: sqlx::types::Json<Vec<f32>>,
     #[serde(skip)]
     pub fsrs_params_updated_at: Option<i64>,
     /// Seconds to answer a card you have seen before; 0 for no limit.
@@ -62,7 +63,7 @@ pub struct Preset {
 
 impl Preset {
     pub fn has_own_params(&self) -> bool {
-        self.fsrs_params.trim() != "[]" && !self.fsrs_params.trim().is_empty()
+        !self.fsrs_params.is_empty()
     }
 }
 
@@ -74,7 +75,7 @@ pub struct Deck {
     pub name: String,
     pub description: String,
     pub preset_id: i64,
-    pub exam_date: Option<String>,
+    pub exam_date: Option<NaiveDate>,
     pub created_at: i64,
     pub status: DeckStatus,
 }
@@ -95,12 +96,6 @@ pub enum DeckStatus {
 impl DeckStatus {
     pub fn is_active(self) -> bool {
         self == Self::Active
-    }
-}
-
-impl Deck {
-    pub fn exam(&self) -> Option<NaiveDate> {
-        self.exam_date.as_deref().and_then(|d| NaiveDate::parse_from_str(d, "%Y-%m-%d").ok())
     }
 }
 
@@ -435,7 +430,7 @@ impl App {
             max_interval: t.max_interval,
             created_at: now(),
             template: None,
-            fsrs_params: "[]".into(),
+            fsrs_params: sqlx::types::Json(Vec::new()),
             fsrs_params_updated_at: None,
             time_limit: 0,
             typed_answers: false,
@@ -792,9 +787,10 @@ impl App {
             deck.exam_date = if e.is_empty() {
                 None
             } else {
-                NaiveDate::parse_from_str(e, "%Y-%m-%d")
-                    .map_err(|_| AppError::bad("exam date must look like 2026-12-31"))?;
-                Some(e.to_string())
+                Some(
+                    NaiveDate::parse_from_str(e, "%Y-%m-%d")
+                        .map_err(|_| AppError::bad("exam date must look like 2026-12-31"))?,
+                )
             };
         }
         sqlx::query(

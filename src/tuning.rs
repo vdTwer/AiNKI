@@ -8,6 +8,7 @@
 //! desired retention by simulation rather than suggest one "optimal" value
 //! (Anki 25.07 removed its "compute minimum recommended retention").
 
+use sqlx::types::Json;
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -43,10 +44,6 @@ impl ParamBook {
     pub fn for_deck(&self, deck_id: i64) -> &[f32] {
         self.by_deck.get(&deck_id).map_or(&self.user, Vec::as_slice)
     }
-}
-
-fn parse_params(s: &str) -> Vec<f32> {
-    serde_json::from_str(s).unwrap_or_default()
 }
 
 /// One review in the optimizer's input, keyed by card (negative: an item
@@ -165,7 +162,7 @@ const BANDS: [(u32, u32); 7] = [(0, 70), (70, 75), (75, 80), (80, 85), (85, 90),
 impl App {
     /// The parameters for every visible deck, read once.
     pub async fn param_book(&self, access: &Access) -> Result<ParamBook> {
-        let rows: Vec<(i64, String)> = sqlx::query_as(
+        let rows: Vec<(i64, Json<Vec<f32>>)> = sqlx::query_as(
             "SELECT d.id, p.fsrs_params FROM decks d JOIN presets p ON p.id = d.preset_id WHERE d.user_id = ?",
         )
         .bind(access.user_id())
@@ -173,24 +170,20 @@ impl App {
         .await?;
         Ok(ParamBook {
             user: access.user.params(),
-            by_deck: rows
-                .into_iter()
-                .map(|(deck, p)| (deck, parse_params(&p)))
-                .filter(|(_, p)| !p.is_empty())
-                .collect(),
+            by_deck: rows.into_iter().map(|(deck, Json(p))| (deck, p)).filter(|(_, p)| !p.is_empty()).collect(),
         })
     }
 
     /// The parameters that schedule one deck.
     pub async fn deck_params(&self, access: &Access, deck_id: i64) -> Result<Vec<f32>> {
-        let own: Option<String> = sqlx::query_scalar(
+        let own: Option<Json<Vec<f32>>> = sqlx::query_scalar(
             "SELECT p.fsrs_params FROM decks d JOIN presets p ON p.id = d.preset_id WHERE d.id = ? AND d.user_id = ?",
         )
         .bind(deck_id)
         .bind(access.user_id())
         .fetch_optional(&self.db)
         .await?;
-        Ok(own.map(|p| parse_params(&p)).filter(|p| !p.is_empty()).unwrap_or_else(|| access.user.params()))
+        Ok(own.map(|Json(p)| p).filter(|p| !p.is_empty()).unwrap_or_else(|| access.user.params()))
     }
 
     async fn histories(&self, user: &User) -> Result<Vec<History>> {
@@ -290,7 +283,7 @@ impl App {
         struct P {
             id: i64,
             name: String,
-            fsrs_params: String,
+            fsrs_params: Json<Vec<f32>>,
         }
         let presets: Vec<P> = sqlx::query_as("SELECT id, name, fsrs_params FROM presets WHERE user_id = ?")
             .bind(user.id)
@@ -307,7 +300,7 @@ impl App {
         for p in presets {
             let mine: Vec<&History> = histories.iter().filter(|h| deck_preset.get(&h.deck_id) == Some(&p.id)).collect();
             let reviews: usize = mine.iter().map(|h| h.reviews.len()).sum();
-            let own = parse_params(&p.fsrs_params);
+            let Json(own) = p.fsrs_params;
             if reviews < PRESET_MIN_REVIEWS {
                 if !own.is_empty() {
                     sqlx::query("UPDATE presets SET fsrs_params = '[]', fsrs_params_updated_at = NULL WHERE id = ?")
@@ -410,7 +403,7 @@ impl App {
         let preset = self.preset(access, preset_id).await?;
         let deck_ids: Vec<i64> =
             self.decks(access).await?.into_iter().filter(|d| d.preset_id == preset_id).map(|d| d.id).collect();
-        let own = parse_params(&preset_params(self, preset_id).await?);
+        let own = preset_params(self, preset_id).await?;
         let params = if own.is_empty() { access.user.params() } else { own };
         let clock = access.user.clock();
 
@@ -589,6 +582,8 @@ impl App {
     }
 }
 
-async fn preset_params(app: &App, preset_id: i64) -> Result<String> {
-    Ok(sqlx::query_scalar("SELECT fsrs_params FROM presets WHERE id = ?").bind(preset_id).fetch_one(&app.db).await?)
+async fn preset_params(app: &App, preset_id: i64) -> Result<Vec<f32>> {
+    let Json(params) =
+        sqlx::query_scalar("SELECT fsrs_params FROM presets WHERE id = ?").bind(preset_id).fetch_one(&app.db).await?;
+    Ok(params)
 }
