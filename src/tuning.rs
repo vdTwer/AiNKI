@@ -21,7 +21,7 @@ use crate::{
     error::{AppError, Result},
     now, num,
     scheduler::{self, CardState},
-    service::placeholders,
+    service::id_list,
 };
 
 /// A preset gets parameters of its own from this many reviews on.
@@ -411,16 +411,11 @@ impl App {
         let mut existing = Vec::new();
         let mut new_cards = 0usize;
         if !deck_ids.is_empty() {
-            let sql = format!(
-                "SELECT state, stability, difficulty, due, last_review, lapses FROM cards
-                 WHERE user_id = ? AND suspended = 0 AND deck_id IN ({})",
-                placeholders(deck_ids.len())
-            );
-            let mut q = sqlx::query_as::<_, (CardState, Option<f64>, Option<f64>, i64, Option<i64>, i64)>(&sql)
-                .bind(access.user_id());
-            for id in &deck_ids {
-                q = q.bind(id);
-            }
+            let sql = "SELECT state, stability, difficulty, due, last_review, lapses FROM cards
+                 WHERE user_id = ? AND suspended = 0 AND deck_id IN (SELECT value FROM json_each(?))";
+            let q = sqlx::query_as::<_, (CardState, Option<f64>, Option<f64>, i64, Option<i64>, i64)>(sql)
+                .bind(access.user_id())
+                .bind(id_list(&deck_ids));
             for (state, s, d, due, last, lapses) in q.fetch_all(&self.db).await? {
                 match (state, s, d, last) {
                     (CardState::New, ..) => new_cards += 1,
@@ -525,21 +520,16 @@ impl App {
         if deck_ids.is_empty() {
             return Ok(out);
         }
-        let sql = format!(
-            "SELECT deck_id, rating, reviewed_at,
+        let sql = "SELECT deck_id, rating, reviewed_at,
                 json_extract(prev_card, '$.stability'), json_extract(prev_card, '$.last_review')
              FROM review_log
              WHERE user_id = ? AND reviewed_at >= ? AND rating > 0 AND state_before = 2
                AND items_asked IS NULL AND prev_card IS NOT NULL AND source != 'import'
-               AND deck_id IN ({})",
-            placeholders(deck_ids.len())
-        );
-        let mut q = sqlx::query_as::<_, (i64, i64, i64, Option<f64>, Option<i64>)>(&sql)
+               AND deck_id IN (SELECT value FROM json_each(?))";
+        let q = sqlx::query_as::<_, (i64, i64, i64, Option<f64>, Option<i64>)>(sql)
             .bind(access.user_id())
-            .bind(now() - 365 * 86_400);
-        for id in &deck_ids {
-            q = q.bind(id);
-        }
+            .bind(now() - 365 * 86_400)
+            .bind(id_list(&deck_ids));
         let mut sums = [(0.0f64, 0i64, 0i64); BANDS.len()];
         for (deck, rating, at, s, last) in q.fetch_all(&self.db).await? {
             let (Some(s), Some(last)) = (s, last) else { continue };

@@ -366,15 +366,10 @@ impl App {
         if ids.is_empty() {
             return Ok(0);
         }
-        let sql = format!(
-            "SELECT COUNT(*) FROM cards WHERE user_id = ? AND suspended = 0 AND state = 2 AND due <= ?
-             AND deck_id IN ({})",
-            crate::service::placeholders(ids.len())
-        );
-        let mut q = sqlx::query_scalar(&sql).bind(access.user_id()).bind(now() - OVERDUE_SECS);
-        for id in ids {
-            q = q.bind(id);
-        }
+        let sql = "SELECT COUNT(*) FROM cards WHERE user_id = ? AND suspended = 0 AND state = 2 AND due <= ?
+             AND deck_id IN (SELECT value FROM json_each(?))";
+        let mut q = sqlx::query_scalar(sql).bind(access.user_id()).bind(now() - OVERDUE_SECS);
+        q = q.bind(crate::service::id_list(&ids));
         Ok(q.fetch_one(&self.db).await?)
     }
 

@@ -18,7 +18,7 @@ use crate::{
     multi::{self, Split},
     now, num,
     scheduler::CardState,
-    service::{Card, placeholders},
+    service::{Card, id_list},
 };
 
 /// A card is a leech after this many lapses...
@@ -252,48 +252,31 @@ pub struct Similar {
 
 impl App {
     async fn dismissals(&self, card_ids: &[i64]) -> Result<HashMap<(i64, Kind), i64>> {
-        let mut out = HashMap::new();
-        for chunk in card_ids.chunks(500) {
-            let sql = format!(
-                "SELECT card_id, kind, lapses FROM coach_dismissals WHERE card_id IN ({})",
-                placeholders(chunk.len())
-            );
-            let mut q = sqlx::query_as::<_, (i64, String, i64)>(&sql);
-            for id in chunk {
-                q = q.bind(id);
-            }
-            for (id, kind, lapses) in q.fetch_all(&self.db).await? {
-                if let Some(k) = Kind::parse(&kind) {
-                    out.insert((id, k), lapses);
-                }
-            }
-        }
-        Ok(out)
+        let rows: Vec<(i64, String, i64)> = sqlx::query_as(
+            "SELECT card_id, kind, lapses FROM coach_dismissals WHERE card_id IN (SELECT value FROM json_each(?))",
+        )
+        .bind(id_list(card_ids))
+        .fetch_all(&self.db)
+        .await?;
+        Ok(rows.into_iter().filter_map(|(id, kind, lapses)| Some(((id, Kind::parse(&kind)?), lapses))).collect())
     }
 
     /// Average thinking time over each card's last five timed answers, for
     /// cards with at least three.
     async fn answer_seconds(&self, card_ids: &[i64]) -> Result<HashMap<i64, f64>> {
-        let mut out = HashMap::new();
-        for chunk in card_ids.chunks(500) {
-            let sql = format!(
-                "SELECT card_id, AVG(duration_ms) FROM (
-                    SELECT card_id, duration_ms,
-                        ROW_NUMBER() OVER (PARTITION BY card_id ORDER BY reviewed_at DESC, id DESC) AS n
-                    FROM review_log
-                    WHERE card_id IN ({}) AND rating > 0 AND duration_ms > 0 AND source != 'import')
-                 WHERE n <= 5 GROUP BY card_id HAVING COUNT(*) >= 3",
-                placeholders(chunk.len())
-            );
-            let mut q = sqlx::query_as::<_, (i64, f64)>(&sql);
-            for id in chunk {
-                q = q.bind(id);
-            }
-            for (id, ms) in q.fetch_all(&self.db).await? {
-                out.insert(id, ms / 1000.0);
-            }
-        }
-        Ok(out)
+        let rows: Vec<(i64, f64)> = sqlx::query_as(
+            "SELECT card_id, AVG(duration_ms) FROM (
+                SELECT card_id, duration_ms,
+                    ROW_NUMBER() OVER (PARTITION BY card_id ORDER BY reviewed_at DESC, id DESC) AS n
+                FROM review_log
+                WHERE card_id IN (SELECT value FROM json_each(?))
+                  AND rating > 0 AND duration_ms > 0 AND source != 'import')
+             WHERE n <= 5 GROUP BY card_id HAVING COUNT(*) >= 3",
+        )
+        .bind(id_list(card_ids))
+        .fetch_all(&self.db)
+        .await?;
+        Ok(rows.into_iter().map(|(id, ms)| (id, ms / 1000.0)).collect())
     }
 
     /// Every visible card's id, deck and normalized front, with the card
@@ -407,15 +390,10 @@ impl App {
             })
             .map(|c| c.0)
             .collect();
-        let mut candidates: Vec<Card> = Vec::new();
-        for chunk in maybe.chunks(500) {
-            let sql = format!("SELECT * FROM cards WHERE id IN ({})", placeholders(chunk.len()));
-            let mut q = sqlx::query_as::<_, Card>(&sql);
-            for id in chunk {
-                q = q.bind(id);
-            }
-            candidates.extend(q.fetch_all(&self.db).await?);
-        }
+        let candidates: Vec<Card> = sqlx::query_as("SELECT * FROM cards WHERE id IN (SELECT value FROM json_each(?))")
+            .bind(id_list(&maybe))
+            .fetch_all(&self.db)
+            .await?;
 
         // Each flag with the lapse count it is judged by.
         type Flagged = (Option<Card>, Vec<(Flag, i64)>);

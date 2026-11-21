@@ -335,8 +335,11 @@ fn check_len(what: &str, value: &str, max: usize) -> Result<()> {
     }
 }
 
-pub(crate) fn placeholders(n: usize) -> String {
-    vec!["?"; n].join(",")
+/// Ids bound as one JSON array, for `IN (SELECT value FROM json_each(?))`.
+/// One parameter however many ids: no placeholder lists to build, no
+/// limit on their number, and the SQL stays a fixed string.
+pub(crate) const fn id_list(ids: &[i64]) -> sqlx::types::Json<&[i64]> {
+    sqlx::types::Json(ids)
 }
 
 impl App {
@@ -1112,7 +1115,7 @@ impl App {
         if deck_ids.is_empty() {
             return Ok((vec![], 0));
         }
-        let mut cond = format!("user_id = ? AND deck_id IN ({})", placeholders(deck_ids.len()));
+        let mut cond = String::from("user_id = ? AND deck_id IN (SELECT value FROM json_each(?))");
         let query = filter.query.as_deref().map(str::trim).filter(|q| !q.is_empty());
         if query.is_some() {
             cond.push_str(" AND (front LIKE ? ESCAPE '\\' OR back LIKE ? ESCAPE '\\')");
@@ -1136,10 +1139,8 @@ impl App {
         let list_sql = format!("SELECT * FROM cards WHERE {cond} ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?");
         let mut count_q = sqlx::query_scalar::<_, i64>(&count_sql).bind(access.user_id());
         let mut list_q = sqlx::query_as::<_, Card>(&list_sql).bind(access.user_id());
-        for id in &deck_ids {
-            count_q = count_q.bind(id);
-            list_q = list_q.bind(id);
-        }
+        count_q = count_q.bind(id_list(&deck_ids));
+        list_q = list_q.bind(id_list(&deck_ids));
         if let Some(l) = &like {
             count_q = count_q.bind(l.clone()).bind(l.clone());
             list_q = list_q.bind(l.clone()).bind(l.clone());
@@ -1180,9 +1181,8 @@ impl App {
 
         let pick = |ids: &[i64], cond: &str, order: &str| {
             let sql = format!(
-                "SELECT * FROM cards WHERE user_id = ? AND suspended = 0 AND deck_id IN ({}) AND {cond}
+                "SELECT * FROM cards WHERE user_id = ? AND suspended = 0 AND deck_id IN (SELECT value FROM json_each(?)) AND {cond}
                  ORDER BY {order} LIMIT 1",
-                placeholders(ids.len())
             );
             let ids = ids.to_vec();
             let user_id = access.user_id();
@@ -1190,10 +1190,7 @@ impl App {
                 if ids.is_empty() {
                     return Ok::<Option<Card>, AppError>(None);
                 }
-                let mut q = sqlx::query_as::<_, Card>(&sql).bind(user_id);
-                for id in ids {
-                    q = q.bind(id);
-                }
+                let q = sqlx::query_as::<_, Card>(&sql).bind(user_id).bind(id_list(&ids));
                 Ok(q.bind(n).fetch_optional(&self.db).await?)
             }
         };
@@ -1434,15 +1431,9 @@ impl App {
         if deck_ids.is_empty() {
             return Ok(None);
         }
-        let sql = format!(
-            "SELECT MIN(due) FROM cards WHERE user_id = ? AND suspended = 0 AND state != 0
-             AND due > ? AND deck_id IN ({})",
-            placeholders(deck_ids.len())
-        );
-        let mut q = sqlx::query_scalar::<_, Option<i64>>(&sql).bind(access.user_id()).bind(now());
-        for id in &deck_ids {
-            q = q.bind(id);
-        }
+        let sql = "SELECT MIN(due) FROM cards WHERE user_id = ? AND suspended = 0 AND state != 0
+             AND due > ? AND deck_id IN (SELECT value FROM json_each(?))";
+        let q = sqlx::query_scalar::<_, Option<i64>>(sql).bind(access.user_id()).bind(now()).bind(id_list(&deck_ids));
         Ok(q.fetch_one(&self.db).await?)
     }
 
@@ -1519,19 +1510,16 @@ impl App {
         if deck_ids.is_empty() {
             return Ok(stats);
         }
-        let ph = placeholders(deck_ids.len());
         // Everything is counted in the database: a long-time Anki user has
         // tens of thousands of cards and hundreds of thousands of reviews,
         // and loading them all made the home page take seconds.
         let rows: Vec<(CardState, bool, i64, i64)> = {
-            let sql = format!(
-                "SELECT state, suspended, COUNT(*), SUM(due <= ?) FROM cards
-                 WHERE user_id = ? AND deck_id IN ({ph}) GROUP BY state, suspended"
-            );
-            let mut q = sqlx::query_as::<_, (CardState, bool, i64, i64)>(&sql).bind(clock.now).bind(access.user_id());
-            for id in &deck_ids {
-                q = q.bind(id);
-            }
+            let sql = "SELECT state, suspended, COUNT(*), SUM(due <= ?) FROM cards
+                 WHERE user_id = ? AND deck_id IN (SELECT value FROM json_each(?)) GROUP BY state, suspended";
+            let q = sqlx::query_as::<_, (CardState, bool, i64, i64)>(sql)
+                .bind(clock.now)
+                .bind(access.user_id())
+                .bind(id_list(&deck_ids));
             q.fetch_all(&self.db).await?
         };
         for (state, suspended, n, due_now) in rows {
@@ -1554,14 +1542,11 @@ impl App {
         let horizon = 14;
         let today = clock.today();
         let horizon_end = clock.day_start(today + Duration::days(num::usize_i64(horizon)));
-        let sql = format!(
-            "SELECT deck_id, due, stability, last_review FROM cards
-             WHERE user_id = ? AND deck_id IN ({ph}) AND state != 0 AND suspended = 0"
-        );
-        let mut q = sqlx::query_as::<_, (i64, i64, Option<f64>, Option<i64>)>(&sql).bind(access.user_id());
-        for id in &deck_ids {
-            q = q.bind(id);
-        }
+        let sql = "SELECT deck_id, due, stability, last_review FROM cards
+             WHERE user_id = ? AND deck_id IN (SELECT value FROM json_each(?)) AND state != 0 AND suspended = 0";
+        let q = sqlx::query_as::<_, (i64, i64, Option<f64>, Option<i64>)>(sql)
+            .bind(access.user_id())
+            .bind(id_list(&deck_ids));
         let learned = q.fetch_all(&self.db).await?;
         let book = self.param_book(access).await?;
         let decays: HashMap<i64, f32> = deck_ids
@@ -1596,21 +1581,19 @@ impl App {
 
         // Reviews: today, the last 30 days, and the streak.
         let since = |from: i64| {
-            let sql = format!(
-                "SELECT COUNT(*), COUNT(DISTINCT card_id), COALESCE(SUM(duration_ms), 0),
+            let sql = "SELECT COUNT(*), COUNT(DISTINCT card_id), COALESCE(SUM(duration_ms), 0),
                     COALESCE(SUM(state_before = 2), 0), COALESCE(SUM(state_before = 2 AND rating > 1), 0),
                     COALESCE(SUM(CASE WHEN duration_ms > 0 THEN duration_ms END), 0),
                     COALESCE(SUM(duration_ms > 0), 0)
                  FROM review_log
-                 WHERE user_id = ? AND rating > 0 AND reviewed_at >= ? AND deck_id IN ({ph})"
-            );
+                 WHERE user_id = ? AND rating > 0 AND reviewed_at >= ? AND deck_id IN (SELECT value FROM json_each(?))";
             let user_id = access.user_id();
             let deck_ids = deck_ids.clone();
             async move {
-                let mut q = sqlx::query_as::<_, (i64, i64, i64, i64, i64, i64, i64)>(&sql).bind(user_id).bind(from);
-                for id in &deck_ids {
-                    q = q.bind(id);
-                }
+                let q = sqlx::query_as::<_, (i64, i64, i64, i64, i64, i64, i64)>(sql)
+                    .bind(user_id)
+                    .bind(from)
+                    .bind(id_list(&deck_ids));
                 q.fetch_one(&self.db).await
             }
         };
@@ -1631,18 +1614,14 @@ impl App {
 
         // Days in a row with a review, up to a year back; today counts once
         // it has one, and doesn't break the streak before it has.
-        let sql = format!(
-            "SELECT EXISTS (SELECT 1 FROM review_log
-                WHERE user_id = ? AND rating > 0 AND reviewed_at >= ? AND reviewed_at < ? AND deck_id IN ({ph}))"
-        );
+        let sql = "SELECT EXISTS (SELECT 1 FROM review_log
+                WHERE user_id = ? AND rating > 0 AND reviewed_at >= ? AND reviewed_at < ? AND deck_id IN (SELECT value FROM json_each(?)))";
         let studied = |day: NaiveDate| {
-            let mut q = sqlx::query_scalar::<_, bool>(&sql)
+            let q = sqlx::query_scalar::<_, bool>(sql)
                 .bind(access.user_id())
                 .bind(clock.day_start(day))
-                .bind(clock.day_start(day + Duration::days(1)));
-            for id in &deck_ids {
-                q = q.bind(id);
-            }
+                .bind(clock.day_start(day + Duration::days(1)))
+                .bind(id_list(&deck_ids));
             q.fetch_one(&self.db)
         };
         let mut day = if studied(today).await? { today } else { today - Duration::days(1) };
@@ -1670,16 +1649,10 @@ impl App {
         let mut days = vec![0i64; num::i64_usize(HISTORY_DAYS)];
         let mut weeks = vec![(0i64, 0i64); num::i64_usize(HISTORY_DAYS / 7)];
         if !deck_ids.is_empty() {
-            let ph = placeholders(deck_ids.len());
-            let sql = format!(
-                "SELECT reviewed_at, state_before = 2, rating > 1 FROM review_log
-                 WHERE user_id = ? AND rating > 0 AND reviewed_at >= ? AND deck_id IN ({ph})"
-            );
-            let mut q =
-                sqlx::query_as::<_, (i64, bool, bool)>(&sql).bind(access.user_id()).bind(clock.day_start(first));
-            for id in &deck_ids {
-                q = q.bind(id);
-            }
+            let sql = "SELECT reviewed_at, state_before = 2, rating > 1 FROM review_log
+                 WHERE user_id = ? AND rating > 0 AND reviewed_at >= ? AND deck_id IN (SELECT value FROM json_each(?))";
+            let mut q = sqlx::query_as::<_, (i64, bool, bool)>(sql).bind(access.user_id()).bind(clock.day_start(first));
+            q = q.bind(id_list(&deck_ids));
             for (at, was_review, passed) in q.fetch_all(&self.db).await? {
                 let Ok(i) = usize::try_from((clock.date_of(at) - first).num_days()) else { continue };
                 let Some(day) = days.get_mut(i) else { continue };
