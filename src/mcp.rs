@@ -130,12 +130,13 @@ impl AinkiMcp {
     async fn card_json(&self, a: &Access, card: &crate::service::Card, studying: bool) -> Result<Value, String> {
         let clock = a.user.clock();
         let params = self.app.deck_params(a, card.deck_id).await.map_err(err)?;
-        let mut v = card.to_json(&clock, &params);
+        let decay = crate::scheduler::decay_for(&params).map_err(|e| err(e.into()))?;
+        let mut v = card.to_json(&clock, decay);
         if card.multi.is_some() {
             let items = self.app.card_items(card).await.map_err(err)?;
             let asked = studying.then(|| crate::multi::asked(card, &items, clock.now));
             if let Some(o) = v.as_object_mut() {
-                o.insert("items".into(), json!(crate::multi::items_json(&items, asked.as_deref(), &clock, &params)));
+                o.insert("items".into(), json!(crate::multi::items_json(&items, asked.as_deref(), &clock, decay)));
             }
         }
         Ok(v)
@@ -612,7 +613,11 @@ impl AinkiMcp {
         let book = self.app.param_book(&a).await.map_err(err)?;
         out(json!({
             "total": total,
-            "cards": cards.iter().map(|c| c.to_json(&clock, book.for_deck(c.deck_id))).collect::<Vec<Value>>(),
+            "cards": cards
+                .iter()
+                .map(|c| crate::scheduler::decay_for(book.for_deck(c.deck_id)).map(|decay| c.to_json(&clock, decay)))
+                .collect::<Result<Vec<Value>, _>>()
+                .map_err(|e| err(e.into()))?,
         }))
     }
 

@@ -490,7 +490,7 @@ impl App {
         };
         let deck = self.deck(access, card.deck_id).await?;
         let cfg = self.sched_config(access, &deck).await?;
-        let fsrs = scheduler::fsrs_for(&self.deck_params(access, deck.id).await?);
+        let fsrs = scheduler::fsrs_for(&self.deck_params(access, deck.id).await?)?;
         let before_items = serde_json::to_string(&items).ok();
         let mut item_logs = Vec::new();
         for ((item, &was_asked), &was_missed) in items.iter_mut().zip(&asked).zip(&missed) {
@@ -665,7 +665,7 @@ pub fn no_items(how: Split) -> AppError {
 
 /// Items as the MCP API shows them: numbered from 1, with recall chances,
 /// and for a study turn whether each one is asked.
-pub fn items_json(items: &[CardItem], asked: Option<&[bool]>, clock: &Clock, params: &[f32]) -> Vec<Value> {
+pub fn items_json(items: &[CardItem], asked: Option<&[bool]>, clock: &Clock, decay: f32) -> Vec<Value> {
     items
         .iter()
         .enumerate()
@@ -674,7 +674,7 @@ pub fn items_json(items: &[CardItem], asked: Option<&[bool]>, clock: &Clock, par
                 "number": n + 1,
                 "text": i.text,
                 "state": i.card_state().as_str(),
-                "retrievability": scheduler::retrievability(&i.sched(), params, clock)
+                "retrievability": scheduler::retrievability(&i.sched(), decay, clock)
                     .map(|r| (f64::from(r) * 1000.0).round() / 1000.0),
             });
             if let (Some(a), Some(o)) = (asked.and_then(|a| a.get(n)), v.as_object_mut()) {

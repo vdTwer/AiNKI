@@ -3420,8 +3420,8 @@ async fn card_view(
         .map(|text| WriteHint { text, href: None })
         .collect();
     let clock = user.clock();
-    let params = app.deck_params(&access, card.deck_id).await?;
-    let r = scheduler::retrievability(&card.sched(), &params, &clock);
+    let decay = scheduler::decay_for(&app.deck_params(&access, card.deck_id).await?)?;
+    let r = scheduler::retrievability(&card.sched(), decay, &clock);
     let draft = match sent {
         Some(f) => CardDraft {
             id: Some(card.id),
@@ -3474,7 +3474,7 @@ async fn card_view(
                         li {
                             span.text { (multi::title(&i.text)) }
                             span.chance {
-                                @match scheduler::retrievability(&i.sched(), &params, &clock) {
+                                @match scheduler::retrievability(&i.sched(), decay, &clock) {
                                     Some(r) => (format::percent(Some(f64::from(r)))),
                                     None => "New",
                                 }

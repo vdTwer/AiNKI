@@ -175,20 +175,28 @@ pub struct Outcome {
     pub elapsed_days: i64,
 }
 
-pub fn fsrs_for(params: &[f32]) -> FSRS {
-    FSRS::new(params).unwrap_or_default()
+/// The model for these parameters; empty means the defaults.
+///
+/// # Errors
+/// Parameters that are not a valid FSRS set (wrong count, out of range).
+pub fn fsrs_for(params: &[f32]) -> Result<FSRS, fsrs::FSRSError> {
+    FSRS::new(params)
 }
 
-pub fn decay_for(params: &[f32]) -> f32 {
-    fsrs::check_and_fill_parameters(params).ok().and_then(|p| p.get(20).copied()).unwrap_or(fsrs::FSRS6_DEFAULT_DECAY)
+/// How fast memories fade under these parameters (FSRS-6's last one).
+///
+/// # Errors
+/// Parameters that are not a valid FSRS set.
+pub fn decay_for(params: &[f32]) -> Result<f32, fsrs::FSRSError> {
+    Ok(fsrs::check_and_fill_parameters(params)?.get(20).copied().unwrap_or(fsrs::FSRS6_DEFAULT_DECAY))
 }
 
 /// Probability of recall right now.
-pub fn retrievability(card: &CardSched, params: &[f32], clock: &Clock) -> Option<f32> {
+pub fn retrievability(card: &CardSched, decay: f32, clock: &Clock) -> Option<f32> {
     let memory = card.memory()?;
     let last = card.last_review?;
     let elapsed = num::i64_f32((clock.now - last).max(0)) / 86_400.0;
-    Some(fsrs::current_retrievability(memory, elapsed, decay_for(params)))
+    Some(fsrs::current_retrievability(memory, elapsed, decay))
 }
 
 /// Deterministic pseudo-random number in [0, 1) so previews match answers.

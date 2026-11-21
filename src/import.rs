@@ -533,7 +533,7 @@ impl App {
         let mut deck_map: HashMap<i64, i64> = HashMap::new();
         let mut image_map: HashMap<String, Option<String>> = HashMap::new();
         let params = access.user.params();
-        let fsrs = scheduler::fsrs_for(&params);
+        let fsrs = scheduler::fsrs_for(&params)?;
         let clock = access.user.clock();
 
         for c in &cards {

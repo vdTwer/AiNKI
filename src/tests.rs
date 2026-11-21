@@ -2109,3 +2109,32 @@ async fn a_card_with_an_unknown_state_fails_to_load() {
     // Before, state 9 quietly read as a new card.
     assert!(matches!(app.card(&a, card.id).await, Err(crate::error::AppError::Internal(_))));
 }
+
+#[tokio::test]
+async fn damaged_steps_or_parameters_fail_instead_of_resetting() {
+    let app = app().await;
+    let a = user(&app, "kolja").await;
+    let deck = app.create_deck(&a, "D", "", None).await.unwrap();
+    let card = app.create_card(&a, deck.id, "Hund", "dog", None, None, None).await.unwrap();
+
+    // Steps that no longer parse used to mean "no steps".
+    sqlx::query("UPDATE presets SET learning_steps = '5x' WHERE id = ?")
+        .bind(deck.preset_id)
+        .execute(&app.db)
+        .await
+        .unwrap();
+    assert!(matches!(app.answer_card(&a, card.id, Rating::Good, None, None).await, Err(AppError::Internal(_))));
+    sqlx::query("UPDATE presets SET learning_steps = '1m 10m' WHERE id = ?")
+        .bind(deck.preset_id)
+        .execute(&app.db)
+        .await
+        .unwrap();
+
+    // Three parameters are no FSRS set; they used to mean the defaults.
+    sqlx::query("UPDATE presets SET fsrs_params = '[1.0, 2.0, 3.0]' WHERE id = ?")
+        .bind(deck.preset_id)
+        .execute(&app.db)
+        .await
+        .unwrap();
+    assert!(matches!(app.answer_card(&a, card.id, Rating::Good, None, None).await, Err(AppError::Internal(_))));
+}

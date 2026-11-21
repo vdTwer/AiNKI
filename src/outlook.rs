@@ -101,7 +101,7 @@ impl App {
         for card in cards {
             by_deck.entry(card.deck_id).or_default().push((card.id, card.sched()));
         }
-        let plans: Vec<DeckPlan> = decks
+        let plans = decks
             .iter()
             .filter(|s| s.deck.status.is_active())
             .filter_map(|s| {
@@ -119,15 +119,18 @@ impl App {
                         *n = u32::try_from(today).unwrap_or(0);
                     }
                 }
-                Some(DeckPlan {
-                    fsrs: scheduler::fsrs_for(params),
-                    cfg: sched_config_for(preset, &s.deck),
-                    decay: scheduler::decay_for(params),
-                    cards: by_deck.remove(&s.deck.id).unwrap_or_default(),
-                    new_cards,
-                })
+                let mut plan = || -> Result<DeckPlan> {
+                    Ok(DeckPlan {
+                        fsrs: scheduler::fsrs_for(params)?,
+                        cfg: sched_config_for(preset, &s.deck)?,
+                        decay: scheduler::decay_for(params)?,
+                        cards: by_deck.remove(&s.deck.id).unwrap_or_default(),
+                        new_cards,
+                    })
+                };
+                Some(plan())
             })
-            .collect();
+            .collect::<Result<Vec<DeckPlan>>>()?;
         Ok(tokio::task::spawn_blocking(move || forecast(&plans, &clock))
             .await
             .map_err(|e| crate::error::AppError::Internal(e.into()))??)

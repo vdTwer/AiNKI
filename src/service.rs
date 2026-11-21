@@ -19,14 +19,19 @@ use crate::{
 };
 
 /// How a deck with this preset schedules its cards.
-pub(crate) fn sched_config_for(p: &Preset, deck: &Deck) -> SchedConfig {
-    SchedConfig {
+///
+/// Steps are checked when a preset is saved, so steps that no longer parse
+/// mean a damaged row: that is an internal error, not "no steps".
+pub(crate) fn sched_config_for(p: &Preset, deck: &Deck) -> Result<SchedConfig> {
+    let steps =
+        |s: &str| scheduler::parse_steps(s).map_err(|e| anyhow::anyhow!("preset {} has broken steps {s:?}: {e}", p.id));
+    Ok(SchedConfig {
         desired_retention: num::f64_f32(p.desired_retention),
-        learning_steps: scheduler::parse_steps(&p.learning_steps).unwrap_or_default(),
-        relearning_steps: scheduler::parse_steps(&p.relearning_steps).unwrap_or_default(),
+        learning_steps: steps(&p.learning_steps)?,
+        relearning_steps: steps(&p.relearning_steps)?,
         max_interval: p.max_interval,
         exam_date: deck.exam_date,
-    }
+    })
 }
 
 /// Show learning cards up to this many seconds early when nothing else is due.
@@ -146,7 +151,7 @@ impl Card {
     }
 
     /// JSON shape used by the MCP API.
-    pub fn to_json(&self, clock: &Clock, params: &[f32]) -> Value {
+    pub fn to_json(&self, clock: &Clock, decay: f32) -> Value {
         let state = self.card_state();
         let due = if state == CardState::New { Value::Null } else { json!(crate::format::iso(self.due, clock)) };
         json!({
@@ -162,7 +167,7 @@ impl Card {
             "is_due": state != CardState::New && self.due <= clock.now,
             "stability_days": self.stability.map(|s| (s * 100.0).round() / 100.0),
             "difficulty": self.difficulty.map(|d| (d * 100.0).round() / 100.0),
-            "retrievability": scheduler::retrievability(&self.sched(), params, clock)
+            "retrievability": scheduler::retrievability(&self.sched(), decay, clock)
                 .map(|r| (f64::from(r) * 1000.0).round() / 1000.0),
             "reps": self.reps,
             "lapses": self.lapses,
@@ -799,7 +804,7 @@ impl App {
         .bind(&deck.name)
         .bind(&deck.description)
         .bind(deck.preset_id)
-        .bind(&deck.exam_date)
+        .bind(deck.exam_date)
         .bind(id)
         .bind(access.user_id())
         .execute(&self.db)
@@ -1151,7 +1156,7 @@ impl App {
     // ----- studying ------------------------------------------------------
 
     pub(crate) async fn sched_config(&self, access: &Access, deck: &Deck) -> Result<SchedConfig> {
-        Ok(sched_config_for(&self.preset(access, deck.preset_id).await?, deck))
+        sched_config_for(&self.preset(access, deck.preset_id).await?, deck)
     }
 
     /// Pick the next card to study, from one deck or all visible decks.
@@ -1235,7 +1240,7 @@ impl App {
     pub async fn previews(&self, access: &Access, card: &Card, deck: &Deck) -> Result<Vec<(Rating, String)>> {
         let cfg = self.sched_config(access, deck).await?;
         let params = self.deck_params(access, deck.id).await?;
-        let fsrs = scheduler::fsrs_for(&params);
+        let fsrs = scheduler::fsrs_for(&params)?;
         let clock = access.user.clock();
         let sched = card.sched();
         Rating::ALL
@@ -1272,7 +1277,7 @@ impl App {
         let deck = self.deck(access, card.deck_id).await?;
         let cfg = self.sched_config(access, &deck).await?;
         let params = self.deck_params(access, deck.id).await?;
-        let fsrs = scheduler::fsrs_for(&params);
+        let fsrs = scheduler::fsrs_for(&params)?;
         let clock = access.user.clock();
         let before = card.sched();
         let out = scheduler::answer(&fsrs, &cfg, card.id, &before, rating, &clock)?;
@@ -1557,7 +1562,10 @@ impl App {
         }
         let learned = q.fetch_all(&self.db).await?;
         let book = self.param_book(access).await?;
-        let decays: HashMap<i64, f32> = deck_ids.iter().map(|&d| (d, scheduler::decay_for(book.for_deck(d)))).collect();
+        let decays: HashMap<i64, f32> = deck_ids
+            .iter()
+            .map(|&d| scheduler::decay_for(book.for_deck(d)).map(|decay| (d, decay)))
+            .collect::<std::result::Result<_, _>>()?;
         let mut forecast = vec![0i64; horizon];
         let (mut r_sum, mut r_n) = (0.0, 0);
         for (deck, due, stability, last_review) in learned {

@@ -447,8 +447,8 @@ impl App {
             retentions.push(current);
             retentions.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
         }
-        let learning_steps = scheduler::parse_steps(&preset.learning_steps).unwrap_or_default().len();
-        let relearning_steps = scheduler::parse_steps(&preset.relearning_steps).unwrap_or_default().len();
+        let learning_steps = scheduler::parse_steps(&preset.learning_steps).map_err(AppError::BadRequest)?.len();
+        let relearning_steps = scheduler::parse_steps(&preset.relearning_steps).map_err(AppError::BadRequest)?.len();
         let (new_per_day, reviews_per_day, max_ivl) = (preset.new_per_day, preset.reviews_per_day, preset.max_interval);
         let out = tokio::task::spawn_blocking(move || -> std::result::Result<Vec<Workload>, fsrs::FSRSError> {
             let filled = Arc::new(fsrs::check_and_fill_parameters(&params)?);
@@ -545,7 +545,8 @@ impl App {
             let (Some(s), Some(last)) = (s, last) else { continue };
             let elapsed = num::i64_f32((at - last).max(0)) / 86_400.0;
             let memory = fsrs::MemoryState { stability: num::f64_f32(s), difficulty: 5.0 };
-            let r = f64::from(fsrs::current_retrievability(memory, elapsed, scheduler::decay_for(book.for_deck(deck))));
+            let r =
+                f64::from(fsrs::current_retrievability(memory, elapsed, scheduler::decay_for(book.for_deck(deck))?));
             let pct = num::i64_u32(num::f64_i64((r * 100.0).clamp(0.0, 99.999)));
             let band = BANDS.iter().position(|(from, to)| pct >= *from && pct < *to).unwrap_or(0);
             if let Some(sum) = sums.get_mut(band) {
