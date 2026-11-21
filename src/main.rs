@@ -215,24 +215,7 @@ async fn main() -> anyhow::Result<()> {
     app.resplit_multicards().await?;
 
     match args.iter().map(String::as_str).collect::<Vec<_>>().as_slice() {
-        [] | ["serve"] => {
-            if app.config.public_url.is_none() {
-                tracing::warn!(
-                    "AINKI_PUBLIC_URL is not set; the public address is taken from request headers. \
-                     Set it (e.g. https://cards.example.com) before exposing AiNKI or connecting Claude."
-                );
-            }
-            let cleaner = app.clone();
-            tokio::spawn(async move {
-                loop {
-                    if let Err(e) = cleaner.cleanup().await {
-                        tracing::warn!("cleanup failed: {e}");
-                    }
-                    tokio::time::sleep(std::time::Duration::from_hours(1)).await;
-                }
-            });
-            web::serve(app).await
-        }
+        [] | ["serve"] => serve(app).await,
         ["create-user", name, password] => {
             let user = app
                 .create_user(name, password, &app.config.default_timezone.clone())
@@ -268,4 +251,24 @@ async fn main() -> anyhow::Result<()> {
             std::process::exit(2);
         }
     }
+}
+
+/// Runs the website, with an hourly cleanup beside it.
+async fn serve(app: Arc<App>) -> anyhow::Result<()> {
+    if app.config.public_url.is_none() {
+        tracing::warn!(
+            "AINKI_PUBLIC_URL is not set; the public address is taken from request headers. \
+             Set it (e.g. https://cards.example.com) before exposing AiNKI or connecting Claude."
+        );
+    }
+    let cleaner = app.clone();
+    tokio::spawn(async move {
+        loop {
+            if let Err(e) = cleaner.cleanup().await {
+                tracing::warn!("cleanup failed: {e}");
+            }
+            tokio::time::sleep(std::time::Duration::from_hours(1)).await;
+        }
+    });
+    web::serve(app).await
 }

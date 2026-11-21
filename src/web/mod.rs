@@ -116,6 +116,7 @@ async fn shutdown_signal() {
     }
 }
 
+#[allow(clippy::too_many_lines, reason = "the route table reads best as one list")]
 pub fn router(app: AppState) -> Router {
     let mcp_routes = Router::new()
         .nest_service("/mcp", mcp::service(app.clone()))
@@ -471,7 +472,6 @@ pub fn layout_in(nav: Nav, title: &str, user: Option<&User>, body: Markup) -> Ma
 /// `page_kind` marks special pages for app.js.
 #[expect(clippy::needless_pass_by_value, reason = "maud renders by reference; callers build the markup inline")]
 fn page(nav: Option<Nav>, title: &str, user: Option<&User>, page_kind: Option<&str>, body: Markup) -> Markup {
-    let current = |n: Nav| (nav == Some(n)).then_some("page");
     let scale = num::i64_f64(user.map_or(100, |u| u.font_scale)) / 100.0;
     html! {
         (DOCTYPE)
@@ -494,45 +494,8 @@ fn page(nav: Option<Nav>, title: &str, user: Option<&User>, page_kind: Option<&s
                 }
             }
             body data-user=[user.map(|u| u.id)] data-page=[page_kind] {
-                // On phones a bar across the top; in the Calm look one dot in
-                // the top right corner that opens into a row of icons on hover.
-                @if user.is_some_and(|u| !u.is_admin) {
-                    nav.top aria-label="Main" {
-                        // The desktop look: the first icon finds anything (desk.js).
-                        button.find-dot.calm-only type="button" data-label="Find" aria-label="Find" aria-haspopup="dialog" { (nav_icon(ICON_FIND)) }
-                        a.brand href="/" data-label="AiNKI" aria-current=[current(Nav::Decks)] { "AiNKI" }
-                        a href="/study" data-label="Study" aria-current=[current(Nav::Study)] { (nav_icon(ICON_STUDY)) "Study" }
-                        a href="/cards/new" data-label="Add" aria-current=[current(Nav::Add)] { (nav_icon(ICON_ADD)) "Add" }
-                        a href="/stats" data-label="Stats" aria-current=[current(Nav::Stats)] { (nav_icon(ICON_STATS)) "Stats" }
-                        // Phones reach the lessons through settings; the bar stays as it was.
-                        a.rail-only href="/learn" data-label="Learn" aria-current=[current(Nav::Learn)] { (nav_icon(ICON_LEARN)) "Learn" }
-                        a href="/settings" data-label="Settings" aria-current=[current(Nav::Settings)] { (nav_icon(ICON_SETTINGS)) "Settings" }
-                        // Last, so it opens right under the dot: hovering the dot offers Home.
-                        a.rail-only href="/" data-label="Home" aria-current=[current(Nav::Decks)] { (nav_icon(ICON_DECKS)) "Home" }
-                    }
-                }
-                // The desktop look in quiet hours: one dark screen over
-                // everything. The only way past is a faint "study anyway"
-                // at the bottom that asks twice. Two folds, so it works
-                // without JavaScript.
-                @if let Some(u) = user {
-                    @if let Some(until) = study::quiet_until(u, now()) {
-                        div.sleep-wall.calm-only role="dialog" aria-modal="true" aria-labelledby="sleep-title" {
-                            h1 #sleep-title { "Go to sleep." }
-                            p { "Your cards open again at " (clock_time(&u.clock(), until)) "." }
-                            details.sleep-anyway {
-                                summary { "study anyway" }
-                                p { "Sleep is when today's cards settle. Studying now costs more than it brings." }
-                                details {
-                                    summary { "I know. Study anyway." }
-                                    form method="post" action="/study/anyway" {
-                                        button type="submit" { "Yes, open my cards until " (clock_time(&u.clock(), until)) }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
+                @if user.is_some_and(|u| !u.is_admin) { (main_nav(nav)) }
+                @if let Some(u) = user { (sleep_wall(u)) }
                 main {
                     // The desktop look: a ? in the corner that opens the key sheet.
                     @if user.is_some_and(|u| !u.is_admin) {
@@ -542,6 +505,51 @@ fn page(nav: Option<Nav>, title: &str, user: Option<&User>, page_kind: Option<&s
                 }
                 script src=(format!("/app.js?v={}", asset_version())) defer {}
                 script src=(format!("/desk.js?v={}", asset_version())) defer {}
+            }
+        }
+    }
+}
+
+/// On phones a bar across the top; in the Calm look one dot in the top
+/// right corner that opens into a row of icons on hover.
+fn main_nav(nav: Option<Nav>) -> Markup {
+    let current = |n: Nav| (nav == Some(n)).then_some("page");
+    html! {
+        nav.top aria-label="Main" {
+            // The desktop look: the first icon finds anything (desk.js).
+            button.find-dot.calm-only type="button" data-label="Find" aria-label="Find" aria-haspopup="dialog" { (nav_icon(ICON_FIND)) }
+            a.brand href="/" data-label="AiNKI" aria-current=[current(Nav::Decks)] { "AiNKI" }
+            a href="/study" data-label="Study" aria-current=[current(Nav::Study)] { (nav_icon(ICON_STUDY)) "Study" }
+            a href="/cards/new" data-label="Add" aria-current=[current(Nav::Add)] { (nav_icon(ICON_ADD)) "Add" }
+            a href="/stats" data-label="Stats" aria-current=[current(Nav::Stats)] { (nav_icon(ICON_STATS)) "Stats" }
+            // Phones reach the lessons through settings; the bar stays as it was.
+            a.rail-only href="/learn" data-label="Learn" aria-current=[current(Nav::Learn)] { (nav_icon(ICON_LEARN)) "Learn" }
+            a href="/settings" data-label="Settings" aria-current=[current(Nav::Settings)] { (nav_icon(ICON_SETTINGS)) "Settings" }
+            // Last, so it opens right under the dot: hovering the dot offers Home.
+            a.rail-only href="/" data-label="Home" aria-current=[current(Nav::Decks)] { (nav_icon(ICON_DECKS)) "Home" }
+        }
+    }
+}
+
+/// The desktop look in quiet hours: one dark screen over everything. The
+/// only way past is a faint "study anyway" at the bottom that asks twice.
+/// Two folds, so it works without JavaScript.
+fn sleep_wall(u: &User) -> Markup {
+    html! {
+        @if let Some(until) = study::quiet_until(u, now()) {
+            div.sleep-wall.calm-only role="dialog" aria-modal="true" aria-labelledby="sleep-title" {
+                h1 #sleep-title { "Go to sleep." }
+                p { "Your cards open again at " (clock_time(&u.clock(), until)) "." }
+                details.sleep-anyway {
+                    summary { "study anyway" }
+                    p { "Sleep is when today's cards settle. Studying now costs more than it brings." }
+                    details {
+                        summary { "I know. Study anyway." }
+                        form method="post" action="/study/anyway" {
+                            button type="submit" { "Yes, open my cards until " (clock_time(&u.clock(), until)) }
+                        }
+                    }
+                }
             }
         }
     }
