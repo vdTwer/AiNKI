@@ -10,24 +10,23 @@ use crate::web::*;
 /// a dot with its name, the ones it invited on a branch below it. Accounts
 /// nobody invited (the first ones, the admin) are the roots. A filled dot
 /// studied in the last 30 days; a ring didn't.
-pub(crate) fn invite_graph(accounts: &[invites::Account]) -> Markup {
-    const ROW: f64 = 34.0;
-    const INDENT: f64 = 30.0;
-    const TOP: f64 = 18.0;
-    const LEFT: f64 = 8.0;
+/// One account in the invitation graph: its row, and how deep it hangs.
+struct Node<'a> {
+    a: &'a invites::Account,
+    depth: usize,
+    row: usize,
+    parent_row: Option<usize>,
+}
+
+/// The accounts in graph order, depth first: each takes the next row,
+/// under the one who invited it. An inviter that is gone makes its people
+/// roots.
+fn graph_rows(accounts: &[invites::Account]) -> Vec<Node<'_>> {
     let ids: std::collections::HashSet<i64> = accounts.iter().map(|a| a.id).collect();
     let mut children: HashMap<Option<i64>, Vec<&invites::Account>> = HashMap::new();
     for a in accounts {
-        // An inviter that is gone makes its people roots.
         let parent = a.invited_by.filter(|p| ids.contains(p) && *p != a.id);
         children.entry(parent).or_default().push(a);
-    }
-    // Depth first: each account takes the next row.
-    struct Node<'a> {
-        a: &'a invites::Account,
-        depth: usize,
-        row: usize,
-        parent_row: Option<usize>,
     }
     let mut nodes: Vec<Node> = Vec::new();
     let mut stack: Vec<(&invites::Account, usize, Option<usize>)> =
@@ -40,11 +39,18 @@ pub(crate) fn invite_graph(accounts: &[invites::Account]) -> Markup {
         let row = nodes.len();
         nodes.push(Node { a, depth, row, parent_row });
         if let Some(kids) = children.get(&Some(a.id)) {
-            for k in kids.iter().rev() {
-                stack.push((*k, depth + 1, Some(row)));
-            }
+            stack.extend(kids.iter().rev().map(|k| (*k, depth + 1, Some(row))));
         }
     }
+    nodes
+}
+
+pub(crate) fn invite_graph(accounts: &[invites::Account]) -> Markup {
+    const ROW: f64 = 34.0;
+    const INDENT: f64 = 30.0;
+    const TOP: f64 = 18.0;
+    const LEFT: f64 = 8.0;
+    let nodes = graph_rows(accounts);
     let x = |d: usize| num::usize_f64(d).mul_add(INDENT, LEFT);
     let y = |r: usize| num::usize_f64(r).mul_add(ROW, TOP);
     let width = nodes
