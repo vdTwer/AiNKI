@@ -1168,9 +1168,7 @@ async fn home(State(app): State<AppState>, user: WebUser, Flash(msg): Flash) -> 
     let outlook = app.outlook(&access, &decks).await?;
     let known = advice::Known { decks: &decks, stats: &stats, attention: &flagged, overdue };
     let notes = app.advice_from(&access, &known).await?;
-    // A rough guide; real thinking time once there's enough history.
-    let minutes =
-        num::f64_i64(((num::i64_f64(total_due) * stats.seconds_per_review.unwrap_or(12.0)) / 60.0).ceil().max(1.0));
+    let minutes = stats.minutes_for(total_due).max(1);
     let mut facts = Vec::new();
     if total_due > 0 {
         facts.push(format!("About {}", count(minutes, "minute")));

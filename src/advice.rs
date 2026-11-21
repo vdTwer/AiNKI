@@ -1027,8 +1027,7 @@ impl App {
                 flagged: flagged.get(&d.deck.id).copied().unwrap_or(0),
             });
         }
-        let seconds = known.stats.seconds_per_review.unwrap_or(12.0);
-        s.minutes_due = num::f64_i64((num::i64_f64(s.due_today) * seconds / 60.0).ceil());
+        s.minutes_due = known.stats.minutes_for(s.due_today);
 
         for p in &presets {
             let decks: Vec<&DeckSummary> = known.decks.iter().filter(|d| d.deck.preset_id == p.id).collect();

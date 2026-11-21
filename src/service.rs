@@ -310,6 +310,18 @@ pub struct Stats {
     pub seconds_per_review: Option<f64>,
 }
 
+impl Stats {
+    /// Thinking time when there's too little history to measure it.
+    const GUESS_SECONDS_PER_REVIEW: f64 = 12.0;
+
+    /// Whole minutes `cards` answers take, rounded up: measured thinking
+    /// time once there's enough history, a rough guess before.
+    pub fn minutes_for(&self, cards: i64) -> i64 {
+        let seconds = self.seconds_per_review.unwrap_or(Self::GUESS_SECONDS_PER_REVIEW);
+        num::f64_i64((num::i64_f64(cards) * seconds / 60.0).ceil())
+    }
+}
+
 /// Days of history the desktop stats charts show: twelve whole weeks.
 pub const HISTORY_DAYS: i64 = 84;
 
