@@ -57,14 +57,14 @@ pub struct Client {
     pub id: String,
     pub secret_hash: Option<String>,
     pub name: String,
-    pub redirect_uris: String,
+    pub redirect_uris: sqlx::types::Json<Vec<String>>,
     pub metadata_url: Option<String>,
     pub created_at: i64,
 }
 
 impl Client {
-    fn redirects(&self) -> Vec<String> {
-        serde_json::from_str(&self.redirect_uris).unwrap_or_default()
+    fn redirects(&self) -> &[String] {
+        &self.redirect_uris
     }
 
     /// Exact match, except that loopback redirects may use any port
@@ -295,7 +295,7 @@ impl App {
         .bind(&id)
         .bind(secret.as_deref().map(sha256_hex))
         .bind(&name)
-        .bind(serde_json::to_string(&req.redirect_uris).unwrap_or_default())
+        .bind(sqlx::types::Json(&req.redirect_uris))
         .bind(now())
         .execute(&self.db)
         .await?;
@@ -356,7 +356,7 @@ impl App {
         )
         .bind(url)
         .bind(name.chars().take(100).collect::<String>())
-        .bind(serde_json::to_string(&doc.redirect_uris).unwrap_or_default())
+        .bind(sqlx::types::Json(&doc.redirect_uris))
         .bind(url)
         .bind(now())
         .execute(&self.db)
@@ -388,7 +388,7 @@ impl App {
         .bind(code_challenge)
         .bind(can_write)
         .bind(can_review)
-        .bind(decks.map(|d| serde_json::to_string(&d).unwrap_or_default()))
+        .bind(decks.map(sqlx::types::Json))
         .bind(now() + CODE_SECS)
         .execute(&self.db)
         .await?;
@@ -460,7 +460,8 @@ impl App {
             code_challenge: String,
             can_write: bool,
             can_review: bool,
-            decks: Option<String>,
+            /// The decks the user granted; `None` means all of them.
+            decks: Option<sqlx::types::Json<Vec<i64>>>,
             expires_at: i64,
         }
         // Codes are single use: delete on read.
@@ -479,7 +480,9 @@ impl App {
         if !pkce_ok(verifier, &row.code_challenge) {
             return Err(OAuthError::new("invalid_grant", "PKCE verification failed"));
         }
-        let decks: Option<Vec<i64>> = row.decks.as_deref().and_then(|d| serde_json::from_str(d).ok());
+        // A grant that fails to parse fails the exchange: before, it became
+        // None, which is "all decks".
+        let decks: Option<Vec<i64>> = row.decks.map(|sqlx::types::Json(d)| d);
         let grant = self
             .create_grant(
                 row.user_id,
@@ -700,7 +703,7 @@ async fn check_authorize(
         Err(e) => return Err(crate::web::WebError::from(e).into_response()),
     };
     let redirects = client.redirects();
-    let redirect_uri = match (p.redirect_uri.as_deref(), redirects.as_slice()) {
+    let redirect_uri = match (p.redirect_uri.as_deref(), redirects) {
         (Some(r), _) if client.allows_redirect(r) => r.to_string(),
         (None, [only]) => only.clone(),
         _ => return Err(authorize_error_page(user, "The app's redirect address doesn't match its registration.")),
@@ -746,7 +749,10 @@ pub async fn authorize_page(
         Err(r) => return r,
     };
     let access = crate::auth::Access::web(user.clone());
-    let decks = app.decks(&access).await.unwrap_or_default();
+    let decks = match app.decks(&access).await {
+        Ok(d) => d,
+        Err(e) => return crate::web::WebError::from(e).into_response(),
+    };
     let target =
         redirect_uri.split("://").nth(1).and_then(|r| r.split('/').next()).unwrap_or(&redirect_uri).to_string();
     let hidden = |name: &str, v: &Option<String>| {

@@ -2151,3 +2151,32 @@ async fn an_unknown_time_zone_fails_to_load() {
     // Before, it quietly became UTC and every day boundary moved.
     assert!(app.find_user(&a.user.handle()).await.is_err());
 }
+
+#[tokio::test]
+async fn a_damaged_deck_grant_never_widens_to_all_decks() {
+    use base64::Engine;
+    use sha2::Digest;
+    let app = app().await;
+    let a = user(&app, "kolja").await;
+    let deck = app.create_deck(&a, "D", "", None).await.unwrap();
+    let reg = app
+        .register_client(crate::oauth::RegistrationRequest {
+            redirect_uris: vec!["https://claude.ai/api/mcp/auth_callback".into()],
+            client_name: Some("Claude".into()),
+            token_endpoint_auth_method: Some("none".into()),
+        })
+        .await
+        .unwrap();
+    let client_id = reg["client_id"].as_str().unwrap().to_string();
+    let client = app.client(&client_id).await.unwrap().unwrap();
+    let verifier = "a".repeat(50);
+    let challenge = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(sha2::Sha256::digest(verifier.as_bytes()));
+    let redirect = "https://claude.ai/api/mcp/auth_callback";
+    let code = app
+        .create_auth_code(a.user_id(), &client, redirect, &challenge, true, false, Some(vec![deck.id]))
+        .await
+        .unwrap();
+    sqlx::query("UPDATE oauth_codes SET decks = 'not json'").execute(&app.db).await.unwrap();
+    // Before, the grant parsed as None, which means every deck.
+    assert!(app.exchange_code(&client_id, None, &code, Some(redirect), &verifier).await.is_err());
+}
