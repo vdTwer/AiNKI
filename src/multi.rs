@@ -413,24 +413,7 @@ impl App {
                     .await?;
             } else {
                 let s = if first_time { card.sched() } else { CardSched::new_card() };
-                sqlx::query(
-                    "INSERT INTO card_items (card_id, position, text, state, step, stability, difficulty,
-                        due, last_review, reps, lapses)
-                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                )
-                .bind(card.id)
-                .bind(num::usize_i64(pos))
-                .bind(text)
-                .bind(s.state as i64)
-                .bind(s.step)
-                .bind(s.stability.map(f64::from))
-                .bind(s.difficulty.map(f64::from))
-                .bind(s.due)
-                .bind(s.last_review)
-                .bind(s.reps)
-                .bind(s.lapses)
-                .execute(&mut *tx)
-                .await?;
+                insert_item(&mut tx, card.id, num::usize_i64(pos), text, &s).await?;
             }
         }
         for (n, item) in old.iter().enumerate() {
@@ -475,85 +458,24 @@ impl App {
         }
         let clock = access.user.clock();
         let asked = asked(card, &items, clock.now);
-        let missed: Vec<bool> = match missed {
-            Missed::All => asked.clone(),
-            Missed::These(positions) => {
-                let mut m = vec![false; items.len()];
-                for p in positions {
-                    match (asked.get(p), m.get_mut(p)) {
-                        (Some(true), Some(slot)) => *slot = true,
-                        _ => return Err(AppError::bad(format!("item {} was not asked this time", p + 1))),
-                    }
-                }
-                m
-            }
-        };
+        let missed = missed_flags(&asked, missed)?;
         let deck = self.deck(access, card.deck_id).await?;
         let cfg = self.sched_config(access, &deck).await?;
         let fsrs = scheduler::fsrs_for(&self.deck_params(access, deck.id).await?)?;
         let before_items = serde_json::to_string(&items).ok();
-        let mut item_logs = Vec::new();
-        for ((item, &was_asked), &was_missed) in items.iter_mut().zip(&asked).zip(&missed) {
-            if !was_asked {
-                continue;
-            }
-            let rating = if was_missed { Rating::Again } else { Rating::Good };
-            let out = scheduler::answer(&fsrs, &cfg, item.id, &item.sched(), rating, &clock)?;
-            item_logs.push((item.id, rating, item.state));
-            item.set(&out.card);
-        }
+        let item_logs = rate_items(&fsrs, &cfg, &mut items, &asked, &missed, &clock)?;
 
         let before = card.sched();
         let n_asked = num::usize_i64(asked.iter().filter(|a| **a).count());
         let n_missed = num::usize_i64(missed.iter().filter(|m| **m).count());
-        let mut c = summarize(&items, &before);
-        c.last_review = Some(clock.now);
-        c.reps = before.reps + 1;
-        if n_missed > 0 && before.state == CardState::Review {
-            c.lapses += 1;
-        }
+        let c = answered_card(&items, &before, n_missed > 0, clock.now);
         let elapsed_days = before.last_review.map_or(0, |last| clock.days_between(last, clock.now).max(0));
         let interval_secs = (c.due - clock.now).max(0);
 
         let mut tx = self.db.begin_with("BEGIN IMMEDIATE").await?;
-        let updated = sqlx::query(
-            "UPDATE cards SET state = ?, step = ?, stability = ?, difficulty = ?, due = ?,
-                last_review = ?, reps = ?, lapses = ?, updated_at = ?
-             WHERE id = ? AND user_id = ? AND reps = ?",
-        )
-        .bind(c.state as i64)
-        .bind(c.step)
-        .bind(c.stability.map(f64::from))
-        .bind(c.difficulty.map(f64::from))
-        .bind(c.due)
-        .bind(c.last_review)
-        .bind(c.reps)
-        .bind(c.lapses)
-        .bind(clock.now)
-        .bind(card.id)
-        .bind(access.user_id())
-        .bind(card.reps)
-        .execute(&mut *tx)
-        .await?;
-        if updated.rows_affected() == 0 {
-            return Err(AppError::Conflict("this card was already answered".into()));
-        }
+        save_answered_card(&mut tx, access, card, &c, clock.now).await?;
         for (item, _) in items.iter().zip(&asked).filter(|(_, a)| **a) {
-            sqlx::query(
-                "UPDATE card_items SET state = ?, step = ?, stability = ?, difficulty = ?, due = ?,
-                    last_review = ?, reps = ?, lapses = ? WHERE id = ?",
-            )
-            .bind(item.state)
-            .bind(item.step)
-            .bind(item.stability)
-            .bind(item.difficulty)
-            .bind(item.due)
-            .bind(item.last_review)
-            .bind(item.reps)
-            .bind(item.lapses)
-            .bind(item.id)
-            .execute(&mut *tx)
-            .await?;
+            save_item(&mut tx, item).await?;
         }
         let rating = if n_missed > 0 { Rating::Again } else { Rating::Good };
         let log_id: i64 = sqlx::query_scalar(
@@ -580,19 +502,7 @@ impl App {
         .bind(before_items)
         .fetch_one(&mut *tx)
         .await?;
-        for (item_id, rating, state_before) in item_logs {
-            sqlx::query(
-                "INSERT INTO item_review_log (review_log_id, item_id, rating, state_before, reviewed_at)
-                 VALUES (?, ?, ?, ?, ?)",
-            )
-            .bind(log_id)
-            .bind(item_id)
-            .bind(rating as i64)
-            .bind(state_before)
-            .bind(clock.now)
-            .execute(&mut *tx)
-            .await?;
-        }
+        log_item_reviews(&mut tx, log_id, &item_logs, clock.now).await?;
         tx.commit().await?;
 
         let interval = if c.state == CardState::Review {
@@ -684,6 +594,146 @@ pub fn items_json(items: &[CardItem], asked: Option<&[bool]>, clock: &Clock, dec
             v
         })
         .collect()
+}
+
+/// The card's schedule after an answer to its items: the items' summary,
+/// one more rep, and a lapse when a learned card missed anything.
+fn answered_card(items: &[CardItem], before: &CardSched, missed_any: bool, now: i64) -> CardSched {
+    let mut c = summarize(items, before);
+    c.last_review = Some(now);
+    c.reps = before.reps + 1;
+    if missed_any && before.state == CardState::Review {
+        c.lapses += 1;
+    }
+    c
+}
+
+/// Answers each asked item on its own memory: Again if missed, else Good.
+/// Returns (item, rating, state before) for the log.
+fn rate_items(
+    fsrs: &fsrs::FSRS,
+    cfg: &scheduler::SchedConfig,
+    items: &mut [CardItem],
+    asked: &[bool],
+    missed: &[bool],
+    clock: &Clock,
+) -> Result<Vec<(i64, Rating, CardState)>> {
+    let mut logs = Vec::new();
+    for ((item, _), &was_missed) in items.iter_mut().zip(asked).zip(missed).filter(|((_, a), _)| **a) {
+        let rating = if was_missed { Rating::Again } else { Rating::Good };
+        let out = scheduler::answer(fsrs, cfg, item.id, &item.sched(), rating, clock)?;
+        logs.push((item.id, rating, item.state));
+        item.set(&out.card);
+    }
+    Ok(logs)
+}
+
+type Tx<'a> = sqlx::Transaction<'a, sqlx::Sqlite>;
+
+/// Which asked items were missed. `These` names positions, and naming one
+/// that wasn't asked is an error.
+fn missed_flags(asked: &[bool], missed: Missed) -> Result<Vec<bool>> {
+    match missed {
+        Missed::All => Ok(asked.to_vec()),
+        Missed::These(positions) => {
+            let mut m = vec![false; asked.len()];
+            for p in positions {
+                match (asked.get(p), m.get_mut(p)) {
+                    (Some(true), Some(slot)) => *slot = true,
+                    _ => return Err(AppError::bad(format!("item {} was not asked this time", p + 1))),
+                }
+            }
+            Ok(m)
+        }
+    }
+}
+
+async fn insert_item(tx: &mut Tx<'_>, card_id: i64, position: i64, text: &str, s: &CardSched) -> Result<()> {
+    sqlx::query(
+        "INSERT INTO card_items (card_id, position, text, state, step, stability, difficulty,
+            due, last_review, reps, lapses)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    )
+    .bind(card_id)
+    .bind(position)
+    .bind(text)
+    .bind(s.state)
+    .bind(s.step)
+    .bind(s.stability.map(f64::from))
+    .bind(s.difficulty.map(f64::from))
+    .bind(s.due)
+    .bind(s.last_review)
+    .bind(s.reps)
+    .bind(s.lapses)
+    .execute(&mut **tx)
+    .await?;
+    Ok(())
+}
+
+/// Stores a multicard's new schedule, unless another answer got there
+/// first (its `reps` moved on): then it's a conflict.
+async fn save_answered_card(tx: &mut Tx<'_>, access: &Access, card: &Card, c: &CardSched, now: i64) -> Result<()> {
+    let updated = sqlx::query(
+        "UPDATE cards SET state = ?, step = ?, stability = ?, difficulty = ?, due = ?,
+            last_review = ?, reps = ?, lapses = ?, updated_at = ?
+         WHERE id = ? AND user_id = ? AND reps = ?",
+    )
+    .bind(c.state)
+    .bind(c.step)
+    .bind(c.stability.map(f64::from))
+    .bind(c.difficulty.map(f64::from))
+    .bind(c.due)
+    .bind(c.last_review)
+    .bind(c.reps)
+    .bind(c.lapses)
+    .bind(now)
+    .bind(card.id)
+    .bind(access.user_id())
+    .bind(card.reps)
+    .execute(&mut **tx)
+    .await?;
+    if updated.rows_affected() == 0 {
+        return Err(AppError::Conflict("this card was already answered".into()));
+    }
+    Ok(())
+}
+
+async fn save_item(tx: &mut Tx<'_>, item: &CardItem) -> Result<()> {
+    sqlx::query(
+        "UPDATE card_items SET state = ?, step = ?, stability = ?, difficulty = ?, due = ?,
+            last_review = ?, reps = ?, lapses = ? WHERE id = ?",
+    )
+    .bind(item.state)
+    .bind(item.step)
+    .bind(item.stability)
+    .bind(item.difficulty)
+    .bind(item.due)
+    .bind(item.last_review)
+    .bind(item.reps)
+    .bind(item.lapses)
+    .bind(item.id)
+    .execute(&mut **tx)
+    .await?;
+    Ok(())
+}
+
+/// One row per asked item, under the card's review: (item, rating, state
+/// before).
+async fn log_item_reviews(tx: &mut Tx<'_>, log_id: i64, logs: &[(i64, Rating, CardState)], now: i64) -> Result<()> {
+    for &(item_id, rating, state_before) in logs {
+        sqlx::query(
+            "INSERT INTO item_review_log (review_log_id, item_id, rating, state_before, reviewed_at)
+             VALUES (?, ?, ?, ?, ?)",
+        )
+        .bind(log_id)
+        .bind(item_id)
+        .bind(rating as i64)
+        .bind(state_before)
+        .bind(now)
+        .execute(&mut **tx)
+        .await?;
+    }
+    Ok(())
 }
 
 #[cfg(test)]
