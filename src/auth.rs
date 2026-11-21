@@ -286,35 +286,11 @@ impl App {
             .await
             .map_err(|e| AppError::Internal(e.into()))??;
 
-        let taken: Vec<i64> = sqlx::query_scalar("SELECT discriminator FROM users WHERE username = ? COLLATE NOCASE")
-            .bind(username)
-            .fetch_all(&self.db)
-            .await?;
-        if taken.len() >= 9999 {
-            return Err(AppError::bad("that username is full, pick another"));
-        }
-        let taken: HashSet<i64> = taken.into_iter().collect();
-        let discriminator = loop {
-            let d = rand::random_range(1..=9999);
-            if !taken.contains(&d) {
-                break d;
-            }
-        };
+        let discriminator = self.free_discriminator(username).await?;
 
         let mut tx = self.db.begin_with("BEGIN IMMEDIATE").await?;
-        let claimed: Option<(i64, i64)> = match invite {
-            Some(token) => {
-                let row = sqlx::query_as(
-                    "UPDATE invites SET used_at = ? WHERE token = ? AND used_at IS NULL AND expires_at > ?
-                     RETURNING id, user_id",
-                )
-                .bind(now())
-                .bind(token)
-                .bind(now())
-                .fetch_optional(&mut *tx)
-                .await?;
-                Some(row.ok_or_else(|| AppError::bad("this invite has been used or has expired"))?)
-            }
+        let claimed = match invite {
+            Some(token) => Some(claim_invite(&mut tx, token).await?),
             None => None,
         };
         let id: i64 = sqlx::query_scalar(
@@ -337,28 +313,27 @@ impl App {
                 .execute(&mut *tx)
                 .await?;
         }
-        for t in presets::TEMPLATES {
-            sqlx::query(
-                "INSERT INTO presets (user_id, name, description, desired_retention, new_per_day,
-                    reviews_per_day, learning_steps, relearning_steps, max_interval, created_at, template)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            )
-            .bind(id)
-            .bind(t.name)
-            .bind(t.description)
-            .bind(t.desired_retention)
-            .bind(t.new_per_day)
-            .bind(t.reviews_per_day)
-            .bind(t.learning_steps)
-            .bind(t.relearning_steps)
-            .bind(t.max_interval)
-            .bind(now())
-            .bind(t.key)
-            .execute(&mut *tx)
-            .await?;
-        }
+        insert_template_presets(&mut tx, id).await?;
         tx.commit().await?;
         self.user(id).await
+    }
+
+    /// A free number for `name#1234`: names are shared, the pair is unique.
+    async fn free_discriminator(&self, username: &str) -> Result<i64> {
+        let taken: Vec<i64> = sqlx::query_scalar("SELECT discriminator FROM users WHERE username = ? COLLATE NOCASE")
+            .bind(username)
+            .fetch_all(&self.db)
+            .await?;
+        if taken.len() >= 9999 {
+            return Err(AppError::bad("that username is full, pick another"));
+        }
+        let taken: HashSet<i64> = taken.into_iter().collect();
+        Ok(loop {
+            let d = rand::random_range(1..=9999);
+            if !taken.contains(&d) {
+                break d;
+            }
+        })
     }
 
     pub async fn user(&self, id: i64) -> Result<User> {
@@ -640,4 +615,43 @@ impl App {
             actor: Actor::Agent { token_id: token.id, can_write: token.can_write, can_review: token.can_review, decks },
         })
     }
+}
+/// Uses up an invite in the account's transaction, so one link can't make
+/// two accounts. Returns (invite, who invited).
+async fn claim_invite(tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>, token: &str) -> Result<(i64, i64)> {
+    let row = sqlx::query_as(
+        "UPDATE invites SET used_at = ? WHERE token = ? AND used_at IS NULL AND expires_at > ?
+         RETURNING id, user_id",
+    )
+    .bind(now())
+    .bind(token)
+    .bind(now())
+    .fetch_optional(&mut **tx)
+    .await?;
+    row.ok_or_else(|| AppError::bad("this invite has been used or has expired"))
+}
+
+/// Every new account starts with the built-in presets.
+async fn insert_template_presets(tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>, user_id: i64) -> Result<()> {
+    for t in presets::TEMPLATES {
+        sqlx::query(
+            "INSERT INTO presets (user_id, name, description, desired_retention, new_per_day,
+                reviews_per_day, learning_steps, relearning_steps, max_interval, created_at, template)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        )
+        .bind(user_id)
+        .bind(t.name)
+        .bind(t.description)
+        .bind(t.desired_retention)
+        .bind(t.new_per_day)
+        .bind(t.reviews_per_day)
+        .bind(t.learning_steps)
+        .bind(t.relearning_steps)
+        .bind(t.max_interval)
+        .bind(now())
+        .bind(t.key)
+        .execute(&mut **tx)
+        .await?;
+    }
+    Ok(())
 }
