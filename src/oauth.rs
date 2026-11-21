@@ -12,6 +12,7 @@
 //! An approved connection is stored like a manual API token, so it appears
 //! (and can be revoked) on the Agent access page.
 
+use crate::num;
 use axum::{
     Json,
     extract::{Query, State},
@@ -248,7 +249,7 @@ async fn fetch_metadata_document(url: &str) -> Option<MetadataDocument> {
         .build()
         .ok()?;
     let mut resp = client.get(parsed).header("Accept", "application/json").send().await.ok()?;
-    if !resp.status().is_success() || resp.content_length().is_some_and(|l| l as usize > MAX_METADATA_BYTES) {
+    if !resp.status().is_success() || resp.content_length().is_some_and(|l| num::u64_usize(l) > MAX_METADATA_BYTES) {
         return None;
     }
     let mut body = Vec::new();

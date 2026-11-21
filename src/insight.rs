@@ -1,6 +1,7 @@
 //! Looking back: the week in a few numbers with one tip, and how much of
 //! each deck you really remembered against what its preset aims for.
 
+use crate::num;
 use std::collections::{HashMap, HashSet};
 
 use chrono::Duration;
@@ -86,7 +87,7 @@ impl App {
                     deck_id: d.id,
                     deck_name: d.name,
                     target: presets.get(&d.preset_id).copied().unwrap_or(0.9),
-                    actual: (n > 0).then(|| ok as f64 / n as f64),
+                    actual: (n > 0).then(|| num::i64_f64(ok) / num::i64_f64(n)),
                     reviews: n,
                 }
             })
@@ -142,9 +143,9 @@ impl App {
                 target_sum += targets.get(&r.deck_id).copied().unwrap_or(0.9);
             }
         }
-        let attention = self.attention(access, None).await?.len() as i64;
-        let retention = (sample > 0).then(|| passed as f64 / sample as f64);
-        let target = (sample > 0).then(|| target_sum / sample as f64);
+        let attention = num::usize_i64(self.attention(access, None).await?.len());
+        let retention = (sample > 0).then(|| num::i64_f64(passed) / num::i64_f64(sample));
+        let target = (sample > 0).then(|| target_sum / num::i64_f64(sample));
         let tip = if attention > 0 {
             Tip::Attention
         } else if let (true, Some(r), Some(t)) = (sample >= MIN_SAMPLE, retention, target) {
@@ -164,9 +165,9 @@ impl App {
         };
         Ok(Week {
             reviews,
-            minutes: ms as f64 / 60_000.0,
-            days_studied: days.len() as i64,
-            new_cards: new_cards.len() as i64,
+            minutes: num::i64_f64(ms) / 60_000.0,
+            days_studied: num::usize_i64(days.len()),
+            new_cards: num::usize_i64(new_cards.len()),
             retention,
             target,
             retention_sample: sample,

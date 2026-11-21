@@ -3,6 +3,7 @@
 //! Every tool calls the same service functions as the website, so an agent
 //! can do anything a person can, limited by the token's permissions.
 
+use crate::num;
 use axum::{
     extract::{Request, State},
     http::{StatusCode, header},
@@ -825,7 +826,7 @@ impl AinkiMcp {
                     if n < 1 {
                         return Err(format!("item numbers start at 1, got {n}"));
                     }
-                    positions.push((n - 1) as usize);
+                    positions.push(num::i64_usize(n - 1));
                 }
                 self.app.answer_list(&a, p.card_id, positions, None, None).await.map_err(err)?
             }
@@ -1017,7 +1018,7 @@ impl AinkiMcp {
     ) -> ToolResult {
         let a = access(&parts)?;
         let days = match p.days.unwrap_or(30) {
-            d @ (30 | 90 | 365) => d as usize,
+            d @ (30 | 90 | 365) => num::i64_usize(d),
             _ => return Err(err(AppError::bad("days must be 30, 90 or 365"))),
         };
         out(json!({ "days": days, "options": self.app.workload(&a, p.preset_id, days).await.map_err(err)? }))

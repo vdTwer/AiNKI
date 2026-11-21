@@ -89,7 +89,7 @@ async fn collection(format: Format, crt: i64, decks: &[(i64, &str)], cards: &[Ca
             .execute(&mut conn)
             .await
             .unwrap();
-        let id = 1000 + i as i64;
+        let id = 1000 + crate::num::usize_i64(i);
         sqlx::query(
             "INSERT INTO cards (id, nid, did, ord, type, queue, due, ivl, factor, reps, lapses, odue, odid)
              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)",
@@ -103,7 +103,7 @@ async fn collection(format: Format, crt: i64, decks: &[(i64, &str)], cards: &[Ca
         .bind(c.due)
         .bind(c.ivl)
         .bind(c.factor)
-        .bind(c.revlog.len() as i64)
+        .bind(crate::num::usize_i64(c.revlog.len()))
         .bind(c.odue)
         .bind(c.odid)
         .execute(&mut conn)
@@ -111,7 +111,7 @@ async fn collection(format: Format, crt: i64, decks: &[(i64, &str)], cards: &[Ca
         .unwrap();
         for (j, (days_ago, ease, kind)) in c.revlog.iter().enumerate() {
             sqlx::query("INSERT INTO revlog (id, cid, ease, type) VALUES (?, ?, ?, ?)")
-                .bind(now_ms - days_ago * DAY * 1000 + j as i64)
+                .bind(now_ms - days_ago * DAY * 1000 + crate::num::usize_i64(j))
                 .bind(id)
                 .bind(ease)
                 .bind(kind)
@@ -127,7 +127,9 @@ async fn collection(format: Format, crt: i64, decks: &[(i64, &str)], cards: &[Ca
 }
 
 fn png() -> Vec<u8> {
-    let img = image::RgbImage::from_fn(8, 8, |x, y| image::Rgb([(x * 30) as u8, (y * 30) as u8, 90]));
+    let img = image::RgbImage::from_fn(8, 8, |x, y| {
+        image::Rgb([u8::try_from(x * 30).unwrap(), u8::try_from(y * 30).unwrap(), 90])
+    });
     let mut out = std::io::Cursor::new(Vec::new());
     img.write_to(&mut out, image::ImageFormat::Png).unwrap();
     out.into_inner()

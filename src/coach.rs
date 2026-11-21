@@ -7,6 +7,7 @@
 //! FSRS community's findings; none of them is a tested threshold, so they
 //! stay simple and explainable.
 
+use crate::num;
 use std::collections::{HashMap, HashSet};
 
 use serde::Serialize;
@@ -132,7 +133,7 @@ pub fn similarity(a: &str, b: &str) -> f64 {
     let (x, y) = (trigrams(a), trigrams(b));
     let shared = x.intersection(&y).count();
     let all = x.union(&y).count();
-    if all == 0 { 0.0 } else { shared as f64 / all as f64 }
+    if all == 0 { 0.0 } else { num::usize_f64(shared) / num::usize_f64(all) }
 }
 
 /// Very short fronts ("Hund") only count when they are the same; three

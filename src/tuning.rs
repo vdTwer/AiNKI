@@ -8,6 +8,7 @@
 //! desired retention by simulation rather than suggest one "optimal" value
 //! (Anki 25.07 removed its "compute minimum recommended retention").
 
+use crate::num;
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -232,7 +233,10 @@ impl App {
             let mut prev: Option<i64> = None;
             for l in logs {
                 let delta = prev.map(|p| clock.days_between(p, l.reviewed_at).max(0)).unwrap_or(0);
-                reviews.push(fsrs::FSRSReview { rating: l.rating.clamp(1, 4) as u32, delta_t: delta as u32 });
+                reviews.push(fsrs::FSRSReview {
+                    rating: num::i64_u32(l.rating.clamp(1, 4)),
+                    delta_t: num::i64_u32(delta),
+                });
                 prev = Some(l.reviewed_at);
             }
             out.push(History { card_id, deck_id, reviews });
@@ -427,22 +431,22 @@ impl App {
                 match (CardState::from_i64(state), s, d, last) {
                     (CardState::New, ..) => new_cards += 1,
                     (_, Some(s), Some(d), Some(last)) => {
-                        let since = (clock.now - last) as f32 / 86_400.0;
-                        let until = ((due - clock.now) as f32 / 86_400.0).max(0.0);
-                        existing.push((s as f32, d as f32, since, until, lapses as u32));
+                        let since = num::i64_f32(clock.now - last) / 86_400.0;
+                        let until = (num::i64_f32(due - clock.now) / 86_400.0).max(0.0);
+                        existing.push((num::f64_f32(s), num::f64_f32(d), since, until, num::i64_u32(lapses)));
                     }
                     _ => {}
                 }
             }
         }
-        let to_learn = new_cards.max(preset.new_per_day.max(0) as usize * days);
+        let to_learn = new_cards.max(num::i64_usize(preset.new_per_day.max(0)) * days);
         // Thinking time: the simulator's defaults, scaled to the user's own
         // typical time per review once there is enough history.
         let scale = self
             .stats(access, None)
             .await?
             .seconds_per_review
-            .map(|s| (s / 12.32).clamp(0.3, 4.0) as f32)
+            .map(|s| num::f64_f32((s / 12.32).clamp(0.3, 4.0)))
             .unwrap_or(1.0);
         let current = preset.desired_retention;
         let mut retentions = vec![0.80, 0.85, 0.90, 0.95];
@@ -461,9 +465,9 @@ impl App {
                     deck_size: existing.len() + to_learn,
                     learn_span: days,
                     max_cost_perday: f32::MAX,
-                    max_ivl: max_ivl as f32,
-                    learn_limit: new_per_day.max(0) as usize,
-                    review_limit: reviews_per_day.max(0) as usize,
+                    max_ivl: num::i64_f32(max_ivl),
+                    learn_limit: num::i64_usize(new_per_day.max(0)),
+                    review_limit: num::i64_usize(reviews_per_day.max(0)),
                     learning_step_count: learning_steps,
                     relearning_step_count: relearning_steps,
                     ..Default::default()
@@ -487,23 +491,23 @@ impl App {
                     .iter()
                     .enumerate()
                     .map(|(i, &(s, d, since, until, lapses))| fsrs::Card {
-                        id: i as i64 + 1,
+                        id: num::usize_i64(i) + 1,
                         difficulty: d,
                         stability: s,
                         last_date: -since,
                         due: until,
                         interval: since + until,
                         lapses,
-                        desired_retention: r as f32,
+                        desired_retention: num::f64_f32(r),
                         parameters: filled.clone(),
                     })
                     .collect();
-                let sim = fsrs::simulate(&config, &filled, r as f32, Some(42), Some(cards))?;
-                let n = days.max(1) as f64;
+                let sim = fsrs::simulate(&config, &filled, num::f64_f32(r), Some(42), Some(cards))?;
+                let n = num::usize_f64(days.max(1));
                 out.push(Workload {
                     retention: r,
                     minutes_per_day: sim.cost_per_day.iter().map(|c| f64::from(*c)).sum::<f64>() / 60.0 / n,
-                    reviews_per_day: sim.review_cnt_per_day.iter().sum::<usize>() as f64 / n,
+                    reviews_per_day: num::usize_f64(sim.review_cnt_per_day.iter().sum::<usize>()) / n,
                     remembered: f64::from(sim.memorized_cnt_per_day.last().copied().unwrap_or(0.0)),
                     current: (r - current).abs() < 0.005,
                 });
@@ -546,10 +550,10 @@ impl App {
         let mut sums = [(0.0f64, 0i64, 0i64); BANDS.len()];
         for (deck, rating, at, s, last) in q.fetch_all(&self.db).await? {
             let (Some(s), Some(last)) = (s, last) else { continue };
-            let elapsed = ((at - last).max(0) as f32) / 86_400.0;
-            let memory = fsrs::MemoryState { stability: s as f32, difficulty: 5.0 };
+            let elapsed = num::i64_f32((at - last).max(0)) / 86_400.0;
+            let memory = fsrs::MemoryState { stability: num::f64_f32(s), difficulty: 5.0 };
             let r = f64::from(fsrs::current_retrievability(memory, elapsed, scheduler::decay_for(book.for_deck(deck))));
-            let pct = (r * 100.0).clamp(0.0, 99.999) as u32;
+            let pct = num::i64_u32(num::f64_i64((r * 100.0).clamp(0.0, 99.999)));
             let band = BANDS.iter().position(|(from, to)| pct >= *from && pct < *to).unwrap_or(0);
             sums[band].0 += r;
             sums[band].1 += i64::from(rating > 1);
@@ -560,8 +564,8 @@ impl App {
             return Ok(out);
         }
         out.reviews = total;
-        out.predicted = sums.iter().map(|s| s.0).sum::<f64>() / total as f64;
-        out.actual = sums.iter().map(|s| s.1).sum::<i64>() as f64 / total as f64;
+        out.predicted = sums.iter().map(|s| s.0).sum::<f64>() / num::i64_f64(total);
+        out.actual = num::i64_f64(sums.iter().map(|s| s.1).sum::<i64>()) / num::i64_f64(total);
         out.bins = BANDS
             .iter()
             .zip(sums)
@@ -569,8 +573,8 @@ impl App {
             .map(|(&(from, to), (p, ok, n))| CalibrationBin {
                 from,
                 to,
-                predicted: p / n as f64,
-                actual: ok as f64 / n as f64,
+                predicted: p / num::i64_f64(n),
+                actual: num::i64_f64(ok) / num::i64_f64(n),
                 reviews: n,
             })
             .collect();

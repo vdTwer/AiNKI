@@ -1,6 +1,7 @@
 //! The website: server-rendered HTML, no JavaScript required, high contrast,
 //! no animations, big tap targets. Designed for phones and e-ink readers.
 
+use crate::num;
 use std::{collections::HashMap, time::Duration};
 
 use axum::{
@@ -441,7 +442,7 @@ pub fn layout_in(nav: Nav, title: &str, user: Option<&User>, body: Markup) -> Ma
 /// `page_kind` marks special pages for app.js.
 fn page(nav: Option<Nav>, title: &str, user: Option<&User>, page_kind: Option<&str>, body: Markup) -> Markup {
     let current = |n: Nav| (nav == Some(n)).then_some("page");
-    let scale = user.map(|u| u.font_scale).unwrap_or(100) as f64 / 100.0;
+    let scale = num::i64_f64(user.map(|u| u.font_scale).unwrap_or(100)) / 100.0;
     html! {
         (DOCTYPE)
         html lang="en" data-look=[user.map(|u| if u.desktop_look == "simple" { "simple" } else { "calm" })] {
@@ -1046,11 +1047,11 @@ fn invite_graph(accounts: &[invites::Account]) -> Markup {
             }
         }
     }
-    let x = |d: usize| LEFT + d as f64 * INDENT;
-    let y = |r: usize| TOP + r as f64 * ROW;
+    let x = |d: usize| LEFT + num::usize_f64(d) * INDENT;
+    let y = |r: usize| TOP + num::usize_f64(r) * ROW;
     let width = nodes
         .iter()
-        .map(|n| x(n.depth) + 16.0 + (n.a.handle().len() as f64) * 8.6 + 110.0)
+        .map(|n| x(n.depth) + 16.0 + num::usize_f64(n.a.handle().len()) * 8.6 + 110.0)
         .fold(320.0_f64, f64::max)
         .ceil();
     let height = (y(nodes.len().max(1)) - ROW + TOP).ceil();
@@ -1106,8 +1107,8 @@ async fn admin_page(State(app): State<AppState>, user: WebUser, headers: HeaderM
         accounts.iter().map(|a| (a.id, if a.is_admin { "admin".to_string() } else { a.handle() })).collect();
     let people: Vec<&invites::Account> = accounts.iter().filter(|a| !a.is_admin).collect();
     let month = now() - 30 * 86_400;
-    let new_this_month = people.iter().filter(|a| a.created_at >= month).count() as i64;
-    let studying = people.iter().filter(|a| a.last_review.is_some_and(|t| t >= month)).count() as i64;
+    let new_this_month = num::usize_i64(people.iter().filter(|a| a.created_at >= month).count());
+    let studying = num::usize_i64(people.iter().filter(|a| a.last_review.is_some_and(|t| t >= month)).count());
     Ok(page(
         None,
         "Admin",
@@ -1117,7 +1118,7 @@ async fn admin_page(State(app): State<AppState>, user: WebUser, headers: HeaderM
             (flash(&msg))
             h1 { "Accounts" }
             p.facts {
-                (count(people.len() as i64, "account")) " · "
+                (count(num::usize_i64(people.len()), "account")) " · "
                 (format::number(new_this_month)) " joined in the last 30 days · "
                 (format::number(studying)) " studied in that time"
             }
@@ -1164,7 +1165,7 @@ async fn home(State(app): State<AppState>, user: WebUser, Flash(msg): Flash) -> 
     let stats = app.stats(&access, None).await?;
     let total_due: i64 = decks.iter().map(super::service::DeckSummary::due_total).sum();
     let flagged = app.attention(&access, None).await?;
-    let attention = flagged.len() as i64;
+    let attention = num::usize_i64(flagged.len());
     let overdue = app.overdue(&access).await?;
     let quiet = study::quiet_until(&user.0, now());
     let week = app.week(&access).await?;
@@ -1172,7 +1173,8 @@ async fn home(State(app): State<AppState>, user: WebUser, Flash(msg): Flash) -> 
     let known = advice::Known { decks: &decks, stats: &stats, attention: &flagged, overdue };
     let notes = app.advice_from(&access, &known).await?;
     // A rough guide; real thinking time once there's enough history.
-    let minutes = ((total_due as f64 * stats.seconds_per_review.unwrap_or(12.0)) / 60.0).ceil().max(1.0) as i64;
+    let minutes =
+        num::f64_i64(((num::i64_f64(total_due) * stats.seconds_per_review.unwrap_or(12.0)) / 60.0).ceil().max(1.0));
     let mut facts = Vec::new();
     if total_due > 0 {
         facts.push(format!("About {}", count(minutes, "minute")));
@@ -1295,7 +1297,7 @@ async fn home(State(app): State<AppState>, user: WebUser, Flash(msg): Flash) -> 
                 }
             }
             @if !archived.is_empty() {
-                p.small.archived-link { a href="/decks/archived" { (count(archived.len() as i64, "archived deck")) } }
+                p.small.archived-link { a href="/decks/archived" { (count(num::usize_i64(archived.len()), "archived deck")) } }
             }
             @if attention > 0 {
                 p.small.attention-link { a href="/attention" { (count(attention, "card")) " " (if attention == 1 { "needs" } else { "need" }) " a look" } }
@@ -2343,7 +2345,7 @@ async fn lesson_page(
                     p.muted.small { "This lesson is in your decks. " a href=(format!("/decks/{}", d.id)) { "Open it" } }
                 } @else {
                     form method="post" action=(format!("/learn/{}/deck", lesson.slug)) {
-                        p.muted.small { "Learn this lesson with " (count(lesson.cards.len() as i64, "card")) "." }
+                        p.muted.small { "Learn this lesson with " (count(num::usize_i64(lesson.cards.len()), "card")) "." }
                         button.btn type="submit" { "Add as a deck" }
                     }
                 }
@@ -2681,7 +2683,7 @@ async fn deck_page(
         )
         .await?;
     let d = &summary.deck;
-    let attention = app.attention(&access, Some(id)).await?.len() as i64;
+    let attention = num::usize_i64(app.attention(&access, Some(id)).await?.len());
     let base = format!(
         "/decks/{id}?q={}&state={}",
         urlenc(q.q.as_deref().unwrap_or("")),
@@ -3721,7 +3723,7 @@ async fn attention_page(
                 p { "Nothing right now. The coach looks for cards you keep forgetting, cards that ask for several things at once, and cards that look alike." }
             } @else {
                 p.muted {
-                    "The coach noticed " (count(found.len() as i64, "card")) ". Open one to see why and what you can do. Nothing changes unless you pick something. "
+                    "The coach noticed " (count(num::usize_i64(found.len()), "card")) ". Open one to see why and what you can do. Nothing changes unless you pick something. "
                     a href="/learn/good-cards" { "What makes a good card" }
                 }
                 ul.list.cards {
@@ -3833,7 +3835,7 @@ async fn split_submit(
     match app.split_card(&access, id, drafts.clone(), keep).await {
         Ok(cards) => Ok(redirect_msg(
             format!("/decks/{}", card.deck_id),
-            &format!("Split into {}.", count(cards.len() as i64, "card")),
+            &format!("Split into {}.", count(num::usize_i64(cards.len()), "card")),
         )),
         Err(e) => {
             let msg = fixable(&e).ok_or(e)?;
@@ -4062,8 +4064,8 @@ async fn preset_view(
                             tr.current[w.current] {
                                 th scope="row" { (format!("{:.0}%", w.retention * 100.0)) @if w.current { span.muted.small { " this preset" } } }
                                 td.num { (format!("{:.0}", w.minutes_per_day.max(0.0))) }
-                                td.num { (format::number(w.reviews_per_day.round() as i64)) }
-                                td.num { (format::number(w.remembered.round() as i64)) }
+                                td.num { (format::number(num::f64_i64(w.reviews_per_day.round()))) }
+                                td.num { (format::number(num::f64_i64(w.remembered.round()))) }
                             }
                         }
                     }
@@ -4394,7 +4396,7 @@ async fn password_update(
 /// Rounds a forecast the way people say it: whole cards below a hundred,
 /// two significant figures above.
 const fn about(n: f64) -> i64 {
-    let n = n.max(0.0).round() as i64;
+    let n = num::f64_i64(n.max(0.0).round());
     if n < 100 {
         return n;
     }
@@ -4414,22 +4416,22 @@ fn week_home(user: &User, today_due: i64, outlook: &Outlook, seconds_per_review:
     let clock = user.clock();
     let days: Vec<(chrono::NaiveDate, f64)> = (0..outlook::DAYS)
         .map(|i| {
-            let n = if i == 0 { today_due.max(0) as f64 } else { outlook.days[i] };
-            (clock.today() + chrono::Duration::days(i as i64), n)
+            let n = if i == 0 { num::i64_f64(today_due.max(0)) } else { outlook.days[i] };
+            (clock.today() + chrono::Duration::days(num::usize_i64(i)), n)
         })
         .collect();
     let tomorrow = outlook.days[1];
     // Tomorrow is settled once today is: only cards answered today can
     // still move it, so any fraction left means it is a forecast.
     let tomorrow_settled = (tomorrow - tomorrow.round()).abs() < 0.05;
-    let tomorrow_n = tomorrow.round() as i64;
-    let week = today_due.max(0) as f64 + outlook.later();
+    let tomorrow_n = num::f64_i64(tomorrow.round());
+    let week = num::i64_f64(today_due.max(0)) + outlook.later();
     let (low, high) = outlook.later_range();
     let (low, high) = (low + today_due.max(0), high + today_due.max(0));
-    let total = week.round() as i64;
-    let most = days.iter().map(|&(_, n)| n.round() as i64).max().unwrap_or(0).max(1);
+    let total = num::f64_i64(week.round());
+    let most = days.iter().map(|&(_, n)| num::f64_i64(n.round())).max().unwrap_or(0).max(1);
     let tip = |i: usize, date: chrono::NaiveDate, n: f64| {
-        let r = n.round() as i64;
+        let r = num::f64_i64(n.round());
         let words = if r == 0 { "nothing due".to_string() } else { count(r, "card") };
         let about = if i >= 2 && r > 0 { "about " } else { "" };
         format!("{}: {about}{words}", format::short_day(&clock, date))
@@ -4464,7 +4466,7 @@ fn week_home(user: &User, today_due: i64, outlook: &Outlook, seconds_per_review:
             @if total > 0 {
             div.week-bars role="img" aria-label=(format!("Cards due on each of the next seven days. {}", days.iter().enumerate().map(|(i, &(d, n))| tip(i, d, n)).collect::<Vec<_>>().join(", "))) {
                 @for (i, &(date, n)) in days.iter().enumerate() {
-                    @let r = n.round() as i64;
+                    @let r = num::f64_i64(n.round());
                     div.day.today[i == 0] title=(tip(i, date, n)) {
                         span.bar.empty[r == 0] style=(format!("height: {}%", (r * 100 / most).max(3))) data-n=(format::number(r)) {}
                         span.letter { (date.format("%a").to_string().chars().next().unwrap_or(' ')) }
@@ -4981,7 +4983,7 @@ async fn stats_page(
             h2 { "Today" }
             dl.stats-inline {
                 div { dt { (format::plural(s.cards_today, "Card")) " studied" } dd { (format::number(s.cards_today)) } }
-                div { dt { (format::plural(s.minutes_today.round() as i64, "Minute")) } dd { (s.minutes_today.round() as i64) } }
+                div { dt { (format::plural(num::f64_i64(s.minutes_today.round()), "Minute")) } dd { (num::f64_i64(s.minutes_today.round())) } }
                 div { dt { (format::plural(s.streak_days, "Day")) " in a row" } dd { (s.streak_days) } }
             }
             h2 { "Memory" }
@@ -5107,16 +5109,16 @@ fn desk_stats(d: &DeskStats) -> Markup {
         None => "/study".into(),
     };
     let (week_total, week_passed) = d.history.weeks.last().copied().unwrap_or((0, 0));
-    let this_week = (week_total > 0).then(|| week_passed as f64 / week_total as f64);
+    let this_week = (week_total > 0).then(|| num::i64_f64(week_passed) / num::i64_f64(week_total));
     let aims: Vec<f64> = d.retention.iter().map(|r| r.target).collect();
-    let aim = (!aims.is_empty()).then(|| aims.iter().sum::<f64>() / aims.len() as f64);
+    let aim = (!aims.is_empty()).then(|| aims.iter().sum::<f64>() / num::usize_f64(aims.len()));
     let worst = d.retention.iter().filter(|r| r.short()).min_by(|a, b| {
         (a.actual.unwrap_or(1.0) - a.target)
             .partial_cmp(&(b.actual.unwrap_or(1.0) - b.target))
             .unwrap_or(std::cmp::Ordering::Equal)
     });
     let last7 = d.history.days.iter().rev().take(7).filter(|(_, n)| *n > 0).count();
-    let minutes = s.seconds_per_review.map(|sec| sec * s.due_now as f64 / 60.0);
+    let minutes = s.seconds_per_review.map(|sec| sec * num::i64_f64(s.due_now) / 60.0);
     let weeks: Vec<String> = d.history.weeks.iter().map(|(t, p)| format!("{t},{p}")).collect();
     let days: Vec<String> = d.history.days.iter().map(|(_, n)| n.to_string()).collect();
     let fc: Vec<String> = s.forecast.iter().map(|(_, n)| n.to_string()).collect();
@@ -5173,7 +5175,7 @@ fn desk_stats(d: &DeskStats) -> Markup {
                     (coach_note(&d.notes[0], "/stats"))
                     @if d.notes.len() > 1 {
                         details.more-notes {
-                            summary { (count(d.notes.len() as i64 - 1, "more note")) }
+                            summary { (count(num::usize_i64(d.notes.len()) - 1, "more note")) }
                             @for n in &d.notes[1..] { (coach_note(n, "/stats")) }
                         }
                     }
@@ -5217,7 +5219,7 @@ fn desk_stats(d: &DeskStats) -> Markup {
                     aside.chart-side {
                         p.kicker { "What to do" }
                         @if let Some(w) = worst {
-                            p.small.warn-note { (deck_plain(&w.deck_name)) " is " (((w.target - w.actual.unwrap_or(w.target)) * 100.0).round() as i64) " points below its aim." }
+                            p.small.warn-note { (deck_plain(&w.deck_name)) " is " (num::f64_i64(((w.target - w.actual.unwrap_or(w.target)) * 100.0).round())) " points below its aim." }
                             a.small href="/attention" { "Open Needs a look" }
                         } @else {
                             p.small { "Every deck is close to its aim." }

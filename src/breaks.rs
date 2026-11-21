@@ -18,6 +18,8 @@
 //! months of study (see the study-breaks notes); real timing data should
 //! retune them.
 
+use crate::num;
+
 /// The first work stretch, in minutes of time on cards.
 pub const START_WORK_MIN: f64 = 25.0;
 /// Learned stretches stay inside this range.
@@ -152,17 +154,17 @@ pub fn replay(steps: &[Step], watch_from: i64) -> State {
             st.breaks += 1;
             st.rested_after = Some(st.worked_min);
             st.worked_min = 0.0;
-            st.slowness *= (-(rest_ms as f64) / 60_000.0 / RECOVERY_MIN).exp();
+            st.slowness *= (-num::i64_f64(rest_ms) / 60_000.0 / RECOVERY_MIN).exp();
         }
         if s.at <= watch_from {
             st.worked_min = 0.0;
         } else {
-            st.worked_min += work_ms as f64 / 60_000.0;
+            st.worked_min += num::i64_f64(work_ms) / 60_000.0;
         }
         if let (Some(t), Some(usual)) = (s.think_ms.filter(|t| *t > 0), s.usual)
             && away < AWAY_MEASURED_MS
         {
-            let slower = ((t as f64).ln() - usual).clamp(-CLIP, CLIP);
+            let slower = (num::i64_f64(t).ln() - usual).clamp(-CLIP, CLIP);
             st.slowness = (1.0 - WEIGHT) * st.slowness + WEIGHT * slower;
         }
         prev = Some(s.at);
@@ -193,7 +195,12 @@ pub fn suggest(st: &State, r: Rhythm) -> Option<Suggestion> {
     let k = st.breaks + 1;
     let long = k.is_multiple_of(LONG_EVERY) || (k % LONG_EVERY == LONG_EVERY - 1 && st.slowness >= SLUMP);
     let minutes = if long { r.short_min() * LONG_TIMES } else { r.short_min() };
-    Some(Suggestion { worked: w.round() as i64, minutes: minutes.min(MAX_BREAK_MIN).round() as i64, long, slowing })
+    Some(Suggestion {
+        worked: num::f64_i64(w.round()),
+        minutes: num::f64_i64(minutes.min(MAX_BREAK_MIN).round()),
+        long,
+        slowing,
+    })
 }
 
 /// Was the latest answer the first after a pause the user took on their
@@ -216,7 +223,7 @@ pub fn card_usuals(answers: &[(i64, Option<i64>)]) -> Vec<Option<f64>> {
             let e = seen.entry(card).or_insert((0.0, 0));
             let usual = (e.1 >= MIN_HISTORY).then(|| e.0 / f64::from(e.1));
             if let Some(ms) = ms.filter(|ms| *ms > 0) {
-                e.0 += (ms as f64).ln();
+                e.0 += num::i64_f64(ms).ln();
                 e.1 += 1;
             }
             usual
@@ -233,7 +240,7 @@ mod tests {
     impl Noise {
         fn next(&mut self) -> f64 {
             self.0 = self.0.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
-            ((self.0 >> 11) as f64) / ((1u64 << 53) as f64)
+            num::u64_f64(self.0 >> 11) / num::u64_f64(1u64 << 53)
         }
         /// Roughly normal, from twelve uniforms.
         fn normal(&mut self) -> f64 {
@@ -252,10 +259,10 @@ mod tests {
         let (mut t, mut worked) = (start * 1000, 0.0);
         while worked < minutes * 60_000.0 {
             let extra = if worked >= slow_from * 60_000.0 { slow } else { 0.0 };
-            let think = (USUAL_MS * (0.35 * n.normal() + extra).exp()) as i64;
+            let think = num::f64_i64(USUAL_MS * (0.35 * n.normal() + extra).exp());
             let answer = 2000;
             t += think + answer;
-            worked += (think + answer) as f64;
+            worked += num::i64_f64(think + answer);
             out.push(Step {
                 at: t / 1000,
                 think_ms: Some(think),
@@ -341,7 +348,7 @@ mod tests {
         s[n].away_ms = Some(30_000);
         s[n].think_ms = Some(30_000);
         let st2 = replay(&s, 0);
-        let more = (30_000.0 + 30_000.0 - was as f64) / 60_000.0;
+        let more = (30_000.0 + 30_000.0 - num::i64_f64(was)) / 60_000.0;
         assert!((st2.worked_min - st.worked_min - more).abs() < 0.01);
         assert!(st2.slowness.abs() < 0.05);
     }

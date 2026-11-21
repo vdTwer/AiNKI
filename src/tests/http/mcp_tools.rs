@@ -59,7 +59,7 @@ async fn list_tools(app: &Arc<App>, token: &str) -> Vec<Value> {
 
 fn png_base64() -> String {
     use base64::Engine;
-    let img = image::RgbImage::from_fn(6, 4, |x, _| image::Rgb([(x * 40) as u8, 120, 200]));
+    let img = image::RgbImage::from_fn(6, 4, |x, _| image::Rgb([u8::try_from(x * 40).unwrap(), 120, 200]));
     let mut out = std::io::Cursor::new(Vec::new());
     img.write_to(&mut out, image::ImageFormat::Png).unwrap();
     base64::engine::general_purpose::STANDARD.encode(out.into_inner())

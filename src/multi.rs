@@ -7,6 +7,7 @@
 //! always hold a summary of its items (see [`summarize`]), so queues, counts
 //! and stats work as for any other card.
 
+use crate::num;
 use std::cmp::Ordering;
 use std::ops::Range;
 
@@ -259,8 +260,8 @@ impl CardItem {
         CardSched {
             state: self.card_state(),
             step: self.step,
-            stability: self.stability.map(|v| v as f32),
-            difficulty: self.difficulty.map(|v| v as f32),
+            stability: self.stability.map(num::f64_f32),
+            difficulty: self.difficulty.map(num::f64_f32),
             due: self.due,
             last_review: self.last_review,
             reps: self.reps,
@@ -328,8 +329,8 @@ fn summarize(items: &[CardItem], card: &CardSched) -> CardSched {
         .iter()
         .filter(|i| i.stability.is_some())
         .min_by(|a, b| a.stability.partial_cmp(&b.stability).unwrap_or(Ordering::Equal));
-    out.stability = weakest.and_then(|i| i.stability).map(|v| v as f32);
-    out.difficulty = weakest.and_then(|i| i.difficulty).map(|v| v as f32);
+    out.stability = weakest.and_then(|i| i.stability).map(num::f64_f32);
+    out.difficulty = weakest.and_then(|i| i.difficulty).map(num::f64_f32);
     out
 }
 
@@ -397,7 +398,7 @@ impl App {
             match pick[pos] {
                 Some(n) => {
                     sqlx::query("UPDATE card_items SET position = ?, text = ? WHERE id = ?")
-                        .bind(pos as i64)
+                        .bind(num::usize_i64(pos))
                         .bind(text)
                         .bind(old[n].id)
                         .execute(&mut *tx)
@@ -411,7 +412,7 @@ impl App {
                          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     )
                     .bind(card.id)
-                    .bind(pos as i64)
+                    .bind(num::usize_i64(pos))
                     .bind(text)
                     .bind(s.state as i64)
                     .bind(s.step)
@@ -497,8 +498,8 @@ impl App {
         }
 
         let before = card.sched();
-        let n_asked = asked.iter().filter(|a| **a).count() as i64;
-        let n_missed = missed.iter().filter(|m| **m).count() as i64;
+        let n_asked = num::usize_i64(asked.iter().filter(|a| **a).count());
+        let n_missed = num::usize_i64(missed.iter().filter(|m| **m).count());
         let mut c = summarize(&items, &before);
         c.last_review = Some(clock.now);
         c.reps = before.reps + 1;

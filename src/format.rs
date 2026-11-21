@@ -1,6 +1,7 @@
 //! How numbers, intervals and dates are written. One place, so every page
 //! (and the MCP answers) says the same thing the same way.
 
+use crate::num;
 use chrono::Datelike;
 
 use crate::scheduler::Clock;
@@ -39,13 +40,13 @@ pub fn percent(v: Option<f64>) -> String {
 
 /// Whole minutes, rounded: "about 3 minutes"; "under a minute" below one.
 pub fn minutes(m: f64) -> String {
-    let n = m.round() as i64;
+    let n = num::f64_i64(m.round());
     if n < 1 { "under a minute".into() } else { format!("about {}", count(n, "minute")) }
 }
 
 /// Short label for a wait, e.g. "10m", "3d", "2.1mo".
 pub fn interval(secs: i64) -> String {
-    let secs = secs.max(0) as f64;
+    let secs = num::i64_f64(secs.max(0));
     if secs < 60.0 {
         "<1m".into()
     } else if secs < 3600.0 {

@@ -1,5 +1,6 @@
 //! Accounts, browser sessions, API tokens and per-request access control.
 
+use crate::num;
 use std::collections::HashSet;
 
 use argon2::{Argon2, PasswordHash, PasswordHasher, PasswordVerifier};
@@ -76,7 +77,7 @@ impl User {
     }
 
     pub fn clock(&self) -> crate::scheduler::Clock {
-        crate::scheduler::Clock::new(now(), self.tz(), self.rollover_hour.clamp(0, 23) as u32)
+        crate::scheduler::Clock::new(now(), self.tz(), num::i64_u32(self.rollover_hour.clamp(0, 23)))
     }
 }
 

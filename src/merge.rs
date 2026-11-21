@@ -2,6 +2,7 @@
 //! decks. The decks it is made from are only read, never changed, unless
 //! the person asks to delete them: then their cards move instead.
 
+use crate::num;
 use std::collections::{HashMap, HashSet};
 
 use serde::Serialize;
@@ -88,7 +89,7 @@ impl App {
         let how = Fill { keep_progress: input.keep_progress, delete_sources: input.delete_sources };
         match self.fill(access, &deck, &sources, how).await {
             Ok((cards, duplicates)) => {
-                let deleted_decks = if how.delete_sources { sources.len() as i64 } else { 0 };
+                let deleted_decks = if how.delete_sources { num::usize_i64(sources.len()) } else { 0 };
                 Ok(Merged { deck, cards, duplicates, deleted_decks })
             }
             Err(e) => {

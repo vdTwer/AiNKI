@@ -4,6 +4,7 @@
 //! Timed questions and typed answers are set per preset and handled on
 //! the study page; a timeout is recorded as Again (see `note_answer`).
 
+use crate::num;
 use chrono::{Duration, NaiveTime, TimeZone, Timelike};
 use serde::Serialize;
 
@@ -69,7 +70,7 @@ pub fn quiet_until(user: &User, at: i64) -> Option<i64> {
     if !in_window(from, to, i64::from(local.hour())) {
         return None;
     }
-    let end_time = NaiveTime::from_hms_opt(to.clamp(0, 23) as u32, 0, 0)?;
+    let end_time = NaiveTime::from_hms_opt(num::i64_u32(to.clamp(0, 23)), 0, 0)?;
     let mut day = local.date_naive();
     loop {
         // A local time that doesn't exist (DST) is taken an hour later.
@@ -134,11 +135,11 @@ pub struct Confidence {
 
 impl Confidence {
     pub fn sure_pct(&self) -> Option<f64> {
-        (self.sure > 0).then(|| self.sure_recalled as f64 * 100.0 / self.sure as f64)
+        (self.sure > 0).then(|| num::i64_f64(self.sure_recalled) * 100.0 / num::i64_f64(self.sure))
     }
 
     pub fn unsure_pct(&self) -> Option<f64> {
-        (self.unsure > 0).then(|| self.unsure_recalled as f64 * 100.0 / self.unsure as f64)
+        (self.unsure > 0).then(|| num::i64_f64(self.unsure_recalled) * 100.0 / num::i64_f64(self.unsure))
     }
 }
 

@@ -2,6 +2,7 @@
 //! 16 gray levels, which is what most e-ink panels can show, so pictures look
 //! the same on a Kindle-style screen as on a phone.
 
+use crate::num;
 use std::path::PathBuf;
 
 use image::{GrayImage, ImageDecoder, ImageReader, Luma, imageops::FilterType};
@@ -68,7 +69,7 @@ fn dither(img: &mut GrayImage, levels: u8) {
         }
     }
     for (p, v) in img.pixels_mut().zip(buf) {
-        *p = Luma([v.clamp(0.0, 255.0) as u8]);
+        *p = Luma([num::f32_u8(v)]);
     }
 }
 
@@ -102,7 +103,7 @@ pub fn process_image(data: &[u8]) -> Result<(Vec<u8>, u32, u32)> {
         let [r, g, b, a] = p.0;
         let a = f32::from(a) / 255.0;
         let l = 0.2126 * f32::from(r) + 0.7152 * f32::from(g) + 0.0722 * f32::from(b);
-        gray.put_pixel(x, y, Luma([(l * a + 255.0 * (1.0 - a)).round() as u8]));
+        gray.put_pixel(x, y, Luma([num::f32_u8((l * a + 255.0 * (1.0 - a)).round())]));
     }
     dither(&mut gray, GRAY_LEVELS);
     let mut out = Vec::new();
@@ -140,7 +141,7 @@ impl App {
         .bind(user_id)
         .bind(i64::from(w))
         .bind(i64::from(h))
-        .bind(png.len() as i64)
+        .bind(num::usize_i64(png.len()))
         .bind(now())
         .execute(&self.db)
         .await?;
@@ -221,7 +222,7 @@ mod tests {
     fn processes_color_png_to_gray_levels() {
         let mut img = image::RgbaImage::new(2000, 1000);
         for (x, _, p) in img.enumerate_pixels_mut() {
-            *p = image::Rgba([(x % 256) as u8, 80, 200, 255]);
+            *p = image::Rgba([u8::try_from(x % 256).unwrap(), 80, 200, 255]);
         }
         let mut png = Vec::new();
         img.write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png).unwrap();

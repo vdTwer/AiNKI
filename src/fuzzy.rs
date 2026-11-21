@@ -8,6 +8,8 @@
 //! match a word of the text with a typo or two ("neuroantomy" finds
 //! "Neuroanatomy"), for a lower score. Case and common accents are ignored.
 
+use crate::num;
+
 /// Letters looked at per text. Longer texts are cut; the start is what counts.
 const MAX_TEXT: usize = 400;
 const MAX_WORD: usize = 48;
@@ -107,7 +109,7 @@ fn in_order(q: &[char], raw: &[char], t: &[char]) -> Option<i32> {
     for j in 0..n {
         if t[j] == q[0] {
             // Letters skipped before the first match cost a little too.
-            let lead = if j == 0 { 0 } else { (GAP_OPEN + (j as i32 - 1) * GAP).min(GAP_MAX) };
+            let lead = if j == 0 { 0 } else { (GAP_OPEN + (num::usize_i32(j) - 1) * GAP).min(GAP_MAX) };
             prev[j] = MATCH + position_bonus(raw, j) - lead;
         }
     }
@@ -162,7 +164,8 @@ fn with_typos(q: &[char], t: &[char]) -> Option<i32> {
         }
         let word = &t[start..i.min(start + MAX_WORD)];
         if let Some(edits) = prefix_distance(q, word, allowed) {
-            let s = q.len() as i32 * MATCH / 2 - edits as i32 * 12 + if start == 0 { START } else { BOUNDARY };
+            let s = num::usize_i32(q.len()) * MATCH / 2 - num::usize_i32(edits) * 12
+                + if start == 0 { START } else { BOUNDARY };
             best = Some(best.map_or(s, |b| b.max(s)));
         }
     }

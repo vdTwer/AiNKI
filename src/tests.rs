@@ -1781,7 +1781,7 @@ async fn smart_breaks_keep_a_rhythm_and_learn_it() {
                      VALUES (?, ?, ?, 3, ?, 2, 3, 0, 'web', ?, 2000, 0)",
                 )
                 .bind(user_id)
-                .bind(cards[(i % 20) as usize])
+                .bind(cards[crate::num::i64_usize(i % 20)])
                 .bind(deck_id)
                 .bind(end - (n - 1 - i) * 20)
                 .bind(think)

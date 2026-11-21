@@ -9,6 +9,7 @@
 //!
 //! The card coach (`coach`) looks at single cards; this looks at the whole.
 
+use crate::num;
 use std::collections::{HashMap, HashSet};
 
 use chrono::{Duration, Timelike};
@@ -126,7 +127,7 @@ pub struct Recall {
 
 impl Recall {
     pub fn rate(self) -> Option<f64> {
-        (self.reviews > 0).then(|| self.remembered as f64 / self.reviews as f64)
+        (self.reviews > 0).then(|| num::i64_f64(self.remembered) / num::i64_f64(self.reviews))
     }
 
     /// The rate, once there are at least `min` reviews.
@@ -245,7 +246,7 @@ impl Signals {
     }
 
     fn new_per_day_7d(&self) -> f64 {
-        self.new_started_7d as f64 / 7.0
+        num::i64_f64(self.new_started_7d) / 7.0
     }
 
     /// The new-card limit of the presets in use, summed over decks.
@@ -370,7 +371,7 @@ fn exam_close(s: &Signals) -> Option<Advice> {
     }
     let pace = s.deck_preset(d).map(|p| p.new_per_day).unwrap_or(0);
     // Two days before the exam are for reviewing only.
-    let need = (d.new_left as f64 / (left - 2).max(1) as f64).ceil() as i64;
+    let need = num::f64_i64((num::i64_f64(d.new_left) / num::i64_f64((left - 2).max(1))).ceil());
     if need <= pace {
         return None;
     }
@@ -391,10 +392,10 @@ fn pile_up(s: &Signals) -> Option<Advice> {
         return None;
     }
     let pace = s.usual().unwrap_or(100.0).max(20.0);
-    if (s.overdue as f64) <= 2.0 * pace {
+    if num::i64_f64(s.overdue) <= 2.0 * pace {
         return None;
     }
-    let spread = (s.overdue as f64 / pace).ceil() as i64;
+    let spread = num::f64_i64((num::i64_f64(s.overdue) / pace).ceil());
     Some(Advice {
         catch_up_toggle: Some(true),
         ..note(
@@ -464,10 +465,10 @@ fn cause(s: &Signals, deck: Option<&DeckSignal>) -> (String, Option<Link>) {
         );
     }
     let (new_7d, limit) = match deck {
-        Some(d) => (d.new_started_7d as f64, s.deck_preset(d).map(|p| p.new_per_day).unwrap_or(0)),
-        None => (s.new_started_7d as f64, s.new_limit()),
+        Some(d) => (num::i64_f64(d.new_started_7d), s.deck_preset(d).map(|p| p.new_per_day).unwrap_or(0)),
+        None => (num::i64_f64(s.new_started_7d), s.new_limit()),
     };
-    if limit > 0 && new_7d / 7.0 >= limit as f64 * 0.8 {
+    if limit > 0 && new_7d / 7.0 >= num::i64_f64(limit) * 0.8 {
         return (
             "Many new cards came in this week. Fewer new cards for a while usually brings it back.".into(),
             link(deck.map_or("/presets".into(), |d| format!("/decks/{}", d.id)), "Change new cards"),
@@ -537,7 +538,7 @@ fn sliding(s: &Signals) -> Option<Advice> {
     if now > before - 0.06 {
         return None;
     }
-    let why = if s.new_started_7d as f64 / 7.0 >= 1.0 && s.new_limit() > 0 {
+    let why = if num::i64_f64(s.new_started_7d) / 7.0 >= 1.0 && s.new_limit() > 0 {
         " Many new cards came in lately; a few calmer days usually bring it back."
     } else if s.days_studied_7 <= 3 {
         " You studied on fewer days; short daily rounds bring it back."
@@ -557,7 +558,7 @@ fn too_sure(s: &Signals) -> Option<Advice> {
     if r >= 0.85 {
         return None;
     }
-    let one_in = (1.0 / (1.0 - r)).round() as i64;
+    let one_in = num::f64_i64((1.0 / (1.0 - r)).round());
     Some(note(
         Rule::TooSure,
         format!(
@@ -574,7 +575,7 @@ fn wave_coming(s: &Signals) -> Option<Advice> {
     if s.new_started_7d == 0 || s.next_days.is_empty() {
         return None;
     }
-    let ahead = s.next_days.iter().sum::<i64>() as f64 / s.next_days.len() as f64;
+    let ahead = num::i64_f64(s.next_days.iter().sum::<i64>()) / num::usize_f64(s.next_days.len());
     if ahead < usual * 1.3 || ahead - usual < 10.0 {
         return None;
     }
@@ -582,8 +583,8 @@ fn wave_coming(s: &Signals) -> Option<Advice> {
         Rule::WaveComing,
         format!(
             "The next week brings about {} reviews a day, {} more than now. Pause new cards for a few days.",
-            ahead.round() as i64,
-            (ahead - usual).round() as i64
+            num::f64_i64(ahead.round()),
+            num::f64_i64((ahead - usual).round())
         ),
         link("/presets", "Change new cards"),
     ))
@@ -599,8 +600,8 @@ fn too_fast(s: &Signals) -> Option<Advice> {
         Rule::TooFast,
         format!(
             "You start about {} new cards a day. Each brings about ten reviews in its first month, so your reviews will grow toward {} a day.",
-            new.round() as i64,
-            (new * REVIEWS_PER_NEW_CARD).round() as i64
+            num::f64_i64(new.round()),
+            num::f64_i64((new * REVIEWS_PER_NEW_CARD).round())
         ),
         link("/learn/backlog", "Why"),
     ))
@@ -608,13 +609,13 @@ fn too_fast(s: &Signals) -> Option<Advice> {
 
 fn heavy_day(s: &Signals) -> Option<Advice> {
     let usual = s.usual()?;
-    (s.due_today as f64 >= usual * 1.5 && s.minutes_due > 30).then(|| {
+    (num::i64_f64(s.due_today) >= usual * 1.5 && s.minutes_due > 30).then(|| {
         note(
             Rule::HeavyDay,
             format!(
                 "Today is heavier than usual: {} against about {}. Do the reviews first; new cards can wait until tomorrow.",
                 cards(s.due_today),
-                usual.round() as i64
+                num::f64_i64(usual.round())
             ),
             None,
         )
@@ -658,7 +659,7 @@ fn long_sittings(s: &Signals) -> Option<Advice> {
             Rule::LongSittings,
             format!(
                 "Your sessions ran about {} minutes last week. A short break every half hour keeps you sharp.",
-                m.round() as i64
+                num::f64_i64(m.round())
             ),
             link("/settings#study", "Suggest breaks"),
         )
@@ -672,7 +673,7 @@ fn slow_answers(s: &Signals) -> Option<Advice> {
             Rule::SlowAnswers,
             format!(
                 "A card takes you about {} seconds. Cards that ask for less are quicker and stick better.",
-                secs.round() as i64
+                num::f64_i64(secs.round())
             ),
             link("/learn/good-cards", "Why"),
         )
@@ -746,7 +747,7 @@ fn tight_limit(s: &Signals) -> Option<Advice> {
         .presets
         .iter()
         .filter(|p| p.used && p.new_per_day > 0)
-        .find(|p| (p.reviews_per_day as f64) < p.new_per_day as f64 * REVIEWS_PER_NEW_CARD)?;
+        .find(|p| num::i64_f64(p.reviews_per_day) < num::i64_f64(p.new_per_day) * REVIEWS_PER_NEW_CARD)?;
     Some(note(
         Rule::TightLimit,
         format!(
@@ -801,14 +802,14 @@ pub fn session_lengths(answers: &[(i64, i64)]) -> Vec<f64> {
         start = match start {
             Some((first, last)) if at - last < SESSION_GAP_SECS => Some((first, end)),
             Some((first, last)) => {
-                out.push((last - first) as f64 / 60.0);
+                out.push(num::i64_f64(last - first) / 60.0);
                 Some((at, end))
             }
             None => Some((at, end)),
         };
     }
     if let Some((first, last)) = start {
-        out.push((last - first) as f64 / 60.0);
+        out.push(num::i64_f64(last - first) / 60.0);
     }
     out
 }
@@ -902,13 +903,15 @@ impl App {
             catch_up: user.catch_up,
             breaks_on: user.session_minutes != 0,
             next_days: known.stats.forecast.iter().skip(1).take(7).map(|(_, n)| *n).collect(),
-            leeches: known.attention.iter().filter(|a| a.flags.iter().any(|f| f.kind == Kind::Leech)).count() as i64,
+            leeches: num::usize_i64(
+                known.attention.iter().filter(|a| a.flags.iter().any(|f| f.kind == Kind::Leech)).count(),
+            ),
             optimizable_reviews: self.optimizable_reviews(access).await?,
             ever_optimized: user.optimized_at.is_some() || user.fsrs_params_updated_at.is_some(),
             auto_optimize: user.auto_optimize,
             ..Default::default()
         };
-        s.other_flags = known.attention.len() as i64 - s.leeches;
+        s.other_flags = num::usize_i64(known.attention.len()) - s.leeches;
 
         let visible: HashSet<i64> = known.decks.iter().map(|d| d.deck.id).collect();
         let mut per_day = [0i64; 14];
@@ -920,13 +923,13 @@ impl App {
         for r in rows.iter().filter(|r| visible.contains(&r.deck_id)) {
             let ago = day_of(r.reviewed_at);
             if ago < 14 {
-                per_day[ago as usize] += 1;
+                per_day[num::i64_usize(ago)] += 1;
             }
             if ago < 7 {
                 s.reviews_7 += 1;
                 answers_7d.push((r.reviewed_at, r.duration_ms.unwrap_or(0)));
                 if let Some(ms) = r.duration_ms.filter(|ms| *ms > 0) {
-                    times_7d.push(ms.min(MAX_ANSWER_MS) as f64 / 1000.0);
+                    times_7d.push(num::i64_f64(ms.min(MAX_ANSWER_MS)) / 1000.0);
                 }
                 if r.state_before == 0 {
                     new_7d.entry(r.deck_id).or_default().insert(r.card_id);
@@ -951,21 +954,21 @@ impl App {
                 add(&mut s.recall_before);
             }
         }
-        let study_days: Vec<f64> = per_day.iter().filter(|n| **n > 0).map(|n| *n as f64).collect();
-        s.study_days_14 = study_days.len() as i64;
+        let study_days: Vec<f64> = per_day.iter().filter(|n| **n > 0).map(|n| num::i64_f64(*n)).collect();
+        s.study_days_14 = num::usize_i64(study_days.len());
         s.usual_per_day = median(study_days).unwrap_or(0.0);
-        s.days_studied_7 = per_day[..7].iter().filter(|n| **n > 0).count() as i64;
-        s.new_started_7d = new_7d.values().map(|c| c.len() as i64).sum();
+        s.days_studied_7 = num::usize_i64(per_day[..7].iter().filter(|n| **n > 0).count());
+        s.new_started_7d = new_7d.values().map(|c| num::usize_i64(c.len())).sum();
         s.answer_seconds = (times_7d.len() >= 20).then(|| median(times_7d)).flatten();
         // Today's session may still be going; only whole ones count.
         answers_7d.retain(|(at, _)| *at < start_today);
         let sessions = session_lengths(&answers_7d);
         s.session_minutes = (sessions.len() >= 3).then(|| median(sessions)).flatten();
         s.target = if s.recall_30d.reviews > 0 {
-            target_sum / s.recall_30d.reviews as f64
+            target_sum / num::i64_f64(s.recall_30d.reviews)
         } else {
             let t: Vec<f64> = deck_target.values().copied().collect();
-            if t.is_empty() { 0.9 } else { t.iter().sum::<f64>() / t.len() as f64 }
+            if t.is_empty() { 0.9 } else { t.iter().sum::<f64>() / num::usize_f64(t.len()) }
         };
         if user.confidence_check {
             let c = self.confidence(access, None).await?;
@@ -1020,14 +1023,14 @@ impl App {
                 target: deck_target.get(&d.deck.id).copied().unwrap_or(0.9),
                 due: d.learning_due + uncapped.get(&d.deck.id).copied().unwrap_or(0),
                 new_left: d.new,
-                new_started_7d: new_7d.get(&d.deck.id).map_or(0, |c| c.len() as i64),
+                new_started_7d: new_7d.get(&d.deck.id).map_or(0, |c| num::usize_i64(c.len())),
                 exam_in_days: d.deck.exam().map(|e| (e - today).num_days()).filter(|n| *n >= 0),
                 days_since_review: last.get(&d.deck.id).map(|at| day_of(*at)),
                 flagged: flagged.get(&d.deck.id).copied().unwrap_or(0),
             });
         }
         let seconds = known.stats.seconds_per_review.unwrap_or(12.0);
-        s.minutes_due = (s.due_today as f64 * seconds / 60.0).ceil() as i64;
+        s.minutes_due = num::f64_i64((num::i64_f64(s.due_today) * seconds / 60.0).ceil());
 
         for p in &presets {
             let decks: Vec<&DeckSummary> = known.decks.iter().filter(|d| d.deck.preset_id == p.id).collect();

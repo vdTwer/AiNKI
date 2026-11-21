@@ -4,6 +4,7 @@
 //! card lifecycle around it: learning/relearning steps, day boundaries in the
 //! user's timezone, interval fuzz, maximum intervals and exam-date caps.
 
+use crate::num;
 use chrono::{Duration, NaiveDate, NaiveTime, TimeZone, Utc};
 use chrono_tz::Tz;
 use fsrs::{FSRS, MemoryState};
@@ -192,36 +193,36 @@ pub fn decay_for(params: &[f32]) -> f32 {
 pub fn retrievability(card: &CardSched, params: &[f32], clock: &Clock) -> Option<f32> {
     let memory = card.memory()?;
     let last = card.last_review?;
-    let elapsed = ((clock.now - last).max(0) as f32) / 86_400.0;
+    let elapsed = num::i64_f32((clock.now - last).max(0)) / 86_400.0;
     Some(fsrs::current_retrievability(memory, elapsed, decay_for(params)))
 }
 
 /// Deterministic pseudo-random number in [0, 1) so previews match answers.
 fn fuzz_seed(card_id: i64, reps: i64) -> f64 {
-    let mut x = (card_id as u64)
+    let mut x = num::i64_u64(card_id)
         .wrapping_mul(0x9E37_79B9_7F4A_7C15)
-        .wrapping_add((reps as u64).wrapping_mul(0xBF58_476D_1CE4_E5B9));
+        .wrapping_add(num::i64_u64(reps).wrapping_mul(0xBF58_476D_1CE4_E5B9));
     x ^= x >> 31;
     x = x.wrapping_mul(0x94D0_49BB_1331_11EB);
     x ^= x >> 29;
-    (x >> 11) as f64 / (1u64 << 53) as f64
+    num::u64_f64(x >> 11) / num::u64_f64(1u64 << 53)
 }
 
 /// Interval fuzz as used by Anki and the FSRS reference implementations:
 /// spreads reviews so cards added together don't stay clumped together.
 fn fuzzed_interval(interval: f64, max_interval: i64, seed: f64) -> i64 {
     if interval < 2.5 {
-        return (interval.round() as i64).clamp(1, max_interval.max(1));
+        return num::f64_i64(interval.round()).clamp(1, max_interval.max(1));
     }
     const RANGES: [(f64, f64, f64); 3] = [(2.5, 7.0, 0.15), (7.0, 20.0, 0.1), (20.0, f64::MAX, 0.05)];
     let mut delta = 1.0;
     for (start, end, factor) in RANGES {
         delta += factor * (interval.min(end) - start).max(0.0);
     }
-    let mut min_ivl = ((interval - delta).round() as i64).max(2);
-    let max_ivl = (interval + delta).round() as i64;
+    let mut min_ivl = num::f64_i64((interval - delta).round()).max(2);
+    let max_ivl = num::f64_i64((interval + delta).round());
     min_ivl = min_ivl.min(max_ivl);
-    let ivl = min_ivl + (seed * ((max_ivl - min_ivl + 1) as f64)).floor() as i64;
+    let ivl = min_ivl + num::f64_i64((seed * num::i64_f64(max_ivl - min_ivl + 1)).floor());
     ivl.clamp(1, max_interval.max(1))
 }
 
@@ -246,7 +247,8 @@ pub fn answer(
     clock: &Clock,
 ) -> anyhow::Result<Outcome> {
     let elapsed_days = card.last_review.map(|last| clock.days_between(last, clock.now).max(0)).unwrap_or(0);
-    let next = fsrs.next_states(card.memory(), cfg.desired_retention, elapsed_days.min(i64::from(u32::MAX)) as u32)?;
+    let next =
+        fsrs.next_states(card.memory(), cfg.desired_retention, num::i64_u32(elapsed_days.min(i64::from(u32::MAX))))?;
     let chosen = match rating {
         Rating::Again => &next.again,
         Rating::Hard => &next.hard,
@@ -267,7 +269,7 @@ pub fn answer(
         let mut days = fuzzed_interval(f64::from(chosen.interval), max_interval, seed);
         // Keep the button order sensible: Easy should never be sooner than Good.
         if rating == Rating::Easy {
-            let good_days = f64::from(next.good.interval).round().max(1.0) as i64;
+            let good_days = num::f64_i64(f64::from(next.good.interval).round().max(1.0));
             days = days.max((good_days + 1).min(max_interval));
         }
         out.state = CardState::Review;
@@ -295,10 +297,10 @@ pub fn answer(
         }
         CardState::New | CardState::Learning | CardState::Relearning => {
             let steps = if card.state == CardState::Relearning { &cfg.relearning_steps } else { &cfg.learning_steps };
-            let step = if card.state == CardState::New { 0 } else { card.step.max(0) as usize };
+            let step = if card.state == CardState::New { 0 } else { num::i64_usize(card.step.max(0)) };
             let in_steps = |out: &mut CardSched, state: CardState, idx: usize, delay: i64| -> i64 {
                 out.state = state;
-                out.step = idx as i64;
+                out.step = num::usize_i64(idx);
                 out.due = clock.now + delay;
                 delay
             };
@@ -312,7 +314,7 @@ pub fn answer(
                     Rating::Hard => {
                         let idx = step.min(steps.len() - 1);
                         let delay = if idx == 0 && steps.len() == 1 {
-                            ((steps[0] as f64 * 1.5) as i64).min(steps[0] + 86_400)
+                            num::f64_i64(num::i64_f64(steps[0]) * 1.5).min(steps[0] + 86_400)
                         } else if idx == 0 {
                             i64::midpoint(steps[0], steps[1])
                         } else {
@@ -358,10 +360,10 @@ pub fn parse_steps(s: &str) -> Result<Vec<i64>, String> {
             if secs <= 0.0 {
                 return Err(format!("step '{t}' must be positive"));
             }
-            if secs > MAX_STEP_SECS as f64 {
+            if secs > num::i64_f64(MAX_STEP_SECS) {
                 return Err(format!("step '{t}' is too long (at most 365d)"));
             }
-            let secs = secs as i64;
+            let secs = num::f64_i64(secs);
             Ok(secs)
         })
         .collect()

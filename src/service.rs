@@ -2,6 +2,7 @@
 //! both thin layers over these functions, so agents can do whatever humans can
 //! (within the limits of their token).
 
+use crate::num;
 use std::collections::HashMap;
 
 use chrono::{Duration, NaiveDate};
@@ -21,7 +22,7 @@ use crate::{
 /// How a deck with this preset schedules its cards.
 pub(crate) fn sched_config_for(p: &Preset, deck: &Deck) -> SchedConfig {
     SchedConfig {
-        desired_retention: p.desired_retention as f32,
+        desired_retention: num::f64_f32(p.desired_retention),
         learning_steps: scheduler::parse_steps(&p.learning_steps).unwrap_or_default(),
         relearning_steps: scheduler::parse_steps(&p.relearning_steps).unwrap_or_default(),
         max_interval: p.max_interval,
@@ -137,8 +138,8 @@ impl Card {
         CardSched {
             state: CardState::from_i64(self.state),
             step: self.step,
-            stability: self.stability.map(|v| v as f32),
-            difficulty: self.difficulty.map(|v| v as f32),
+            stability: self.stability.map(num::f64_f32),
+            difficulty: self.difficulty.map(num::f64_f32),
             due: self.due,
             last_review: self.last_review,
             reps: self.reps,
@@ -1196,8 +1197,8 @@ impl App {
         });
         let prefer_new = new_left > 0
             && (rev_left == 0
-                || (new_done as f64 / (new_done + new_left) as f64)
-                    <= (rev_done as f64 / (rev_done + rev_left).max(1) as f64));
+                || (num::i64_f64(new_done) / num::i64_f64(new_done + new_left))
+                    <= (num::i64_f64(rev_done) / num::i64_f64((rev_done + rev_left).max(1))));
 
         let chosen = match (learning, review, new) {
             (Some(c), _, _) => Some(c),
@@ -1532,7 +1533,7 @@ impl App {
         // Forecast and recall chance: only the few numbers they need.
         let horizon = 14;
         let today = clock.today();
-        let horizon_end = clock.day_start(today + Duration::days(horizon as i64));
+        let horizon_end = clock.day_start(today + Duration::days(num::usize_i64(horizon)));
         let sql = format!(
             "SELECT deck_id, due, stability, last_review FROM cards
              WHERE user_id = ? AND deck_id IN ({ph}) AND state != 0 AND suspended = 0"
@@ -1549,14 +1550,14 @@ impl App {
         for (deck, due, stability, last_review) in learned {
             let decay = decays.get(&deck).copied().unwrap_or(fsrs::FSRS6_DEFAULT_DECAY);
             if due < horizon_end {
-                let day = (clock.date_of(due) - today).num_days().max(0) as usize;
+                let day = num::i64_usize((clock.date_of(due) - today).num_days().max(0));
                 if day < horizon {
                     forecast[day] += 1;
                 }
             }
             if let (Some(s), Some(last)) = (stability, last_review) {
-                let elapsed = ((clock.now - last).max(0) as f32) / 86_400.0;
-                let memory = fsrs::MemoryState { stability: s as f32, difficulty: 5.0 };
+                let elapsed = num::i64_f32((clock.now - last).max(0)) / 86_400.0;
+                let memory = fsrs::MemoryState { stability: num::f64_f32(s), difficulty: 5.0 };
                 r_sum += f64::from(fsrs::current_retrievability(memory, elapsed, decay));
                 r_n += 1;
             }
@@ -1564,7 +1565,7 @@ impl App {
         stats.forecast = forecast
             .into_iter()
             .enumerate()
-            .map(|(i, n)| ((today + Duration::days(i as i64)).format("%Y-%m-%d").to_string(), n))
+            .map(|(i, n)| ((today + Duration::days(num::usize_i64(i))).format("%Y-%m-%d").to_string(), n))
             .collect();
         if r_n > 0 {
             stats.average_retrievability = Some(r_sum / f64::from(r_n));
@@ -1593,16 +1594,16 @@ impl App {
         let (n, cards, ms, ..) = since(clock.start_of_today()).await?;
         stats.reviews_today = n;
         stats.cards_today = cards;
-        stats.minutes_today = (ms as f64 / 60_000.0 * 10.0).round() / 10.0;
+        stats.minutes_today = (num::i64_f64(ms) / 60_000.0 * 10.0).round() / 10.0;
         let (n, _, _, review_total, passed, timed_ms, timed) =
             since(clock.day_start(today - Duration::days(30))).await?;
         stats.reviews_30d = n;
         stats.retention_sample_30d = review_total;
         if review_total > 0 {
-            stats.true_retention_30d = Some(passed as f64 / review_total as f64);
+            stats.true_retention_30d = Some(num::i64_f64(passed) / num::i64_f64(review_total));
         }
         if timed >= 10 {
-            stats.seconds_per_review = Some(timed_ms as f64 / timed as f64 / 1000.0);
+            stats.seconds_per_review = Some(num::i64_f64(timed_ms) / num::i64_f64(timed) / 1000.0);
         }
 
         // Days in a row with a review, up to a year back; today counts once
@@ -1643,8 +1644,8 @@ impl App {
         let clock = access.user.clock();
         let today = clock.today();
         let first = today - Duration::days(HISTORY_DAYS - 1);
-        let mut days = vec![0i64; HISTORY_DAYS as usize];
-        let mut weeks = vec![(0i64, 0i64); (HISTORY_DAYS / 7) as usize];
+        let mut days = vec![0i64; num::i64_usize(HISTORY_DAYS)];
+        let mut weeks = vec![(0i64, 0i64); num::i64_usize(HISTORY_DAYS / 7)];
         if !deck_ids.is_empty() {
             let ph = placeholders(deck_ids.len());
             let sql = format!(
@@ -1661,9 +1662,9 @@ impl App {
                 if !(0..HISTORY_DAYS).contains(&i) {
                     continue;
                 }
-                days[i as usize] += 1;
+                days[num::i64_usize(i)] += 1;
                 if was_review {
-                    let w = &mut weeks[(i / 7) as usize];
+                    let w = &mut weeks[num::i64_usize(i / 7)];
                     w.0 += 1;
                     w.1 += i64::from(passed);
                 }
@@ -1673,7 +1674,7 @@ impl App {
             days: days
                 .into_iter()
                 .enumerate()
-                .map(|(i, n)| ((first + Duration::days(i as i64)).format("%Y-%m-%d").to_string(), n))
+                .map(|(i, n)| ((first + Duration::days(num::usize_i64(i))).format("%Y-%m-%d").to_string(), n))
                 .collect(),
             weeks,
         })

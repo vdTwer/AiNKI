@@ -5,6 +5,7 @@
 //! cloze notes become one card per cloze number. Review history is imported
 //! too, so FSRS memory states (and later the optimizer) can use it.
 
+use crate::num;
 use std::{
     collections::HashMap,
     io::{Cursor, Read},
@@ -268,7 +269,7 @@ fn parse_media_entries(buf: &[u8]) -> Vec<String> {
             break;
         }
         let Some(len) = read_varint(buf, &mut pos) else { break };
-        let end = pos + len as usize;
+        let end = pos + num::u64_usize(len);
         let Some(entry) = buf.get(pos..end) else { break };
         pos = end;
         // Inside MediaEntry, field 1 is the file name.
@@ -282,7 +283,7 @@ fn parse_media_entries(buf: &[u8]) -> Vec<String> {
                 }
                 2 => {
                     let Some(l) = read_varint(entry, &mut p) else { break };
-                    let e = p + l as usize;
+                    let e = p + num::u64_usize(l);
                     if k >> 3 == 1 {
                         name = String::from_utf8_lossy(entry.get(p..e).unwrap_or_default()).into();
                     }
@@ -547,7 +548,7 @@ impl App {
             let f1 = fields.get(1).map(String::as_str).unwrap_or("");
 
             let (front_html, back_html) = if !cloze_numbers(f0).is_empty() {
-                let n = (c.ord + 1) as u32;
+                let n = num::i64_u32(c.ord + 1);
                 let back = if f1.trim().is_empty() {
                     render_cloze(f0, None)
                 } else {
@@ -625,7 +626,7 @@ impl App {
                 };
                 let delta = prev.map(|p| clock.days_between(p, t).max(0)).unwrap_or(0);
                 prev = Some(t);
-                fsrs_reviews.push(fsrs::FSRSReview { rating: r.ease as u32, delta_t: delta as u32 });
+                fsrs_reviews.push(fsrs::FSRSReview { rating: num::i64_u32(r.ease), delta_t: num::i64_u32(delta) });
                 sqlx::query(
                     "INSERT INTO review_log (user_id, card_id, deck_id, rating, reviewed_at,
                         state_before, elapsed_days, scheduled_secs, source)
@@ -661,7 +662,7 @@ impl App {
             let memory = if starts_new && !fsrs_reviews.is_empty() {
                 fsrs.memory_state(fsrs::FSRSItem { reviews: fsrs_reviews }, None).ok()
             } else if c.factor > 0 && c.ivl > 0 {
-                fsrs.memory_state_from_sm2(c.factor as f32 / 1000.0, c.ivl as f32, 0.9).ok()
+                fsrs.memory_state_from_sm2(num::i64_f32(c.factor) / 1000.0, num::i64_f32(c.ivl), 0.9).ok()
             } else {
                 None
             };

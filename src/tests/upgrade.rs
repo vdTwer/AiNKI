@@ -202,9 +202,9 @@ async fn seed_v1(db: &SqlitePool) -> V1 {
         .bind(review_card)
         .bind(spanish)
         .bind(rating)
-        .bind(t - (40 - i as i64 * 7) * DAY)
+        .bind(t - (40 - crate::num::usize_i64(i) * 7) * DAY)
         .bind(state_before)
-        .bind(i as i64 * 7)
+        .bind(crate::num::usize_i64(i) * 7)
         .execute(db)
         .await
         .unwrap();
@@ -216,10 +216,10 @@ async fn seed_v1(db: &SqlitePool) -> V1 {
              VALUES (?, ?, ?, 2, ?, 6.0, ?, unixepoch() - 10 * 86400, 2) RETURNING id",
         )
         .bind(list_card)
-        .bind(pos as i64)
+        .bind(crate::num::usize_i64(pos))
         .bind(text)
-        .bind(9.0 + pos as f64)
-        .bind(t - DAY + pos as i64)
+        .bind(9.0 + crate::num::usize_f64(pos))
+        .bind(t - DAY + crate::num::usize_i64(pos))
         .fetch_one(db)
         .await
         .unwrap();
@@ -275,7 +275,7 @@ fn v1_migrations_are_unchanged() {
     }
     // New migrations only come after the v1 ones and are numbered in order.
     let versions: Vec<i64> = all.migrations.iter().map(|m| m.version).collect();
-    assert_eq!(versions, (1..=versions.len() as i64).collect::<Vec<_>>());
+    assert_eq!(versions, (1..=crate::num::usize_i64(versions.len())).collect::<Vec<_>>());
 }
 
 #[tokio::test]
