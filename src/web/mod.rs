@@ -410,7 +410,6 @@ fn asset_version() -> &'static str {
 }
 
 /// Where the Calm look may apply. theme.js reads it from the stylesheet link.
-const DESKTOP_MEDIA: &str = "(min-width: 60em) and (hover: hover) and (pointer: fine)";
 
 /// Nested Anki decks arrive as "`Languages::Spanish`". The parents are shown
 /// as a quiet path, the deck's own name last: "Languages › Spanish".
@@ -485,10 +484,6 @@ fn page(nav: Option<Nav>, title: &str, user: Option<&User>, page_kind: Option<&s
                 link rel="icon" href="/favicon.svg" type="image/svg+xml";
                 link rel="apple-touch-icon" href="/apple-touch-icon.png";
                 link rel="stylesheet" href=(format!("/style.css?v={}", asset_version()));
-                // The Calm look: only on desktops, and only once theme.js
-                // has switched it on. Everything else gets style.css alone.
-                link rel="stylesheet" href=(format!("/calm.css?v={}", asset_version())) media=(DESKTOP_MEDIA) data-calm;
-                script src=(format!("/theme.js?v={}", asset_version())) {}
                 @if (scale - 1.0).abs() > f64::EPSILON {
                     style { (PreEscaped(format!(":root{{--scale:{scale}}}"))) }
                 }
@@ -504,7 +499,6 @@ fn page(nav: Option<Nav>, title: &str, user: Option<&User>, page_kind: Option<&s
                     (body)
                 }
                 script src=(format!("/app.js?v={}", asset_version())) defer {}
-                script src=(format!("/desk.js?v={}", asset_version())) defer {}
             }
         }
     }

@@ -19,7 +19,8 @@
   } catch (e) { /* storage blocked */ }
 
   var root = document.documentElement;
-  var calm = root.classList.contains('calm');
+  // One look for everyone now: the extras that were desktop-only are on.
+  var calm = true;
   // Card text longer than this is set smaller and left-aligned, when
   // writing and when studying alike.
   var LONG_TEXT = 90;

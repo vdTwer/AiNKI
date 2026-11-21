@@ -301,7 +301,7 @@ pub(crate) fn week_home(user: &User, today_due: i64, outlook: &Outlook, seconds_
     };
     let WeekAhead { days, tomorrow: tomorrow_n, tomorrow_settled, week, range: (low, high), total, most } = w;
     html! {
-        div.week-home.calm-only {
+        div.week-home {
             section.week aria-label="Next seven days" {
                 h2 { "Next seven days" }
                 @if total == 0 {

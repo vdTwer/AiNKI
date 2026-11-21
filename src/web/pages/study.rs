@@ -81,11 +81,11 @@ pub(crate) fn study_foot(
                 // Desktop only: a break of your own. The card is covered and
                 // its clock stops (app.js).
                 @if card_id.is_some() {
-                    button.link.icon-link.pause-study.calm-only type="button" { (icon(ICON_PAUSE, PAGE_ICON)) span { "Pause" } }
+                    button.link.icon-link.pause-study type="button" { (icon(ICON_PAUSE, PAGE_ICON)) span { "Pause" } }
                 }
             }
             @if card_id.is_some() {
-                div.pause-cover.calm-only hidden data-stay {
+                div.pause-cover hidden data-stay {
                     p.kicker { "Paused" }
                     button.btn.primary type="button" data-resume { "Resume" }
                 }
