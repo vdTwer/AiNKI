@@ -2,6 +2,7 @@
 #
 #   lint     rustfmt and clippy; any warning fails
 #   rust     cargo test (unit, HTTP, MCP, Anki import, migration checks)
+#   perf     page speed budgets for a heavy user, in release mode
 #   e2e      Playwright in Chromium and Firefox, desktop, simple look and phone
 #   upgrade  seeds data with the v1 binary, then checks it with this one
 name: Test
@@ -45,6 +46,17 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - run: cargo test --locked
+
+  perf:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: release
+      - run: cargo test --locked --release perf -- --ignored --nocapture
 
   e2e:
     runs-on: ubuntu-latest
