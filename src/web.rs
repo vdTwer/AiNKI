@@ -29,7 +29,7 @@ use crate::{
     fuzzy, import, insight, invites, lessons, markdown, mcp, media,
     multi::{self, Piece, Split},
     now, oauth,
-    outlook::{self, Outlook},
+    outlook::Outlook,
     presets,
     scheduler::{self, CardState, Rating},
     security::{self, ClientIp, Flash},
@@ -4410,9 +4410,9 @@ const WHY_OUTLOOK: &str = "Cards come back after you study them: a miss the next
 /// review them (see `outlook`).
 fn week_home(user: &User, today_due: i64, outlook: &Outlook, seconds_per_review: Option<f64>) -> Markup {
     let clock = user.clock();
-    let days: Vec<(chrono::NaiveDate, f64)> = (0..outlook::DAYS)
-        .map(|i| {
-            let n = if i == 0 { num::i64_f64(today_due.max(0)) } else { outlook.days[i] };
+    let days: Vec<(chrono::NaiveDate, f64)> = (outlook.days.iter().enumerate())
+        .map(|(i, &forecast)| {
+            let n = if i == 0 { num::i64_f64(today_due.max(0)) } else { forecast };
             (clock.today() + chrono::Duration::days(num::usize_i64(i)), n)
         })
         .collect();
@@ -4636,7 +4636,7 @@ async fn auto_optimize(State(app): State<AppState>, user: WebUser, Form(f): Form
 async fn optimize(State(app): State<AppState>, user: WebUser) -> WebResult {
     let result = app.optimize_parameters(&user.access()).await;
     let msg = match result {
-        Ok(v) => v["note"].as_str().unwrap_or("Done.").to_string(),
+        Ok(v) => v.get("note").and_then(serde_json::Value::as_str).unwrap_or("Done.").to_string(),
         Err(AppError::BadRequest(m)) => capitalize(&m),
         Err(e) => return Err(e.into()),
     };
@@ -5165,14 +5165,14 @@ fn desk_stats(d: &DeskStats) -> Markup {
                     p.small.muted { "You studied on " (last7) " of the last 7 days." }
                 }
             }
-            @if !d.notes.is_empty() {
+            @if let Some((first, more)) = d.notes.split_first() {
                 section.coach-notes aria-label="The coach" {
                     h2 { "The coach" }
-                    (coach_note(&d.notes[0], "/stats"))
-                    @if d.notes.len() > 1 {
+                    (coach_note(first, "/stats"))
+                    @if !more.is_empty() {
                         details.more-notes {
-                            summary { (count(num::usize_i64(d.notes.len()) - 1, "more note")) }
-                            @for n in &d.notes[1..] { (coach_note(n, "/stats")) }
+                            summary { (count(num::usize_i64(more.len()), "more note")) }
+                            @for n in more { (coach_note(n, "/stats")) }
                         }
                     }
                 }

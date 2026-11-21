@@ -34,7 +34,7 @@ pub fn score(query: &str, text: &str) -> Option<i32> {
     let folded: Vec<char> = raw.iter().map(|&c| fold_char(c)).collect();
     let mut total = 0;
     for w in &words {
-        let w = &w[..w.len().min(MAX_WORD)];
+        let w = w.get(..MAX_WORD).unwrap_or(w);
         total += in_order(w, &raw, &folded).or_else(|| with_typos(w, &folded))?;
     }
     Some(total)
@@ -73,10 +73,7 @@ fn is_word_char(c: char) -> bool {
 
 /// What a match at position i is worth beyond MATCH.
 fn position_bonus(raw: &[char], i: usize) -> i32 {
-    if i == 0 {
-        return START;
-    }
-    let (prev, here) = (raw[i - 1], raw[i]);
+    let (Some(&prev), Some(&here)) = (i.checked_sub(1).and_then(|p| raw.get(p)), raw.get(i)) else { return START };
     if !is_word_char(prev) && is_word_char(here) {
         BOUNDARY
     } else if prev.is_lowercase() && here.is_uppercase() {
@@ -88,6 +85,7 @@ fn position_bonus(raw: &[char], i: usize) -> i32 {
 
 /// Best in-order match of `q` in the text, by dynamic programming over
 /// (query letter, text position). None when the letters are not all there.
+#[expect(clippy::indexing_slicing, reason = "dynamic programming: every index stays inside the tables sized above")]
 fn in_order(q: &[char], raw: &[char], t: &[char]) -> Option<i32> {
     let (m, n) = (q.len(), t.len());
     if m > n {
@@ -151,21 +149,18 @@ fn with_typos(q: &[char], t: &[char]) -> Option<i32> {
         4..=7 => 1,
         _ => 2,
     };
+    let mut start = 0;
     let mut best: Option<i32> = None;
-    let mut i = 0;
-    while i < t.len() {
-        if !is_word_char(t[i]) {
-            i += 1;
+    for word in t.split(|c| !is_word_char(*c)) {
+        let at = start;
+        start += word.len() + 1;
+        if word.is_empty() {
             continue;
         }
-        let start = i;
-        while i < t.len() && is_word_char(t[i]) {
-            i += 1;
-        }
-        let word = &t[start..i.min(start + MAX_WORD)];
+        let word = word.get(..MAX_WORD).unwrap_or(word);
         if let Some(edits) = prefix_distance(q, word, allowed) {
             let s = num::usize_i32(q.len()) * MATCH / 2 - num::usize_i32(edits) * 12
-                + if start == 0 { START } else { BOUNDARY };
+                + if at == 0 { START } else { BOUNDARY };
             best = Some(best.map_or(s, |b| b.max(s)));
         }
     }
@@ -175,6 +170,7 @@ fn with_typos(q: &[char], t: &[char]) -> Option<i32> {
 /// The fewest edits that turn `q` into some prefix of `w` (optimal string
 /// alignment: insert, delete, replace, swap two neighbours), if at most
 /// `allowed`.
+#[expect(clippy::indexing_slicing, reason = "dynamic programming: every index stays inside the tables sized above")]
 fn prefix_distance(q: &[char], w: &[char], allowed: usize) -> Option<usize> {
     let (m, n) = (q.len(), w.len());
     if n + allowed < m {

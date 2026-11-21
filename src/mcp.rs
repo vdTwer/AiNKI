@@ -135,7 +135,9 @@ impl AinkiMcp {
         if card.multi.is_some() {
             let items = self.app.card_items(card).await.map_err(err)?;
             let asked = studying.then(|| crate::multi::asked(card, &items, clock.now));
-            v["items"] = json!(crate::multi::items_json(&items, asked.as_deref(), &clock, &params));
+            if let Some(o) = v.as_object_mut() {
+                o.insert("items".into(), json!(crate::multi::items_json(&items, asked.as_deref(), &clock, &params)));
+            }
         }
         Ok(v)
     }
@@ -627,7 +629,10 @@ impl AinkiMcp {
         let card = self.app.card(&a, p.card_id).await.map_err(err)?;
         let mut v = self.card_json(&a, &card, false).await?;
         if p.include_history {
-            v["history"] = json!(self.app.card_history(&a, p.card_id).await.map_err(err)?);
+            let history = self.app.card_history(&a, p.card_id).await.map_err(err)?;
+            if let Some(o) = v.as_object_mut() {
+                o.insert("history".into(), json!(history));
+            }
         }
         out(v)
     }

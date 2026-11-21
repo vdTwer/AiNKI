@@ -42,6 +42,7 @@ pub struct Media {
 }
 
 /// Floyd–Steinberg error diffusion to `levels` evenly spaced grays.
+#[expect(clippy::indexing_slicing, reason = "error diffusion: each neighbour is bounds-checked against w and h first")]
 fn dither(img: &mut GrayImage, levels: u8) {
     let (w, h) = img.dimensions();
     let (w, h) = (w as usize, h as usize);

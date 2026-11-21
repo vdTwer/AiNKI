@@ -305,32 +305,23 @@ pub fn answer(
             };
             let learning_state =
                 if card.state == CardState::Relearning { CardState::Relearning } else { CardState::Learning };
-            if steps.is_empty() {
-                graduate(&mut out)
-            } else {
-                match rating {
-                    Rating::Again => in_steps(&mut out, learning_state, 0, steps[0]),
-                    Rating::Hard => {
-                        let idx = step.min(steps.len() - 1);
-                        let delay = if idx == 0 && steps.len() == 1 {
-                            num::f64_i64(num::i64_f64(steps[0]) * 1.5).min(steps[0] + 86_400)
-                        } else if idx == 0 {
-                            i64::midpoint(steps[0], steps[1])
-                        } else {
-                            steps[idx]
-                        };
-                        in_steps(&mut out, learning_state, idx, delay)
-                    }
-                    Rating::Good => {
-                        let next_idx = step + 1;
-                        if next_idx >= steps.len() {
-                            graduate(&mut out)
-                        } else {
-                            in_steps(&mut out, learning_state, next_idx, steps[next_idx])
-                        }
-                    }
-                    Rating::Easy => graduate(&mut out),
+            match (rating, steps.as_slice()) {
+                (_, []) | (Rating::Easy, _) => graduate(&mut out),
+                (Rating::Again, [first, ..]) => in_steps(&mut out, learning_state, 0, *first),
+                (Rating::Hard, [first, rest @ ..]) => {
+                    let idx = step.min(rest.len());
+                    let delay = match (idx, rest) {
+                        // One step: half as long again, but at most a day longer.
+                        (0, []) => num::f64_i64(num::i64_f64(*first) * 1.5).min(first + 86_400),
+                        (0, [second, ..]) => i64::midpoint(*first, *second),
+                        _ => steps.get(idx).copied().unwrap_or(*first),
+                    };
+                    in_steps(&mut out, learning_state, idx, delay)
                 }
+                (Rating::Good, _) => match steps.get(step + 1) {
+                    Some(&delay) => in_steps(&mut out, learning_state, step + 1, delay),
+                    None => graduate(&mut out),
+                },
             }
         }
     };

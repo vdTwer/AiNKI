@@ -211,7 +211,7 @@ impl App {
             return Ok(None);
         }
         let mut start = last;
-        for &t in &times[1..] {
+        for &t in times.iter().skip(1) {
             if start - t >= SESSION_GAP_SECS {
                 break;
             }

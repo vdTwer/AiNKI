@@ -191,11 +191,11 @@ fn walk(
     acc: &mut Acc,
 ) -> anyhow::Result<()> {
     let day = num::i64_usize((clock.date_of(at) - clock.today()).num_days().max(0));
-    if day >= DAYS {
+    let Some(slot) = acc.days.get_mut(day) else {
         leaf(acc, p, k);
         return Ok(());
-    }
-    acc.days[day] += p;
+    };
+    *slot += p;
     let k = if day > 0 {
         if k == 0 && (p - 1.0).abs() < f64::EPSILON {
             acc.floor += 1.0;

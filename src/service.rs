@@ -1569,8 +1569,8 @@ impl App {
             let decay = decays.get(&deck).copied().unwrap_or(fsrs::FSRS6_DEFAULT_DECAY);
             if due < horizon_end {
                 let day = num::i64_usize((clock.date_of(due) - today).num_days().max(0));
-                if day < horizon {
-                    forecast[day] += 1;
+                if let Some(n) = forecast.get_mut(day) {
+                    *n += 1;
                 }
             }
             if let (Some(s), Some(last)) = (stability, last_review) {
@@ -1676,13 +1676,10 @@ impl App {
                 q = q.bind(id);
             }
             for (at, was_review, passed) in q.fetch_all(&self.db).await? {
-                let i = (clock.date_of(at) - first).num_days();
-                if !(0..HISTORY_DAYS).contains(&i) {
-                    continue;
-                }
-                days[num::i64_usize(i)] += 1;
-                if was_review {
-                    let w = &mut weeks[num::i64_usize(i / 7)];
+                let Ok(i) = usize::try_from((clock.date_of(at) - first).num_days()) else { continue };
+                let Some(day) = days.get_mut(i) else { continue };
+                *day += 1;
+                if was_review && let Some(w) = weeks.get_mut(i / 7) {
                     w.0 += 1;
                     w.1 += i64::from(passed);
                 }

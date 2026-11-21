@@ -84,7 +84,8 @@ impl App {
         for id in &sources {
             decks.push(self.deck(access, *id).await?);
         }
-        let preset_id = input.preset_id.unwrap_or(decks[0].preset_id);
+        let first = decks.first().ok_or_else(|| AppError::bad("pick decks to merge"))?;
+        let preset_id = input.preset_id.unwrap_or(first.preset_id);
         let deck = self.create_deck(access, &input.name, &input.description, Some(preset_id)).await?;
         let how = Fill { keep_progress: input.keep_progress, delete_sources: input.delete_sources };
         match self.fill(access, &deck, &sources, how).await {

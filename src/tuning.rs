@@ -75,9 +75,11 @@ fn training_set(histories: &[&History]) -> (Vec<fsrs::FSRSItem>, Vec<i64>, usize
     let mut used = 0;
     for h in histories {
         used += h.reviews.len();
-        for i in 1..h.reviews.len() {
-            if h.reviews[i].delta_t > 0 {
-                items.push(fsrs::FSRSItem { reviews: h.reviews[..=i].to_vec() });
+        for (i, review) in h.reviews.iter().enumerate().skip(1) {
+            if review.delta_t > 0
+                && let Some(prefix) = h.reviews.get(..=i)
+            {
+                items.push(fsrs::FSRSItem { reviews: prefix.to_vec() });
                 card_ids.push(h.card_id);
             }
         }
@@ -225,7 +227,7 @@ impl App {
             // Only history after the last reset, and only if it starts from
             // the card being new (otherwise the memory state is unknown).
             let start = logs.iter().rposition(|l| l.rating == 0).map_or(0, |i| i + 1);
-            let logs = &logs[start..];
+            let logs = logs.get(start..).unwrap_or_default();
             if logs.first().is_none_or(|l| l.state_before != CardState::New as i64) {
                 continue;
             }
@@ -554,9 +556,11 @@ impl App {
             let r = f64::from(fsrs::current_retrievability(memory, elapsed, scheduler::decay_for(book.for_deck(deck))));
             let pct = num::i64_u32(num::f64_i64((r * 100.0).clamp(0.0, 99.999)));
             let band = BANDS.iter().position(|(from, to)| pct >= *from && pct < *to).unwrap_or(0);
-            sums[band].0 += r;
-            sums[band].1 += i64::from(rating > 1);
-            sums[band].2 += 1;
+            if let Some(sum) = sums.get_mut(band) {
+                sum.0 += r;
+                sum.1 += i64::from(rating > 1);
+                sum.2 += 1;
+            }
         }
         let total: i64 = sums.iter().map(|s| s.2).sum();
         if total == 0 {

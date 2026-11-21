@@ -237,14 +237,14 @@ async fn fetch_metadata_document(url: &str) -> Option<MetadataDocument> {
     .ok()?
     .ok()?
     .collect();
-    if addrs.is_empty() || !addrs.iter().all(|a| is_public_ip(a.ip())) {
+    let Some(&addr) = addrs.first().filter(|_| addrs.iter().all(|a| is_public_ip(a.ip()))) else {
         tracing::warn!("refusing to fetch client metadata from non-public host {host}");
         return None;
-    }
+    };
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(10))
         .redirect(reqwest::redirect::Policy::none())
-        .resolve(&host, addrs[0])
+        .resolve(&host, addr)
         .no_proxy()
         .build()
         .ok()?;
@@ -309,9 +309,9 @@ impl App {
             "response_types": ["code"],
             "token_endpoint_auth_method": method,
         });
-        if let Some(s) = secret {
-            out["client_secret"] = json!(s);
-            out["client_secret_expires_at"] = json!(0);
+        if let (Some(s), Some(o)) = (secret, out.as_object_mut()) {
+            o.insert("client_secret".into(), json!(s));
+            o.insert("client_secret_expires_at".into(), json!(0));
         }
         Ok(out)
     }
@@ -701,9 +701,9 @@ async fn check_authorize(
         Err(e) => return Err(crate::web::WebError::from(e).into_response()),
     };
     let redirects = client.redirects();
-    let redirect_uri = match p.redirect_uri.as_deref() {
-        Some(r) if client.allows_redirect(r) => r.to_string(),
-        None if redirects.len() == 1 => redirects[0].clone(),
+    let redirect_uri = match (p.redirect_uri.as_deref(), redirects.as_slice()) {
+        (Some(r), _) if client.allows_redirect(r) => r.to_string(),
+        (None, [only]) => only.clone(),
         _ => return Err(authorize_error_page(user, "The app's redirect address doesn't match its registration.")),
     };
     #[expect(clippy::result_large_err, reason = "the error is the redirect response itself, built once")]

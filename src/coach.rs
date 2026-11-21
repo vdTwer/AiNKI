@@ -121,7 +121,7 @@ pub fn normalize(text: &str) -> String {
 
 fn trigrams(s: &str) -> HashSet<[char; 3]> {
     let padded: Vec<char> = format!("  {s} ").chars().collect();
-    padded.windows(3).map(|w| [w[0], w[1], w[2]]).collect()
+    padded.windows(3).filter_map(|w| <[char; 3]>::try_from(w).ok()).collect()
 }
 
 /// How alike two normalized fronts are, from 0 to 1: the share of their

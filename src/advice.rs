@@ -494,10 +494,7 @@ fn deck_lags(s: &Signals) -> Option<Advice> {
     let short = |d: &&DeckSignal| d.recall.rate_over(MIN_DECK_SAMPLE).is_some_and(|r| r <= d.target - 0.07);
     let lagging: Vec<&DeckSignal> = s.decks.iter().filter(short).collect();
     // Several decks short is the whole picture; `below_target` speaks then.
-    if lagging.len() != 1 {
-        return None;
-    }
-    let d = lagging[0];
+    let [d] = lagging[..] else { return None };
     let rest = Recall {
         reviews: s.recall_30d.reviews - d.recall.reviews,
         remembered: s.recall_30d.remembered - d.recall.remembered,
@@ -789,9 +786,9 @@ fn median(mut v: Vec<f64>) -> Option<f64> {
     if v.is_empty() {
         return None;
     }
-    v.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-    let n = v.len();
-    Some(if n % 2 == 1 { v[n / 2] } else { f64::midpoint(v[n / 2 - 1], v[n / 2]) })
+    v.sort_by(f64::total_cmp);
+    let mid = v.len() / 2;
+    if v.len() % 2 == 1 { v.get(mid).copied() } else { Some(f64::midpoint(*v.get(mid - 1)?, *v.get(mid)?)) }
 }
 
 /// Sessions from answer times (oldest first): each one's length in
@@ -922,8 +919,8 @@ impl App {
         let mut times_7d = Vec::new();
         for r in rows.iter().filter(|r| visible.contains(&r.deck_id)) {
             let ago = day_of(r.reviewed_at);
-            if ago < 14 {
-                per_day[num::i64_usize(ago)] += 1;
+            if let Some(day) = usize::try_from(ago).ok().and_then(|a| per_day.get_mut(a)) {
+                *day += 1;
             }
             if ago < 7 {
                 s.reviews_7 += 1;
