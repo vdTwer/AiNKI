@@ -19,8 +19,8 @@ pub(crate) async fn import_page(State(app): State<AppState>, user: WebUser, Flas
             p.muted.small { "Each card keeps the first two fields of its note, the first image of each side and its review history. Cloze notes become one card per gap. " code { ".colpkg" } " backups work too." }
             form method="post" action="/import" enctype="multipart/form-data" {
                 input type="hidden" name="kind" value="apkg";
-                label.file.drop.icon-link {
-                    (icon(ICON_IMPORT, DROP_ICON))
+                label.file.drop {
+                    
                     span.drop-text { "Choose an Anki file" }
                     span.muted.small { ".apkg or .colpkg, or drop it here" }
                     input type="file" name="file" accept=".apkg,.colpkg" required;
@@ -42,8 +42,8 @@ pub(crate) async fn import_page(State(app): State<AppState>, user: WebUser, Flas
                     div.sheet.paste {
                         label.face-label for="csv-text" { "Paste the cards" }
                         textarea.csv id="csv-text" name="text" rows="5" placeholder="Hund,dog\nKatze,cat" {}
-                        label.file.attach.icon-link {
-                            (icon(ICON_FILE, PAGE_ICON))
+                        label.file.attach {
+                            
                             span.attach-text { "Or choose a file" }
                             " " span.muted.optional { "(.csv, .tsv, .txt)" }
                             input type="file" name="file" accept=".csv,.tsv,.txt";

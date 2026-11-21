@@ -75,13 +75,13 @@ pub(crate) fn study_foot(
             div.study-tools {
                 form method="post" action="/study/undo" {
                     @if let Some(d) = q_deck { input type="hidden" name="deck" value=(d); }
-                    button.link.icon-link type="submit" { (icon(ICON_UNDO, PAGE_ICON)) span { "Undo last answer" } }
+                    button.link type="submit" { span { "Undo last answer" } }
                 }
-                @if let Some(id) = card_id { (icon_link(&format!("/cards/{id}{}", CardFrom::study(q_deck).query()), ICON_EDIT, "Edit card")) }
+                @if let Some(id) = card_id { a href=(format!("/cards/{id}{}", CardFrom::study(q_deck).query())) { "Edit card" } }
                 // Desktop only: a break of your own. The card is covered and
                 // its clock stops (app.js).
                 @if card_id.is_some() {
-                    button.link.icon-link.pause-study type="button" { (icon(ICON_PAUSE, PAGE_ICON)) span { "Pause" } }
+                    button.link.pause-study type="button" { span { "Pause" } }
                 }
             }
             @if card_id.is_some() {
@@ -554,7 +554,7 @@ async fn session_end(app: &App, access: &Access, deck: Option<i64>) -> Result<Ma
             a href="/" { "Back to decks" }
             form method="post" action="/study/undo" {
                 @if let Some(d) = deck { input type="hidden" name="deck" value=(d); }
-                button.link.icon-link type="submit" { (icon(ICON_UNDO, PAGE_ICON)) span { "Undo last answer" } }
+                button.link type="submit" { span { "Undo last answer" } }
             }
         }
     }

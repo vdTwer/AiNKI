@@ -215,14 +215,14 @@ fn home_footer(user: &User, h: &Home) -> Markup {
     @if attention > 0 {
         p.small.attention-link { a href="/attention" { (count(attention, "card")) " " (format::agree(attention, "needs", "need")) " a look" } }
     }
-    p.actions.icon-links.home-actions {
-        (icon_btn("/cards/new", ICON_ADD, "Add card"))
-        (icon_btn("/decks/new", ICON_DECKS, "New deck"))
-        (icon_btn("/import", ICON_IMPORT, "Import"))
+    p.actions.home-actions {
+        a.btn href=("/cards/new") { "Add card" }
+        a.btn href=("/decks/new") { "New deck" }
+        a.btn href=("/import") { "Import" }
     }
     // The desktop look: a plus for a new deck, Import in words.
     p.desk-actions.calm-only hidden[decks.is_empty()] {
-        a.add-deck href="/decks/new" aria-label="New deck" data-label="New deck" { (icon(ICON_ADD, PAGE_ICON)) }
+        a.add-deck href="/decks/new" { "New deck" }
         a href="/import" { "Import deck" }
     }
     @if !decks.is_empty() {

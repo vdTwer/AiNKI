@@ -374,13 +374,13 @@ fn deck_hero(user: &User, summary: &DeckSummary, attention: i64) -> Markup {
         } @else if summary.due_total() > 0 {
             p { a.btn.primary.start href=(format!("/study?deck={id}")) { "Start studying " span.arrow aria-hidden="true" { "→" } } }
         }
-        p.actions.icon-links.deck-menu id="deck-menu" {
-            (icon_btn(&format!("/cards/new?deck={id}"), ICON_ADD, "Add card"))
-            (icon_btn(&format!("/decks/{id}/edit"), ICON_EDIT, "Edit deck"))
-            (icon_btn(&format!("/decks/{id}/edit#share"), ICON_SHARE, "Share"))
-            (icon_btn(&format!("/stats?deck={id}"), ICON_STATS, "Stats"))
-            a.btn.icon-link.calm-only href=(format!("/decks/merge?with={id}")) { span { "Merge with other decks" } }
-            a.btn.icon-link.calm-only href=(format!("/decks/{id}/export.csv")) { span { "Export as CSV" } }
+        p.actions.deck-menu id="deck-menu" {
+            a.btn href=(&format!("/cards/new?deck={id}")) { "Add card" }
+            a.btn href=(&format!("/decks/{id}/edit")) { "Edit deck" }
+            a.btn href=(&format!("/decks/{id}/edit#share")) { "Share" }
+            a.btn href=(&format!("/stats?deck={id}")) { "Stats" }
+            a.btn.calm-only href=(format!("/decks/merge?with={id}")) { span { "Merge with other decks" } }
+            a.btn.calm-only href=(format!("/decks/{id}/export.csv")) { span { "Export as CSV" } }
         }
         }
         div.deck-side {
@@ -444,7 +444,7 @@ fn deck_cards(id: i64, q: &DeckQuery, cards: &[Card], total: i64, page: i64, bas
                 @if (page + 1) * per_page < total { a.btn href=(format!("{base}&page={}", page + 1)) { "Next ›" } }
             }
         }
-        p.icon-links.deck-export { (icon_link(&format!("/decks/{id}/export.csv"), ICON_EXPORT, "Export as CSV")) }
+        p.deck-export { a href=(&format!("/decks/{id}/export.csv")) { "Export as CSV" } }
     }
 }
 

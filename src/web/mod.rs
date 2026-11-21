@@ -71,8 +71,6 @@ use pages::{
 pub(crate) use pages::tokens::permission_fields;
 
 const CSS: &str = include_str!("../style.css");
-const CALM_CSS: &str = include_str!("../static/calm.css");
-const THEME_JS: &str = include_str!("../static/theme.js");
 const APP_JS: &str = include_str!("../static/app.js");
 const DESK_JS: &str = include_str!("../static/desk.js");
 // Two cards, Wild Orchid behind Terra Cotta, with the "done" tick.
@@ -206,8 +204,6 @@ pub fn router(app: AppState) -> Router {
         .layer(middleware::from_fn_with_state(app.clone(), renew_session));
     let static_routes = Router::new()
         .route("/style.css", get(|q: RawQuery| async move { asset(q, "text/css; charset=utf-8", CSS) }))
-        .route("/calm.css", get(|q: RawQuery| async move { asset(q, "text/css; charset=utf-8", CALM_CSS) }))
-        .route("/theme.js", get(|q: RawQuery| async move { asset(q, "text/javascript; charset=utf-8", THEME_JS) }))
         .route("/app.js", get(|q: RawQuery| async move { asset(q, "text/javascript; charset=utf-8", APP_JS) }))
         .route("/desk.js", get(|q: RawQuery| async move { asset(q, "text/javascript; charset=utf-8", DESK_JS) }))
         .route("/fonts/{name}", get(font_file))
@@ -404,12 +400,10 @@ pub fn urlenc(s: &str) -> String {
 fn asset_version() -> &'static str {
     static VERSION: std::sync::OnceLock<String> = std::sync::OnceLock::new();
     VERSION.get_or_init(|| {
-        let all = [CSS, CALM_CSS, THEME_JS, APP_JS, DESK_JS].concat();
+        let all = [CSS, APP_JS, DESK_JS].concat();
         crate::auth::sha256_hex(&all)[..10].to_string()
     })
 }
-
-/// Where the Calm look may apply. theme.js reads it from the stylesheet link.
 
 /// Nested Anki decks arrive as "`Languages::Spanish`". The parents are shown
 /// as a quiet path, the deck's own name last: "Languages › Spanish".
@@ -474,7 +468,7 @@ fn page(nav: Option<Nav>, title: &str, user: Option<&User>, page_kind: Option<&s
     let scale = num::i64_f64(user.map_or(100, |u| u.font_scale)) / 100.0;
     html! {
         (DOCTYPE)
-        html lang="en" data-look=[user.map(|u| if u.desktop_look == "simple" { "simple" } else { "calm" })] {
+        html lang="en" {
             head {
                 meta charset="utf-8";
                 meta name="viewport" content="width=device-width, initial-scale=1";
@@ -511,16 +505,16 @@ fn main_nav(nav: Option<Nav>) -> Markup {
     html! {
         nav.top aria-label="Main" {
             // The desktop look: the first icon finds anything (desk.js).
-            button.find-dot.calm-only type="button" data-label="Find" aria-label="Find" aria-haspopup="dialog" { (nav_icon(ICON_FIND)) }
+            button.find-dot.calm-only type="button" data-label="Find" aria-label="Find" aria-haspopup="dialog" { "Find" }
             a.brand href="/" data-label="AiNKI" aria-current=[current(Nav::Decks)] { "AiNKI" }
-            a href="/study" data-label="Study" aria-current=[current(Nav::Study)] { (nav_icon(ICON_STUDY)) "Study" }
-            a href="/cards/new" data-label="Add" aria-current=[current(Nav::Add)] { (nav_icon(ICON_ADD)) "Add" }
-            a href="/stats" data-label="Stats" aria-current=[current(Nav::Stats)] { (nav_icon(ICON_STATS)) "Stats" }
+            a href="/study" data-label="Study" aria-current=[current(Nav::Study)] { "Study" }
+            a href="/cards/new" data-label="Add" aria-current=[current(Nav::Add)] { "Add" }
+            a href="/stats" data-label="Stats" aria-current=[current(Nav::Stats)] { "Stats" }
             // Phones reach the lessons through settings; the bar stays as it was.
-            a.rail-only href="/learn" data-label="Learn" aria-current=[current(Nav::Learn)] { (nav_icon(ICON_LEARN)) "Learn" }
-            a href="/settings" data-label="Settings" aria-current=[current(Nav::Settings)] { (nav_icon(ICON_SETTINGS)) "Settings" }
+            a.rail-only href="/learn" data-label="Learn" aria-current=[current(Nav::Learn)] { "Learn" }
+            a href="/settings" data-label="Settings" aria-current=[current(Nav::Settings)] { "Settings" }
             // Last, so it opens right under the dot: hovering the dot offers Home.
-            a.rail-only href="/" data-label="Home" aria-current=[current(Nav::Decks)] { (nav_icon(ICON_DECKS)) "Home" }
+            a.rail-only href="/" data-label="Home" aria-current=[current(Nav::Decks)] { "Home" }
         }
     }
 }
@@ -549,66 +543,6 @@ fn sleep_wall(u: &User) -> Markup {
     }
 }
 
-// Icons: line drawings on a 24px grid in the text colour. The rail shows
-// them at 26px; in a page, next to a word, at 20px.
-const ICON_DECKS: &str = r#"<rect x="4" y="9.5" width="16" height="10.5" rx="2"/><path d="M6.5 6.5h11M9 3.5h6"/>"#;
-const ICON_STUDY: &str =
-    r#"<rect x="5" y="3.5" width="14" height="17" rx="2.5"/><path d="M9 10.5l2 2 4-4"/><path d="M9 16.5h6"/>"#;
-const ICON_FIND: &str = r#"<circle cx="10.5" cy="10.5" r="5.5"/><path d="M14.5 14.5l5 5"/>"#;
-const ICON_ADD: &str = r#"<path d="M12 5v14M5 12h14"/>"#;
-const ICON_STATS: &str = r#"<path d="M5 20V13M12 20V5M19 20v-9"/>"#;
-const ICON_LEARN: &str = r#"<path d="M12 6.5C10 5 7.5 4.5 4.5 4.5v13.5c3 0 5.5.5 7.5 2 2-1.5 4.5-2 7.5-2V4.5c-3 0-5.5.5-7.5 2z"/><path d="M12 6.5v13.5"/>"#;
-const ICON_SETTINGS: &str =
-    r#"<path d="M5 7h8M17 7h2M5 17h2M11 17h8"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/>"#;
-const ICON_EDIT: &str = r#"<path d="M14.5 5.5l4 4L9 19H5v-4z"/><path d="M12.5 7.5l4 4"/>"#;
-// A paper plane, so Share doesn't look like Export's tray.
-const ICON_SHARE: &str = r#"<path d="M20 4L3.5 10.5l7 3 3 7z"/><path d="M20 4l-9.5 9.5"/>"#;
-const ICON_IMPORT: &str =
-    r#"<path d="M12 4v11M8 11l4 4 4-4"/><path d="M5 16v2.5A1.5 1.5 0 0 0 6.5 20h11a1.5 1.5 0 0 0 1.5-1.5V16"/>"#;
-const ICON_EXPORT: &str =
-    r#"<path d="M12 15V4M8 8l4-4 4 4"/><path d="M5 16v2.5A1.5 1.5 0 0 0 6.5 20h11a1.5 1.5 0 0 0 1.5-1.5V16"/>"#;
-const ICON_PAUSE: &str = r#"<path d="M9 6.5v11M15 6.5v11"/>"#;
-const ICON_UNDO: &str = r#"<path d="M9 7L5 11l4 4"/><path d="M5 11h9a5 5 0 0 1 0 10h-2"/>"#;
-const ICON_IMAGE: &str = r#"<rect x="3.5" y="5" width="17" height="14" rx="2.5"/><circle cx="9" cy="10" r="1.6"/><path d="M4.5 17l4.5-4.2 3.2 3 2.6-2.2 4.7 4"/>"#;
-const ICON_FILE: &str = r#"<path d="M7 3.5h6.5L18 8v11a1.5 1.5 0 0 1-1.5 1.5h-9A1.5 1.5 0 0 1 6 19V5a1.5 1.5 0 0 1 1-1.5z"/><path d="M13 3.5V8h5"/>"#;
-
-const RAIL_ICON: u32 = 30;
-const PAGE_ICON: u32 = 20;
-const DROP_ICON: u32 = 34;
-
-/// An icon as a small solid object: the drawing repeated a little further
-/// back each time gives it depth, plus a soft shadow behind. calm.css
-/// spaces the layers out and tilts it with its link; elsewhere it is
-/// hidden and only the words show. Large icons draw with 2px lines; small
-/// ones next to words with finer 1.5px lines, so they don't look heavy.
-fn icon(paths: &'static str, size: u32) -> Markup {
-    let line = if size < 24 { 1.5 } else { 2.0 };
-    let stroke = format!("{:.2}", line * 24.0 / f64::from(size));
-    let layer = |class: &'static str, depth: u8| {
-        html! {
-            svg class=(class) style=(format!("--z:{depth}")) viewBox="0 0 24 24" width=(size) height=(size) fill="none" stroke="currentColor" stroke-width=(stroke) stroke-linecap="round" stroke-linejoin="round" {
-                (PreEscaped(paths))
-            }
-        }
-    };
-    html! {
-        span.tile style=(format!("--size:{size}px")) aria-hidden="true" {
-            (layer("shadow", 0))
-            @for z in (1..=5).rev() { (layer("side", z)) }
-            (layer("face", 0))
-        }
-    }
-}
-
-fn nav_icon(paths: &'static str) -> Markup {
-    icon(paths, RAIL_ICON)
-}
-
-/// A quiet link with a 3D icon in front of its words.
-fn icon_link(href: &str, paths: &'static str, label: &str) -> Markup {
-    html! { a.icon-link href=(href) { (icon(paths, PAGE_ICON)) span { (label) } } }
-}
-
 /// The "done" tick: Terra, drawn with straight strokes and square ends, like
 /// the numbers beside it. pathLength lets calm.css draw it in from 1 to 0
 /// at any size.
@@ -618,11 +552,6 @@ fn done_check(size: u32, class: &'static str) -> Markup {
             path d="M4.5 12.5 9.5 17.5 19.5 6.5" pathLength="1" {}
         }
     }
-}
-
-/// The same where the simple look shows a button.
-fn icon_btn(href: &str, paths: &'static str, label: &str) -> Markup {
-    html! { a.btn.icon-link href=(href) { (icon(paths, PAGE_ICON)) span { (label) } } }
 }
 
 /// The page this one belongs to, as one quiet line above the heading:
