@@ -138,7 +138,7 @@ impl App {
         let copied = self.copy_shared_deck(access, &share).await;
         if copied.is_err() {
             // Offer it again, so it can be tried once more.
-            let _ = sqlx::query(
+            let offered_again = sqlx::query(
                 "INSERT OR IGNORE INTO deck_shares (id, deck_id, from_user, to_user, created_at)
                  SELECT ?, ?, id, ?, ? FROM users WHERE id = (SELECT user_id FROM decks WHERE id = ?)",
             )
@@ -149,6 +149,9 @@ impl App {
             .bind(share.deck_id)
             .execute(&self.db)
             .await;
+            if let Err(e) = offered_again {
+                tracing::warn!("share {share_id} failed to copy and could not be offered again: {e}");
+            }
         }
         copied
     }
