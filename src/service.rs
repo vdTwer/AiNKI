@@ -313,7 +313,7 @@ pub struct StudyCard {
     pub remaining: i64,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Default, Serialize)]
 pub struct Stats {
     pub total: i64,
     pub new: i64,
@@ -1517,28 +1517,19 @@ impl App {
             }
             None => self.decks(access).await?.into_iter().map(|d| d.id).collect(),
         };
-        let clock = access.user.clock();
-        let mut stats = Stats {
-            total: 0,
-            new: 0,
-            learning: 0,
-            review: 0,
-            suspended: 0,
-            due_now: 0,
-            reviews_today: 0,
-            cards_today: 0,
-            minutes_today: 0.0,
-            true_retention_30d: None,
-            retention_sample_30d: 0,
-            reviews_30d: 0,
-            streak_days: 0,
-            forecast: vec![],
-            average_retrievability: None,
-            seconds_per_review: None,
-        };
+        let mut stats = Stats::default();
         if deck_ids.is_empty() {
             return Ok(stats);
         }
+        let clock = access.user.clock();
+        self.count_cards(access, &deck_ids, &clock, &mut stats).await?;
+        self.forecast_and_recall(access, &deck_ids, &clock, &mut stats).await?;
+        self.count_answers(access, &deck_ids, &clock, &mut stats).await?;
+        stats.streak_days = self.streak(access, &deck_ids, &clock).await?;
+        Ok(stats)
+    }
+
+    async fn count_cards(&self, access: &Access, deck_ids: &[i64], clock: &Clock, stats: &mut Stats) -> Result<()> {
         // Everything is counted in the database: a long-time Anki user has
         // tens of thousands of cards and hundreds of thousands of reviews,
         // and loading them all made the home page take seconds.
@@ -1548,7 +1539,7 @@ impl App {
             let q = sqlx::query_as::<_, (CardState, bool, i64, i64)>(sql)
                 .bind(clock.now)
                 .bind(access.user_id())
-                .bind(id_list(&deck_ids));
+                .bind(id_list(deck_ids));
             q.fetch_all(&self.db).await?
         };
         for (state, suspended, n, due_now) in rows {
@@ -1567,15 +1558,25 @@ impl App {
             }
         }
 
+        Ok(())
+    }
+
+    async fn forecast_and_recall(
+        &self,
+        access: &Access,
+        deck_ids: &[i64],
+        clock: &Clock,
+        stats: &mut Stats,
+    ) -> Result<()> {
+        let today = clock.today();
         // Forecast and recall chance: only the few numbers they need.
         let horizon = 14;
-        let today = clock.today();
         let horizon_end = clock.day_start(today + Duration::days(num::usize_i64(horizon)));
         let sql = "SELECT deck_id, due, stability, last_review FROM cards
              WHERE user_id = ? AND deck_id IN (SELECT value FROM json_each(?)) AND state != 0 AND suspended = 0";
         let q = sqlx::query_as::<_, (i64, i64, Option<f64>, Option<i64>)>(sql)
             .bind(access.user_id())
-            .bind(id_list(&deck_ids));
+            .bind(id_list(deck_ids));
         let learned = q.fetch_all(&self.db).await?;
         let book = self.param_book(access).await?;
         let decays: HashMap<i64, f32> = deck_ids
@@ -1608,7 +1609,12 @@ impl App {
             stats.average_retrievability = Some(r_sum / f64::from(r_n));
         }
 
-        // Reviews: today, the last 30 days, and the streak.
+        Ok(())
+    }
+
+    /// Answers today and in the last 30 days: counts, minutes, recall.
+    async fn count_answers(&self, access: &Access, deck_ids: &[i64], clock: &Clock, stats: &mut Stats) -> Result<()> {
+        let today = clock.today();
         let since = |from: i64| {
             let sql = "SELECT COUNT(*), COUNT(DISTINCT card_id), COALESCE(SUM(duration_ms), 0),
                     COALESCE(SUM(state_before = 2), 0), COALESCE(SUM(state_before = 2 AND rating > 1), 0),
@@ -1617,7 +1623,7 @@ impl App {
                  FROM review_log
                  WHERE user_id = ? AND rating > 0 AND reviewed_at >= ? AND deck_id IN (SELECT value FROM json_each(?))";
             let user_id = access.user_id();
-            let deck_ids = deck_ids.clone();
+            let deck_ids = deck_ids.to_vec();
             async move {
                 let q = sqlx::query_as::<_, (i64, i64, i64, i64, i64, i64, i64)>(sql)
                     .bind(user_id)
@@ -1641,8 +1647,13 @@ impl App {
             stats.seconds_per_review = Some(num::i64_f64(timed_ms) / num::i64_f64(timed) / 1000.0);
         }
 
-        // Days in a row with a review, up to a year back; today counts once
-        // it has one, and doesn't break the streak before it has.
+        Ok(())
+    }
+
+    /// Days in a row with a review, up to a year back; today counts once it
+    /// has one, and doesn't break the streak before it has.
+    async fn streak(&self, access: &Access, deck_ids: &[i64], clock: &Clock) -> Result<i64> {
+        let today = clock.today();
         let sql = "SELECT EXISTS (SELECT 1 FROM review_log
                 WHERE user_id = ? AND rating > 0 AND reviewed_at >= ? AND reviewed_at < ? AND deck_id IN (SELECT value FROM json_each(?)))";
         let studied = |day: NaiveDate| {
@@ -1650,15 +1661,16 @@ impl App {
                 .bind(access.user_id())
                 .bind(clock.day_start(day))
                 .bind(clock.day_start(day + Duration::days(1)))
-                .bind(id_list(&deck_ids));
+                .bind(id_list(deck_ids));
             q.fetch_one(&self.db)
         };
+        let mut days = 0;
         let mut day = if studied(today).await? { today } else { today - Duration::days(1) };
         while today - day <= Duration::days(365) && studied(day).await? {
-            stats.streak_days += 1;
+            days += 1;
             day -= Duration::days(1);
         }
-        Ok(stats)
+        Ok(days)
     }
 
     /// The last twelve weeks, for the charts on the desktop stats page:
