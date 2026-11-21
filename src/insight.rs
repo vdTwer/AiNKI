@@ -61,17 +61,6 @@ pub struct Week {
     pub tip: Tip,
 }
 
-/// One answer of the week.
-#[derive(sqlx::FromRow)]
-struct WeekAnswer {
-    deck_id: i64,
-    card_id: i64,
-    rating: i64,
-    state_before: CardState,
-    reviewed_at: i64,
-    duration_ms: Option<i64>,
-}
-
 impl Week {
     /// The one thing worth doing: cards that need a look first, then recall
     /// against its aim (once the sample says something), then spreading
@@ -137,14 +126,7 @@ impl App {
             .map(|d| (d.id, presets.get(&d.preset_id).copied().unwrap_or(0.9)))
             .collect();
 
-        let rows: Vec<WeekAnswer> = sqlx::query_as(
-            "SELECT deck_id, card_id, rating, state_before, reviewed_at, duration_ms FROM review_log
-             WHERE user_id = ? AND rating > 0 AND source != 'import' AND reviewed_at >= ?",
-        )
-        .bind(access.user_id())
-        .bind(start)
-        .fetch_all(&self.db)
-        .await?;
+        let rows = self.answers_since(access, start).await?;
 
         let (mut reviews, mut ms, mut sample, mut passed, mut target_sum) = (0, 0, 0, 0, 0.0);
         let mut days = HashSet::new();

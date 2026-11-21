@@ -117,12 +117,12 @@ impl App {
         // Forecast and recall chance: only the few numbers they need.
         let horizon = 14;
         let horizon_end = clock.day_start(today + Duration::days(num::usize_i64(horizon)));
-        let sql = "SELECT deck_id, due, stability, last_review FROM cards
+        let sql = "SELECT json_group_array(json_array(deck_id, due, stability, last_review)) FROM cards
              WHERE user_id = ? AND deck_id IN (SELECT value FROM json_each(?)) AND state != 0 AND suspended = 0";
-        let q = sqlx::query_as::<_, (i64, i64, Option<f64>, Option<i64>)>(sql)
+        let q = sqlx::query_scalar::<_, Json<Vec<(i64, i64, Option<f64>, Option<i64>)>>>(sql)
             .bind(access.user_id())
             .bind(id_list(deck_ids));
-        let learned = q.fetch_all(&self.db).await?;
+        let Json(learned) = q.fetch_one(&self.db).await?;
         let book = self.param_book(access).await?;
         let decays: HashMap<i64, f32> = deck_ids
             .iter()
@@ -201,15 +201,12 @@ impl App {
         let today = clock.today();
         // One query asks every day of the last year at once: each pair is a
         // day's start and end in the user's zone, so DST is the clock's job.
-        let days: Vec<(i64, i64)> = (0..=STREAK_DAYS)
-            .map(|back| today - Duration::days(back))
-            .map(|day| (clock.day_start(day), clock.day_start(day + Duration::days(1))))
-            .collect();
+        let days = day_bounds(clock, (0..=STREAK_DAYS).map(|back| today - Duration::days(back)));
         let sql = "SELECT CAST(d.key AS INTEGER) FROM json_each(?) d WHERE EXISTS (SELECT 1 FROM review_log
                 WHERE user_id = ? AND rating > 0 AND reviewed_at >= d.value ->> 0 AND reviewed_at < d.value ->> 1
                 AND deck_id IN (SELECT value FROM json_each(?)))";
         let studied: Vec<i64> = sqlx::query_scalar(sql)
-            .bind(sqlx::types::Json(&days))
+            .bind(Json(&days))
             .bind(access.user_id())
             .bind(id_list(deck_ids))
             .fetch_all(&self.db)
@@ -234,17 +231,25 @@ impl App {
         let mut days = vec![0i64; num::i64_usize(HISTORY_DAYS)];
         let mut weeks = vec![(0i64, 0i64); num::i64_usize(HISTORY_DAYS / 7)];
         if !deck_ids.is_empty() {
-            let sql = "SELECT reviewed_at, state_before = 2, rating > 1 FROM review_log
-                 WHERE user_id = ? AND rating > 0 AND reviewed_at >= ? AND deck_id IN (SELECT value FROM json_each(?))";
-            let mut q = sqlx::query_as::<_, (i64, bool, bool)>(sql).bind(access.user_id()).bind(clock.day_start(first));
-            q = q.bind(id_list(&deck_ids));
-            for (at, was_review, passed) in q.fetch_all(&self.db).await? {
-                let Ok(i) = usize::try_from((clock.date_of(at) - first).num_days()) else { continue };
-                let Some(day) = days.get_mut(i) else { continue };
-                *day += 1;
-                if was_review && let Some(w) = weeks.get_mut(i / 7) {
-                    w.0 += 1;
-                    w.1 += i64::from(passed);
+            // Counted per day in the database: twelve weeks are tens of
+            // thousands of answers for a heavy user, too many to ship.
+            let sql = "SELECT CAST(d.key AS INTEGER), COUNT(*), SUM(r.state_before = 2), SUM(r.state_before = 2 AND r.rating > 1)
+                 FROM json_each(?) d JOIN review_log r ON r.user_id = ? AND r.reviewed_at >= d.value ->> 0
+                     AND r.reviewed_at < d.value ->> 1
+                 WHERE r.rating > 0 AND r.deck_id IN (SELECT value FROM json_each(?))
+                 GROUP BY d.key";
+            let q = sqlx::query_as::<_, (i64, i64, i64, i64)>(sql)
+                .bind(Json(day_bounds(&clock, (0..HISTORY_DAYS).map(|i| first + Duration::days(i)))))
+                .bind(access.user_id())
+                .bind(id_list(&deck_ids));
+            for (i, n, reviews, passed) in q.fetch_all(&self.db).await? {
+                let i = num::i64_usize(i);
+                if let Some(day) = days.get_mut(i) {
+                    *day = n;
+                }
+                if let Some(w) = weeks.get_mut(i / 7) {
+                    w.0 += reviews;
+                    w.1 += passed;
                 }
             }
         }
@@ -257,6 +262,47 @@ impl App {
             weeks,
         })
     }
+}
+
+/// One answer as the coach and the weekly review read it.
+pub(crate) struct Answer {
+    pub deck_id: i64,
+    pub card_id: i64,
+    pub rating: i64,
+    pub state_before: CardState,
+    pub reviewed_at: i64,
+    pub duration_ms: Option<i64>,
+}
+
+impl App {
+    /// The user's own answers from `since` on, oldest first, imports left
+    /// out. Read as one JSON array: six weeks are tens of thousands of
+    /// answers for a heavy user, and sqlx hands rows over one at a time.
+    pub(crate) async fn answers_since(&self, access: &Access, since: i64) -> Result<Vec<Answer>> {
+        type Row = (i64, i64, i64, i64, i64, Option<i64>);
+        let Json(rows): Json<Vec<Row>> = sqlx::query_scalar(
+            "SELECT json_group_array(json_array(deck_id, card_id, rating, state_before, reviewed_at, duration_ms))
+             FROM (SELECT * FROM review_log WHERE user_id = ? AND rating > 0 AND source != 'import' AND reviewed_at >= ?
+                   ORDER BY reviewed_at, id)",
+        )
+        .bind(access.user_id())
+        .bind(since)
+        .fetch_one(&self.db)
+        .await?;
+        rows.into_iter()
+            .map(|(deck_id, card_id, rating, state, reviewed_at, duration_ms)| {
+                let state_before = CardState::from_stored(state)
+                    .ok_or_else(|| AppError::Internal(anyhow::anyhow!("an answer has the unknown state {state}")))?;
+                Ok(Answer { deck_id, card_id, rating, state_before, reviewed_at, duration_ms })
+            })
+            .collect()
+    }
+}
+
+/// Each day's start and end in the user's zone, for queries that count
+/// per day with `json_each`: the clock knows DST and rollover, SQL doesn't.
+fn day_bounds(clock: &Clock, days: impl Iterator<Item = NaiveDate>) -> Vec<(i64, i64)> {
+    days.map(|day| (clock.day_start(day), clock.day_start(day + Duration::days(1)))).collect()
 }
 
 /// How far back the streak looks, in days.

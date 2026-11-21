@@ -10,6 +10,7 @@ use std::collections::HashMap;
 use chrono::{Duration, NaiveDate};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
+use sqlx::types::Json;
 
 use crate::{
     App,

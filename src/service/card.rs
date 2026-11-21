@@ -3,16 +3,19 @@
 #[allow(clippy::wildcard_imports, reason = "an area of the service sees the service's shared imports and types")]
 use super::*;
 
-#[derive(Debug, Clone, sqlx::FromRow, Serialize)]
+/// A card. Read one with `query_as`; read many with [`CARD_JSON`], which is
+/// several times quicker than a row per card.
+#[derive(Debug, Clone, sqlx::FromRow, Serialize, Deserialize)]
 pub struct Card {
     pub id: i64,
-    #[serde(skip)]
+    #[serde(skip_serializing)]
     pub user_id: i64,
     pub deck_id: i64,
     pub front: String,
     pub back: String,
     pub front_image: Option<String>,
     pub back_image: Option<String>,
+    #[serde(deserialize_with = "stored_state")]
     pub state: CardState,
     pub step: i64,
     pub stability: Option<f64>,
@@ -21,6 +24,7 @@ pub struct Card {
     pub last_review: Option<i64>,
     pub reps: i64,
     pub lapses: i64,
+    #[serde(deserialize_with = "stored_bool")]
     pub suspended: bool,
     pub position: i64,
     pub created_by: String,
@@ -29,6 +33,31 @@ pub struct Card {
     /// How a multicard's back is split into items; `None` for a plain card.
     /// See `multi`.
     pub multi: Option<Split>,
+}
+
+/// Every column of a card as one JSON object, for reading many cards in one
+/// row: `SELECT json_group_array({CARD_JSON}) FROM cards WHERE ...` decodes
+/// as `Json<Vec<Card>>`. sqlx hands rows over one at a time, which costs
+/// about 30 µs per card; this costs about 1.
+pub(crate) const CARD_JSON: &str = "json_object('id', id, 'user_id', user_id, 'deck_id', deck_id, 'front', front,
+    'back', back, 'front_image', front_image, 'back_image', back_image, 'state', state, 'step', step,
+    'stability', stability, 'difficulty', difficulty, 'due', due, 'last_review', last_review, 'reps', reps,
+    'lapses', lapses, 'suspended', suspended, 'position', position, 'created_by', created_by,
+    'created_at', created_at, 'updated_at', updated_at, 'multi', multi)";
+
+/// A card state as stored, a number (the API writes it as a word).
+fn stored_state<'de, D: serde::Deserializer<'de>>(d: D) -> std::result::Result<CardState, D::Error> {
+    let n = i64::deserialize(d)?;
+    CardState::from_stored(n).ok_or_else(|| serde::de::Error::custom(format!("unknown card state {n}")))
+}
+
+/// Booleans as stored: 0 and 1.
+fn stored_bool<'de, D: serde::Deserializer<'de>>(d: D) -> std::result::Result<bool, D::Error> {
+    match i64::deserialize(d)? {
+        0 => Ok(false),
+        1 => Ok(true),
+        n => Err(serde::de::Error::custom(format!("{n} is no boolean"))),
+    }
 }
 
 impl Card {
@@ -108,7 +137,7 @@ impl<'a> NewCard<'a> {
 }
 
 /// A card's text, as the quick find reads it.
-#[derive(Debug, sqlx::FromRow)]
+#[derive(Debug)]
 pub struct CardText {
     pub id: i64,
     pub deck_id: i64,
@@ -352,14 +381,21 @@ impl App {
     /// Every visible card's front and the start of its back, for the quick
     /// find, newest first. Only the text: the find scores it in memory.
     pub async fn card_texts(&self, access: &Access) -> Result<Vec<CardText>> {
-        let all: Vec<CardText> = sqlx::query_as(
-            "SELECT id, deck_id, front, substr(back, 1, 300) AS back FROM cards
-             WHERE user_id = ? ORDER BY created_at DESC, id DESC",
+        // One JSON array: quick find reads every card, and sqlx hands rows
+        // over one at a time.
+        let Json(all): Json<Vec<(i64, i64, String, String)>> = sqlx::query_scalar(
+            "SELECT json_group_array(json_array(id, deck_id, front, back)) FROM (
+                 SELECT id, deck_id, front, substr(back, 1, 300) AS back FROM cards
+                 WHERE user_id = ? ORDER BY created_at DESC, id DESC)",
         )
         .bind(access.user_id())
-        .fetch_all(&self.db)
+        .fetch_one(&self.db)
         .await?;
-        Ok(all.into_iter().filter(|c| access.can_see_deck(c.deck_id)).collect())
+        Ok(all
+            .into_iter()
+            .filter(|c| access.can_see_deck(c.1))
+            .map(|(id, deck_id, front, back)| CardText { id, deck_id, front, back })
+            .collect())
     }
 
     pub async fn list_cards(&self, access: &Access, filter: &CardFilter) -> Result<(Vec<Card>, i64)> {

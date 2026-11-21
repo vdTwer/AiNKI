@@ -10,6 +10,7 @@
 use std::collections::{HashMap, HashSet};
 
 use serde::Serialize;
+use sqlx::types::Json;
 
 use crate::{
     App,
@@ -18,7 +19,7 @@ use crate::{
     multi::{self, Split},
     now, num,
     scheduler::CardState,
-    service::{Card, id_list},
+    service::{CARD_JSON, Card, id_list},
 };
 
 /// A card is a leech after this many lapses...
@@ -264,17 +265,18 @@ impl App {
     /// Average thinking time over each card's last five timed answers, for
     /// cards with at least three.
     async fn answer_seconds(&self, card_ids: &[i64]) -> Result<HashMap<i64, f64>> {
-        let rows: Vec<(i64, f64)> = sqlx::query_as(
-            "SELECT card_id, AVG(duration_ms) FROM (
+        // One JSON array: a heavy user has thousands of such cards.
+        let Json(rows): Json<Vec<(i64, f64)>> = sqlx::query_scalar(
+            "SELECT json_group_array(json_array(card_id, ms)) FROM (SELECT card_id, AVG(duration_ms) AS ms FROM (
                 SELECT card_id, duration_ms,
                     ROW_NUMBER() OVER (PARTITION BY card_id ORDER BY reviewed_at DESC, id DESC) AS n
                 FROM review_log
                 WHERE card_id IN (SELECT value FROM json_each(?))
                   AND rating > 0 AND duration_ms > 0 AND source != 'import')
-             WHERE n <= 5 GROUP BY card_id HAVING COUNT(*) >= 3",
+             WHERE n <= 5 GROUP BY card_id HAVING COUNT(*) >= 3)",
         )
         .bind(id_list(card_ids))
-        .fetch_all(&self.db)
+        .fetch_one(&self.db)
         .await?;
         Ok(rows.into_iter().map(|(id, ms)| (id, ms / 1000.0)).collect())
     }
@@ -452,10 +454,12 @@ impl App {
             })
             .map(|c| c.0)
             .collect();
-        let candidates: Vec<Card> = sqlx::query_as("SELECT * FROM cards WHERE id IN (SELECT value FROM json_each(?))")
-            .bind(id_list(&maybe))
-            .fetch_all(&self.db)
-            .await?;
+        let Json(candidates): Json<Vec<Card>> = sqlx::query_scalar(&format!(
+            "SELECT json_group_array({CARD_JSON}) FROM cards WHERE id IN (SELECT value FROM json_each(?))"
+        ))
+        .bind(id_list(&maybe))
+        .fetch_one(&self.db)
+        .await?;
 
         Ok((candidates, secs))
     }

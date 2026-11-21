@@ -22,14 +22,15 @@ use std::collections::HashMap;
 
 use chrono::Duration;
 use fsrs::FSRS;
+use sqlx::types::Json;
 
 use crate::{
     App,
     auth::Access,
-    error::Result,
+    error::{AppError, Result},
     num,
     scheduler::{self, CardSched, CardState, Clock, Rating, SchedConfig},
-    service::{Card, DeckSummary, sched_config_for},
+    service::{DeckSummary, sched_config_for},
 };
 
 /// Days in the outlook, today included.
@@ -91,15 +92,24 @@ impl App {
         let presets: HashMap<i64, _> = self.list_presets(access).await?.into_iter().map(|p| (p.id, p)).collect();
         let book = self.param_book(access).await?;
         let horizon = clock.day_start(clock.today() + Duration::days(num::usize_i64(DAYS)));
-        let cards: Vec<Card> =
-            sqlx::query_as("SELECT * FROM cards WHERE user_id = ? AND state != 0 AND suspended = 0 AND due < ?")
-                .bind(access.user_id())
-                .bind(horizon)
-                .fetch_all(&self.db)
-                .await?;
+        // Read as one JSON array: sqlx hands rows over one by one, which
+        // costs more than the query once there are thousands.
+        type Row = (i64, i64, i64, i64, Option<f32>, Option<f32>, i64, Option<i64>, i64, i64);
+        let Json(rows): Json<Vec<Row>> = sqlx::query_scalar(
+            "SELECT json_group_array(json_array(id, deck_id, state, step, stability, difficulty, due, last_review,
+                 reps, lapses))
+             FROM cards WHERE user_id = ? AND state != 0 AND suspended = 0 AND due < ?",
+        )
+        .bind(access.user_id())
+        .bind(horizon)
+        .fetch_one(&self.db)
+        .await?;
         let mut by_deck: HashMap<i64, Vec<(i64, CardSched)>> = HashMap::new();
-        for card in cards {
-            by_deck.entry(card.deck_id).or_default().push((card.id, card.sched()));
+        for (id, deck, state, step, stability, difficulty, due, last_review, reps, lapses) in rows {
+            let state = CardState::from_stored(state)
+                .ok_or_else(|| AppError::Internal(anyhow::anyhow!("card {id} has the unknown state {state}")))?;
+            let sched = CardSched { state, step, stability, difficulty, due, last_review, reps, lapses };
+            by_deck.entry(deck).or_default().push((id, sched));
         }
         let plans = decks
             .iter()

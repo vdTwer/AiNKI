@@ -29,6 +29,18 @@ pub enum CardState {
 }
 
 impl CardState {
+    /// The state a stored number stands for, for rows read as JSON; `None`
+    /// for a number no state has.
+    pub const fn from_stored(v: i64) -> Option<Self> {
+        match v {
+            0 => Some(Self::New),
+            1 => Some(Self::Learning),
+            2 => Some(Self::Review),
+            3 => Some(Self::Relearning),
+            _ => None,
+        }
+    }
+
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::New => "new",
@@ -400,8 +412,10 @@ mod tests {
 
     #[test]
     fn the_stored_numbers_never_change() {
-        let stored = [CardState::New, CardState::Learning, CardState::Review, CardState::Relearning].map(|s| s as i64);
-        assert_eq!(stored, [0, 1, 2, 3]);
+        let states = [CardState::New, CardState::Learning, CardState::Review, CardState::Relearning];
+        assert_eq!(states.map(|s| s as i64), [0, 1, 2, 3]);
+        assert_eq!([0, 1, 2, 3].map(CardState::from_stored), states.map(Some));
+        assert_eq!(CardState::from_stored(4), None);
     }
 
     fn cfg() -> SchedConfig {

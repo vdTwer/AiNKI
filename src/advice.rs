@@ -22,7 +22,7 @@ use crate::{
     format::{agree, count},
     num,
     scheduler::CardState,
-    service::{DeckSummary, Stats},
+    service::{Answer, DeckSummary, Stats},
 };
 
 /// Recall figures need this many reviews of learned cards.
@@ -922,15 +922,7 @@ impl App {
     /// The rows the coach reads: answers from `since` on, cards due by `now`.
     async fn coach_rows(&self, access: &Access, since: i64, now: i64) -> Result<Rows> {
         // Six weeks of answers: recall now and before, pace, sessions.
-        let answers: Vec<Answer> = sqlx::query_as(
-            "SELECT deck_id, card_id, rating, state_before, reviewed_at, duration_ms FROM review_log
-             WHERE user_id = ? AND rating > 0 AND source != 'import' AND reviewed_at >= ?
-             ORDER BY reviewed_at, id",
-        )
-        .bind(access.user_id())
-        .bind(since)
-        .fetch_all(&self.db)
-        .await?;
+        let answers = self.answers_since(access, since).await?;
         // The last review of each deck, however long ago.
         let last: Vec<(i64, i64)> = sqlx::query_as(
             "SELECT deck_id, MAX(reviewed_at) FROM review_log
@@ -960,17 +952,6 @@ struct Rows {
     last: Vec<(i64, i64)>,
     /// Review cards due now per deck, before the limits.
     uncapped: HashMap<i64, i64>,
-}
-
-/// One answer from the last six weeks, as the coach reads it.
-#[derive(sqlx::FromRow)]
-struct Answer {
-    deck_id: i64,
-    card_id: i64,
-    rating: i64,
-    state_before: CardState,
-    reviewed_at: i64,
-    duration_ms: Option<i64>,
 }
 
 /// What six weeks of answers add up to, counted without the database.
