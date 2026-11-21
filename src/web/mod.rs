@@ -78,12 +78,6 @@ const PARTS_JS: &str = include_str!("../static/parts.js");
 const FAVICON_SVG: &str = include_str!("../static/favicon.svg");
 const FAVICON_PNG: &[u8] = include_bytes!("../static/favicon-32.png");
 const TOUCH_ICON_PNG: &[u8] = include_bytes!("../static/apple-touch-icon.png");
-const FONTS: &[(&str, &[u8])] = &[
-    ("eb-garamond-italic-latin-ext.woff2", include_bytes!("../static/fonts/eb-garamond-italic-latin-ext.woff2")),
-    ("eb-garamond-italic-latin.woff2", include_bytes!("../static/fonts/eb-garamond-italic-latin.woff2")),
-    ("eb-garamond-normal-latin-ext.woff2", include_bytes!("../static/fonts/eb-garamond-normal-latin-ext.woff2")),
-    ("eb-garamond-normal-latin.woff2", include_bytes!("../static/fonts/eb-garamond-normal-latin.woff2")),
-];
 
 pub async fn serve(app: AppState) -> anyhow::Result<()> {
     let bind = app.config.bind.clone();
@@ -207,7 +201,6 @@ pub fn router(app: AppState) -> Router {
         .route("/style.css", get(|q: RawQuery| async move { asset(q, "text/css; charset=utf-8", CSS) }))
         .route("/app.js", get(|q: RawQuery| async move { asset(q, "text/javascript; charset=utf-8", APP_JS) }))
         .route("/parts.js", get(|q: RawQuery| async move { asset(q, "text/javascript; charset=utf-8", PARTS_JS) }))
-        .route("/fonts/{name}", get(font_file))
         .route("/favicon.svg", get(|| async { static_file("image/svg+xml", FAVICON_SVG.as_bytes(), false) }))
         // Browsers ask for /favicon.ico on their own; a PNG there works everywhere.
         .route("/favicon.ico", get(|| async { static_file("image/png", FAVICON_PNG, false) }))
@@ -654,11 +647,4 @@ fn static_file(content_type: &'static str, body: &'static [u8], forever: bool) -
 fn asset(RawQuery(q): RawQuery, content_type: &'static str, body: &'static str) -> Response {
     let current = q.and_then(|q| q.strip_prefix("v=").map(|v| v == asset_version())).unwrap_or(false);
     static_file(content_type, body.as_bytes(), current)
-}
-
-async fn font_file(Path(name): Path<String>) -> Response {
-    match FONTS.iter().find(|(n, _)| *n == name) {
-        Some((_, bytes)) => static_file("font/woff2", bytes, true),
-        None => StatusCode::NOT_FOUND.into_response(),
-    }
 }
