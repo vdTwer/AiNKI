@@ -53,14 +53,6 @@ fn preferences_form(u: &User) -> Markup {
                 label.check { input type="checkbox" name="four_buttons" value="1" checked[u.four_buttons]; " Show Hard and Easy buttons" }
                 p.hint.muted.small { "Hard means you remembered, with effort. If you forgot, it's Again; FSRS gets that wrong otherwise. " a href="/learn/two-buttons" { "Two buttons or four?" } }
                 label.check { input type="checkbox" name="optimize_include_agent" value="1" checked[u.optimize_include_agent]; " Use reviews done through agents when optimizing" }
-                fieldset.line {
-                    legend { "Look on desktop computers" }
-                    span.choice {
-                        label.check { input type="radio" name="desktop_look" value="calm" checked[u.desktop_look != "simple"]; " Calm" }
-                        label.check { input type="radio" name="desktop_look" value="simple" checked[u.desktop_look == "simple"]; " Simple" }
-                    }
-                }
-                p.hint.muted.small { "Phones, e-readers and browsers without JavaScript always use the simple, high-contrast look." }
             }
             div.form-foot.end { button.btn.primary type="submit" { "Save" } }
         }
@@ -183,7 +175,6 @@ pub(crate) struct SettingsForm {
     pub(crate) font_scale: String,
     pub(crate) four_buttons: Option<String>,
     pub(crate) optimize_include_agent: Option<String>,
-    pub(crate) desktop_look: Option<String>,
 }
 
 pub(crate) async fn settings_update(
@@ -200,7 +191,6 @@ pub(crate) async fn settings_update(
                 four_buttons: f.four_buttons.is_some(),
                 font_scale: f.font_scale.trim().parse().unwrap_or(user.0.font_scale),
                 optimize_include_agent: f.optimize_include_agent.is_some(),
-                desktop_look: f.desktop_look.as_deref().unwrap_or("calm"),
             };
             app.update_settings(user.0.id, &settings).await?;
             Ok(redirect_msg("/settings", "Settings saved."))
