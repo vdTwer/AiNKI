@@ -28,22 +28,30 @@ pub(crate) struct Home {
 
 impl Home {
     async fn load(app: &App, access: &Access) -> Result<Self, AppError> {
+        // Everything that doesn't depend on anything else, at once.
+        let (summaries, stats, flagged, overdue, shares, reads) = tokio::try_join!(
+            app.deck_summaries(access),
+            app.stats(access, None),
+            app.attention(access, None),
+            app.overdue(access),
+            app.incoming_shares(access),
+            app.coach_reads(access),
+        )?;
         let (archived, decks): (Vec<_>, Vec<_>) =
-            app.deck_summaries(access).await?.into_iter().partition(|d| d.deck.status == DeckStatus::Archived);
-        let stats = app.stats(access, None).await?;
-        let flagged = app.attention(access, None).await?;
-        let overdue = app.overdue(access).await?;
+            summaries.into_iter().partition(|d| d.deck.status == DeckStatus::Archived);
+        let attention = num::usize_i64(flagged.len());
+        let (week, outlook) = tokio::try_join!(app.week_with(access, attention), app.outlook(access, &decks))?;
         let known = advice::Known { decks: &decks, stats: &stats, attention: &flagged, overdue };
-        let notes = app.advice_from(access, &known).await?;
+        let notes = advice::advice_with(access, &known, reads);
         Ok(Self {
             total_due: decks.iter().map(DeckSummary::due_total).sum(),
             archived: archived.len(),
-            shares: app.incoming_shares(access).await?,
-            attention: num::usize_i64(flagged.len()),
+            shares,
+            attention,
             overdue,
             quiet: study::quiet_until(&access.user, now()),
-            week: app.week(access).await?,
-            outlook: app.outlook(access, &decks).await?,
+            week,
+            outlook,
             notes,
             decks,
             stats,
@@ -324,7 +332,7 @@ pub(crate) fn week_home(user: &User, today_due: i64, outlook: &Outlook, seconds_
                 @for (i, &(date, n)) in days.iter().enumerate() {
                     @let r = num::f64_i64(n.round());
                     div.day.today[i == 0] title=(tip(i, date, n)) {
-                        span.bar.empty[r == 0] style=(format!("height: {}%", (r * 100 / most).max(3))) data-n=(format::number(r)) {}
+                        span.bar.empty[r == 0] style=(format!("height: {}%", (r * 100 / most).max(3))) {}
                         span.letter { (date.format("%a").to_string().chars().next().unwrap_or(' ')) }
                     }
                 }

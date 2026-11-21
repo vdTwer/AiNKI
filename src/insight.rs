@@ -121,20 +121,25 @@ impl App {
     ///
     /// `Internal` if the database fails.
     pub async fn week(&self, access: &Access) -> Result<Week> {
+        let attention = num::usize_i64(self.attention(access, None).await?.len());
+        self.week_with(access, attention).await
+    }
+
+    /// The same, with the number of flagged cards the caller already has.
+    ///
+    /// # Errors
+    ///
+    /// `Internal` if the database fails.
+    pub async fn week_with(&self, access: &Access, attention: i64) -> Result<Week> {
         let clock = access.user.clock();
         let today = clock.today();
         let start = clock.day_start(today - Duration::days(6));
-        let presets: HashMap<i64, f64> =
-            self.list_presets(access).await?.into_iter().map(|p| (p.id, p.desired_retention)).collect();
+        let (presets, decks, rows) =
+            tokio::try_join!(self.list_presets(access), self.decks(access), self.answers_since(access, start))?;
+        let presets: HashMap<i64, f64> = presets.into_iter().map(|p| (p.id, p.desired_retention)).collect();
         // The decks this access sees, with the retention each aims for.
-        let targets: HashMap<i64, f64> = self
-            .decks(access)
-            .await?
-            .into_iter()
-            .map(|d| (d.id, presets.get(&d.preset_id).copied().unwrap_or(0.9)))
-            .collect();
-
-        let rows = self.answers_since(access, start).await?;
+        let targets: HashMap<i64, f64> =
+            decks.into_iter().map(|d| (d.id, presets.get(&d.preset_id).copied().unwrap_or(0.9))).collect();
 
         let (mut reviews, mut ms, mut sample, mut passed, mut target_sum) = (0, 0, 0, 0, 0.0);
         let mut days = HashSet::new();
@@ -152,7 +157,6 @@ impl App {
                 target_sum += targets.get(&r.deck_id).copied().unwrap_or(0.9);
             }
         }
-        let attention = num::usize_i64(self.attention(access, None).await?.len());
         let retention = (sample > 0).then(|| num::i64_f64(passed) / num::i64_f64(sample));
         let target = (sample > 0).then(|| target_sum / num::i64_f64(sample));
         let mut week = Week {

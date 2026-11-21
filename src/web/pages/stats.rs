@@ -29,22 +29,38 @@ pub(crate) struct StatsPage {
 
 impl StatsPage {
     async fn load(app: &App, access: &Access, deck: Option<i64>) -> Result<Self, AppError> {
-        let all = deck.is_none();
-        Ok(Self {
-            deck: match deck {
-                Some(id) => Some(app.deck(access, id).await?),
-                None => None,
-            },
-            s: app.stats(access, deck).await?,
-            cal: app.calibration(access, deck).await?,
-            sure: app.confidence(access, deck).await?,
-            week: if all { Some(app.week(access).await?) } else { None },
-            retention: (app.deck_retention(access).await?.into_iter())
-                .filter(|d| d.reviews > 0 && deck.is_none_or(|id| id == d.deck_id))
-                .collect(),
-            history: app.history(access, deck).await?,
-            notes: if all { app.advice(access).await? } else { vec![] },
-        })
+        let the_deck = async {
+            match deck {
+                Some(id) => app.deck(access, id).await.map(Some),
+                None => Ok(None),
+            }
+        };
+        let (the_deck, s, cal, sure, retention, history) = tokio::try_join!(
+            the_deck,
+            app.stats(access, deck),
+            app.calibration(access, deck),
+            app.confidence(access, deck),
+            app.deck_retention(access),
+            app.history(access, deck),
+        )?;
+        let retention =
+            retention.into_iter().filter(|d| d.reviews > 0 && deck.is_none_or(|id| id == d.deck_id)).collect();
+        // The week and the coach speak about everything: all decks only.
+        let (week, notes) = if deck.is_none() {
+            let (decks, flagged, overdue, reads) = tokio::try_join!(
+                app.deck_summaries(access),
+                app.attention(access, None),
+                app.overdue(access),
+                app.coach_reads(access),
+            )?;
+            let attention = num::usize_i64(flagged.len());
+            let week = app.week_with(access, attention).await?;
+            let known = advice::Known { decks: &decks, stats: &s, attention: &flagged, overdue };
+            (Some(week), advice::advice_with(access, &known, reads))
+        } else {
+            (None, vec![])
+        };
+        Ok(Self { deck: the_deck, s, cal, sure, week, retention, history, notes })
     }
 
     fn study_url(&self) -> String {

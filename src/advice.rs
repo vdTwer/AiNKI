@@ -841,14 +841,39 @@ impl App {
     ///
     /// `Internal` if the database fails.
     pub async fn advice_from(&self, access: &Access, known: &Known<'_>) -> Result<Vec<Advice>> {
-        let quiet: Vec<String> = sqlx::query_scalar("SELECT rule FROM coach_snoozes WHERE user_id = ? AND until > ?")
-            .bind(access.user_id())
-            .bind(crate::now())
-            .fetch_all(&self.db)
-            .await?;
-        let mut notes = advise(&self.signals(access, known).await?);
-        notes.retain(|n| !quiet.iter().any(|q| q == n.rule.as_str()));
-        Ok(notes)
+        Ok(advice_with(access, known, self.coach_reads(access).await?))
+    }
+
+    /// Everything the coach reads from the database, fetched at once, so a
+    /// page can fetch it alongside its other data and then call
+    /// [`advice_with`].
+    ///
+    /// # Errors
+    ///
+    /// `Internal` if the database fails.
+    pub async fn coach_reads(&self, access: &Access) -> Result<CoachReads> {
+        let user = &access.user;
+        let clock = user.clock();
+        let since = clock.day_start(clock.today() - Duration::days(41));
+        let snoozed = async {
+            let quiet: Vec<String> =
+                sqlx::query_scalar("SELECT rule FROM coach_snoozes WHERE user_id = ? AND until > ?")
+                    .bind(access.user_id())
+                    .bind(crate::now())
+                    .fetch_all(&self.db)
+                    .await?;
+            Ok::<_, crate::error::AppError>(quiet)
+        };
+        let confidence =
+            async { if user.confidence_check { self.confidence(access, None).await.map(Some) } else { Ok(None) } };
+        let (snoozed, presets, rows, optimizable_reviews, confidence) = tokio::try_join!(
+            snoozed,
+            self.list_presets(access),
+            self.coach_rows(access, since, clock.now),
+            self.optimizable_reviews(access),
+            confidence,
+        )?;
+        Ok(CoachReads { snoozed, presets, rows, optimizable_reviews, confidence })
     }
 
     /// "Not now": the rule stays quiet for three days.
@@ -875,90 +900,111 @@ impl App {
     ///
     /// `Internal` if the database fails.
     pub async fn signals(&self, access: &Access, known: &Known<'_>) -> Result<Signals> {
-        let user = &access.user;
-        let clock = user.clock();
-        let today = clock.today();
-        let presets = self.list_presets(access).await?;
-        let target_of: HashMap<i64, f64> = presets.iter().map(|p| (p.id, p.desired_retention)).collect();
-        let deck_target: HashMap<i64, f64> =
-            known.decks.iter().map(|d| (d.deck.id, target_of.get(&d.deck.preset_id).copied().unwrap_or(0.9))).collect();
-        let visible: HashSet<i64> = known.decks.iter().map(|d| d.deck.id).collect();
-        let ago = |at: i64| (today - clock.date_of(at)).num_days();
-
-        let Rows { answers, last, uncapped } =
-            self.coach_rows(access, clock.day_start(today - Duration::days(41)), clock.now).await?;
-        let last: HashMap<i64, i64> = last.into_iter().filter(|(d, _)| visible.contains(d)).collect();
-        let mut s = Signals {
-            hour: chrono::DateTime::from_timestamp(clock.now, 0).map_or(12, |t| t.with_timezone(&clock.tz).hour()),
-            quiet: crate::study::quiet_until(user, clock.now).is_some(),
-            reviews_today: known.stats.reviews_today,
-            overdue: known.overdue,
-            catch_up: user.catch_up,
-            breaks_on: user.session_minutes != 0,
-            next_days: known.stats.forecast.iter().skip(1).take(7).map(|(_, n)| *n).collect(),
-            leeches: num::usize_i64(
-                known.attention.iter().filter(|a| a.flags.iter().any(|f| f.kind == Kind::Leech)).count(),
-            ),
-            optimizable_reviews: self.optimizable_reviews(access).await?,
-            ever_optimized: user.optimized_at.is_some() || user.fsrs_params_updated_at.is_some(),
-            auto_optimize: user.auto_optimize,
-            days_since_review: last.values().max().map(|at| ago(*at)),
-            ..Default::default()
-        };
-        s.other_flags = num::usize_i64(known.attention.len()) - s.leeches;
-        if user.confidence_check {
-            let c = self.confidence(access, None).await?;
-            s.sure = Some(Recall { reviews: c.sure, remembered: c.sure_recalled });
-        }
-        let visible_answers: Vec<&Answer> = answers.iter().filter(|r| visible.contains(&r.deck_id)).collect();
-        let tally = Tally::of(&visible_answers, ago, |deck| deck_target.get(&deck).copied().unwrap_or(0.9));
-        tally.add_to(&mut s, clock.start_of_today(), &deck_target);
-        let per_deck = PerDeck { tally: &tally, target: &deck_target, last: &last, uncapped: &uncapped };
-        s.decks = per_deck.signals(known, user.catch_up, today, ago, &mut s.due_today, &mut s.held_back);
-        s.minutes_due = known.stats.minutes_for(s.due_today);
-        s.presets = presets
-            .iter()
-            .map(|p| {
-                let decks: Vec<&DeckSummary> = known.decks.iter().filter(|d| d.deck.preset_id == p.id).collect();
-                PresetSignal {
-                    id: p.id,
-                    name: p.name.clone(),
-                    desired_retention: p.desired_retention,
-                    new_per_day: p.new_per_day,
-                    reviews_per_day: p.reviews_per_day,
-                    fitted: p.fsrs_params_updated_at.is_some() || s.ever_optimized,
-                    has_exam: decks.iter().any(|d| d.deck.exam_date.is_some()),
-                    used: !decks.is_empty(),
-                }
-            })
-            .collect();
-        Ok(s)
+        Ok(signals_with(access, known, self.coach_reads(access).await?))
     }
 
     /// The rows the coach reads: answers from `since` on, cards due by `now`.
     async fn coach_rows(&self, access: &Access, since: i64, now: i64) -> Result<Rows> {
         // Six weeks of answers: recall now and before, pace, sessions.
-        let answers = self.answers_since(access, since).await?;
+        let answers = self.answers_since(access, since);
         // The last review of each deck, however long ago.
-        let last: Vec<(i64, i64)> = sqlx::query_as(
+        let last = sqlx::query_as::<_, (i64, i64)>(
             "SELECT deck_id, MAX(reviewed_at) FROM review_log
              WHERE user_id = ? AND rating > 0 AND source != 'import' GROUP BY deck_id",
         )
         .bind(access.user_id())
-        .fetch_all(&self.db)
-        .await?;
+        .fetch_all(&self.db);
         // Review cards due today, before the limits hold some back.
-        let uncapped: Vec<(i64, i64)> = sqlx::query_as(
+        let uncapped = sqlx::query_as::<_, (i64, i64)>(
             "SELECT deck_id, COUNT(*) FROM cards WHERE user_id = ? AND suspended = 0 AND state = 2 AND due <= ?
              GROUP BY deck_id",
         )
         .bind(access.user_id())
         .bind(now)
-        .fetch_all(&self.db)
-        .await?;
-
+        .fetch_all(&self.db);
+        let (answers, last, uncapped) =
+            tokio::try_join!(answers, async { Ok(last.await?) }, async { Ok(uncapped.await?) })?;
         Ok(Rows { answers, last, uncapped: uncapped.into_iter().collect() })
     }
+}
+
+/// What the coach reads from the database (see `App::coach_reads`).
+pub struct CoachReads {
+    snoozed: Vec<String>,
+    presets: Vec<crate::service::Preset>,
+    rows: Rows,
+    optimizable_reviews: i64,
+    confidence: Option<crate::study::Confidence>,
+}
+
+/// The coach's notes from what is known and what was read, most important
+/// first. Rules put off with "Not now" stay out. No database.
+pub fn advice_with(access: &Access, known: &Known<'_>, reads: CoachReads) -> Vec<Advice> {
+    let snoozed = reads.snoozed.clone();
+    let mut notes = advise(&signals_with(access, known, reads));
+    notes.retain(|n| !snoozed.iter().any(|q| q == n.rule.as_str()));
+    notes
+}
+
+/// The signals the rules read. No database.
+fn signals_with(access: &Access, known: &Known<'_>, reads: CoachReads) -> Signals {
+    let CoachReads { presets, rows, optimizable_reviews, confidence, .. } = reads;
+    let user = &access.user;
+    let clock = user.clock();
+    let today = clock.today();
+
+    let target_of: HashMap<i64, f64> = presets.iter().map(|p| (p.id, p.desired_retention)).collect();
+    let deck_target: HashMap<i64, f64> =
+        known.decks.iter().map(|d| (d.deck.id, target_of.get(&d.deck.preset_id).copied().unwrap_or(0.9))).collect();
+    let visible: HashSet<i64> = known.decks.iter().map(|d| d.deck.id).collect();
+    let ago = |at: i64| (today - clock.date_of(at)).num_days();
+
+    let Rows { answers, last, uncapped } = rows;
+    let last: HashMap<i64, i64> = last.into_iter().filter(|(d, _)| visible.contains(d)).collect();
+    let mut s = Signals {
+        hour: chrono::DateTime::from_timestamp(clock.now, 0).map_or(12, |t| t.with_timezone(&clock.tz).hour()),
+        quiet: crate::study::quiet_until(user, clock.now).is_some(),
+        reviews_today: known.stats.reviews_today,
+        overdue: known.overdue,
+        catch_up: user.catch_up,
+        breaks_on: user.session_minutes != 0,
+        next_days: known.stats.forecast.iter().skip(1).take(7).map(|(_, n)| *n).collect(),
+        leeches: num::usize_i64(
+            known.attention.iter().filter(|a| a.flags.iter().any(|f| f.kind == Kind::Leech)).count(),
+        ),
+        optimizable_reviews,
+        ever_optimized: user.optimized_at.is_some() || user.fsrs_params_updated_at.is_some(),
+        auto_optimize: user.auto_optimize,
+        days_since_review: last.values().max().map(|at| ago(*at)),
+        ..Default::default()
+    };
+    s.other_flags = num::usize_i64(known.attention.len()) - s.leeches;
+    if let Some(c) = confidence {
+        s.sure = Some(Recall { reviews: c.sure, remembered: c.sure_recalled });
+    }
+    let visible_answers: Vec<&Answer> = answers.iter().filter(|r| visible.contains(&r.deck_id)).collect();
+    let tally = Tally::of(&visible_answers, ago, |deck| deck_target.get(&deck).copied().unwrap_or(0.9));
+    tally.add_to(&mut s, clock.start_of_today(), &deck_target);
+    let per_deck = PerDeck { tally: &tally, target: &deck_target, last: &last, uncapped: &uncapped };
+    s.decks = per_deck.signals(known, user.catch_up, today, ago, &mut s.due_today, &mut s.held_back);
+    s.minutes_due = known.stats.minutes_for(s.due_today);
+    s.presets = presets
+        .iter()
+        .map(|p| {
+            let decks: Vec<&DeckSummary> = known.decks.iter().filter(|d| d.deck.preset_id == p.id).collect();
+            PresetSignal {
+                id: p.id,
+                name: p.name.clone(),
+                desired_retention: p.desired_retention,
+                new_per_day: p.new_per_day,
+                reviews_per_day: p.reviews_per_day,
+                fitted: p.fsrs_params_updated_at.is_some() || s.ever_optimized,
+                has_exam: decks.iter().any(|d| d.deck.exam_date.is_some()),
+                used: !decks.is_empty(),
+            }
+        })
+        .collect();
+    s
 }
 
 /// What `App::coach_rows` reads.
