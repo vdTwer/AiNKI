@@ -12,7 +12,7 @@ use crate::{
     error::AppError,
     now,
     scheduler::{CardState, Rating},
-    service::{CardFilter, CardInput, NewCard, PresetInput, Settings},
+    service::{CardFilter, CardInput, NewCard, PresetInput},
 };
 
 mod anki;
@@ -779,31 +779,48 @@ mod http {
             async move {
                 let res = send(&app, req).await;
                 assert_eq!(res.status(), StatusCode::OK);
-                serde_json::from_str::<serde_json::Value>(&text(res).await).unwrap()["results"]
-                    .as_array()
-                    .unwrap()
-                    .clone()
+                found_rows(&text(res).await)
             }
         };
 
         // A typo still finds the deck, shown with its path.
         let r = find("spnish").await;
-        assert_eq!(r[0]["title"], "Languages › Spanish verbs");
-        assert_eq!(r[0]["href"], format!("/decks/{}", deck.id));
+        assert_eq!(
+            (r[0].0.as_str(), r[0].1.as_str()),
+            (format!("/decks/{}", deck.id).as_str(), "Languages › Spanish verbs")
+        );
         // Cards are found by their words, without the Markdown.
         let r = find("hblr").await;
-        let card = r.iter().find(|x| x["kind"] == "card").unwrap();
-        assert_eq!(card["title"], "hablar");
-        assert_eq!(card["sub"], "Languages › Spanish verbs");
+        let card = r.iter().find(|x| x.2 == "card").unwrap();
+        assert_eq!(card.1, "hablar");
         // Only your own cards.
-        assert!(!find("secreto").await.iter().any(|x| x["kind"] == "card"));
+        assert!(!find("secreto").await.iter().any(|x| x.2 == "card"));
         // Places by other words for them, lessons by title.
-        assert_eq!(find("password").await[0]["href"], "/settings");
-        assert!(find("forgetting").await.iter().any(|x| x["kind"] == "lesson"));
+        assert_eq!(find("password").await[0].0, "/settings");
+        assert!(find("forgetting").await.iter().any(|x| x.2 == "lesson"));
         // Nothing typed: the places and the decks.
         let r = find("").await;
-        assert_eq!(r[0]["title"], "Today");
-        assert!(r.iter().any(|x| x["kind"] == "deck"));
+        assert_eq!(r[0].1, "Today");
+        assert!(r.iter().any(|x| x.2 == "deck"));
+    }
+
+    /// The rows of the find page: (href, title, kind), in order. Places
+    /// carry no kind.
+    fn found_rows(html: &str) -> Vec<(String, String, String)> {
+        let results = html.split(r#"id="find-results""#).nth(1).unwrap_or_default();
+        let results = results.split("</ul>").next().unwrap_or_default();
+        results
+            .split(r#"<a class="row" href=""#)
+            .skip(1)
+            .map(|row| {
+                let href = row.split('"').next().unwrap_or_default().to_string();
+                let title = row.split(r#"<span class="grow">"#).nth(1).unwrap_or_default();
+                let title = title.split('<').next().unwrap_or_default().to_string();
+                let kind = row.split(r#"<span class="small muted">"#).nth(1).unwrap_or_default();
+                let kind = kind.split('<').next().unwrap_or_default().to_string();
+                (href, title, kind)
+            })
+            .collect()
     }
 
     #[tokio::test]
@@ -1334,46 +1351,31 @@ mod http {
     }
 
     #[tokio::test]
-    async fn desktop_look_is_opt_in_by_script_and_setting() {
+    async fn one_plain_look_with_its_two_scripts() {
         let app = app().await;
-        let a = user(&app, "kolja").await;
+        user(&app, "kolja").await;
         let cookie = login_cookie(&app, "kolja").await;
-        let page = |c: String| Request::get("/").header(header::COOKIE, c).body(Body::empty()).unwrap();
-        let body = axum::body::to_bytes(send(&app, page(cookie.clone())).await.into_body(), usize::MAX).await.unwrap();
+        let page = Request::get("/").header(header::COOKIE, cookie).body(Body::empty()).unwrap();
+        let body = axum::body::to_bytes(send(&app, page).await.into_body(), usize::MAX).await.unwrap();
         let html = String::from_utf8_lossy(&body);
-        // The base page is the simple look; the hand-drawn one is only a
-        // desktop-only stylesheet that theme.js may switch on.
-        assert!(html.contains(r#"data-look="calm""#));
         assert!(html.contains(r#"<link rel="stylesheet" href="/style.css?v="#));
-        assert!(html.contains(r#"" media="(min-width: 60em) and (hover: hover) and (pointer: fine)""#));
-        assert!(html.contains(r#"href="/calm.css?v="#));
-        assert!(html.contains(r#"<script src="/theme.js?v="#));
-        assert!(!html.contains(r#"class="calm""#));
-
-        let settings = |desktop_look| Settings {
-            timezone: "UTC",
-            rollover_hour: 4,
-            four_buttons: false,
-            font_scale: 100,
-            optimize_include_agent: true,
-            desktop_look,
-        };
-        app.update_settings(a.user_id(), &settings("simple")).await.unwrap();
-        let body = axum::body::to_bytes(send(&app, page(cookie)).await.into_body(), usize::MAX).await.unwrap();
-        assert!(String::from_utf8_lossy(&body).contains(r#"data-look="simple""#));
-        assert!(app.update_settings(a.user_id(), &settings("neon")).await.is_err());
-
-        for (path, kind) in [
-            ("/calm.css", "text/css"),
-            ("/theme.js", "text/javascript"),
-            ("/fonts/eb-garamond-normal-latin.woff2", "font/woff2"),
+        assert!(html.contains(r#"<script src="/app.js?v="#));
+        assert!(html.contains(r#"<script type="module" src="/parts.js?v="#));
+        for gone in ["calm.css", "theme.js", "desk.js", "data-look", "calm-only", "simple-only"] {
+            assert!(!html.contains(gone), "{gone} is still on the page");
+        }
+        for (path, kind, status) in [
+            ("/style.css", "text/css", StatusCode::OK),
+            ("/parts.js", "text/javascript", StatusCode::OK),
+            ("/calm.css", "", StatusCode::NOT_FOUND),
+            ("/fonts/eb-garamond-normal-latin.woff2", "", StatusCode::NOT_FOUND),
         ] {
             let res = send(&app, Request::get(path).body(Body::empty()).unwrap()).await;
-            assert_eq!(res.status(), StatusCode::OK, "{path}");
-            assert!(res.headers()[header::CONTENT_TYPE].to_str().unwrap().starts_with(kind));
+            assert_eq!(res.status(), status, "{path}");
+            if status == StatusCode::OK {
+                assert!(res.headers()[header::CONTENT_TYPE].to_str().unwrap().starts_with(kind));
+            }
         }
-        let res = send(&app, Request::get("/fonts/../ainki.db").body(Body::empty()).unwrap()).await;
-        assert_eq!(res.status(), StatusCode::NOT_FOUND);
     }
 
     #[tokio::test]

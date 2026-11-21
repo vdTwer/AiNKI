@@ -331,7 +331,7 @@ async fn a_v1_database_upgrades_without_losing_anything() {
     assert_eq!(user.id, v1.user);
     assert_eq!(app.session_user("v1-session").await.unwrap().map(|u| u.id), Some(v1.user));
     // v1 settings are kept; v2 settings start at their defaults.
-    assert_eq!((user.font_scale, user.desktop_look.as_str(), user.timezone.0.name()), (110, "calm", "Europe/Berlin"));
+    assert_eq!((user.font_scale, user.timezone.0.name()), (110, "Europe/Berlin"));
     assert!(user.auto_optimize);
     assert!(!user.catch_up && !user.confidence_check && !user.is_admin);
     assert_eq!((user.session_minutes, user.catch_up_reviews), (0, 100));
