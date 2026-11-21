@@ -426,7 +426,6 @@ pub(crate) async fn card_view(
         .collect();
     let clock = user.clock();
     let decay = scheduler::decay_for(&app.deck_params(&access, card.deck_id).await?)?;
-    let r = scheduler::retrievability(&card.sched(), decay, &clock);
     let draft = match sent {
         Some(f) => CardDraft {
             id: Some(card.id),
@@ -464,76 +463,96 @@ pub(crate) async fn card_view(
             (form_error(error))
             (coach_box(&card, &flags))
             (card_form(&format!("/cards/{id}{}", from.query()), &decks, &draft, "Save", false, &hints))
-            h2 { "Scheduling" }
-            dl.kv {
-                dt { "State" } dd { (state_label(card.card_state())) @if card.suspended { " (suspended)" } }
-                @if card.card_state() != CardState::New {
-                    dt { "Due" } dd { (capitalize(&format::when(&clock, card.due))) }
-                }
-                @if let Some(r) = r { dt { @if card.multi.is_some() { "Weakest item now" } @else { "Recall chance now" } } dd { (format::percent(Some(f64::from(r)))) } }
-            }
-            @if !items.is_empty() {
-                h2 { "Items" }
-                ol.item-recall {
-                    @for i in &items {
-                        li {
-                            span.text { (multi::title(&i.text)) }
-                            span.chance {
-                                @match scheduler::retrievability(&i.sched(), decay, &clock) {
-                                    Some(r) => (format::percent(Some(f64::from(r)))),
-                                    None => "New",
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            details.more {
-                summary { "Scheduling details" }
-                dl.kv {
-                    @if let Some(s) = card.stability { dt { "Stability" } dd { (format!("{s:.1} days")) } }
-                    @if let Some(d) = card.difficulty { dt { "Difficulty" } dd { (format!("{d:.1} / 10")) } }
-                    dt { "Reviews / lapses" } dd { (card.reps) " / " (card.lapses) }
-                    dt { "Added" } dd { (source_label(&card.created_by)) }
-                }
-            }
-            form.actions method="post" action=(format!("/cards/{id}/{}", if card.suspended { "unsuspend" } else { "suspend" })) {
-                button.btn type="submit" { @if card.suspended { "Unsuspend" } @else { "Suspend" } }
-            }
-            details.danger {
-                summary { "Forget progress or delete this card…" }
-                form method="post" action=(format!("/cards/{id}/delete")) {
-                    p { "Forgetting makes it a new card again. Deleting removes it and its history." }
-                    div.actions {
-                        button.btn.danger type="submit" formaction=(format!("/cards/{id}/forget")) { "Forget progress" }
-                        button.btn.danger type="submit" { "Delete card" }
-                    }
-                }
-            }
-            @if !history.is_empty() {
-                h2 { "History" }
-                table.history {
-                    thead { tr { th { "When" } th { "Answer" } th { "Next" } } }
-                    tbody {
-                        @for h in history.iter().rev() {
-                            tr {
-                                td { (capitalize(&format::when(&clock, h["timestamp"].as_i64().unwrap_or(0)))) }
-                                td {
-                                    @if let (Some(asked), Some(recalled)) = (h["items_asked"].as_i64(), h["items_recalled"].as_i64()) {
-                                        (recalled) " of " (asked) " remembered"
-                                    } @else {
-                                        (rating_label(h["rating"].as_str().unwrap_or("")))
-                                    }
-                                    @if h["source"] == "agent" { " (by an agent)" }
-                                }
-                                td { (h["next_interval"].as_str().unwrap_or("")) }
-                            }
-                        }
-                    }
-                }
-            }
+            (card_schedule(&card, &items, decay, &clock))
+            (card_actions(&card))
+            (card_log(&history, &clock))
         },
     ))
+}
+
+fn card_schedule(card: &Card, items: &[crate::multi::CardItem], decay: f32, clock: &scheduler::Clock) -> Markup {
+    let r = scheduler::retrievability(&card.sched(), decay, clock);
+    html! {
+        h2 { "Scheduling" }
+        dl.kv {
+            dt { "State" } dd { (state_label(card.card_state())) @if card.suspended { " (suspended)" } }
+            @if card.card_state() != CardState::New {
+                dt { "Due" } dd { (capitalize(&format::when(clock, card.due))) }
+            }
+            @if let Some(r) = r { dt { @if card.multi.is_some() { "Weakest item now" } @else { "Recall chance now" } } dd { (format::percent(Some(f64::from(r)))) } }
+        }
+        @if !items.is_empty() {
+            h2 { "Items" }
+            ol.item-recall {
+                @for i in items {
+                    li {
+                        span.text { (multi::title(&i.text)) }
+                        span.chance {
+                            @match scheduler::retrievability(&i.sched(), decay, clock) {
+                                Some(r) => (format::percent(Some(f64::from(r)))),
+                                None => "New",
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        details.more {
+            summary { "Scheduling details" }
+            dl.kv {
+                @if let Some(s) = card.stability { dt { "Stability" } dd { (format!("{s:.1} days")) } }
+                @if let Some(d) = card.difficulty { dt { "Difficulty" } dd { (format!("{d:.1} / 10")) } }
+                dt { "Reviews / lapses" } dd { (card.reps) " / " (card.lapses) }
+                dt { "Added" } dd { (source_label(&card.created_by)) }
+            }
+        }
+    }
+}
+
+fn card_actions(card: &Card) -> Markup {
+    let id = card.id;
+    html! {
+        form.actions method="post" action=(format!("/cards/{id}/{}", if card.suspended { "unsuspend" } else { "suspend" })) {
+            button.btn type="submit" { @if card.suspended { "Unsuspend" } @else { "Suspend" } }
+        }
+        details.danger {
+            summary { "Forget progress or delete this card…" }
+            form method="post" action=(format!("/cards/{id}/delete")) {
+                p { "Forgetting makes it a new card again. Deleting removes it and its history." }
+                div.actions {
+                    button.btn.danger type="submit" formaction=(format!("/cards/{id}/forget")) { "Forget progress" }
+                    button.btn.danger type="submit" { "Delete card" }
+                }
+            }
+        }
+    }
+}
+
+fn card_log(history: &[serde_json::Value], clock: &scheduler::Clock) -> Markup {
+    html! {
+        @if !history.is_empty() {
+            h2 { "History" }
+            table.history {
+                thead { tr { th { "When" } th { "Answer" } th { "Next" } } }
+                tbody {
+                    @for h in history.iter().rev() {
+                        tr {
+                            td { (capitalize(&format::when(clock, h["timestamp"].as_i64().unwrap_or(0)))) }
+                            td {
+                                @if let (Some(asked), Some(recalled)) = (h["items_asked"].as_i64(), h["items_recalled"].as_i64()) {
+                                    (recalled) " of " (asked) " remembered"
+                                } @else {
+                                    (rating_label(h["rating"].as_str().unwrap_or("")))
+                                }
+                                @if h["source"] == "agent" { " (by an agent)" }
+                            }
+                            td { (h["next_interval"].as_str().unwrap_or("")) }
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 pub(crate) async fn card_page(

@@ -301,6 +301,9 @@ pub(crate) struct DeckQuery {
     pub(crate) page: Option<i64>,
 }
 
+/// Cards listed on one page of a deck.
+const DECK_PAGE_SIZE: i64 = 50;
+
 pub(crate) async fn deck_page(
     State(app): State<AppState>,
     user: WebUser,
@@ -311,7 +314,7 @@ pub(crate) async fn deck_page(
     let access = user.access();
     let summary = app.deck_summaries(&access).await?.into_iter().find(|d| d.deck.id == id).ok_or(AppError::NotFound)?;
     let page = q.page.unwrap_or(0).max(0);
-    let per_page = 50;
+    let per_page = DECK_PAGE_SIZE;
     let (cards, total) = app
         .list_cards(
             &access,
@@ -339,97 +342,110 @@ pub(crate) async fn deck_page(
             (flash(msg.as_deref()))
             // On desktops: the deck and its one action on the left, its
             // settings beside it, the rest in a menu.
-            div.deck-hero {
-            div.deck-main {
-            div.deck-title {
-                h1 { (deck_title(&d.name)) }
-                button.more-toggle.calm-only type="button" aria-label="More" aria-expanded="false" aria-controls="deck-menu" { span {} span {} span {} }
-            }
-            @if !d.description.is_empty() { p { (d.description) } }
-            dl.stats-inline {
-                div { dt { "New today" } dd { (format::number(summary.new_today)) } }
-                div { dt { "Due" } dd { (format::number(summary.learning_due + summary.review_due)) } }
-                div { dt { "Cards" } dd { (format::number(summary.total)) } }
-            }
-            @if let Some(exam) = &d.exam_date { p.muted { "Exam " (exam_words(&user.0, *exam)) } }
-            @if !d.status.is_active() {
-                // At rest, waking the deck is what this page is for.
-                p.rest-note.muted { (rest_words(d.status)) }
-                form method="post" action=(format!("/decks/{id}/resume")) {
-                    button.btn.primary type="submit" { (if d.status == DeckStatus::Archived { "Restore deck" } else { "Resume deck" }) }
-                }
-            } @else if summary.due_total() > 0 {
-                p { a.btn.primary.start href=(format!("/study?deck={id}")) { "Start studying " span.arrow aria-hidden="true" { "→" } } }
-            }
-            p.actions.icon-links.deck-menu id="deck-menu" {
-                (icon_btn(&format!("/cards/new?deck={id}"), ICON_ADD, "Add card"))
-                (icon_btn(&format!("/decks/{id}/edit"), ICON_EDIT, "Edit deck"))
-                (icon_btn(&format!("/decks/{id}/edit#share"), ICON_SHARE, "Share"))
-                (icon_btn(&format!("/stats?deck={id}"), ICON_STATS, "Stats"))
-                a.btn.icon-link.calm-only href=(format!("/decks/merge?with={id}")) { span { "Merge with other decks" } }
-                a.btn.icon-link.calm-only href=(format!("/decks/{id}/export.csv")) { span { "Export as CSV" } }
-            }
-            }
-            div.deck-side {
-            p.muted.small { "Preset: " a href=(format!("/presets/{}", d.preset_id)) { (summary.preset_name) } }
-            @if attention > 0 {
-                p.small { a href=(format!("/attention?deck={id}")) { (count(attention, "card")) " " (format::agree(attention, "needs", "need")) " a look" } }
-            }
-            }
-            }
-
-            div.cards-head {
-                h2 { "Cards" }
-                a.calm-only href=(format!("/cards/new?deck={id}")) { "Add card" }
-            }
-            form.search method="get" action=(format!("/decks/{id}")) {
-                input type="search" name="q" value=(q.q.clone().unwrap_or_default()) placeholder="Search text" aria-label="Search";
-                select name="state" aria-label="Filter" {
-                    @for (v, l) in [("", "All"), ("new", "New"), ("learning", "Learning"), ("review", "Review"), ("due", "Due"), ("suspended", "Suspended")] {
-                        option value=(v) selected[q.state.as_deref().unwrap_or("") == v] { (l) }
-                    }
-                }
-                button.btn type="submit" { "Find" }
-            }
-            @let filtered = q.q.as_deref().is_some_and(|t| !t.trim().is_empty()) || q.state.as_deref().is_some_and(|t| !t.is_empty());
-            @if total == 0 && !filtered {
-                p.empty.muted { "No cards yet. " a href=(format!("/cards/new?deck={id}")) { "Add the first card." } }
-            } @else if total == 0 {
-                p.empty.muted {
-                    @if let Some(t) = q.q.as_deref().filter(|t| !t.trim().is_empty()) { "No cards match “" (t) "”. " } @else { "No cards match this filter. " }
-                    a href=(format!("/decks/{id}")) { "Show all cards." }
-                }
-            } @else {
-                p.muted.small { (count(total, "card")) }
-            }
-            div.table-head.calm-only aria-hidden="true" hidden[cards.is_empty()] { span.grow { "Card" } span.num { "State" } span.chev {} }
-            ul.list.cards hidden[cards.is_empty()] {
-                @for c in &cards {
-                    li {
-                        a.row href=(format!("/cards/{}", c.id)) {
-                            span.grow {
-                                @if c.front.is_empty() { "[image]" } @else { (truncate(&c.front, 80)) }
-                                br;
-                                span.muted.small { (truncate(&c.back, 80)) }
-                            }
-                            span.counts.small {
-                                (card_status(c))
-                            }
-                            span.chev.calm-only aria-hidden="true" { "›" }
-                        }
-                    }
-                }
-            }
-            @if page > 0 || (page + 1) * per_page < total {
-                nav.actions.quiet-links aria-label="Pages" {
-                    @if page > 0 { a.btn href=(format!("{base}&page={}", page - 1)) { "‹ Previous" } }
-                    @if (page + 1) * per_page < total { a.btn href=(format!("{base}&page={}", page + 1)) { "Next ›" } }
-                }
-            }
-            p.icon-links.deck-export { (icon_link(&format!("/decks/{id}/export.csv"), ICON_EXPORT, "Export as CSV")) }
+            (deck_hero(&user.0, &summary, attention))
+            (deck_cards(id, &q, &cards, total, page, &base))
         },
     )
     .into_response())
+}
+
+fn deck_hero(user: &User, summary: &DeckSummary, attention: i64) -> Markup {
+    let (d, id) = (&summary.deck, summary.deck.id);
+    html! {
+        div.deck-hero {
+        div.deck-main {
+        div.deck-title {
+            h1 { (deck_title(&d.name)) }
+            button.more-toggle.calm-only type="button" aria-label="More" aria-expanded="false" aria-controls="deck-menu" { span {} span {} span {} }
+        }
+        @if !d.description.is_empty() { p { (d.description) } }
+        dl.stats-inline {
+            div { dt { "New today" } dd { (format::number(summary.new_today)) } }
+            div { dt { "Due" } dd { (format::number(summary.learning_due + summary.review_due)) } }
+            div { dt { "Cards" } dd { (format::number(summary.total)) } }
+        }
+        @if let Some(exam) = &d.exam_date { p.muted { "Exam " (exam_words(user, *exam)) } }
+        @if !d.status.is_active() {
+            // At rest, waking the deck is what this page is for.
+            p.rest-note.muted { (rest_words(d.status)) }
+            form method="post" action=(format!("/decks/{id}/resume")) {
+                button.btn.primary type="submit" { (if d.status == DeckStatus::Archived { "Restore deck" } else { "Resume deck" }) }
+            }
+        } @else if summary.due_total() > 0 {
+            p { a.btn.primary.start href=(format!("/study?deck={id}")) { "Start studying " span.arrow aria-hidden="true" { "→" } } }
+        }
+        p.actions.icon-links.deck-menu id="deck-menu" {
+            (icon_btn(&format!("/cards/new?deck={id}"), ICON_ADD, "Add card"))
+            (icon_btn(&format!("/decks/{id}/edit"), ICON_EDIT, "Edit deck"))
+            (icon_btn(&format!("/decks/{id}/edit#share"), ICON_SHARE, "Share"))
+            (icon_btn(&format!("/stats?deck={id}"), ICON_STATS, "Stats"))
+            a.btn.icon-link.calm-only href=(format!("/decks/merge?with={id}")) { span { "Merge with other decks" } }
+            a.btn.icon-link.calm-only href=(format!("/decks/{id}/export.csv")) { span { "Export as CSV" } }
+        }
+        }
+        div.deck-side {
+        p.muted.small { "Preset: " a href=(format!("/presets/{}", d.preset_id)) { (summary.preset_name) } }
+        @if attention > 0 {
+            p.small { a href=(format!("/attention?deck={id}")) { (count(attention, "card")) " " (format::agree(attention, "needs", "need")) " a look" } }
+        }
+        }
+        }
+    }
+}
+
+fn deck_cards(id: i64, q: &DeckQuery, cards: &[Card], total: i64, page: i64, base: &str) -> Markup {
+    let per_page = DECK_PAGE_SIZE;
+    html! {
+        div.cards-head {
+            h2 { "Cards" }
+            a.calm-only href=(format!("/cards/new?deck={id}")) { "Add card" }
+        }
+        form.search method="get" action=(format!("/decks/{id}")) {
+            input type="search" name="q" value=(q.q.clone().unwrap_or_default()) placeholder="Search text" aria-label="Search";
+            select name="state" aria-label="Filter" {
+                @for (v, l) in [("", "All"), ("new", "New"), ("learning", "Learning"), ("review", "Review"), ("due", "Due"), ("suspended", "Suspended")] {
+                    option value=(v) selected[q.state.as_deref().unwrap_or("") == v] { (l) }
+                }
+            }
+            button.btn type="submit" { "Find" }
+        }
+        @let filtered = q.q.as_deref().is_some_and(|t| !t.trim().is_empty()) || q.state.as_deref().is_some_and(|t| !t.is_empty());
+        @if total == 0 && !filtered {
+            p.empty.muted { "No cards yet. " a href=(format!("/cards/new?deck={id}")) { "Add the first card." } }
+        } @else if total == 0 {
+            p.empty.muted {
+                @if let Some(t) = q.q.as_deref().filter(|t| !t.trim().is_empty()) { "No cards match “" (t) "”. " } @else { "No cards match this filter. " }
+                a href=(format!("/decks/{id}")) { "Show all cards." }
+            }
+        } @else {
+            p.muted.small { (count(total, "card")) }
+        }
+        div.table-head.calm-only aria-hidden="true" hidden[cards.is_empty()] { span.grow { "Card" } span.num { "State" } span.chev {} }
+        ul.list.cards hidden[cards.is_empty()] {
+            @for c in cards {
+                li {
+                    a.row href=(format!("/cards/{}", c.id)) {
+                        span.grow {
+                            @if c.front.is_empty() { "[image]" } @else { (truncate(&c.front, 80)) }
+                            br;
+                            span.muted.small { (truncate(&c.back, 80)) }
+                        }
+                        span.counts.small {
+                            (card_status(c))
+                        }
+                        span.chev.calm-only aria-hidden="true" { "›" }
+                    }
+                }
+            }
+        }
+        @if page > 0 || (page + 1) * per_page < total {
+            nav.actions.quiet-links aria-label="Pages" {
+                @if page > 0 { a.btn href=(format!("{base}&page={}", page - 1)) { "‹ Previous" } }
+                @if (page + 1) * per_page < total { a.btn href=(format!("{base}&page={}", page + 1)) { "Next ›" } }
+            }
+        }
+        p.icon-links.deck-export { (icon_link(&format!("/decks/{id}/export.csv"), ICON_EXPORT, "Export as CSV")) }
+    }
 }
 
 /// One-line plain preview of Markdown text for lists.

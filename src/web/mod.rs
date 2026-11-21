@@ -37,7 +37,7 @@ use crate::{
     presets,
     scheduler::{self, CardState, Rating},
     security::{self, ClientIp, Flash},
-    service::{Card, CardFilter, CardInput, Deck, DeckStatus, NewCard, Patch, PresetInput, Settings},
+    service::{Card, CardFilter, CardInput, Deck, DeckStatus, DeckSummary, NewCard, Patch, PresetInput, Settings},
     study,
 };
 
