@@ -19,7 +19,7 @@ fn pct(v: f64) -> String {
     format!("{:.0}%", v * 100.0)
 }
 
-fn svg(label: &str, body: Markup) -> Markup {
+fn svg(label: &str, body: &Markup) -> Markup {
     html! {
         svg.chart viewBox=(format!("0 0 {W} {H}")) role="img" aria-label=(label) { (body) }
     }
@@ -39,7 +39,7 @@ pub fn retention(weeks: &[(i64, i64)], aim: Option<f64>) -> Markup {
     let lo = (((low - 0.03) * 20.0).floor() / 20.0).clamp(0.0, 0.8);
     let last = vals.len().saturating_sub(1).max(1);
     let x = |i: usize| LEFT + num::usize_f64(i) * (W - LEFT - 8.0) / num::usize_f64(last);
-    let y = |v: f64| TOP + (1.0 - v) / (1.0 - lo) * (H - TOP - BOTTOM);
+    let y = |v: f64| ((1.0 - v) / (1.0 - lo)).mul_add(H - TOP - BOTTOM, TOP);
     let mut path = String::new();
     let mut pen = false;
     for (i, v) in vals.iter().enumerate() {
@@ -54,7 +54,7 @@ pub fn retention(weeks: &[(i64, i64)], aim: Option<f64>) -> Markup {
     let grid: Vec<f64> = (0..=20).map(|k| f64::from(k) * 0.05).filter(|g| *g >= lo - 1e-9).collect();
     svg(
         "Recall by week, last twelve weeks",
-        html! {
+        &html! {
             @for g in &grid {
                 line.grid x1=(LEFT) x2=(W - 8.0) y1=(y(*g)) y2=(y(*g)) {}
                 text.axis x="0" y=(y(*g) + 4.0) { (pct(*g)) }
@@ -113,10 +113,10 @@ pub fn bars(values: &[(String, i64)], label: &str) -> Markup {
     let most = values.iter().map(|v| v.1).max().unwrap_or(0).max(1);
     let n = values.len().max(1);
     let slot = (W - 8.0) / num::usize_f64(n);
-    let y = |v: i64| TOP + (1.0 - num::i64_f64(v) / num::i64_f64(most)) * (H - TOP - BOTTOM);
+    let y = |v: i64| (1.0 - num::i64_f64(v) / num::i64_f64(most)).mul_add(H - TOP - BOTTOM, TOP);
     svg(
         label,
-        html! {
+        &html! {
             line.grid x1="0" x2=(W) y1=(H - BOTTOM) y2=(H - BOTTOM) {}
             text.axis x="0" y=(TOP + 4.0) { (most) }
             @for (i, (name, v)) in values.iter().enumerate() {
@@ -137,8 +137,8 @@ pub fn bars(values: &[(String, i64)], label: &str) -> Markup {
 pub fn calibration(bins: &[(f64, f64, i64)]) -> Markup {
     const S: f64 = 200.0;
     const PAD: f64 = 28.0;
-    let p = |v: f64| PAD + v * (S - PAD - 6.0);
-    let q = |v: f64| S - PAD - v * (S - PAD - 6.0);
+    let p = |v: f64| v.mul_add(S - PAD - 6.0, PAD);
+    let q = |v: f64| v.mul_add(-(S - PAD - 6.0), S - PAD);
     html! {
         svg.chart.calibration viewBox=(format!("0 0 {S} {S}")) role="img" aria-label="Expected against remembered, last year" {
             line.grid x1=(p(0.0)) y1=(q(0.0)) x2=(p(1.0)) y2=(q(0.0)) {}

@@ -113,7 +113,7 @@ pub(crate) fn face_field(
                 button.link type="button" data-clear-image { "Remove" }
             }
             label.file.attach {
-                
+
                 span.attach-text { @if image.is_some() { "Replace image" } @else { "Add image" } }
                 " " span.muted.optional { "(optional)" }
                 input type="file" name=(format!("{side}_image")) accept="image/*";

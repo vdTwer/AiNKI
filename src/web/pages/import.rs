@@ -20,7 +20,6 @@ pub(crate) async fn import_page(State(app): State<AppState>, user: WebUser, Flas
             form method="post" action="/import" enctype="multipart/form-data" {
                 input type="hidden" name="kind" value="apkg";
                 label.file.drop {
-                    
                     span.drop-text { "Choose an Anki file" }
                     span.muted.small { ".apkg or .colpkg, or drop it here" }
                     input type="file" name="file" accept=".apkg,.colpkg" required;
@@ -43,7 +42,6 @@ pub(crate) async fn import_page(State(app): State<AppState>, user: WebUser, Flas
                         label.face-label for="csv-text" { "Paste the cards" }
                         textarea.csv id="csv-text" name="text" rows="5" placeholder="Hund,dog\nKatze,cat" {}
                         label.file.attach {
-                            
                             span.attach-text { "Or choose a file" }
                             " " span.muted.optional { "(.csv, .tsv, .txt)" }
                             input type="file" name="file" accept=".csv,.tsv,.txt";
