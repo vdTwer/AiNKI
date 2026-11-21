@@ -1,11 +1,11 @@
 # Where things are
 
-AiNKI is one Rust binary. `src/service.rs` holds everything a user can do; the website and the MCP server are thin layers over it.
+AiNKI is one Rust binary. `src/service/` holds everything a user can do; the website and the MCP server are thin layers over it.
 
 ## Server
 
 - `src/main.rs`: configuration from the environment, the admin commands, startup.
-- `src/service.rs`: decks, cards, studying, stats.
+- `src/service/`: everything a user can do, one file per area (presets, decks, cards, studying, stats, settings), each with its types.
 - `src/scheduler.rs`: the card lifecycle around FSRS (learning steps, day boundaries, fuzz, exam caps).
 - `src/tuning.rs`: the optimizer, per-preset parameters, the monthly run, workload simulation and calibration.
 - `src/presets.rs`: the built-in presets and why they look the way they do.
