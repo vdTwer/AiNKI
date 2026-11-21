@@ -2065,8 +2065,12 @@ fn break_page(user: &User, msg: &Option<String>, deck: Option<i64>, due: study::
             section.session-end.rest.break {
                 p.kicker.calm-only { "Break" }
                 h1 { "Time for a break" }
-                @if due.smart {
+                @if due.smart && due.slowing {
                     p.summary { "You have studied for " (study::minutes_words(due.studied)) ", and your answers are slowing down. A " (length) " break should bring you back." }
+                } @else if due.long {
+                    p.summary { "You have studied for " (study::minutes_words(due.studied)) " since your last break. Time for a longer one: " (study::minutes_words(due.length)) ". Get up and move about." }
+                } @else if due.smart {
+                    p.summary { "You have studied for " (study::minutes_words(due.studied)) " since your last break. A " (length) " break keeps you fresh for the next stretch." }
                 } @else {
                     p.summary { "You have studied for " (study::minutes_words(due.studied)) ". Stand up, look out of the window, then carry on if you like." }
                 }
@@ -2086,7 +2090,7 @@ fn break_page(user: &User, msg: &Option<String>, deck: Option<i64>, due: study::
                 div.break-run.calm-only hidden {
                     p.break-clock role="timer" aria-live="off" { (due.length) ":00" }
                     div.break-line aria-hidden="true" { div.break-fill {} }
-                    @if due.smart { p.summary { "Your answers were slowing down." } }
+                    @if due.slowing { p.summary { "Your answers were slowing down." } }
                     p.summary { "The next card comes back by itself when the time is up." }
                     p { button.btn type="submit" form="keep-going" { "End break now" } }
                 }
