@@ -244,6 +244,28 @@ fn effective_max_interval(cfg: &SchedConfig, clock: &Clock) -> i64 {
     max
 }
 
+/// Where a card in its short steps goes next: `Some((step, delay))` to
+/// stay in the steps, `None` to graduate to FSRS. Again starts over, Hard
+/// repeats the step (the first one a bit longer), Good moves on, Easy and
+/// running out of steps graduate.
+fn next_step(rating: Rating, steps: &[i64], step: usize) -> Option<(usize, i64)> {
+    match (rating, steps) {
+        (_, []) | (Rating::Easy, _) => None,
+        (Rating::Again, [first, ..]) => Some((0, *first)),
+        (Rating::Hard, [first, rest @ ..]) => {
+            let idx = step.min(rest.len());
+            let delay = match (idx, rest) {
+                // One step: half as long again, but at most a day longer.
+                (0, []) => num::f64_i64(num::i64_f64(*first) * 1.5).min(first + 86_400),
+                (0, [second, ..]) => i64::midpoint(*first, *second),
+                _ => steps.get(idx).copied().unwrap_or(*first),
+            };
+            Some((idx, delay))
+        }
+        (Rating::Good, _) => steps.get(step + 1).map(|&delay| (step + 1, delay)),
+    }
+}
+
 /// Compute the card's new state after answering with `rating`.
 pub fn answer(
     fsrs: &FSRS,
@@ -287,49 +309,27 @@ pub fn answer(
     };
 
     let interval_secs = match card.state {
-        CardState::Review => {
-            if rating == Rating::Again {
-                out.lapses += 1;
-                if let Some(first) = cfg.relearning_steps.first() {
-                    out.state = CardState::Relearning;
-                    out.step = 0;
-                    out.due = clock.now + first;
-                    *first
-                } else {
-                    graduate(&mut out)
-                }
+        CardState::Review if rating == Rating::Again => {
+            out.lapses += 1;
+            if let Some(&first) = cfg.relearning_steps.first() {
+                (out.state, out.step, out.due) = (CardState::Relearning, 0, clock.now + first);
+                first
             } else {
                 graduate(&mut out)
             }
         }
+        CardState::Review => graduate(&mut out),
         CardState::New | CardState::Learning | CardState::Relearning => {
-            let steps = if card.state == CardState::Relearning { &cfg.relearning_steps } else { &cfg.learning_steps };
+            let relearning = card.state == CardState::Relearning;
+            let steps = if relearning { &cfg.relearning_steps } else { &cfg.learning_steps };
             let step = if card.state == CardState::New { 0 } else { num::i64_usize(card.step.max(0)) };
-            let in_steps = |out: &mut CardSched, state: CardState, idx: usize, delay: i64| -> i64 {
-                out.state = state;
-                out.step = num::usize_i64(idx);
-                out.due = clock.now + delay;
-                delay
-            };
-            let learning_state =
-                if card.state == CardState::Relearning { CardState::Relearning } else { CardState::Learning };
-            match (rating, steps.as_slice()) {
-                (_, []) | (Rating::Easy, _) => graduate(&mut out),
-                (Rating::Again, [first, ..]) => in_steps(&mut out, learning_state, 0, *first),
-                (Rating::Hard, [first, rest @ ..]) => {
-                    let idx = step.min(rest.len());
-                    let delay = match (idx, rest) {
-                        // One step: half as long again, but at most a day longer.
-                        (0, []) => num::f64_i64(num::i64_f64(*first) * 1.5).min(first + 86_400),
-                        (0, [second, ..]) => i64::midpoint(*first, *second),
-                        _ => steps.get(idx).copied().unwrap_or(*first),
-                    };
-                    in_steps(&mut out, learning_state, idx, delay)
+            match next_step(rating, steps, step) {
+                None => graduate(&mut out),
+                Some((idx, delay)) => {
+                    let state = if relearning { CardState::Relearning } else { CardState::Learning };
+                    (out.state, out.step, out.due) = (state, num::usize_i64(idx), clock.now + delay);
+                    delay
                 }
-                (Rating::Good, _) => match steps.get(step + 1) {
-                    Some(&delay) => in_steps(&mut out, learning_state, step + 1, delay),
-                    None => graduate(&mut out),
-                },
             }
         }
     };
