@@ -100,7 +100,7 @@ pub fn days(days: &[(String, i64)]) -> Markup {
         svg.chart.days viewBox=(format!("0 0 {w} {h}")) role="img" aria-label="Reviews per day, last twelve weeks" {
             @for (i, (day, n)) in days.iter().enumerate() {
                 @let level = if *n == 0 { 0 } else { 1 + (n * 3 / most) };
-                rect class=(format!("l{level}")) x=(num::usize_f64(i / 7) * (S + GAP)) y=(num::usize_f64(i % 7) * (S + GAP)) width=(S) height=(S) rx="2" {
+                rect class=(format!("l{level}")) x=(num::usize_f64(i / 7) * (S + GAP)) y=(num::usize_f64(i % 7) * (S + GAP)) width=(S) height=(S) {
                     title { (day) ": " (n) (if *n == 1 { " review" } else { " reviews" }) }
                 }
             }
@@ -121,7 +121,7 @@ pub fn bars(values: &[(String, i64)], label: &str) -> Markup {
             text.axis x="0" y=(TOP + 4.0) { (most) }
             @for (i, (name, v)) in values.iter().enumerate() {
                 @let x = num::usize_f64(i) * slot;
-                rect.bar x=(slot.mul_add(0.15, x)) y=(y(*v)) width=(slot * 0.7) height=((H - BOTTOM - y(*v)).max(1.0)) rx="2" {
+                rect.bar x=(slot.mul_add(0.15, x)) y=(y(*v)) width=(slot * 0.7) height=((H - BOTTOM - y(*v)).max(1.0)) {
                     title { (name) ": " (v) (if *v == 1 { " card" } else { " cards" }) }
                 }
                 @if i == 0 || i + 1 == n || i % 7 == 0 {

@@ -1,18 +1,11 @@
-/* AiNKI's one look: plain, one narrow column, one accent for what you can
-   press. Light, dark and e-ink come from the same tokens. Modern browsers
-   only: nesting, light-dark(), :has(), container queries and @layer. */
+/* AiNKI's one look: text in one narrow column, one accent for what you can
+   press, one filled button per page. Light, dark and e-ink share tokens.
+   Modern browsers only: @layer, nesting, light-dark(), :has(), container
+   queries. */
 
-@layer reset, tokens, base, parts, pages;
+@layer base, parts, pages;
 
-@layer reset {
-  *, *::before, *::after { box-sizing: border-box; }
-  [hidden] { display: none !important; }
-  body, h1, h2, h3, p, ul, ol, dl, dd, figure { margin: 0; }
-  img, svg { max-width: 100%; }
-  button, input, select, textarea { font: inherit; color: inherit; }
-}
-
-@layer tokens {
+@layer base {
   :root {
     color-scheme: light dark;
     --ink: light-dark(#1b1b1f, #ececf0);
@@ -22,142 +15,95 @@
     --bg: light-dark(#fff, #121215);
     --accent: light-dark(#a8336d, #e58ab8);
     --on-accent: light-dark(#fff, #121215);
-    --radius: .4rem;
-    --column: 40rem;
     --tap: 2.75rem;
     --scale: 1;
   }
-  /* E-ink: black on white, every line visible, nothing moves. */
+  /* E-ink: black on white, every line visible. */
   @media (monochrome), (update: slow) {
     :root { --accent: var(--ink); --muted: var(--ink); --line: var(--ink); --soft: var(--bg); }
-    *, *::before, *::after { transition: none !important; animation: none !important; }
   }
-  @media (prefers-reduced-motion: reduce) {
-    *, *::before, *::after { transition: none !important; animation: none !important; }
-  }
-}
+  *, *::before, *::after { box-sizing: border-box; transition: none !important; animation: none !important; }
+  [hidden] { display: none !important; }
+  body, h1, h2, h3, p, ul, ol, dl, dd { margin: 0; }
+  img, svg { max-width: 100%; }
+  button, input, select, textarea { font: inherit; color: inherit; }
 
-@layer base {
-  html { font-size: calc(17px * var(--scale)); -webkit-text-size-adjust: 100%; }
-  body {
-    background: var(--bg);
-    color: var(--ink);
-    font-family: system-ui, sans-serif;
-    line-height: 1.5;
-  }
-  main, nav.top { max-width: var(--column); margin-inline: auto; padding-inline: 1rem; }
+  html { font: calc(17px * var(--scale)) / 1.5 system-ui, sans-serif; -webkit-text-size-adjust: 100%; }
+  body { background: var(--bg); color: var(--ink); }
+  main, nav.top { max-width: 40rem; margin-inline: auto; padding-inline: 1rem; }
   main { padding-block: 1.5rem 5rem; container-type: inline-size; }
-  :where(main, section, .sheet, .card-area) > * + * { margin-top: 1rem; }
+  :where(main, section, .sheet, .card-area, .chart-sec) > * + * { margin-top: 1rem; }
 
-  h1 { font-size: 1.6rem; line-height: 1.2; font-weight: 650; text-wrap: balance; }
-  h2 {
-    margin-top: 2.5rem;
-    font-size: .8rem;
-    font-weight: 600;
-    letter-spacing: .06em;
-    text-transform: uppercase;
-    color: var(--muted);
-  }
-  a { color: var(--accent); text-underline-offset: .2em; text-decoration-thickness: 1px; }
-  a:hover { text-decoration-thickness: 2px; }
+  h1 { font-size: 1.5rem; line-height: 1.25; font-weight: 600; text-wrap: balance; }
+  h2 { margin-top: 2.5rem; font-size: 1rem; font-weight: 600; }
+  a { color: var(--accent); text-underline-offset: .2em; }
   :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   hr { border: 0; border-top: 1px solid var(--line); }
-  code, pre { font-family: ui-monospace, monospace; font-size: .9em; }
-  pre { white-space: pre-wrap; overflow-wrap: anywhere; background: var(--soft); padding: .75rem; border-radius: var(--radius); }
+  code, pre, kbd { font-family: ui-monospace, monospace; font-size: .9em; }
+  pre { white-space: pre-wrap; overflow-wrap: anywhere; background: var(--soft); padding: .75rem; }
   pre.copy { user-select: all; }
   table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
-  th, td { text-align: left; padding: .45rem .3rem; border-bottom: 1px solid var(--line); }
+  th, td { text-align: left; padding: .4rem .3rem; border-bottom: 1px solid var(--line); }
   th { font-weight: 600; }
   .num { text-align: right; font-variant-numeric: tabular-nums; }
-  .muted { color: var(--muted); }
-  .small { font-size: .875rem; }
+  .muted, .kicker, .sub, .deck-path, .list-known, .list-how { color: var(--muted); }
+  .small, .kicker, .sub, .deck-path { font-size: .875rem; }
+  .sub, .deck-path { display: block; }
   .grow { flex: 1; min-width: 0; overflow-wrap: anywhere; }
   .fit, .graph-wrap, .table-wrap { overflow-x: auto; }
-
-  /* Key caps live in the ? sheet, not on the controls; the column heads
-     of a list repeat what each row says. */
-  .key, .chev, .table-head .num, .done .unit, .end-mark .line { display: none; }
-  .kicker { font-size: .8rem; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
-  kbd { font: .85em ui-monospace, monospace; padding: 0 .3em; border: 1px solid var(--line); border-radius: .25rem; }
+  /* Key caps live in the ? sheet; list heads repeat what rows say. */
+  .key, .chev, .table-head .num, .done .unit, .end-mark .line, .mark { display: none; }
 }
 
 @layer parts {
-  /* The menu: the name, then the pages, on one line that scrolls on small phones. */
+  /* The menu: the name, then the pages, on one line that scrolls if it must. */
   nav.top {
     display: flex;
     gap: 1.25rem;
-    align-items: center;
     overflow-x: auto;
     border-bottom: 1px solid var(--line);
-
-    & a {
-      flex: none;
-      padding-block: .9rem;
-      color: var(--muted);
-      text-decoration: none;
-      &:hover { color: var(--ink); }
-      &[aria-current="page"] { color: var(--ink); box-shadow: inset 0 -2px var(--ink); }
-    }
-    & a.brand { margin-right: auto; color: var(--ink); font-weight: 700; box-shadow: none; }
+    & a { flex: none; padding-block: .9rem; color: var(--muted); text-decoration: none; }
+    & a:hover, & a[aria-current="page"] { color: var(--ink); }
+    & a.brand { margin-right: auto; color: var(--ink); font-weight: 700; }
+    @media (width < 30rem) { gap: .7rem; font-size: .9375rem; }
   }
 
-  /* Buttons: a quiet outline; the one primary per page is filled. */
+  /* Pressable things read as links; the page's one primary is filled. */
   .btn, button {
     display: inline-flex;
     align-items: center;
     justify-content: center;
     gap: .4rem;
     min-height: var(--tap);
-    padding: .5rem 1rem;
-    border: 1px solid color-mix(in srgb, var(--ink) 25%, transparent);
-    border-radius: var(--radius);
-    background: var(--bg);
-    color: var(--ink);
-    font-weight: 550;
-    text-decoration: none;
-    cursor: pointer;
-    touch-action: manipulation;
-    &:hover { border-color: var(--ink); text-decoration: none; }
-    &.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
-    &.primary:hover { background: color-mix(in srgb, var(--accent) 85%, var(--ink)); }
-    &.danger { color: light-dark(#a12f2f, #f08080); }
-    &.wide, &.start { display: flex; width: 100%; }
-  }
-  /* A link that has to be a button (it posts). */
-  button.link {
-    min-height: 0;
     padding: 0;
     border: 0;
     background: none;
     color: var(--accent);
-    font-weight: 400;
-    text-decoration: underline;
-    text-underline-offset: .2em;
+    text-decoration: none;
+    cursor: pointer;
+    touch-action: manipulation;
+    &:hover { text-decoration: underline; }
+    &.primary { padding: .5rem 1.25rem; background: var(--accent); color: var(--on-accent); font-weight: 600; }
+    &.danger { color: light-dark(#a12f2f, #f08080); }
+    &.wide, &.start { display: flex; width: 100%; }
   }
-  .actions { display: flex; flex-wrap: wrap; gap: .5rem; }
-  /* Blocks that sit in divs of their own still get air around them. */
+  button.link { min-height: 0; text-decoration: underline; }
+  /* Where a choice is the whole point (answers, sure/not sure, a form's
+     submit), each option is a box you can hit with a thumb. */
+  :is(.answers, .sure-buttons, .pause-cover) .btn:not(.primary), form > button:not(.link, .primary) {
+    padding: .5rem 1.25rem;
+    border: 1px solid var(--line);
+    color: var(--ink);
+  }
+  .actions { display: flex; flex-wrap: wrap; gap: 0 1.5rem; }
   main :is(dl, .actions, .start, form.search) { margin-block: 1rem; }
-  form.search {
-    display: flex;
-    flex-wrap: wrap;
-    gap: .5rem;
-    & input { flex: 2 1 12rem; margin: 0; }
-    & select { flex: 1 1 7rem; width: auto; margin: 0; }
-  }
-  .icon-link { display: inline-flex; align-items: center; gap: .3rem; }
 
   /* Forms */
   form { margin: 0; }
-  label { display: block; margin-bottom: 1rem; font-weight: 550; }
-  label.check {
-    display: flex;
-    gap: .6rem;
-    align-items: center;
-    min-height: var(--tap);
-    margin: 0;
-    font-weight: 400;
-    &.indent { padding-left: 1.8rem; }
-  }
+  label { display: block; margin-bottom: 1rem; }
+  h2 + :is(form, label, fieldset) { margin-top: .75rem; }
+  label.check { display: flex; gap: .6rem; align-items: center; min-height: var(--tap); margin: 0; font-weight: 400; }
+  label.check.indent { padding-left: 1.8rem; }
   input[type=checkbox], input[type=radio] { width: 1.15rem; height: 1.15rem; margin: 0; accent-color: var(--accent); flex: none; }
   :is(input:not([type=checkbox], [type=radio], [type=file], [type=hidden]), select, textarea) {
     display: block;
@@ -165,136 +111,104 @@
     min-height: var(--tap);
     margin-top: .3rem;
     padding: .5rem .7rem;
-    border: 1px solid color-mix(in srgb, var(--ink) 25%, transparent);
-    border-radius: var(--radius);
+    border: 1px solid var(--line);
     background: var(--bg);
     font-weight: 400;
-    &:focus { border-color: var(--accent); outline: 1px solid var(--accent); }
+    &:focus { border-color: var(--accent); outline: none; }
   }
   textarea { resize: vertical; field-sizing: content; min-height: 5rem; }
-  fieldset { border: 1px solid var(--line); border-radius: var(--radius); margin: 0 0 1rem; padding: .5rem 1rem; }
-  legend { font-weight: 550; padding-inline: .3rem; }
-  .field { display: flex; align-items: center; gap: .5rem; & input { flex: 1; } & .unit { color: var(--muted); } }
+  fieldset { border: 0; margin: 0 0 1rem; padding: 0; }
+  legend { font-weight: 600; padding: 0; }
+  .field { display: flex; align-items: center; gap: .5rem; & .unit { color: var(--muted); } }
+  input[type=number] { max-width: 8rem; }
+  .field { margin-top: .3rem; & input { margin-top: 0; } & input[type=number] { flex: none; } }
+  form.search {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .5rem;
+    & input { flex: 2 1 12rem; margin: 0; }
+    & select { flex: 1 1 7rem; width: auto; margin: 0; }
+  }
   details > summary { cursor: pointer; min-height: var(--tap); display: flex; align-items: center; color: var(--accent); }
   details.danger > summary { color: light-dark(#a12f2f, #f08080); }
-  .notice, .coach { padding: .75rem 1rem; border-radius: var(--radius); background: var(--soft); }
+  .notice, .coach, .typed-echo { padding: .75rem 1rem; background: var(--soft); }
   .coach-flag + .coach-flag { border-top: 1px solid var(--line); margin-top: .75rem; padding-top: .75rem; }
-  .coach-label { font-weight: 600; }
 
-  /* Lists with hairlines; a whole row is the link. */
-  ul.list, ul.decks {
-    list-style: none;
-    padding: 0;
-    & li { border-bottom: 1px solid var(--line); }
-    & li:first-child { border-top: 1px solid var(--line); }
-  }
-  a.row, li.item {
-    display: flex;
-    gap: .75rem;
-    align-items: center;
-    min-height: 3.25rem;
-    padding: .6rem .5rem;
-  }
-  a.row {
-    color: var(--ink);
-    text-decoration: none;
-    border-radius: var(--radius);
-    &:hover { background: var(--soft); }
-  }
-  /* A hovered row needs no lines: hide its own and its neighbour's. */
-  li:has(> a.row:hover), li:has(+ li > a.row:hover) { border-color: transparent; }
+  /* Lists: hairlines, and a whole row is the link. */
+  ul:is(.list, .decks) { list-style: none; padding: 0; border-top: 1px solid var(--line); & li { border-bottom: 1px solid var(--line); } }
+  a.row, li.item { display: flex; gap: .75rem; align-items: center; min-height: 3.25rem; padding: .6rem .25rem; }
+  a.row { color: var(--ink); text-decoration: none; &:hover, &.on { background: var(--soft); } }
   .counts, a.row .num { white-space: nowrap; font-variant-numeric: tabular-nums; }
-  .sub, .deck-path { display: block; font-size: .8rem; color: var(--muted); }
   .deck-path .sep { margin-inline: .3em; &:last-child { display: none; } }
-  .parent { font-size: .9rem; & a { text-decoration: none; } }
-  .evidence { flex: none; font-size: .75rem; color: var(--muted); border: 1px solid var(--line); border-radius: 1rem; padding: 0 .5rem; }
+  .parent a { text-decoration: none; }
+  .evidence { flex: none; font-size: .75rem; color: var(--muted); }
 
-  /* Segmented tabs (Add: card, deck, import). */
+  /* Add: card, deck or import. */
   nav.tabs {
-    display: grid;
-    grid-auto-flow: column;
-    grid-auto-columns: 1fr;
-    border: 1px solid var(--line);
-    border-radius: var(--radius);
-    overflow: hidden;
-    & a { padding: .6rem; text-align: center; color: var(--muted); text-decoration: none; }
-    & a + a { border-left: 1px solid var(--line); }
-    & a[aria-current="page"] { background: var(--soft); color: var(--ink); font-weight: 600; }
+    display: flex;
+    gap: 1.5rem;
+    & a { color: var(--muted); text-decoration: none; }
+    & a[aria-current="page"] { color: var(--ink); font-weight: 600; }
   }
 
   /* Card text */
   .md {
     & p { margin: 0 0 .6em; &:last-child { margin: 0; } }
-    & td, & th { border: 1px solid var(--line); padding: .2rem .4rem; }
+    & :is(td, th) { border: 1px solid var(--line); padding: .2rem .4rem; }
     & blockquote { margin: 0; padding-left: .8rem; border-left: 3px solid var(--line); }
     & img { display: block; height: auto; margin: 0 auto .75rem; }
   }
   img.thumb { display: block; max-height: 10rem; height: auto; }
 
-  /* Small facts as a grid of numbers. */
   dl.stats-inline {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr));
     gap: 1rem;
-    & dt { font-size: .8rem; color: var(--muted); }
-    & dd { font-size: 1.5rem; font-weight: 650; font-variant-numeric: tabular-nums; }
+    & dt { font-size: .875rem; color: var(--muted); }
+    & dd { font-size: 1.5rem; font-variant-numeric: tabular-nums; }
   }
   dl.kv { display: grid; grid-template-columns: auto 1fr; gap: .3rem 1rem; & dt { color: var(--muted); } }
+
+  /* Sheets over the page: the key list (a popover) and the quick find. */
+  .key-sheet, ainki-find dialog {
+    width: min(36rem, calc(100% - 2rem));
+    max-height: 80vh;
+    margin: 12vh auto auto;
+    padding: 1.25rem;
+    border: 1px solid var(--line);
+    background: var(--bg);
+    color: var(--ink);
+    &::backdrop { background: rgb(0 0 0 / .3); }
+  }
+  .key-sheet { & h2 { margin: 0; } & h3 { margin-top: 1rem; font-size: 1rem; } & .kv { grid-template-columns: 6rem 1fr; } }
+  ainki-find #find-results { margin-top: .75rem; }
+  .keys-hint { margin-top: 4rem; font-size: .8rem; color: var(--muted); & button { color: inherit; } }
+  @media (hover: none) { .keys-hint { display: none; } }
 }
 
 @layer pages {
   /* Home */
-  .today {
-    & .date, & .facts { color: var(--muted); }
-    & .count { font-variant-numeric: tabular-nums; }
-    & h1 { margin-block: .2rem .4rem; }
-    & .start { margin-top: 1.25rem; }
-  }
-  .table-head {
-    display: flex;
-    gap: .75rem;
-    margin-top: 2.5rem;
-    padding: 0 .5rem .4rem;
-    font-size: .8rem;
-    font-weight: 600;
-    letter-spacing: .06em;
-    text-transform: uppercase;
-    color: var(--muted);
-  }
-
-  /* The coming week: seven bars, today first. */
+  .today :is(.date, .facts) { color: var(--muted); }
+  .table-head { display: flex; gap: .75rem; margin-top: 2.5rem; padding: 0 .25rem .4rem; font-weight: 600; }
   .week-bars {
     display: grid;
     grid-template-columns: repeat(7, 1fr);
     gap: .5rem;
-    height: 6rem;
-    margin-top: .75rem;
+    height: 5rem;
     & .day { display: flex; flex-direction: column; justify-content: flex-end; align-items: center; gap: .25rem; }
-    & .bar { width: 100%; max-width: 2rem; background: var(--line); border-radius: 2px; }
+    & .bar { width: 100%; max-width: 2rem; background: var(--line); }
     & .today .bar { background: var(--accent); }
     & .letter { font-size: .75rem; color: var(--muted); }
-    /* Hovering a day names its count just above its bar. */
-    & .bar { position: relative; }
-    & .bar::before {
-      content: attr(data-n);
-      position: absolute;
-      bottom: 100%;
-      inset-inline: 0;
-      font-size: .75rem;
-      text-align: center;
-      color: var(--ink);
-      opacity: 0;
-    }
-    & .day:hover .bar::before { opacity: 1; }
   }
+  .done-check, .end-mark .check { color: var(--accent); vertical-align: -.1em; }
+  .end-mark .check { width: 2rem; height: 2rem; }
 
   /* Studying */
   .study {
-    & .card-state { font-size: .75rem; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
-    & .face { font-size: 1.35rem; padding-block: 1rem; overflow-wrap: anywhere; }
-    & .face.back { padding-top: .5rem; }
-    & hr.divider { width: 3rem; border-top: 2px solid var(--line); margin: 0; }
-    & .reveal .show, & .show { display: flex; width: 100%; margin-top: 1rem; }
+    & .card-state { font-size: .875rem; color: var(--muted); }
+    & .face { font-size: 1.35rem; padding-block: .5rem; overflow-wrap: anywhere; }
+    & hr.divider { width: 3rem; margin: 0; }
+    & .show { display: flex; width: 100%; margin-top: 1rem; }
     &.paused .card-area { visibility: hidden; }
   }
   .answers {
@@ -304,37 +218,19 @@
     margin-top: 1.5rem;
     &.cols-1 { --n: 1; }
     &.cols-4 { --n: 4; }
-    & .btn { flex-direction: column; gap: 0; min-height: 3.75rem; }
-    & .ivl { font-size: .8rem; font-weight: 400; opacity: .8; }
+    & .btn { flex-direction: column; gap: 0; min-height: 3.5rem; }
+    & .ivl { font-size: .8rem; opacity: .8; }
   }
-  /* Four buttons in two rows when the column is narrow. */
   @container (width < 24rem) { .answers.cols-4 { --n: 2; } }
   /* On phones the answers wait at the thumb. */
-  @container (width < 30rem) {
-    .answers { position: sticky; bottom: 0; padding-block: .75rem; background: var(--bg); }
-  }
-  .study-foot {
-    margin-top: 2.5rem;
-    & .progress { height: 3px; background: var(--line); border-radius: 2px; }
-    & .bar { height: 3px; background: var(--accent); border-radius: 2px; }
-  }
-  .study-meta, .timer-meta {
-    display: flex;
-    justify-content: space-between;
-    gap: 1rem;
-    margin-top: .4rem;
-    font-size: .875rem;
-    color: var(--muted);
-    font-variant-numeric: tabular-nums;
-    & a { color: inherit; }
-  }
-  .study-tools { display: flex; flex-wrap: wrap; gap: .5rem 1.5rem; margin-top: 1rem; font-size: .9rem; }
-  .pause-cover { margin-top: 1rem; text-align: center; }
-  .timer-line { height: 3px; background: var(--line); }
-  .timer-fill { height: 3px; width: 100%; background: var(--accent); }
-  .typed-echo { margin-bottom: 1rem; padding: .5rem .75rem; background: var(--soft); border-radius: var(--radius); }
+  @container (width < 30rem) { .answers { position: sticky; bottom: 0; padding-block: .75rem; background: var(--bg); } }
+  .progress, .timer-line, .break-line { height: 2px; margin-top: 2.5rem; background: var(--line); }
+  :is(.progress .bar, .timer-fill, .break-fill) { height: 2px; background: var(--accent); }
+  .timer-fill { width: 100%; }
+  .study-meta, .timer-meta { display: flex; justify-content: space-between; gap: 1rem; margin-top: .4rem; font-size: .875rem; color: var(--muted); & a { color: inherit; } }
+  .study-tools, .session-end .end-links { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem 1.5rem; margin-top: 1rem; }
   .sure-buttons { display: grid; grid-template-columns: 1fr 1fr; gap: .5rem; }
-  .session-end .end-links { display: flex; flex-wrap: wrap; align-items: center; gap: 1.5rem; }
+  .pause-cover { text-align: center; }
 
   /* Multicards: tick what you remembered. */
   ol.list-items {
@@ -343,106 +239,59 @@
     font-size: 1.1rem;
     & :is(label.item, li.known, li.shown) { display: flex; align-items: center; gap: .7rem; min-height: var(--tap); margin: 0; font-weight: 400; }
     & li.known { padding-left: 1.85rem; color: var(--muted); }
-    & .num { min-width: 1.3rem; color: var(--muted); font-size: .9rem; }
+    & .num { min-width: 1.3rem; color: var(--muted); }
     & .text { flex: 1; & :is(h1, h2, h3, h4, p, ul, ol) { margin: 0; font-size: inherit; } }
-    & .mark { display: none; }
-    & label.item:has(input:checked) .text { text-decoration: line-through; text-decoration-color: var(--muted); }
-  }
-  .list-known, .list-how { font-size: .9rem; color: var(--muted); }
-
-  /* Stats: day bars */
-  table.forecast {
-    & th { font-weight: 400; white-space: nowrap; width: 5rem; }
-    & .bar-cell { width: 100%; }
-    & .bar { display: block; height: .9rem; min-width: 2px; background: var(--accent); border-radius: 2px; }
-    & :is(th, td) { border: 0; padding-block: .15rem; }
+    & label.item:has(input:checked) .text { text-decoration: line-through; }
   }
 
-  /* Done for today: a small tick in the accent. */
-  .done-check, .end-mark .check { color: var(--accent); vertical-align: -.1em; }
-  .end-mark .check { width: 2rem; height: 2rem; }
-
-  /* Stats: three numbers, then charts with their notes. */
+  /* Stats */
   .big3 {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
     gap: 1.5rem;
-    & .n { font-size: 2rem; font-weight: 650; font-variant-numeric: tabular-nums; line-height: 1.2; }
     & > * { margin: 0; }
-    & > div > * + * { margin-top: .25rem; }
+    & .n { font-size: 2rem; font-variant-numeric: tabular-nums; line-height: 1.2; }
   }
-  .chart-sec { margin-top: 2.5rem; }
-  .chart-side { margin-top: 1.25rem; }
+  .chart-sec, details.numbers { margin-top: 2.5rem; }
   svg.chart {
     display: block;
     width: 100%;
     height: auto;
-    margin-top: .75rem;
     font: 11px system-ui, sans-serif;
     & .grid { stroke: var(--line); }
     & .aim { stroke: var(--muted); stroke-dasharray: 4 4; }
     & .line { fill: none; stroke: var(--accent); stroke-width: 2; }
-    & .dot, & .bar { fill: var(--accent); }
+    & :is(.dot, .bar, .l4) { fill: var(--accent); }
     & .axis { fill: var(--muted); }
     & .strong { fill: var(--ink); }
-    & :is(.dot, .bar, rect):hover { opacity: .7; }
     &.days { max-width: 22rem; }
     &.calibration { max-width: 16rem; }
     & .l0 { fill: var(--soft); }
     & .l1 { fill: color-mix(in srgb, var(--accent) 30%, var(--bg)); }
     & .l2 { fill: color-mix(in srgb, var(--accent) 55%, var(--bg)); }
     & .l3 { fill: color-mix(in srgb, var(--accent) 80%, var(--bg)); }
-    & .l4 { fill: var(--accent); }
   }
-  table.by-deck tr.short td { font-weight: 650; }
+  table.forecast {
+    & th { font-weight: 400; white-space: nowrap; width: 5rem; }
+    & .bar-cell { width: 100%; }
+    & .bar { display: block; height: .9rem; min-width: 2px; background: var(--accent); }
+    & :is(th, td) { border: 0; padding-block: .15rem; }
+  }
+  table.by-deck tr.short td { font-weight: 600; }
   .sure-bars {
     display: grid;
     gap: .4rem;
     & > div { display: grid; grid-template-columns: 5rem 1fr 3rem; gap: .5rem; align-items: center; }
-    & .track { height: .6rem; background: var(--soft); border-radius: 2px; }
-    & .fill { display: block; height: 100%; background: var(--accent); border-radius: 2px; &.grey { background: var(--muted); } }
-  }
-  details.numbers { margin-top: 2.5rem; }
-
-  /* Breaks: a clock that runs by itself (parts.js); without it, the links. */
-  ainki-break {
-    display: block;
-    margin-top: 2rem;
-    &:not(:defined) { display: none; }
-    & .break-clock { font-size: 3rem; font-weight: 300; font-variant-numeric: tabular-nums; }
-    & .break-line { height: 3px; background: var(--line); }
-    & .break-fill { height: 3px; width: 0; background: var(--accent); }
+    & .track { height: .5rem; background: var(--soft); }
+    & .fill { display: block; height: 100%; background: var(--accent); &.grey { background: var(--muted); } }
   }
 
-  /* Sheets over the page: the key list (a popover) and the quick find. */
-  .key-sheet, ainki-find dialog {
-    width: min(36rem, calc(100% - 2rem));
-    max-height: 80vh;
-    margin: 10vh auto auto;
-    padding: 1.25rem;
-    border: 1px solid var(--line);
-    border-radius: var(--radius);
-    background: var(--bg);
-    color: var(--ink);
-    box-shadow: 0 1rem 3rem rgb(0 0 0 / .15);
-    &::backdrop { background: rgb(0 0 0 / .25); }
-  }
-  .key-sheet {
-    & h2 { margin-top: 0; }
-    & h3 { margin-top: 1rem; font-size: .9rem; }
-    & .kv { grid-template-columns: 6rem 1fr; }
-  }
-  ainki-find {
-    & dialog { margin-top: 15vh; }
-    & .find-form { margin: 0; }
-    & #find-results { margin-top: .75rem; }
-    & a.row.on { background: var(--soft); }
-  }
-  /* Keys only matter where there is a keyboard. */
-  .keys-hint { margin-top: 4rem; font-size: .8rem; color: var(--muted); & button { color: inherit; } }
-  @media (hover: none) { .keys-hint { display: none; } }
+  /* A break runs by itself (parts.js); without script, the links do. */
+  ainki-break { display: block; margin-top: 2rem; &:not(:defined) { display: none; } }
+  .break-clock { font-size: 3rem; font-weight: 300; font-variant-numeric: tabular-nums; }
+  .break-fill { width: 0; }
 
-  /* Quiet hours: one screen over everything, a way past in two folds. */
+  /* Quiet hours: one dark screen over everything, a way past in two folds. */
   .sleep-wall {
     position: fixed;
     inset: 0;
@@ -457,6 +306,5 @@
     text-align: center;
     & h1 { font-size: 2.5rem; font-weight: 300; }
     & summary { justify-content: center; color: rgb(140 140 150 / .35); }
-    & button { margin-top: 1rem; }
   }
 }
