@@ -5,166 +5,230 @@
     reason = "a page sees the shared web plumbing and its sibling pages, as when they were one file"
 )]
 use crate::web::*;
+use crate::{
+    service::{DeckSummary, Stats},
+    share::IncomingShare,
+};
+
+/// Everything the home page shows, fetched once.
+pub(crate) struct Home {
+    pub(crate) decks: Vec<DeckSummary>,
+    pub(crate) archived: usize,
+    pub(crate) shares: Vec<IncomingShare>,
+    pub(crate) stats: Stats,
+    pub(crate) total_due: i64,
+    /// Cards the coach flagged.
+    pub(crate) attention: i64,
+    pub(crate) overdue: i64,
+    pub(crate) quiet: Option<i64>,
+    pub(crate) week: insight::Week,
+    pub(crate) outlook: Outlook,
+    pub(crate) notes: Vec<Advice>,
+}
+
+impl Home {
+    async fn load(app: &App, access: &Access) -> Result<Self, AppError> {
+        let (archived, decks): (Vec<_>, Vec<_>) =
+            app.deck_summaries(access).await?.into_iter().partition(|d| d.deck.status == DeckStatus::Archived);
+        let stats = app.stats(access, None).await?;
+        let flagged = app.attention(access, None).await?;
+        let overdue = app.overdue(access).await?;
+        let known = advice::Known { decks: &decks, stats: &stats, attention: &flagged, overdue };
+        let notes = app.advice_from(access, &known).await?;
+        Ok(Self {
+            total_due: decks.iter().map(DeckSummary::due_total).sum(),
+            archived: archived.len(),
+            shares: app.incoming_shares(access).await?,
+            attention: num::usize_i64(flagged.len()),
+            overdue,
+            quiet: study::quiet_until(&access.user, now()),
+            week: app.week(access).await?,
+            outlook: app.outlook(access, &decks).await?,
+            notes,
+            decks,
+            stats,
+        })
+    }
+
+    /// The short line under the headline: time, recall, streak.
+    pub(crate) fn facts(&self) -> Vec<String> {
+        let s = &self.stats;
+        let mut facts = Vec::new();
+        if self.total_due > 0 {
+            facts.push(format!("About {}", count(s.minutes_for(self.total_due).max(1), "minute")));
+        }
+        if let Some(r) = s.true_retention_30d {
+            facts.push(format!("{} recalled when due, last 30 days", format::percent(Some(r))));
+        }
+        if s.streak_days > 1 {
+            facts.push(format!("{} in a row", count(s.streak_days, "day")));
+        }
+        facts
+    }
+}
 
 pub(crate) async fn home(State(app): State<AppState>, user: WebUser, Flash(msg): Flash) -> WebResult {
-    let access = user.access();
-    let (archived, decks): (Vec<_>, Vec<_>) =
-        app.deck_summaries(&access).await?.into_iter().partition(|d| d.deck.status == DeckStatus::Archived);
-    let shares = app.incoming_shares(&access).await?;
-    let stats = app.stats(&access, None).await?;
-    let total_due: i64 = decks.iter().map(crate::service::DeckSummary::due_total).sum();
-    let flagged = app.attention(&access, None).await?;
-    let attention = num::usize_i64(flagged.len());
-    let overdue = app.overdue(&access).await?;
-    let quiet = study::quiet_until(&user.0, now());
-    let week = app.week(&access).await?;
-    let outlook = app.outlook(&access, &decks).await?;
-    let known = advice::Known { decks: &decks, stats: &stats, attention: &flagged, overdue };
-    let notes = app.advice_from(&access, &known).await?;
-    let minutes = stats.minutes_for(total_due).max(1);
-    let mut facts = Vec::new();
-    if total_due > 0 {
-        facts.push(format!("About {}", count(minutes, "minute")));
+    let h = Home::load(&app, &user.access()).await?;
+    let u = &user.0;
+    let body = html! {
+        (flash(msg.as_deref()))
+        // On desktops the week sits beside today, as a sidebar.
+        div.hero { (home_today(u, &h)) (home_side(u, &h)) }
+        (home_shares(&h.shares))
+        (home_decks(u, &h))
+        (home_footer(u, &h))
+    };
+    Ok(page(Some(Nav::Decks), "Decks", Some(u), Some("home"), body).into_response())
+}
+
+fn home_today(user: &User, h: &Home) -> Markup {
+    let (decks, total_due, facts, quiet, overdue) = (&h.decks, h.total_due, h.facts(), h.quiet, h.overdue);
+    html! {
+    section.today aria-label="Today" {
+        p.date { @if user.catch_up { span.calm-only { "Catching up · " } } (format::long_date(&user.clock())) }
+        @if total_due > 0 {
+            h1 { span.count { (total_due) " " (format::plural(total_due, "card")) } " to study today" }
+        } @else if !decks.is_empty() {
+            h1.all-done { span.simple-only { "All done for today" } span.calm-only { "All done." } }
+        } @else {
+            h1 { span.simple-only { "Welcome to AiNKI" } span.calm-only { "Welcome, " (capitalize(&user.username)) "." } }
+        }
+        @if !facts.is_empty() { p.facts { (facts.join(" · ")) } }
+        @if let Some(t) = quiet {
+            p.facts { "Quiet hours until " (format::when(&user.clock(), t)) "." }
+        } @else if total_due > 0 {
+            p { a.btn.primary.start href="/study" { "Start studying " span.arrow aria-hidden="true" { "→" } } }
+        }
+        (catch_up_note(user, overdue))
     }
-    if let Some(r) = stats.true_retention_30d {
-        facts.push(format!("{} recalled when due, last 30 days", format::percent(Some(r))));
     }
-    if stats.streak_days > 1 {
-        facts.push(format!("{} in a row", count(stats.streak_days, "day")));
+}
+
+fn home_side(user: &User, h: &Home) -> Markup {
+    let (decks, week, notes, overdue, attention) = (&h.decks, &h.week, &h.notes, h.overdue, h.attention);
+    html! {
+    @if !decks.is_empty() {
+        aside.today-side.calm-only {
+            (week_note_with(week, notes.first().map(|n| coach_note(n, "/"))))
+            @if user.catch_up && overdue >= 20 {
+                @let days = (overdue + user.catch_up_reviews - 1) / user.catch_up_reviews.max(1);
+                div.pace {
+                    p.kicker { "At this pace" }
+                    p.pace-days { span.n { (days) } " " (format::plural(days, "day")) " to catch up" }
+                    p.small.muted { (format::number(overdue)) " overdue, " (format::number(user.catch_up_reviews)) " a day." }
+                }
+            }
+            @if attention > 0 && notes.first().is_none_or(|n| n.rule != advice::Rule::Leeches) {
+                p.small { a href="/attention" { (count(attention, "card")) " " (format::agree(attention, "needs", "need")) " a look" } }
+            }
+        }
     }
-    Ok(page(
-        Some(Nav::Decks),
-        "Decks",
-        Some(&user.0),
-        Some("home"),
-        html! {
-            (flash(msg.as_deref()))
-            // On desktops the week sits beside today, as a sidebar.
-            div.hero {
-            section.today aria-label="Today" {
-                p.date { @if user.0.catch_up { span.calm-only { "Catching up · " } } (format::long_date(&user.0.clock())) }
-                @if total_due > 0 {
-                    h1 { span.count { (total_due) " " (format::plural(total_due, "card")) } " to study today" }
-                } @else if !decks.is_empty() {
-                    h1.all-done { span.simple-only { "All done for today" } span.calm-only { "All done." } }
-                } @else {
-                    h1 { span.simple-only { "Welcome to AiNKI" } span.calm-only { "Welcome, " (capitalize(&user.0.username)) "." } }
-                }
-                @if !facts.is_empty() { p.facts { (facts.join(" · ")) } }
-                @if let Some(t) = quiet {
-                    p.facts { "Quiet hours until " (format::when(&user.0.clock(), t)) "." }
-                } @else if total_due > 0 {
-                    p { a.btn.primary.start href="/study" { "Start studying " span.arrow aria-hidden="true" { "→" } } }
-                }
-                (catch_up_note(&user.0, overdue))
-            }
-            @if !decks.is_empty() {
-                aside.today-side.calm-only {
-                    (week_note_with(&week, notes.first().map(|n| coach_note(n, "/"))))
-                    @if user.0.catch_up && overdue >= 20 {
-                        @let days = (overdue + user.0.catch_up_reviews - 1) / user.0.catch_up_reviews.max(1);
-                        div.pace {
-                            p.kicker { "At this pace" }
-                            p.pace-days { span.n { (days) } " " (format::plural(days, "day")) " to catch up" }
-                            p.small.muted { (format::number(overdue)) " overdue, " (format::number(user.0.catch_up_reviews)) " a day." }
-                        }
+    }
+}
+
+fn home_shares(shares: &[IncomingShare]) -> Markup {
+    html! {
+    @if !shares.is_empty() {
+        h2 { "Shared with you" }
+        ul.list {
+            @for sh in shares {
+                li.item {
+                    div.grow {
+                        strong { (deck_title(&sh.deck_name)) } br;
+                        span.small { (sh.cards) " " (format::plural(sh.cards, "card")) " from " (sh.from) }
                     }
-                    @if attention > 0 && notes.first().is_none_or(|n| n.rule != advice::Rule::Leeches) {
-                        p.small { a href="/attention" { (count(attention, "card")) " " (format::agree(attention, "needs", "need")) " a look" } }
+                    form method="post" action=(format!("/shares/{}/accept", sh.id)) {
+                        button.btn type="submit" { "Accept" }
+                        " "
+                        button.btn type="submit" formaction=(format!("/shares/{}/decline", sh.id)) { "Decline" }
                     }
                 }
             }
+        }
+        p.muted.small { "Accepting gives you your own copy. Your progress is yours; later changes by the sender don't carry over." }
+    }
+    }
+}
+
+fn home_decks(user: &User, h: &Home) -> Markup {
+    let (decks, archived) = (&h.decks, h.archived);
+    html! {
+    @if decks.is_empty() && archived > 0 {
+        p.muted { "Every deck is archived. Restore one to study it again." }
+    } @else if decks.is_empty() {
+        p.simple-only { "No decks yet. Create one, or bring your Anki decks along." }
+        // The desktop look: someone new gets three quiet ways in.
+        div.calm-only.first-steps {
+            p.lede { "Three ways to begin." }
+            ul.list.links {
+                @for (href, name, sub) in [
+                    ("/learn", "Read a short lesson", "How memory works, in a few minutes. Each lesson can become your first deck."),
+                    ("/decks/new", "Make a deck", "Write your own cards, one fact on each."),
+                    ("/import", "Bring your Anki decks", "From an .apkg or a CSV file."),
+                ] {
+                    li { a.row href=(href) { span.grow { span { (name) } span.sub.muted.small { (sub) } } span.chev aria-hidden="true" { "›" } } }
+                }
             }
-            @if !shares.is_empty() {
-                h2 { "Shared with you" }
-                ul.list {
-                    @for sh in &shares {
-                        li.item {
-                            div.grow {
-                                strong { (deck_title(&sh.deck_name)) } br;
-                                span.small { (sh.cards) " " (format::plural(sh.cards, "card")) " from " (sh.from) }
-                            }
-                            form method="post" action=(format!("/shares/{}/accept", sh.id)) {
-                                button.btn type="submit" { "Accept" }
-                                " "
-                                button.btn type="submit" formaction=(format!("/shares/{}/decline", sh.id)) { "Decline" }
-                            }
-                        }
-                    }
-                }
-                p.muted.small { "Accepting gives you your own copy. Your progress is yours; later changes by the sender don't carry over." }
-            }
-            @if decks.is_empty() && !archived.is_empty() {
-                p.muted { "Every deck is archived. Restore one to study it again." }
-            } @else if decks.is_empty() {
-                p.simple-only { "No decks yet. Create one, or bring your Anki decks along." }
-                // The desktop look: someone new gets three quiet ways in.
-                div.calm-only.first-steps {
-                    p.lede { "Three ways to begin." }
-                    ul.list.links {
-                        @for (href, name, sub) in [
-                            ("/learn", "Read a short lesson", "How memory works, in a few minutes. Each lesson can become your first deck."),
-                            ("/decks/new", "Make a deck", "Write your own cards, one fact on each."),
-                            ("/import", "Bring your Anki decks", "From an .apkg or a CSV file."),
-                        ] {
-                            li { a.row href=(href) { span.grow { span { (name) } span.sub.muted.small { (sub) } } span.chev aria-hidden="true" { "›" } } }
-                        }
-                    }
-                }
-            } @else {
-                div.table-head aria-hidden="true" {
-                    span.grow { "Decks" }
-                    span.num { "Due" }
-                    span.num { "New" }
-                    span.chev {}
-                }
-                ul.list.decks {
-                    @for d in &decks {
-                        @let due = d.learning_due + d.review_due;
-                        li {
-                            a.row href=(format!("/decks/{}", d.deck.id)) {
-                                span.grow {
-                                    span.deck-name { (deck_title(&d.deck.name)) }
-                                    @if d.deck.status == DeckStatus::Paused {
-                                        span.sub { "Paused" }
-                                    } @else if let Some(exam) = &d.deck.exam_date {
-                                        span.sub { "Exam " (exam_words(&user.0, *exam)) }
-                                    }
-                                }
-                                @if d.due_total() == 0 && d.total > d.suspended {
-                                    span.num.due.done title="Done for today" { (done_check(13, "done-check")) span.unit { "done for today" } }
-                                } @else {
-                                    span.num.due title="Due" { @if due > 0 { (format::number(due)) span.unit { " due" } } @else { (format::NONE) } }
-                                }
-                                span.num.new title="New" { @if d.new_today > 0 { span.dot aria-hidden="true" {} (format::number(d.new_today)) span.unit { " new" } } @else { (format::NONE) } }
-                                span.chev aria-hidden="true" { "›" }
+        }
+    } @else {
+        div.table-head aria-hidden="true" {
+            span.grow { "Decks" }
+            span.num { "Due" }
+            span.num { "New" }
+            span.chev {}
+        }
+        ul.list.decks {
+            @for d in decks {
+                @let due = d.learning_due + d.review_due;
+                li {
+                    a.row href=(format!("/decks/{}", d.deck.id)) {
+                        span.grow {
+                            span.deck-name { (deck_title(&d.deck.name)) }
+                            @if d.deck.status == DeckStatus::Paused {
+                                span.sub { "Paused" }
+                            } @else if let Some(exam) = &d.deck.exam_date {
+                                span.sub { "Exam " (exam_words(user, *exam)) }
                             }
                         }
+                        @if d.due_total() == 0 && d.total > d.suspended {
+                            span.num.due.done title="Done for today" { (done_check(13, "done-check")) span.unit { "done for today" } }
+                        } @else {
+                            span.num.due title="Due" { @if due > 0 { (format::number(due)) span.unit { " due" } } @else { (format::NONE) } }
+                        }
+                        span.num.new title="New" { @if d.new_today > 0 { span.dot aria-hidden="true" {} (format::number(d.new_today)) span.unit { " new" } } @else { (format::NONE) } }
+                        span.chev aria-hidden="true" { "›" }
                     }
                 }
             }
-            @if !archived.is_empty() {
-                p.small.archived-link { a href="/decks/archived" { (count(num::usize_i64(archived.len()), "archived deck")) } }
-            }
-            @if attention > 0 {
-                p.small.attention-link { a href="/attention" { (count(attention, "card")) " " (format::agree(attention, "needs", "need")) " a look" } }
-            }
-            p.actions.icon-links.home-actions {
-                (icon_btn("/cards/new", ICON_ADD, "Add card"))
-                (icon_btn("/decks/new", ICON_DECKS, "New deck"))
-                (icon_btn("/import", ICON_IMPORT, "Import"))
-            }
-            // The desktop look: a plus for a new deck, Import in words.
-            p.desk-actions.calm-only hidden[decks.is_empty()] {
-                a.add-deck href="/decks/new" aria-label="New deck" data-label="New deck" { (icon(ICON_ADD, PAGE_ICON)) }
-                a href="/import" { "Import deck" }
-            }
-            @if !decks.is_empty() {
-                (week_home(&user.0, total_due, &outlook, stats.seconds_per_review))
-            }
-        },
-    )
-    .into_response())
+        }
+    }
+    }
+}
+
+fn home_footer(user: &User, h: &Home) -> Markup {
+    let (decks, archived, attention, total_due, outlook, stats) =
+        (&h.decks, h.archived, h.attention, h.total_due, &h.outlook, &h.stats);
+    html! {
+    @if archived > 0 {
+        p.small.archived-link { a href="/decks/archived" { (count(num::usize_i64(archived), "archived deck")) } }
+    }
+    @if attention > 0 {
+        p.small.attention-link { a href="/attention" { (count(attention, "card")) " " (format::agree(attention, "needs", "need")) " a look" } }
+    }
+    p.actions.icon-links.home-actions {
+        (icon_btn("/cards/new", ICON_ADD, "Add card"))
+        (icon_btn("/decks/new", ICON_DECKS, "New deck"))
+        (icon_btn("/import", ICON_IMPORT, "Import"))
+    }
+    // The desktop look: a plus for a new deck, Import in words.
+    p.desk-actions.calm-only hidden[decks.is_empty()] {
+        a.add-deck href="/decks/new" aria-label="New deck" data-label="New deck" { (icon(ICON_ADD, PAGE_ICON)) }
+        a href="/import" { "Import deck" }
+    }
+    @if !decks.is_empty() {
+        (week_home(user, total_due, outlook, stats.seconds_per_review))
+    }
+    }
 }
 
 /// Rounds a forecast the way people say it: whole cards below a hundred,
@@ -186,30 +250,56 @@ pub(crate) const WHY_OUTLOOK: &str = "Cards come back after you study them: a mi
 /// what the page says to study now (new cards and limits included); later
 /// days hold the forecast, which counts the cards that come back after you
 /// review them (see `outlook`).
+/// The numbers behind the week ahead, worked out apart from the markup.
+struct WeekAhead {
+    /// Each day from today with its count: today's is settled, later days'
+    /// are forecasts.
+    days: Vec<(chrono::NaiveDate, f64)>,
+    tomorrow: i64,
+    /// Only cards answered today can still move tomorrow, so a fraction
+    /// left in its forecast means it isn't settled yet.
+    tomorrow_settled: bool,
+    week: f64,
+    range: (i64, i64),
+    total: i64,
+    /// The tallest bar.
+    most: i64,
+}
+
+impl WeekAhead {
+    fn new(clock: &scheduler::Clock, today_due: i64, outlook: &Outlook) -> Self {
+        let due = today_due.max(0);
+        let today_due = num::i64_f64(due);
+        let days: Vec<(chrono::NaiveDate, f64)> = (outlook.days.iter().enumerate())
+            .map(|(i, &forecast)| {
+                (clock.today() + chrono::Duration::days(num::usize_i64(i)), if i == 0 { today_due } else { forecast })
+            })
+            .collect();
+        let tomorrow = outlook.days[1];
+        let week = today_due + outlook.later();
+        let (low, high) = outlook.later_range();
+        Self {
+            most: days.iter().map(|&(_, n)| num::f64_i64(n.round())).max().unwrap_or(0).max(1),
+            days,
+            tomorrow: num::f64_i64(tomorrow.round()),
+            tomorrow_settled: (tomorrow - tomorrow.round()).abs() < 0.05,
+            week,
+            range: (low + due, high + due),
+            total: num::f64_i64(week.round()),
+        }
+    }
+}
+
 pub(crate) fn week_home(user: &User, today_due: i64, outlook: &Outlook, seconds_per_review: Option<f64>) -> Markup {
     let clock = user.clock();
-    let days: Vec<(chrono::NaiveDate, f64)> = (outlook.days.iter().enumerate())
-        .map(|(i, &forecast)| {
-            let n = if i == 0 { num::i64_f64(today_due.max(0)) } else { forecast };
-            (clock.today() + chrono::Duration::days(num::usize_i64(i)), n)
-        })
-        .collect();
-    let tomorrow = outlook.days[1];
-    // Tomorrow is settled once today is: only cards answered today can
-    // still move it, so any fraction left means it is a forecast.
-    let tomorrow_settled = (tomorrow - tomorrow.round()).abs() < 0.05;
-    let tomorrow_n = num::f64_i64(tomorrow.round());
-    let week = num::i64_f64(today_due.max(0)) + outlook.later();
-    let (low, high) = outlook.later_range();
-    let (low, high) = (low + today_due.max(0), high + today_due.max(0));
-    let total = num::f64_i64(week.round());
-    let most = days.iter().map(|&(_, n)| num::f64_i64(n.round())).max().unwrap_or(0).max(1);
+    let w = WeekAhead::new(&clock, today_due, outlook);
     let tip = |i: usize, date: chrono::NaiveDate, n: f64| {
         let r = num::f64_i64(n.round());
         let words = if r == 0 { "nothing due".to_string() } else { count(r, "card") };
         let about = if i >= 2 && r > 0 { "about " } else { "" };
         format!("{}: {about}{words}", format::short_day(&clock, date))
     };
+    let WeekAhead { days, tomorrow: tomorrow_n, tomorrow_settled, week, range: (low, high), total, most } = w;
     html! {
         div.week-home.calm-only {
             section.week aria-label="Next seven days" {
