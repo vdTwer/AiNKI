@@ -61,6 +61,33 @@ pub struct Week {
     pub tip: Tip,
 }
 
+/// One answer of the week.
+#[derive(sqlx::FromRow)]
+struct WeekAnswer {
+    deck_id: i64,
+    card_id: i64,
+    rating: i64,
+    state_before: CardState,
+    reviewed_at: i64,
+    duration_ms: Option<i64>,
+}
+
+impl Week {
+    /// The one thing worth doing: cards that need a look first, then recall
+    /// against its aim (once the sample says something), then spreading
+    /// the reviews over more days.
+    fn best_tip(&self) -> Tip {
+        let spread = self.reviews > 0 && self.days_studied < 4;
+        match (self.attention, self.retention, self.target) {
+            (1.., _, _) => Tip::Attention,
+            (_, Some(r), Some(t)) if self.retention_sample >= MIN_SAMPLE && r < t - SHORT_BY => Tip::BelowTarget,
+            (_, Some(r), Some(t)) if self.retention_sample >= 100 && r > t + 0.04 => Tip::AboveTarget,
+            _ if spread => Tip::Spread,
+            _ => Tip::Nothing,
+        }
+    }
+}
+
 impl App {
     /// How much of each deck was remembered when due over the last 30 days.
     pub async fn deck_retention(&self, access: &Access) -> Result<Vec<DeckRetention>> {
@@ -110,16 +137,7 @@ impl App {
             .map(|d| (d.id, presets.get(&d.preset_id).copied().unwrap_or(0.9)))
             .collect();
 
-        #[derive(sqlx::FromRow)]
-        struct Row {
-            deck_id: i64,
-            card_id: i64,
-            rating: i64,
-            state_before: CardState,
-            reviewed_at: i64,
-            duration_ms: Option<i64>,
-        }
-        let rows: Vec<Row> = sqlx::query_as(
+        let rows: Vec<WeekAnswer> = sqlx::query_as(
             "SELECT deck_id, card_id, rating, state_before, reviewed_at, duration_ms FROM review_log
              WHERE user_id = ? AND rating > 0 AND source != 'import' AND reviewed_at >= ?",
         )
@@ -147,24 +165,7 @@ impl App {
         let attention = num::usize_i64(self.attention(access, None).await?.len());
         let retention = (sample > 0).then(|| num::i64_f64(passed) / num::i64_f64(sample));
         let target = (sample > 0).then(|| target_sum / num::i64_f64(sample));
-        let tip = if attention > 0 {
-            Tip::Attention
-        } else if let (true, Some(r), Some(t)) = (sample >= MIN_SAMPLE, retention, target) {
-            if r < t - SHORT_BY {
-                Tip::BelowTarget
-            } else if r > t + 0.04 && sample >= 100 {
-                Tip::AboveTarget
-            } else if reviews > 0 && days.len() < 4 {
-                Tip::Spread
-            } else {
-                Tip::Nothing
-            }
-        } else if reviews > 0 && days.len() < 4 {
-            Tip::Spread
-        } else {
-            Tip::Nothing
-        };
-        Ok(Week {
+        let mut week = Week {
             reviews,
             minutes: num::i64_f64(ms) / 60_000.0,
             days_studied: num::usize_i64(days.len()),
@@ -173,7 +174,9 @@ impl App {
             target,
             retention_sample: sample,
             attention,
-            tip,
-        })
+            tip: Tip::Nothing,
+        };
+        week.tip = week.best_tip();
+        Ok(week)
     }
 }
