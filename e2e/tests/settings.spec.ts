@@ -277,7 +277,7 @@ test('a wrong password at login says so', async ({ browser }) => {
   await ctx.close();
 });
 
-test('smart breaks: chosen in Settings, suggested once answers slow down', async ({ page, seed, account }) => {
+test('smart breaks: chosen in Settings, suggested when the work stretch is up', async ({ page, seed, account }) => {
   const deck = await seed.deck('Long session');
   const card = await seed.card(deck, 'q', 'a');
   await page.goto('/settings');
@@ -290,30 +290,28 @@ test('smart breaks: chosen in Settings, suggested once answers slow down', async
   if (await save.isVisible()) await save.click();
   await expect.poll(() => sql<{ m: number }>('SELECT session_minutes AS m FROM users WHERE id = ?', account.id)[0].m).toBe(-1);
 
-  // 40 minutes of reviews, one every 12 s: 2 s each at first, 3.5 s from
-  // minute 25 on.
+  // 160 answers, one every 12 s and ending now, each 9 s on the front and
+  // 2 s on the back: 29 minutes of work, past 1.1 stretches of 25.
   const now = Math.floor(Date.now() / 1000);
-  for (let i = 0; i < 200; i++) {
-    const at = now - 40 * 60 + i * 12;
-    const before = JSON.stringify({ state: 'review', step: 0, stability: 30, difficulty: 5, due: at, last_review: at - 3 * 86400, reps: 5, lapses: 0 });
+  for (let i = 0; i < 160; i++) {
     sql(
       `INSERT INTO review_log (user_id, card_id, deck_id, rating, reviewed_at, state_before, elapsed_days,
-         scheduled_secs, source, prev_card, think_ms) VALUES (?, ?, ?, 3, ?, 2, 3, 0, 'web', ?, ?)`,
-      account.id, card, deck, at, before, (i >= 125 ? 3500 : 2000) + (i % 5) * 150,
+         scheduled_secs, source, think_ms, answer_ms, away_ms) VALUES (?, ?, ?, 3, ?, 2, 3, 0, 'web', 9000, 2000, 0)`,
+      account.id, card, deck, now - (159 - i) * 12,
     );
   }
   await page.goto('/study');
   const main = page.locator('main');
   await expect(main.locator('h1')).toHaveText('Time for a break');
-  await expect(main).toContainText('You have studied for 40 minutes, and your answers are slowing down.');
+  await expect(main).toContainText('You have studied for 29 minutes since your last break. A 5-minute break keeps you fresh for the next stretch.');
   if (await isCalm(page)) {
-    // The desktop starts the break by itself, sized for this slowdown,
-    // and says why.
-    await expect(main.locator('.break-clock')).toHaveText(/^\d{1,2}:\d\d$/);
-    await expect(main.getByText('Your answers were slowing down.')).toBeVisible();
+    // The desktop starts the break by itself.
+    await expect(main.locator('.break-clock')).toHaveText(/^[45]:\d\d$/);
     await main.getByRole('button', { name: 'End break now' }).click();
   } else {
     await main.getByRole('button', { name: 'Keep going' }).click();
   }
   await expect(main.locator('.study .face.front')).toHaveText('q');
+  // Waved off right away: the next stretches get a little longer.
+  expect(sql<{ w: number }>('SELECT break_work_min AS w FROM users WHERE id = ?', account.id)[0].w).toBeCloseTo(27.5);
 });

@@ -1647,55 +1647,45 @@ async fn a_break_is_suggested_after_the_session_length() {
     assert!(app.break_due(&a).await.unwrap().is_none(), "off by default");
     sqlx::query("UPDATE users SET session_minutes = 20 WHERE id = ?").bind(a.user_id()).execute(&app.db).await.unwrap();
     let a = reload(&app, "kolja").await;
-    let due = crate::study::BreakDue { studied: 25, length: 5, smart: false };
+    let due = crate::study::BreakDue { studied: 25, length: 5, smart: false, long: false, slowing: false };
     assert_eq!(app.break_due(&a).await.unwrap(), Some(due));
 
-    app.skip_break(a.user_id()).await.unwrap();
+    app.skip_break(&a.user).await.unwrap();
     let a = reload(&app, "kolja").await;
     assert_eq!(app.break_due(&a).await.unwrap(), None);
 }
 
 #[tokio::test]
-async fn smart_breaks_come_when_answers_slow_down() {
+async fn smart_breaks_keep_a_rhythm_and_learn_it() {
     let app = app().await;
     let a = user(&app, "kolja").await;
     let deck = app.create_deck(&a, "Facts", "", None).await.unwrap();
     sqlx::query("UPDATE users SET session_minutes = -1 WHERE id = ?").bind(a.user_id()).execute(&app.db).await.unwrap();
     let a = reload(&app, "kolja").await;
-    // A review card last seen 3 days ago with a stability of 30 days: FSRS
-    // is about 97% sure of it.
-    let before = |at: i64| {
-        serde_json::json!({ "state": "review", "step": 0, "stability": 30.0, "difficulty": 5.0,
-            "due": at, "last_review": at - 3 * 86_400, "reps": 5, "lapses": 0 })
-        .to_string()
-    };
-    // One answer every 12 s for `minutes`, ending now, of 2 s each; from
-    // minute `slow_from` on they take 3.5 s. Without times (`timed` false)
-    // every third answer from then on is a miss instead.
-    let session = |minutes: i64, slow_from: i64, timed: bool| {
-        let (app, deck_id, user_id) = (&app, deck.id, a.user_id());
+    let mut cards = vec![];
+    for i in 0..20 {
+        cards.push(app.create_card(&a, deck.id, &format!("q{i}"), "a", None, None, None).await.unwrap().id);
+    }
+    // Twenty cards in turn, one answer every 20 s, the last `ago_secs`
+    // before now: 9 s on the front and 2 s on the back, so 11 s of work
+    // each. From answer `slow_from` on, fronts take 15 s.
+    let session = |n: i64, slow_from: i64, ago_secs: i64| {
+        let (app, deck_id, user_id, cards) = (&app, deck.id, a.user_id(), cards.clone());
         async move {
             sqlx::query("DELETE FROM review_log").execute(&app.db).await.unwrap();
-            let start = now() - minutes * 60;
-            for i in 0..minutes * 5 {
-                let at = start + i * 12;
-                let c = app.create_card(&reload(app, "kolja").await, deck_id, &format!("q{i}"), "a", None, None, None).await.unwrap();
-                // A little wobble, so the baseline has a spread.
-                let slow = at - start >= slow_from * 60;
-                let ms = timed.then(|| if slow { 3500 } else { 2000 } + (i % 5) * 150);
-                let rating = if slow && !timed && i % 3 == 0 { 1 } else { 3 };
+            let end = now() - ago_secs;
+            for i in 0..n {
+                let think = if i >= slow_from { 15_000 } else { 9000 + (i % 3) * 300 };
                 sqlx::query(
                     "INSERT INTO review_log (user_id, card_id, deck_id, rating, reviewed_at, state_before,
-                        elapsed_days, scheduled_secs, source, prev_card, think_ms)
-                     VALUES (?, ?, ?, ?, ?, 2, 3, 0, 'web', ?, ?)",
+                        elapsed_days, scheduled_secs, source, think_ms, answer_ms, away_ms)
+                     VALUES (?, ?, ?, 3, ?, 2, 3, 0, 'web', ?, 2000, 0)",
                 )
                 .bind(user_id)
-                .bind(c.id)
+                .bind(cards[(i % 20) as usize])
                 .bind(deck_id)
-                .bind(rating)
-                .bind(at)
-                .bind(before(at))
-                .bind(ms)
+                .bind(end - (n - 1 - i) * 20)
+                .bind(think)
                 .execute(&app.db)
                 .await
                 .unwrap();
@@ -1703,23 +1693,53 @@ async fn smart_breaks_come_when_answers_slow_down() {
         }
     };
 
-    session(40, 999, true).await;
-    assert_eq!(app.break_due(&a).await.unwrap(), None, "fresh all along");
-
-    session(40, 25, true).await;
-    let due = app.break_due(&a).await.unwrap().expect("slower since minute 25");
-    assert!(due.smart);
-    assert_eq!(due.studied, 40);
-    assert!((2..=20).contains(&due.length), "{due:?}");
-
-    // Misses on cards FSRS was sure of are enough, even without times.
-    session(40, 25, false).await;
-    assert!(app.break_due(&a).await.unwrap().is_some_and(|d| d.smart));
-
-    // Keep going: the watch starts over.
-    app.skip_break(a.user_id()).await.unwrap();
-    let a = reload(&app, "kolja").await;
+    // 22 fresh minutes on cards: no break yet.
+    session(120, 999, 0).await;
+    assert_eq!(app.break_due(&a).await.unwrap(), None, "fresh, inside the stretch");
+    // 30 minutes: the stretch is over, a plain five-minute break.
+    session(160, 999, 0).await;
+    let due = app.break_due(&a).await.unwrap().expect("1.1 stretches");
+    assert_eq!(due, crate::study::BreakDue { studied: 30, length: 5, smart: true, long: false, slowing: false });
+    // Back after four minutes away: that was the break.
+    session(160, 999, 4 * 60).await;
     assert_eq!(app.break_due(&a).await.unwrap(), None);
+
+    // Slower from the 30th answer: a break well before the stretch is up.
+    session(80, 30, 0).await;
+    let due = app.break_due(&a).await.unwrap().expect("answers slump");
+    assert!(due.slowing && due.studied < 22, "{due:?}");
+
+    // Keep going right away: longer stretches, shorter breaks, and the
+    // watch starts over.
+    app.break_shown(a.user_id()).await.unwrap();
+    let a = reload(&app, "kolja").await;
+    app.skip_break(&a.user).await.unwrap();
+    let a = reload(&app, "kolja").await;
+    assert!((a.user.break_work_min - 27.5).abs() < 1e-9 && a.user.break_mult < 1.0);
+    assert_eq!(app.break_due(&a).await.unwrap(), None);
+
+    // A pause of the user's own after 15 minutes: the other way.
+    sqlx::query("UPDATE users SET break_work_min = 25, break_mult = 1, break_skipped_at = NULL, break_shown_at = NULL WHERE id = ?")
+        .bind(a.user_id())
+        .execute(&app.db)
+        .await
+        .unwrap();
+    session(80, 999, 5 * 60).await;
+    sqlx::query(
+        "INSERT INTO review_log (user_id, card_id, deck_id, rating, reviewed_at, state_before, elapsed_days, scheduled_secs, source, think_ms, answer_ms, away_ms)
+         VALUES (?, ?, ?, 3, ?, 2, 3, 0, 'web', 9000, 2000, 0)",
+    )
+    .bind(a.user_id())
+    .bind(cards[0])
+    .bind(deck.id)
+    .bind(now())
+    .execute(&app.db)
+    .await
+    .unwrap();
+    let a = reload(&app, "kolja").await;
+    app.note_rest(&a).await.unwrap();
+    let a = reload(&app, "kolja").await;
+    assert!((a.user.break_work_min - 25.0 / 1.1).abs() < 1e-9 && (a.user.break_mult - 1.1).abs() < 1e-9);
 }
 
 #[tokio::test]

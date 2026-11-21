@@ -1,225 +1,226 @@
-//! Smart breaks: suggest a break when answers show tiredness, and size it
-//! by how this user recovered from earlier pauses.
+//! Smart breaks: an even rhythm of work stretches and breaks, steered by
+//! how the answers run, and tuned to the user over time.
 //!
-//! Each review answer is compared with the same session when it was fresh:
-//! - time: how much slower the recall (`think_ms`) was than expected, in
-//!   standard deviations. A card that has been timed before is compared with
-//!   its own earlier times, so hard cards don't pass for tiredness.
-//! - recall: a miss weighs by how sure FSRS was. Missing a 97% card is
-//!   strong evidence, missing a 70% card is almost none.
+//! - A work stretch counts time on cards (a tab hidden for a moment is still
+//!   work; paused time and gaps are not). It starts at `START_WORK_MIN`.
+//! - A break comes at 1.1 stretches at the latest, from 0.9 stretches when
+//!   the answers run slow, and after `MIN_WORK_MIN` when they clearly slump.
+//! - "Slow" is a running mean of how much longer each card took than it
+//!   usually does (natural log of the ratio). One card says almost nothing:
+//!   its time varies by about 0.35 while tiredness adds 0.1 or so, which is
+//!   why only the mean over the last twenty-odd cards is trusted.
+//! - A short break is a fifth of the stretch, at least five minutes; every
+//!   fourth is a long one, three times as long.
+//! - Pressing Keep going makes the next stretches longer and the breaks
+//!   shorter; pausing before any suggestion does the opposite.
 //!
-//! Both are log-likelihood ratios of "tired" against "fresh", so they add.
-//! A CUSUM sums them, never below zero, and a break is due once it crosses
-//! `THRESHOLD`. Nothing here knows tiredness for sure: the threshold is a
-//! choice of how rarely a fresh learner is interrupted for nothing.
+//! The numbers come from simulating several hundred kinds of learners over
+//! months of study (see the study-breaks notes); real timing data should
+//! retune them.
 
-/// The first part of a session sets its fresh baseline.
-pub const BASELINE_SECS: i64 = 10 * 60;
-/// No suggestion before this much of a session has passed.
-pub const MIN_SESSION_SECS: i64 = 10 * 60;
-/// After this long, a break is suggested whatever the answers say.
-pub const CEILING_SECS: i64 = 90 * 60;
-/// A pause this long inside a session starts the watch over: it was a break.
-pub const RESET_GAP_SECS: i64 = 2 * 60;
-/// Timed answers needed in the baseline before time counts at all.
-const MIN_BASELINE: usize = 8;
-/// Answer times vary at least this much (natural log units).
-const SIGMA_FLOOR: f64 = 0.3;
-/// The slowdown watched for, in standard deviations; the CUSUM's
-/// reference value is half of it.
-const SHIFT: f64 = 1.0;
-/// The drop in recall watched for: a tired user remembers 15% less.
-const RECALL_DROP: f64 = 0.15;
-/// The CUSUM's alarm level. In theory h = 5 already alarms only once in
-/// ~900 fresh answers, but the baseline is only an estimate from ten
-/// minutes: in simulation h = 5 interrupted a third of fresh 45-minute
-/// sessions and h = 8 still 8%. h = 10 stays under 2% and still notices a
-/// real one-sigma slowdown within about 22 answers (four to five minutes).
-const THRESHOLD: f64 = 10.0;
-/// One very slow answer (a sneeze) counts as three sigmas at most.
-const Z_CLIP: f64 = 3.0;
-/// Until there is history, recovery takes about three minutes.
-pub const DEFAULT_TAU_MIN: f64 = 3.0;
-/// A break lasts until the slowdown is expected to be down to this.
-const RECOVERED: f64 = 0.2;
-const MIN_BREAK_MIN: f64 = 2.0;
-const MAX_BREAK_MIN: f64 = 20.0;
-/// Answers on each side of a gap that tell how well it rested.
-const SIDE: usize = 8;
+/// The first work stretch, in minutes of time on cards.
+pub const START_WORK_MIN: f64 = 25.0;
+/// Learned stretches stay inside this range.
+const WORK_RANGE: (f64, f64) = (15.0, 45.0);
+/// Learned break lengths stay inside this multiple of the plain length.
+const MULT_RANGE: (f64, f64) = (0.8, 2.5);
+/// How much one Keep going, or one own pause, moves the rhythm.
+const LEARN_STEP: f64 = 1.1;
+/// A break may come this early in a stretch when the answers run slow...
+const EARLY: f64 = 0.9;
+/// ...and comes this late at the latest.
+const LATE: f64 = 1.1;
+/// No break before this much work, however slow the answers.
+const MIN_WORK_MIN: f64 = 10.0;
+/// A running slowness this high brings the break forward (about energy 50
+/// in the simulation's terms)...
+const SLOW: f64 = 0.08;
+/// ...and this high is a slump: a break after `MIN_WORK_MIN` (energy 40).
+const SLUMP: f64 = 0.15;
+/// Weight of each new card in the running mean: about the last twenty.
+const WEIGHT: f64 = 0.05;
+/// One odd card (a sneeze) moves the mean at most this much, in log units.
+const CLIP: f64 = 1.0;
+/// Earlier answers a card needs before its time tells anything.
+const MIN_HISTORY: u32 = 2;
+/// A rest this long between two answers is a break: the stretch starts over.
+pub const REST_SECS: i64 = 3 * 60;
+/// After a gap this long the day's rhythm starts from scratch.
+const FRESH_START_SECS: i64 = 60 * 60;
+/// Slowness fades during a rest with this time constant, in minutes.
+const RECOVERY_MIN: f64 = 5.0;
+/// A tab hidden shorter than this still measures the card.
+const AWAY_MEASURED_MS: i64 = 10_000;
+/// A tab hidden longer than this was a rest, not other work.
+const AWAY_REST_MS: i64 = REST_SECS * 1000;
+/// An answer without times counts as at most this much work.
+const UNTIMED_MS: i64 = 60_000;
+const SHORT_MIN: f64 = 5.0;
+const LONG_EVERY: usize = 4;
+const LONG_TIMES: f64 = 3.0;
+const MAX_BREAK_MIN: f64 = 45.0;
 
-/// One answer of a review card on the website, oldest first.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct Answer {
+/// One answer on the website, oldest first.
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub struct Step {
     pub at: i64,
-    pub card: i64,
-    /// Front to answer, in ms, without hidden or paused time.
+    /// Front to answer, back, and hidden tab time, as measured in the
+    /// browser; `None` without JavaScript.
     pub think_ms: Option<i64>,
-    pub recalled: bool,
-    /// FSRS's recall chance at the moment of the answer.
-    pub r: Option<f64>,
+    pub answer_ms: Option<i64>,
+    pub away_ms: Option<i64>,
+    /// The card's usual front time (mean natural log of ms), when it has
+    /// enough history and this answer's time means what it usually does.
+    pub usual: Option<f64>,
 }
 
-/// For each answer, the mean log time of its card's earlier answers, once
-/// there were at least three.
-pub fn card_means(answers: &[Answer]) -> Vec<Option<f64>> {
+/// The user's learned rhythm.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Rhythm {
+    pub work_min: f64,
+    pub mult: f64,
+}
+
+impl Default for Rhythm {
+    fn default() -> Self {
+        Self { work_min: START_WORK_MIN, mult: 1.0 }
+    }
+}
+
+impl Rhythm {
+    /// Any stored values, kept in range.
+    pub fn new(work_min: f64, mult: f64) -> Self {
+        let ok = |v: f64, (lo, hi): (f64, f64), d: f64| if v.is_finite() { v.clamp(lo, hi) } else { d };
+        Self { work_min: ok(work_min, WORK_RANGE, START_WORK_MIN), mult: ok(mult, MULT_RANGE, 1.0) }
+    }
+
+    /// Keep going while fresh: longer stretches, shorter breaks.
+    #[must_use]
+    pub fn kept_going(self) -> Self {
+        Self::new(self.work_min * LEARN_STEP, self.mult / LEARN_STEP)
+    }
+
+    /// A pause before any suggestion: shorter stretches, longer breaks.
+    #[must_use]
+    pub fn paused_early(self) -> Self {
+        Self::new(self.work_min / LEARN_STEP, self.mult * LEARN_STEP)
+    }
+
+    /// A plain break, in minutes.
+    fn short_min(self) -> f64 {
+        (self.work_min / 5.0).max(SHORT_MIN) * self.mult
+    }
+}
+
+/// Where the day stands after its answers.
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub struct State {
+    /// Minutes of work in the current stretch.
+    pub worked_min: f64,
+    /// Running mean of how much slower than usual the cards were.
+    pub slowness: f64,
+    /// Breaks taken since the day's rhythm started, own pauses included.
+    pub breaks: usize,
+    /// When the last answer came right after a break: the minutes of work
+    /// before that break.
+    pub rested_after: Option<f64>,
+}
+
+/// Walk through the day's answers. `watch_from` is the last Keep going:
+/// work before it doesn't count toward the stretch.
+pub fn replay(steps: &[Step], watch_from: i64) -> State {
+    let mut st = State::default();
+    let mut prev: Option<i64> = None;
+    for s in steps {
+        let gap_ms = prev.map(|p| (s.at - p).max(0) * 1000);
+        let away = s.away_ms.unwrap_or(0).max(0);
+        let (work_ms, rest_ms) = match (s.think_ms, gap_ms) {
+            (Some(t), gap) => {
+                let card = t.max(0) + s.answer_ms.unwrap_or(0).max(0);
+                let (work, away_rest) = if away >= AWAY_REST_MS { (card, away) } else { (card + away, 0) };
+                // Whatever the gap held beyond the card was rest: the Pause
+                // cover, or time before the card was opened.
+                (work, gap.map_or(0, |g| (g - work).max(away_rest)))
+            }
+            (None, Some(g)) => (g.min(UNTIMED_MS), (g - UNTIMED_MS).max(0)),
+            (None, None) => (0, 0),
+        };
+        st.rested_after = None;
+        if gap_ms.is_some_and(|g| g >= FRESH_START_SECS * 1000) {
+            st = State::default();
+        } else if rest_ms >= REST_SECS * 1000 {
+            st.breaks += 1;
+            st.rested_after = Some(st.worked_min);
+            st.worked_min = 0.0;
+            st.slowness *= (-(rest_ms as f64) / 60_000.0 / RECOVERY_MIN).exp();
+        }
+        if s.at <= watch_from {
+            st.worked_min = 0.0;
+        } else {
+            st.worked_min += work_ms as f64 / 60_000.0;
+        }
+        if let (Some(t), Some(usual)) = (s.think_ms.filter(|t| *t > 0), s.usual)
+            && away < AWAY_MEASURED_MS
+        {
+            let slower = ((t as f64).ln() - usual).clamp(-CLIP, CLIP);
+            st.slowness = (1.0 - WEIGHT) * st.slowness + WEIGHT * slower;
+        }
+        prev = Some(s.at);
+    }
+    st
+}
+
+/// A break to suggest now.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Suggestion {
+    /// Minutes of work in this stretch.
+    pub worked: i64,
+    pub minutes: i64,
+    pub long: bool,
+    /// The answers were running slow.
+    pub slowing: bool,
+}
+
+/// Is a break due, and how long should it be?
+pub fn suggest(st: &State, r: Rhythm) -> Option<Suggestion> {
+    let w = st.worked_min;
+    let slowing = st.slowness >= SLOW;
+    let due = w >= LATE * r.work_min || (w >= EARLY * r.work_min && slowing) || (w >= MIN_WORK_MIN && st.slowness >= SLUMP);
+    if !due {
+        return None;
+    }
+    let k = st.breaks + 1;
+    let long = k.is_multiple_of(LONG_EVERY) || (k % LONG_EVERY == LONG_EVERY - 1 && st.slowness >= SLUMP);
+    let minutes = if long { r.short_min() * LONG_TIMES } else { r.short_min() };
+    Some(Suggestion { worked: w.round() as i64, minutes: minutes.min(MAX_BREAK_MIN).round() as i64, long, slowing })
+}
+
+/// Was the latest answer the first after a pause the user took on their
+/// own, before any suggestion, with enough work behind it to mean
+/// tiredness? `shown_at` is when a break was last suggested.
+pub fn paused_on_own(st: &State, steps: &[Step], shown_at: Option<i64>) -> bool {
+    let Some(before) = st.rested_after else { return false };
+    let [.., prev, last] = steps else { return false };
+    let suggested = shown_at.is_some_and(|t| t >= prev.at && t <= last.at);
+    before >= MIN_WORK_MIN && !suggested
+}
+
+/// For each answer, the mean log front time of its card's earlier answers,
+/// once there were `MIN_HISTORY`.
+pub fn card_usuals(answers: &[(i64, Option<i64>)]) -> Vec<Option<f64>> {
     let mut seen: std::collections::HashMap<i64, (f64, u32)> = std::collections::HashMap::new();
     answers
         .iter()
-        .map(|a| {
-            let e = seen.entry(a.card).or_insert((0.0, 0));
-            let mean = (e.1 >= 3).then(|| e.0 / f64::from(e.1));
-            if let Some(ms) = a.think_ms.filter(|ms| *ms > 0) {
+        .map(|&(card, ms)| {
+            let e = seen.entry(card).or_insert((0.0, 0));
+            let usual = (e.1 >= MIN_HISTORY).then(|| e.0 / f64::from(e.1));
+            if let Some(ms) = ms.filter(|ms| *ms > 0) {
                 e.0 += (ms as f64).ln();
                 e.1 += 1;
             }
-            mean
+            usual
         })
         .collect()
-}
-
-/// How much slower than fresh each answer of a session was, in standard
-/// deviations. The baseline is the session's first ten minutes. `None`
-/// where there is no time, or not enough baseline to compare with.
-pub fn slowdowns(session: &[Answer], means: &[Option<f64>]) -> Vec<Option<f64>> {
-    let Some(first) = session.first() else { return vec![] };
-    let logs: Vec<Option<f64>> = session.iter().map(|a| a.think_ms.filter(|ms| *ms > 0).map(|ms| (ms as f64).ln())).collect();
-    let in_base = |i: usize| session[i].at < first.at + BASELINE_SECS;
-    // Cards timed before are compared with themselves, shifted by how this
-    // session ran against their history; the others with the session.
-    let base_known: Vec<f64> = (0..session.len()).filter(|&i| in_base(i)).filter_map(|i| Some(logs[i]? - means[i]?)).collect();
-    let base_new: Vec<f64> = (0..session.len()).filter(|&i| in_base(i) && means[i].is_none()).filter_map(|i| logs[i]).collect();
-    let offset = (base_known.len() >= MIN_BASELINE / 2).then(|| mean(&base_known));
-    let level = (base_new.len() >= MIN_BASELINE / 2).then(|| mean(&base_new));
-    let expected = |i: usize| match means[i] {
-        Some(m) => offset.map(|o| m + o),
-        None => level,
-    };
-    let residuals: Vec<f64> = (0..session.len()).filter(|&i| in_base(i)).filter_map(|i| Some(logs[i]? - expected(i)?)).collect();
-    if residuals.len() < MIN_BASELINE {
-        return vec![None; session.len()];
-    }
-    // The median deviation, so a few odd answers in the baseline don't
-    // stretch it.
-    let sigma = (1.4826 * mad(&residuals)).max(SIGMA_FLOOR);
-    (0..session.len()).map(|i| Some(((logs[i]? - expected(i)?) / sigma).clamp(-Z_CLIP, Z_CLIP))).collect()
-}
-
-/// The evidence one answer adds for "tired" over "fresh".
-fn evidence(a: &Answer, slowdown: Option<f64>) -> f64 {
-    let time = slowdown.map_or(0.0, |z| SHIFT * (z - SHIFT / 2.0));
-    let recall = a.r.map_or(0.0, |r| {
-        let r = r.clamp(0.01, 0.99);
-        if a.recalled {
-            (1.0 - RECALL_DROP).ln()
-        } else {
-            ((1.0 - r * (1.0 - RECALL_DROP)) / (1.0 - r)).ln()
-        }
-    });
-    time + recall
-}
-
-/// Is a break due? `session` holds this session's answers, `means` their
-/// card means, `watch_from` when the watch last started over (a skipped
-/// break). Returns how much slower than fresh the last answers were, which
-/// sets the break's length.
-pub fn tired(session: &[Answer], means: &[Option<f64>], watch_from: i64, now: i64) -> Option<f64> {
-    let start = session.first()?.at;
-    if now - start < MIN_SESSION_SECS {
-        return None;
-    }
-    let z = slowdowns(session, means);
-    let recent = recent_slowdown(&z, session.len());
-    if now - start >= CEILING_SECS {
-        return Some(recent.unwrap_or(1.0));
-    }
-    let mut cusum = 0.0_f64;
-    let mut prev = start;
-    let mut alarm = false;
-    for (i, a) in session.iter().enumerate() {
-        if a.at - prev >= RESET_GAP_SECS {
-            cusum = 0.0;
-            alarm = false;
-        }
-        prev = a.at;
-        if a.at < start + BASELINE_SECS || a.at < watch_from {
-            continue;
-        }
-        cusum = (cusum + evidence(a, z[i])).max(0.0);
-        alarm |= cusum >= THRESHOLD;
-    }
-    alarm.then(|| recent.unwrap_or(1.0))
-}
-
-/// Mean slowdown of the last few timed answers before `end`.
-fn recent_slowdown(z: &[Option<f64>], end: usize) -> Option<f64> {
-    let last: Vec<f64> = z[..end].iter().rev().filter_map(|v| *v).take(SIDE).collect();
-    (!last.is_empty()).then(|| mean(&last))
-}
-
-/// Mean slowdown of the first few timed answers from `start` on.
-fn early_slowdown(z: &[Option<f64>], start: usize) -> Option<f64> {
-    let first: Vec<f64> = z[start..].iter().filter_map(|v| *v).take(SIDE).collect();
-    (first.len() == SIDE).then(|| mean(&first))
-}
-
-/// How fast this user recovers, in minutes: slowdown after a pause of g
-/// minutes is taken to fall as e^(-g/tau). Learned from pauses of 2 to 60
-/// minutes in `history` that came after a real slowdown. `None` with fewer
-/// than three.
-pub fn recovery_minutes(history: &[Answer], means: &[Option<f64>]) -> Option<f64> {
-    let mut taus = vec![];
-    // Runs of study with no pause over an hour share one baseline.
-    let mut s = 0;
-    while s < history.len() {
-        let mut e = s + 1;
-        while e < history.len() && history[e].at - history[e - 1].at < 3600 {
-            e += 1;
-        }
-        let z = slowdowns(&history[s..e], &means[s..e]);
-        for i in 1..(e - s) {
-            let gap = history[s + i].at - history[s + i - 1].at;
-            if gap < RESET_GAP_SECS {
-                continue;
-            }
-            let (Some(before), Some(after)) = (
-                recent_slowdown(&z, i).filter(|_| z[..i].iter().flatten().count() >= SIDE),
-                early_slowdown(&z, i),
-            ) else {
-                continue;
-            };
-            if before < 0.5 {
-                continue;
-            }
-            let rested = (1.0 - after / before).clamp(0.05, 0.95);
-            taus.push((gap as f64 / 60.0 / -(1.0 - rested).ln()).clamp(0.5, 30.0));
-        }
-        s = e;
-    }
-    (taus.len() >= 3).then(|| median(&mut taus))
-}
-
-/// Minutes of break: long enough for `slowdown` to fall to `RECOVERED`.
-pub fn break_minutes(slowdown: f64, tau: f64) -> i64 {
-    let m = tau * (slowdown.max(2.0 * RECOVERED) / RECOVERED).ln();
-    m.clamp(MIN_BREAK_MIN, MAX_BREAK_MIN).round() as i64
-}
-
-fn mean(v: &[f64]) -> f64 {
-    v.iter().sum::<f64>() / v.len() as f64
-}
-
-/// Median absolute deviation from the median.
-fn mad(v: &[f64]) -> f64 {
-    let mut c = v.to_vec();
-    let m = median(&mut c);
-    let mut d: Vec<f64> = v.iter().map(|x| (x - m).abs()).collect();
-    median(&mut d)
-}
-
-fn median(v: &mut [f64]) -> f64 {
-    v.sort_by(f64::total_cmp);
-    let n = v.len();
-    if n % 2 == 1 { v[n / 2] } else { (v[n / 2 - 1] + v[n / 2]) / 2.0 }
 }
 
 #[cfg(test)]
@@ -239,132 +240,157 @@ mod tests {
         }
     }
 
-    /// A session of one answer every 12 s for `minutes`. From `tired_after`
-    /// minutes on, answers slow by `slow` (log units) and recall drops.
-    fn session(seed: u64, minutes: i64, tired_after: i64, slow: f64, drop: f64) -> Vec<Answer> {
+    const USUAL_MS: f64 = 5000.0;
+
+    /// Cards back to back for `minutes`, each usually 5 s plus 2 s on the
+    /// back, with the usual spread. From `slow_from` minutes of work on,
+    /// fronts take `slow` (log units) longer.
+    fn study(seed: u64, start: i64, minutes: f64, slow_from: f64, slow: f64) -> Vec<Step> {
         let mut n = Noise(seed);
         let mut out = vec![];
-        let mut t = 0;
-        let mut card = 0;
-        while t < minutes * 60 {
-            card += 1;
-            let tired = t >= tired_after * 60;
-            let r = 0.9;
-            let ms = (2000.0 * (0.35 * n.normal() + if tired { slow } else { 0.0 }).exp()) as i64;
-            let p = if tired { r * (1.0 - drop) } else { r };
-            out.push(Answer { at: t, card, think_ms: Some(ms), recalled: n.next() < p, r: Some(r) });
-            t += 12;
+        let (mut t, mut worked) = (start * 1000, 0.0);
+        while worked < minutes * 60_000.0 {
+            let extra = if worked >= slow_from * 60_000.0 { slow } else { 0.0 };
+            let think = (USUAL_MS * (0.35 * n.normal() + extra).exp()) as i64;
+            let answer = 2000;
+            t += think + answer;
+            worked += (think + answer) as f64;
+            out.push(Step { at: t / 1000, think_ms: Some(think), answer_ms: Some(answer), away_ms: Some(0), usual: Some(USUAL_MS.ln()) });
         }
         out
     }
 
-    fn no_means(s: &[Answer]) -> Vec<Option<f64>> {
-        vec![None; s.len()]
+    fn due(steps: &[Step]) -> Option<Suggestion> {
+        suggest(&replay(steps, 0), Rhythm::default())
     }
 
     #[test]
-    fn a_fresh_session_is_left_alone() {
-        // 100 fresh sessions of 45 minutes: at most two wrong suggestions.
-        let wrong = (0..100)
-            .filter(|&seed| {
-                let s = session(seed, 45, 999, 0.0, 0.0);
-                tired(&s, &no_means(&s), 0, 45 * 60).is_some()
-            })
-            .count();
-        assert!(wrong <= 2, "{wrong} fresh sessions interrupted");
+    fn short_fresh_days_are_left_alone() {
+        // 200 fresh days of 20 minutes: at most a few wrong suggestions.
+        let wrong = (0..200).filter(|&seed| due(&study(seed, 0, 20.0, 999.0, 0.0)).is_some()).count();
+        assert!(wrong <= 6, "{wrong} of 200 interrupted");
     }
 
     #[test]
-    fn slower_answers_bring_a_break() {
-        let s = session(1, 40, 20, 0.5, 0.0);
-        let slowdown = tired(&s, &no_means(&s), 0, 40 * 60).expect("tired by minute 40");
-        assert!(slowdown > 0.8, "{slowdown}");
-        // Not before the slowdown began, and soon after it.
-        let upto = |m: i64| s.iter().filter(|a| a.at < m * 60).copied().collect::<Vec<_>>();
-        assert!(tired(&upto(20), &no_means(&s), 0, 20 * 60).is_none());
-        assert!(tired(&upto(25), &no_means(&s), 0, 25 * 60).is_some());
+    fn a_fresh_stretch_ends_on_the_clock() {
+        // Fresh all along: no break at 25 minutes, one by 27.5.
+        assert!(due(&study(1, 0, 24.0, 999.0, 0.0)).is_none());
+        let s = due(&study(1, 0, 27.6, 999.0, 0.0)).expect("by 1.1 stretches");
+        assert_eq!(s, Suggestion { worked: 28, minutes: 5, long: false, slowing: false });
     }
 
     #[test]
-    fn misses_alone_bring_a_break_too() {
-        // No times at all, as without JavaScript: recall drops by 40%.
-        let mut s = session(2, 40, 15, 0.0, 0.4);
-        for a in &mut s {
-            a.think_ms = None;
+    fn slow_answers_bring_the_break_forward() {
+        // Clearly slower from minute 5 on: a break soon after minute 10.
+        assert!(due(&study(2, 0, 9.5, 5.0, 0.5)).is_none(), "never before ten minutes");
+        let s = due(&study(2, 0, 13.0, 5.0, 0.5)).expect("a slump");
+        assert!(s.slowing && s.worked < 22, "{s:?}");
+        // A mild slowdown waits for the early end of the stretch.
+        let mild = |m| due(&study(3, 0, m, 0.0, 0.12));
+        assert!(mild(20.0).is_none());
+        assert!(mild(23.0).is_some_and(|s| s.slowing));
+    }
+
+    #[test]
+    fn one_slow_card_is_not_tiredness() {
+        let mut s = study(4, 0, 15.0, 999.0, 0.0);
+        let last = s.last_mut().unwrap();
+        last.think_ms = Some(60_000);
+        assert!(due(&s).is_none());
+    }
+
+    #[test]
+    fn a_rest_starts_the_stretch_over_and_every_fourth_break_is_long() {
+        let mut day = vec![];
+        let mut start = 0;
+        for i in 0..3 {
+            let s = study(10 + i, start, 26.0, 999.0, 0.0);
+            start = s.last().unwrap().at + 6 * 60;
+            day.extend(s);
         }
-        assert!(tired(&s, &no_means(&s), 0, 40 * 60).is_some());
+        let st = replay(&day, 0);
+        assert_eq!(st.breaks, 2);
+        assert!(st.worked_min < 27.0);
+        day.extend(study(20, start, 28.0, 999.0, 0.0));
+        let s = suggest(&replay(&day, 0), Rhythm::default()).expect("fourth stretch done");
+        assert!(s.long);
+        assert_eq!(s.minutes, 15);
     }
 
     #[test]
-    fn never_in_the_first_ten_minutes_and_always_after_ninety() {
-        let s = session(3, 10, 0, 2.0, 0.9);
-        assert!(tired(&s[..s.len() - 1], &no_means(&s), 0, 9 * 60).is_none());
-        let s = session(4, 91, 999, 0.0, 0.0);
-        assert!(tired(&s, &no_means(&s), 0, 91 * 60).is_some());
-    }
-
-    #[test]
-    fn skipping_a_break_starts_the_watch_over() {
-        let s = session(5, 40, 15, 0.6, 0.0);
-        assert!(tired(&s, &no_means(&s), 0, 40 * 60).is_some());
-        assert!(tired(&s, &no_means(&s), 39 * 60, 40 * 60).is_none());
-    }
-
-    #[test]
-    fn hard_cards_are_compared_with_themselves() {
-        // Every card is slow, but no slower than it always is.
-        let mut s = session(6, 40, 999, 0.0, 0.0);
-        let means: Vec<Option<f64>> = s
-            .iter_mut()
-            .enumerate()
-            .map(|(i, a)| {
-                let hard = if i > 100 { 1.5 } else { 0.0 };
-                a.think_ms = a.think_ms.map(|ms| (ms as f64 * f64::exp(hard)) as i64);
-                Some(2000f64.ln() + hard)
-            })
-            .collect();
-        assert!(tired(&s, &means, 0, 40 * 60).is_none());
-        assert!(tired(&s, &no_means(&s), 0, 40 * 60).is_some(), "without its history it looks like tiredness");
-    }
-
-    #[test]
-    fn card_means_use_only_earlier_answers() {
-        let a = |card, ms| Answer { at: 0, card, think_ms: Some(ms), recalled: true, r: None };
-        let m = card_means(&[a(1, 1000), a(1, 1000), a(2, 5), a(1, 1000), a(1, 9999)]);
-        assert_eq!(m[..3], [None, None, None]);
-        assert!(m[4].is_some_and(|v| (v - 1000f64.ln()).abs() < 1e-9));
-    }
-
-    #[test]
-    fn recovery_is_learned_from_pauses() {
-        // Three days: slow by the end, a 6-minute pause, back to half the
-        // slowdown. e^(-6/tau) = 0.5 gives tau = 8.7 minutes.
-        let mut history = vec![];
-        for day in 0..3 {
-            let base = day * 86_400;
-            let mut s = session(10 + day as u64, 30, 20, 1.0, 0.0);
-            let mut after = session(20 + day as u64, 10, 0, 0.5, 0.0);
-            for a in &mut s {
-                a.at += base;
-                a.card += 1000 * day;
-            }
-            for a in &mut after {
-                a.at += base + 36 * 60;
-                a.card += 1000 * day + 500;
-            }
-            history.extend(s);
-            history.extend(after);
+    fn short_gaps_and_paused_time_are_not_work() {
+        let mut s = study(5, 0, 20.0, 999.0, 0.0);
+        // Two minutes behind the Pause cover: no break, no work either.
+        let n = s.len() / 2;
+        for x in &mut s[n..] {
+            x.at += 120;
         }
-        let tau = recovery_minutes(&history, &no_means(&history)).expect("three pauses");
-        assert!((5.0..14.0).contains(&tau), "{tau}");
-        assert_eq!(recovery_minutes(&history[..200], &no_means(&history[..200])), None);
+        let st = replay(&s, 0);
+        assert_eq!(st.breaks, 0);
+        assert!((st.worked_min - 20.0).abs() < 0.3, "{}", st.worked_min);
+        // A hidden tab for 30 s is other work: it counts, but the card's
+        // time doesn't measure tiredness.
+        let was = s[n].think_ms.unwrap();
+        s[n].away_ms = Some(30_000);
+        s[n].think_ms = Some(30_000);
+        let st2 = replay(&s, 0);
+        let more = (30_000.0 + 30_000.0 - was as f64) / 60_000.0;
+        assert!((st2.worked_min - st.worked_min - more).abs() < 0.01);
+        assert!(st2.slowness.abs() < 0.05);
     }
 
     #[test]
-    fn a_bigger_slowdown_means_a_longer_break() {
-        assert_eq!(break_minutes(1.0, DEFAULT_TAU_MIN), 5);
-        assert!(break_minutes(2.0, DEFAULT_TAU_MIN) > 5);
-        assert_eq!(break_minutes(0.1, DEFAULT_TAU_MIN), 2);
-        assert_eq!(break_minutes(50.0, 30.0), 20);
+    fn keep_going_starts_the_watch_over() {
+        let s = study(6, 0, 28.0, 999.0, 0.0);
+        assert!(due(&s).is_some());
+        let watch = s[s.len() - 3].at;
+        assert!(suggest(&replay(&s, watch), Rhythm::default()).is_none());
+    }
+
+    #[test]
+    fn an_hour_away_starts_the_day_over() {
+        let mut s = study(7, 0, 20.0, 999.0, 0.0);
+        let then = s.last().unwrap().at + 3600;
+        s.extend(study(8, then, 10.0, 999.0, 0.0));
+        let st = replay(&s, 0);
+        assert_eq!(st.breaks, 0);
+        assert!(st.worked_min < 11.0);
+    }
+
+    #[test]
+    fn the_rhythm_learns_and_stays_in_range() {
+        let r = Rhythm::default().kept_going();
+        assert!((r.work_min - 27.5).abs() < 1e-9 && (r.mult - 1.0 / 1.1).abs() < 1e-9);
+        let mut r = Rhythm::default();
+        for _ in 0..30 {
+            r = r.paused_early();
+        }
+        assert_eq!(r, Rhythm { work_min: 15.0, mult: 2.5 });
+        // Short breaks never go under five minutes before the multiplier.
+        assert_eq!(suggest(&State { worked_min: 17.0, ..State::default() }, r).map(|s| s.minutes), Some(13));
+        assert_eq!(Rhythm::new(f64::NAN, 99.0), Rhythm { work_min: START_WORK_MIN, mult: 2.5 });
+    }
+
+    #[test]
+    fn own_pauses_are_told_from_suggested_ones() {
+        let mut s = study(9, 0, 15.0, 999.0, 0.0);
+        let before = s.last().unwrap().at;
+        s.extend(study(9, before + 4 * 60, 0.05, 999.0, 0.0).into_iter().take(1));
+        let st = replay(&s, 0);
+        assert!(st.rested_after.is_some());
+        assert!(paused_on_own(&st, &s, None));
+        assert!(!paused_on_own(&st, &s, Some(before + 1)), "the break was suggested");
+        // A pause after only five minutes says nothing.
+        let mut short = study(9, 0, 5.0, 999.0, 0.0);
+        let b = short.last().unwrap().at;
+        short.extend(study(9, b + 4 * 60, 0.05, 999.0, 0.0).into_iter().take(1));
+        assert!(!paused_on_own(&replay(&short, 0), &short, None));
+    }
+
+    #[test]
+    fn card_usuals_use_only_earlier_answers() {
+        let u = card_usuals(&[(1, Some(1000)), (1, Some(1000)), (2, Some(5)), (1, Some(9999))]);
+        assert_eq!(u[..3], [None, None, None]);
+        assert!(u[3].is_some_and(|v| (v - 1000f64.ln()).abs() < 1e-9));
     }
 }
