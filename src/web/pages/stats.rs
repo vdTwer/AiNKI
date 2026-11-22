@@ -203,7 +203,6 @@ fn numbers_model(d: &StatsPage) -> Markup {
                 }
             }
         }
-        p.muted.small { a href="/learn/optimizing" { "What this means" } }
     }
     }
 }
@@ -448,7 +447,6 @@ fn desk_model(d: &StatsPage) -> Markup {
                         "FSRS expected you to remember " (format::percent(Some(d.cal.predicted))) " of your reviews last year. You remembered " (format::percent(Some(d.cal.actual))) "."
                         @if (d.cal.predicted - d.cal.actual).abs() <= 0.03 { " That's a close fit." }
                     }
-                    a.small href="/learn/optimizing" { "What this means" }
                 }
             }
             @if let (Some(a), Some(b)) = (d.sure.sure_pct(), d.sure.unsure_pct()) {

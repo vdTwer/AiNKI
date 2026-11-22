@@ -179,7 +179,6 @@
   .counts, a.row .num { white-space: nowrap; font-variant-numeric: tabular-nums; }
   .deck-path .sep { margin-inline: .3em; &:last-child { display: none; } }
   .parent a { text-decoration: none; }
-  .evidence { flex: none; font-size: .75rem; color: var(--muted); }
 
   /* Add: card, deck or import. */
   nav.tabs {

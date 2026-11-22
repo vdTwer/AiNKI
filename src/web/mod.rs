@@ -30,7 +30,7 @@ use crate::{
     coach,
     error::AppError,
     format::{self, count},
-    fuzzy, import, insight, invites, lessons, markdown, mcp, media,
+    fuzzy, import, insight, invites, markdown, mcp, media,
     multi::{self, Piece, Split},
     now, num, oauth,
     outlook::Outlook,
@@ -54,7 +54,6 @@ mod pages {
     pub mod home;
     pub mod import;
     pub mod invites;
-    pub mod lessons;
     pub mod media;
     pub mod presets;
     pub mod settings;
@@ -65,8 +64,8 @@ mod pages {
 }
 #[allow(clippy::wildcard_imports, reason = "the router and every page reach every handler by name")]
 use pages::{
-    admin::*, auth::*, cards::*, coach::*, decks::*, find::*, home::*, import::*, invites::*, lessons::*, media::*,
-    presets::*, settings::*, sharing::*, stats::*, study::*, tokens::*,
+    admin::*, auth::*, cards::*, coach::*, decks::*, find::*, home::*, import::*, invites::*, media::*, presets::*,
+    settings::*, sharing::*, stats::*, study::*, tokens::*,
 };
 // The consent page for OAuth clients asks for permissions the same way.
 pub(crate) use pages::tokens::permission_fields;
@@ -170,9 +169,6 @@ pub fn router(app: AppState) -> Router {
         .route("/cards/{id}/{action}", post(card_action))
         .route("/attention", get(attention_page))
         .route("/coach/not-now", post(coach_not_now))
-        .route("/learn", get(learn_page))
-        .route("/learn/{slug}", get(lesson_page))
-        .route("/learn/{slug}/deck", post(lesson_deck))
         .route("/presets", get(presets_page))
         .route("/presets/new", get(preset_new_page).post(preset_create))
         .route("/presets/{id}", get(preset_page).post(preset_update))
@@ -448,7 +444,6 @@ pub enum Nav {
     Study,
     Add,
     Stats,
-    Learn,
     Settings,
 }
 
@@ -542,7 +537,6 @@ fn main_nav(nav: Option<Nav>) -> Markup {
             a href="/study" data-label="Study" aria-current=[current(Nav::Study)] { "Study" }
             a href="/cards/new" data-label="Add" aria-current=[current(Nav::Add)] { "Add" }
             a href="/stats" data-label="Stats" aria-current=[current(Nav::Stats)] { "Stats" }
-            a href="/learn" data-label="Learn" aria-current=[current(Nav::Learn)] { "Learn" }
             a href="/settings" data-label="Settings" aria-current=[current(Nav::Settings)] { "Settings" }
             a href="/find" aria-label="Find" { "Find" }
         }

@@ -6,15 +6,6 @@
 )]
 use crate::web::*;
 
-/// Where to read why a flag matters.
-pub(crate) const fn coach_lesson(kind: coach::Kind) -> &'static str {
-    match kind {
-        coach::Kind::Leech => "/learn/leeches",
-        coach::Kind::Split => "/learn/good-cards",
-        coach::Kind::Duplicate => "/learn/interference",
-    }
-}
-
 /// Whether the back offers a split into cards.
 pub(crate) fn splittable(card: &Card) -> bool {
     card.multi.is_some() || !multi::splits(&card.back).is_empty()
@@ -30,9 +21,9 @@ pub(crate) fn coach_box(card: &Card, flags: &[coach::Flag]) -> Markup {
                 @for f in flags {
                     div.coach-flag {
                         p.coach-label { (f.kind.label()) }
-                        p { (f.reason) " " a href=(coach_lesson(f.kind)) { "Why this matters" } }
+                        p { (f.reason) }
                         @if f.kind == coach::Kind::Leech {
-                            p.muted.small { "Rewrite it so it asks one clear thing, add an image or a memory hook, or split it. Suspending takes it out of your reviews." }
+                            p.muted.small { "Each lapse sends it back to short gaps, so it costs more time than many easy cards. Rewrite it so it asks one clear thing, add an image or a memory hook, or split it. Suspending takes it out of your reviews." }
                         }
                         form.actions method="post" action=(format!("/cards/{id}/keep-{}", f.kind.as_str())) {
                             @if f.kind != coach::Kind::Duplicate && card.multi.is_none() && coach::list_items(&card.back) >= 2 {
@@ -86,8 +77,7 @@ pub(crate) async fn attention_page(
                 p { "Nothing right now. The coach looks for cards you keep forgetting, cards that ask for several things at once, and cards that look alike." }
             } @else {
                 p.muted {
-                    "The coach noticed " (count(num::usize_i64(found.len()), "card")) ". Open one to see why and what you can do. Nothing changes unless you pick something. "
-                    a href="/learn/good-cards" { "What makes a good card" }
+                    "The coach noticed " (count(num::usize_i64(found.len()), "card")) ". Open one to see why and what you can do. Nothing changes unless you pick something."
                 }
                 ul.list.cards {
                     @for a in &found {

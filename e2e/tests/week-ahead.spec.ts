@@ -11,7 +11,7 @@ function due(id: number, at: number) {
   sql('UPDATE cards SET state = 2, stability = 10, difficulty = 5, reps = 3, last_review = ?, due = ? WHERE id = ?', at - 10 * DAY, at, id);
 }
 
-test('home shows the next seven days, starting today', async ({ page, seed }) => {
+test('Stats shows the next seven days, starting today', async ({ page, seed }) => {
   const deck = await seed.deck('Capitals');
   const [france, spain, peru, chad] = await seed.cards(deck, [
     ['France', 'Paris'],

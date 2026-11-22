@@ -6,7 +6,6 @@ const PLACES: [string, RegExp][] = [
   ['Study', /\/study$/],
   ['Add', /\/cards\/new$/],
   ['Stats', /\/stats$/],
-  ['Learn', /\/learn$/],
   ['Settings', /\/settings$/],
   ['AiNKI', /\/$/],
 ];
@@ -22,10 +21,10 @@ test('every place is reachable from the navigation', async ({ page, seed }) => {
   }
 });
 
-test('the menu reads Study, Add, Stats, Learn, Settings, Find', async ({ page }) => {
+test('the menu reads Study, Add, Stats, Settings, Find', async ({ page }) => {
   await page.goto('/stats');
   const names = await page.locator('nav.top a:not(.brand)').allTextContents();
-  expect(names).toEqual(['Study', 'Add', 'Stats', 'Learn', 'Settings', 'Find']);
+  expect(names).toEqual(['Study', 'Add', 'Stats', 'Settings', 'Find']);
 });
 
 test('quick find forgives typos and goes where you pick', async ({ page, seed }) => {

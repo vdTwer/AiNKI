@@ -17,7 +17,6 @@ mod fuzzy;
 mod import;
 mod insight;
 mod invites;
-mod lessons;
 mod markdown;
 mod mcp;
 mod media;

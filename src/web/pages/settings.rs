@@ -24,7 +24,6 @@ pub(crate) async fn settings_page(State(app): State<AppState>, user: WebUser, Fl
                     ("/presets", "Presets", "How much to remember, daily limits"),
                     ("/access", "Agent access", "Connect Claude and other agents"),
                     ("/import", "Import", "From Anki or a CSV file"),
-                    ("/learn", "Learn", "How memory and scheduling work, and how to write good cards"),
                     ("/invites", "Invite someone", "One person a week"),
                 ] {
                     li { a.row href=(href) { span.grow { span { (name) } span.sub.muted.small { (sub) } } span.chev aria-hidden="true" { "›" } } }
@@ -51,7 +50,7 @@ fn preferences_form(u: &User) -> Markup {
                 label.line { "New day starts at" span.field { input type="number" name="rollover_hour" min="0" max="23" value=(u.rollover_hour); span.unit { ":00" } } }
                 label.line { "Text size" span.field { input type="number" name="font_scale" min="80" max="200" step="10" value=(u.font_scale); span.unit { "%" } } }
                 label.check { input type="checkbox" name="four_buttons" value="1" checked[u.four_buttons]; " Show Hard and Easy buttons" }
-                p.hint.muted.small { "Hard means you remembered, with effort. If you forgot, it's Again; FSRS gets that wrong otherwise. " a href="/learn/two-buttons" { "Two buttons or four?" } }
+                p.hint.muted.small { "Hard means you remembered, with effort. If you forgot, it's Again; FSRS gets that wrong otherwise." }
                 label.check { input type="checkbox" name="optimize_include_agent" value="1" checked[u.optimize_include_agent]; " Use reviews done through agents when optimizing" }
             }
             div.form-foot.end { button.btn.primary type="submit" { "Save" } }
@@ -94,7 +93,7 @@ fn studying_form(u: &User) -> Markup {
                 p.hint.muted.small { "It doesn't change the schedule. Stats show how often you were right when you felt sure." }
                 label.check { input type="checkbox" name="catch_up" value="1" checked[u.catch_up]; " Catch-up mode" }
                 label.line { "Reviews a day while catching up" input type="number" name="catch_up_reviews" min="1" max="9999" value=(u.catch_up_reviews); }
-                p.hint.muted.small { "For after time away: no new cards, and the cards you most likely still know come first, so less is lost. " a href="/learn/backlog" { "More" } }
+                p.hint.muted.small { "For after time away: no new cards, and the cards you most likely still know come first, so less is lost." }
             }
             div.form-foot.end { button.btn.primary type="submit" { "Save" } }
         }
@@ -128,8 +127,7 @@ fn fsrs_section(u: &User, reviews: i64, custom: bool) -> Markup {
                 noscript { button.btn type="submit" { "Save" } }
             }
             p.hint.muted.small {
-                "Optimizing fits FSRS to your own memory. It helps once you have a few hundred reviews. New parameters are only kept when they predict your reviews better. "
-                a href="/learn/optimizing" { "More" }
+                "Optimizing fits FSRS to your own memory. It helps once you have a few hundred reviews. New parameters are only kept when they predict your reviews better."
             }
         }
         div.form-foot.end {

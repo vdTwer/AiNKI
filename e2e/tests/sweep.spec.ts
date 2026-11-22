@@ -36,7 +36,7 @@ test('every page, every link', async ({ page, seed, account }) => {
   await page.context().clearCookies({ name: 'ainki_flash' });
 
   const start = ['/', '/study', `/decks/${deck}`, `/decks/${deck}/edit`, `/cards/${card}`, `/cards/${list}`, '/cards/new', '/decks/new',
-    '/import', '/stats', `/stats?deck=${deck}`, '/settings', '/presets', '/presets/new', '/learn', '/attention', '/invites', '/access'];
+    '/import', '/stats', `/stats?deck=${deck}`, '/settings', '/presets', '/presets/new', '/attention', '/invites', '/access'];
   const seen = new Set<string>();
   const queue = [...start];
   const problems: string[] = [];
