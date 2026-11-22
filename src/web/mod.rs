@@ -543,7 +543,7 @@ fn main_nav(nav: Option<Nav>) -> Markup {
     let current = |n: Nav| (nav == Some(n)).then_some("page");
     html! {
         nav.top aria-label="Main" {
-            a.brand href="/" data-label="AiNKI" aria-current=[current(Nav::Decks)] { "AiNKI" }
+            a.brand href="/" data-label="AiNKI" aria-current=[current(Nav::Decks)] { "A" span.i { "i" } "NKI" }
             a href="/study" data-label="Study" aria-current=[current(Nav::Study)] { "Study" }
             a href="/cards/new" data-label="Add" aria-current=[current(Nav::Add)] { "Add" }
             a href="/stats" data-label="Stats" aria-current=[current(Nav::Stats)] { "Stats" }
