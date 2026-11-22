@@ -22,6 +22,10 @@ pub(crate) struct StatsPage {
     pub(crate) week: Option<insight::Week>,
     pub(crate) retention: Vec<insight::DeckRetention>,
     pub(crate) history: crate::service::History,
+    /// The week ahead, with the cards that come back after you study them.
+    pub(crate) outlook: Outlook,
+    /// What studying asks for today, as on Home.
+    pub(crate) total_due: i64,
     /// What the coach would say, most important first; it speaks about
     /// everything, so only on the stats of all decks.
     pub(crate) notes: Vec<Advice>,
@@ -35,32 +39,38 @@ impl StatsPage {
                 None => Ok(None),
             }
         };
-        let (the_deck, s, cal, sure, retention, history) = tokio::try_join!(
+        let (the_deck, s, cal, sure, retention, history, summaries) = tokio::try_join!(
             the_deck,
             app.stats(access, deck),
             app.calibration(access, deck),
             app.confidence(access, deck),
             app.deck_retention(access),
             app.history(access, deck),
+            app.deck_summaries(access),
         )?;
+        let active: Vec<_> = summaries
+            .into_iter()
+            .filter(|d| d.deck.status != DeckStatus::Archived && deck.is_none_or(|id| id == d.deck.id))
+            .collect();
+        let outlook = app.outlook(access, &active).await?;
+        let total_due = active.iter().map(crate::service::DeckSummary::due_total).sum();
         let retention =
             retention.into_iter().filter(|d| d.reviews > 0 && deck.is_none_or(|id| id == d.deck_id)).collect();
         // The week and the coach speak about everything: all decks only.
         let (week, notes) = if deck.is_none() {
-            let (decks, flagged, overdue, reads) = tokio::try_join!(
-                app.deck_summaries(access),
+            let (flagged, overdue, reads) = tokio::try_join!(
                 app.attention(access, None),
                 app.overdue(access),
                 app.coach_reads(access),
             )?;
             let attention = num::usize_i64(flagged.len());
             let week = app.week_with(access, attention).await?;
-            let known = advice::Known { decks: &decks, stats: &s, attention: &flagged, overdue };
+            let known = advice::Known { decks: &active, stats: &s, attention: &flagged, overdue };
             (Some(week), advice::advice_with(access, &known, reads))
         } else {
             (None, vec![])
         };
-        Ok(Self { deck: the_deck, s, cal, sure, week, retention, history, notes })
+        Ok(Self { deck: the_deck, s, cal, sure, week, retention, history, notes, outlook, total_due })
     }
 
     fn this_week(&self) -> Option<f64> {
@@ -105,7 +115,7 @@ pub(crate) async fn stats_page(
         details.numbers {
             summary { "All the numbers" }
             (numbers_today(&d)) (numbers_retention(&d)) (numbers_cards(&d)) (numbers_model(&d))
-            (numbers_sure(&d)) (numbers_forecast(u, &d))
+            (numbers_sure(&d))
         }
     };
     Ok(layout_in(Nav::Stats, "Stats", Some(u), body).into_response())
@@ -224,24 +234,113 @@ fn numbers_sure(d: &StatsPage) -> Markup {
     }
 }
 
-fn numbers_forecast(user: &User, d: &StatsPage) -> Markup {
-    let s = &d.s;
-    let max = s.forecast.iter().map(|(_, n)| *n).max().unwrap_or(0).max(1);
-    html! {
-    h2 { "Due in the next two weeks" }
-    table.forecast {
-        tbody {
-            @for (day, n) in &s.forecast {
-                tr {
-                    th scope="row" { (forecast_day(user, day)) }
-                    td.bar-cell {
-                        @if *n > 0 { span.bar style=(format!("width:{}%", n * 100 / max)) {} }
-                    }
-                    td.num { (format::number(*n)) }
-                }
-            }
+
+/// Rounds a forecast the way people say it: whole cards below a hundred,
+/// two significant figures above.
+pub(crate) const fn about(n: f64) -> i64 {
+    let n = num::f64_i64(n.max(0.0).round());
+    if n < 100 {
+        return n;
+    }
+    let step = 10i64.pow(n.ilog10() - 1);
+    (n + step / 2) / step * step
+}
+
+pub(crate) const WHY_OUTLOOK: &str = "Cards come back after you study them: a miss the next day, a young card a few days later. The forecast counts them too, if you study every day and add no more cards.";
+
+/// The week ahead on Stats: what tomorrow asks for, what the
+/// next seven days probably ask for (with the forecast and its range on
+/// hover), then a bar for each day, today first and in bold. Today holds
+/// what the page says to study now (new cards and limits included); later
+/// days hold the forecast, which counts the cards that come back after you
+/// review them (see `outlook`).
+/// The numbers behind the week ahead, worked out apart from the markup.
+struct WeekAhead {
+    /// Each day from today with its count: today's is settled, later days'
+    /// are forecasts.
+    days: Vec<(chrono::NaiveDate, f64)>,
+    tomorrow: i64,
+    /// Only cards answered today can still move tomorrow, so a fraction
+    /// left in its forecast means it isn't settled yet.
+    tomorrow_settled: bool,
+    week: f64,
+    range: (i64, i64),
+    total: i64,
+    /// The tallest bar.
+    most: i64,
+}
+
+impl WeekAhead {
+    fn new(clock: &scheduler::Clock, today_due: i64, outlook: &Outlook) -> Self {
+        let due = today_due.max(0);
+        let today_due = num::i64_f64(due);
+        let days: Vec<(chrono::NaiveDate, f64)> = (outlook.days.iter().enumerate())
+            .map(|(i, &forecast)| {
+                (clock.today() + chrono::Duration::days(num::usize_i64(i)), if i == 0 { today_due } else { forecast })
+            })
+            .collect();
+        let tomorrow = outlook.days[1];
+        let week = today_due + outlook.later();
+        let (low, high) = outlook.later_range();
+        Self {
+            most: days.iter().map(|&(_, n)| num::f64_i64(n.round())).max().unwrap_or(0).max(1),
+            days,
+            tomorrow: num::f64_i64(tomorrow.round()),
+            tomorrow_settled: (tomorrow - tomorrow.round()).abs() < 0.05,
+            week,
+            range: (low + due, high + due),
+            total: num::f64_i64(week.round()),
         }
     }
+}
+
+fn week_ahead(user: &User, today_due: i64, outlook: &Outlook, seconds_per_review: Option<f64>) -> Markup {
+    let clock = user.clock();
+    let w = WeekAhead::new(&clock, today_due, outlook);
+    let tip = |i: usize, date: chrono::NaiveDate, n: f64| {
+        let r = num::f64_i64(n.round());
+        let words = if r == 0 { "nothing due".to_string() } else { count(r, "card") };
+        let about = if i >= 2 && r > 0 { "about " } else { "" };
+        format!("{}: {about}{words}", format::short_day(&clock, date))
+    };
+    let WeekAhead { days, tomorrow: tomorrow_n, tomorrow_settled, week, range: (low, high), total, most } = w;
+    html! {
+        div.week-ahead {
+            section.week aria-label="Next seven days" {
+                h2 title=(WHY_OUTLOOK) { "Next seven days" }
+                @if total == 0 {
+                    p { "Nothing comes due in the next week." }
+                } @else {
+                    p {
+                        @if tomorrow_n == 0 {
+                            "Nothing due tomorrow."
+                        } @else {
+                            (if tomorrow_settled { "" } else { "About " })
+                            (count(tomorrow_n, "card")) " tomorrow."
+                        }
+                        " Probably "
+                        span.forecast
+                            title=(format!("Forecast: {}. Likely {} to {}. {WHY_OUTLOOK}", count(total, "card"), format::number(low), format::number(high))) {
+                            "about " (format::number(about(week)))
+                        }
+                        " in the next week"
+                        @if let Some(sec) = seconds_per_review { ", " (format::minutes(sec * week / 60.0)) " of study" }
+                        "."
+                    }
+                }
+            }
+            @if total > 0 {
+            div.week-bars role="img" aria-label=(format!("Cards due on each of the next seven days. {}", days.iter().enumerate().map(|(i, &(d, n))| tip(i, d, n)).collect::<Vec<_>>().join(", "))) {
+                @for (i, &(date, n)) in days.iter().enumerate() {
+                    @let r = num::f64_i64(n.round());
+                    div.day.today[i == 0] title=(tip(i, date, n)) {
+                        span.bar.empty[r == 0] style=(format!("height: {}%", (r * 100 / most).max(3))) {}
+                        span.letter { (date.format("%a").to_string().chars().next().unwrap_or(' ')) }
+                    }
+                }
+            }
+            }
+        }
     }
 }
 
@@ -301,7 +400,6 @@ fn desk_coach(d: &StatsPage) -> Markup {
 }
 
 fn desk_charts(user: &User, d: &StatsPage) -> Markup {
-    let forecast: Vec<(String, i64)> = d.s.forecast.iter().map(|(day, n)| (forecast_day(user, day), *n)).collect();
     html! {
     section.chart-sec {
         h2 title="Each point is one week: of the learned cards that came due, the share you remembered. The dashed line is your aim. Hover a week for its numbers." { "Are you remembering what you aim for?" }
@@ -309,9 +407,7 @@ fn desk_charts(user: &User, d: &StatsPage) -> Markup {
         (charts::retention(&d.history.weeks, d.aim()))
     }
     section.chart-sec {
-        h2 title="How many learned cards come due on each day, as they are scheduled now. Every review you do schedules its card again, so later days fill up as you study." { "Next two weeks" }
-        p.small.muted { "Cards due each day." }
-        (charts::bars(&forecast, "Cards due on each of the next fourteen days"))
+        (week_ahead(user, d.total_due, &d.outlook, d.s.seconds_per_review))
     }
     }
 }
@@ -378,5 +474,20 @@ fn desk_model(d: &StatsPage) -> Markup {
             }
         }
     }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::about;
+
+    #[test]
+    fn forecasts_round_the_way_people_say_them() {
+        assert_eq!(about(0.4), 0);
+        assert_eq!(about(42.5), 43);
+        assert_eq!(about(99.4), 99);
+        assert_eq!(about(312.4), 310);
+        assert_eq!(about(315.0), 320);
+        assert_eq!(about(1_234.0), 1_200);
     }
 }

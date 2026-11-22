@@ -63,7 +63,7 @@ pub fn retention(weeks: &[(i64, i64)], aim: Option<f64>) -> Markup {
             }
             @if let Some(a) = aim {
                 line.aim x1=(LEFT) x2=(W - 8.0) y1=(y(a)) y2=(y(a)) {}
-                text.axis.strong x=(LEFT + 4.0) y=(y(a) - 6.0) { "aim " (pct(a)) }
+                text.axis.strong x=(LEFT + 56.0) y=(y(a) - 6.0) { "aim " (pct(a)) }
             }
             path.line d=(path) {}
             @for (i, (v, &(n, p))) in vals.iter().zip(weeks).enumerate() {
@@ -86,32 +86,6 @@ fn week_name(ago: usize) -> String {
         1 => "Last week".into(),
         n => format!("{n} weeks ago"),
     }
-}
-
-/// Bars, one per labeled value: cards due on each coming day.
-pub fn bars(values: &[(String, i64)], label: &str) -> Markup {
-    let most = values.iter().map(|v| v.1).max().unwrap_or(0).max(1);
-    let n = values.len().max(1);
-    let slot = (W - 8.0) / num::usize_f64(n);
-    let y = |v: i64| (1.0 - num::i64_f64(v) / num::i64_f64(most)).mul_add(H - TOP - BOTTOM, TOP);
-    svg(
-        label,
-        &html! {
-            line.grid x1="0" x2=(W) y1=(H - BOTTOM) y2=(H - BOTTOM) {}
-            @for (i, (name, v)) in values.iter().enumerate() {
-                @let x = num::usize_f64(i) * slot;
-                rect.bar x=(slot.mul_add(0.2, x)) y=(y(*v)) width=(slot * 0.6) height=((H - BOTTOM - y(*v)).max(1.0)) rx="2" {
-                    title { (name) ": " (v) (if *v == 1 { " card" } else { " cards" }) }
-                }
-                @if *v > 0 {
-                    text.axis x=(slot.mul_add(0.5, x)) y=(y(*v) - 5.0) text-anchor="middle" { (v) }
-                }
-                @if i == 0 || i + 1 == n || i % 7 == 0 {
-                    text.axis x=(slot.mul_add(0.5, x)) y=(H - 6.0) text-anchor="middle" { (name) }
-                }
-            }
-        },
-    )
 }
 
 /// Expected against remembered: one dot per group of reviews, on a square
@@ -154,10 +128,4 @@ mod tests {
         assert!(retention(&[(0, 0); 12], None).into_string().contains("No reviews"));
     }
 
-    #[test]
-    fn bars_scale_to_the_most_and_keep_zero_visible() {
-        let svg = bars(&[("Mon".into(), 0), ("Tue".into(), 4)], "x").into_string();
-        assert!(svg.contains("<title>Tue: 4 cards</title>"));
-        assert!(svg.contains(r#"height="1""#), "an empty day still shows a sliver: {svg}");
-    }
 }

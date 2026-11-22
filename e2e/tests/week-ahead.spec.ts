@@ -1,11 +1,10 @@
-// The desktop home's week looks ahead: tomorrow's cards, a forecast for
+// The week ahead on Stats looks ahead: tomorrow's cards, a forecast for
 // the next seven days that counts the cards coming back, and a bar for
 // today and each of the six days after it.
-import { test, expect, sql, desktopOnly } from '../support/fixtures.ts';
+import { test, expect, sql } from '../support/fixtures.ts';
 
 const DAY = 86_400;
 
-desktopOnly();
 
 /** Make a card learned and due at a given time. */
 function due(id: number, at: number) {
@@ -26,8 +25,8 @@ test('home shows the next seven days, starting today', async ({ page, seed }) =>
   due(peru, now + 3 * DAY);
   due(chad, now + 3 * DAY);
 
-  await page.goto('/');
-  const week = page.locator('.week-home');
+  await page.goto('/stats');
+  const week = page.locator('.week-ahead');
   await expect(week.locator('h2')).toHaveText('Next seven days');
   await expect(week).not.toContainText('last seven days');
 
@@ -56,8 +55,8 @@ test('a quiet week says so and draws no bars', async ({ page, seed }) => {
   const deck = await seed.deck('Capitals');
   const id = await seed.card(deck, 'France', 'Paris');
   due(id, Math.floor(Date.now() / 1000) + 30 * DAY);
-  await page.goto('/');
-  const week = page.locator('.week-home');
+  await page.goto('/stats');
+  const week = page.locator('.week-ahead');
   await expect(week).toContainText('Nothing comes due in the next week.');
   await expect(week.locator('.week-bars')).toHaveCount(0);
 });
@@ -69,9 +68,9 @@ test('cards that come back within the week count too', async ({ page, seed }) =>
   // returns within days.
   const now = Math.floor(Date.now() / 1000);
   sql('UPDATE cards SET state = 2, stability = 1, difficulty = 5, reps = 2, last_review = ?, due = ? WHERE id = ?', now, now + DAY, id);
-  await page.goto('/');
-  const forecast = page.locator('.week-home .forecast');
-  await expect(page.locator('.week-home p').first()).toContainText(/^1 card tomorrow\./);
+  await page.goto('/stats');
+  const forecast = page.locator('.week-ahead .forecast');
+  await expect(page.locator('.week-ahead p').first()).toContainText(/^1 card tomorrow\./);
   const n = Number((await forecast.getAttribute('title'))!.match(/\d+/)![0]);
   expect(n).toBeGreaterThanOrEqual(2);
 });

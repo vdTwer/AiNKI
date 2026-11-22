@@ -441,11 +441,6 @@ fn exam_words(user: &User, date: chrono::NaiveDate) -> String {
     }
 }
 
-fn forecast_day(user: &User, date: &str) -> String {
-    chrono::NaiveDate::parse_from_str(date, "%Y-%m-%d")
-        .map_or_else(|_| date.to_string(), |d| format::short_day(&user.clock(), d))
-}
-
 /// The menu entry a page belongs to; marked as the current one.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Nav {

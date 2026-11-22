@@ -240,7 +240,7 @@
     display: grid;
     grid-template-columns: repeat(7, 1fr);
     gap: .5rem;
-    height: 5rem;
+    height: 6rem;
     & .day { display: flex; flex-direction: column; justify-content: flex-end; align-items: center; gap: .25rem; }
     & .bar { width: 100%; max-width: 2rem; min-height: 2px; border-radius: 3px 3px 0 0; background: color-mix(in oklab, var(--accent) 18%, var(--bg)); }
     & .today .bar { background: var(--accent); }
