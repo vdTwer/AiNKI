@@ -36,7 +36,7 @@
   html { font: calc(17px * var(--scale)) / 1.55 system-ui, sans-serif; -webkit-text-size-adjust: 100%; text-rendering: optimizeLegibility; -webkit-font-smoothing: antialiased; }
   body { background: var(--bg); color: var(--ink); font-variant-numeric: tabular-nums; }
   main, nav.top { max-width: 40rem; margin-inline: auto; padding-inline: 1.25rem; }
-  main { padding-block: 2rem 6rem; container-type: inline-size; }
+  main { padding-block: 2rem 6rem; }
   :where(main, section, .sheet, .card-area, .chart-sec) > * + * { margin-top: 1rem; }
 
   h1 { font-size: 1.75rem; line-height: 1.2; font-weight: 650; letter-spacing: -.02em; text-wrap: balance; }
@@ -249,34 +249,67 @@
   .done-check, .end-mark .check { color: var(--accent); vertical-align: -.1em; }
   .end-mark .check { width: 2rem; height: 2rem; }
 
-  /* Studying */
+  /* Studying: the card, lots of air, one big button. Everything else is
+     small, faint and out of the way; the menu steps back to the name. */
+  body[data-page="study"]:has(.study) {
+    & nav.top a:not(.brand), & .keys-hint { display: none; }
+    & nav.top a.brand { color: var(--faint); font-weight: 600; & .i { color: inherit; } &:hover { color: var(--ink); } }
+    & main { padding-top: clamp(1.5rem, 9vh, 6rem); }
+  }
   .study {
-    & .card-state { font-size: .875rem; color: var(--muted); }
-    & .face { font-size: 1.35rem; padding-block: .5rem; overflow-wrap: anywhere; }
-    & hr.divider { width: 3rem; margin: 0; }
-    & .show { display: flex; width: 100%; margin-top: 1rem; }
+    & .card-state { color: var(--faint); }
+    & .face { font-size: 1.5rem; line-height: 1.4; padding-block: .25rem; overflow-wrap: anywhere; text-wrap: pretty; }
+    & .face.front { font-size: clamp(1.5rem, 1.2rem + 1.4vw, 1.9rem); letter-spacing: -.01em; }
+    & .face.back { font-size: 1.25rem; color: color-mix(in oklab, var(--ink) 86%, var(--bg)); }
+    & .card-area > .face.back { margin-top: 1.5rem; }
+    & hr.divider { width: 2.5rem; margin: 2rem 0 0; border-top: 2px solid color-mix(in oklab, var(--accent) 35%, var(--bg)); }
+    & .reveal { margin-top: 3rem; }
+    & .show, & .answers .btn, & .sure-buttons .btn { min-height: 3.75rem; font-size: 1.0625rem; border-radius: calc(var(--r) * 1.2); }
+    & .show { display: flex; width: 100%; }
     &.paused .card-area { visibility: hidden; }
   }
   .answers {
     display: grid;
     grid-template-columns: repeat(var(--n, 2), 1fr);
-    gap: .5rem;
-    margin-top: 1.5rem;
+    gap: .6rem;
+    margin-top: 3rem;
     &.cols-1 { --n: 1; }
     &.cols-4 { --n: 4; }
-    & .btn { flex-direction: column; gap: 0; min-height: 3.5rem; }
-    & .ivl { font-size: .8rem; opacity: .8; }
+    & .btn { flex-direction: column; gap: 0; }
+    & .ivl { font-size: .75rem; font-weight: 400; opacity: .7; }
   }
-  @container (width < 24rem) { .answers.cols-4 { --n: 2; } }
-  /* On phones the answers wait at the thumb. */
-  @container (width < 30rem) { .answers { position: sticky; bottom: 0; padding-block: .75rem; background: var(--bg); } }
-  .progress, .timer-line, .break-line { height: 2px; margin-top: 2.5rem; background: var(--line); }
+  @media (width < 24rem) { .answers.cols-4 { --n: 2; } }
+  /* On phones the big button waits at the thumb. */
+  @media (width < 30rem) {
+    .answers, .study .reveal { position: sticky; bottom: 0; margin-inline: -1.25rem; padding: .75rem 1.25rem; background: var(--bg); }
+  }
+  .progress, .timer-line, .break-line { height: 2px; margin-top: 2.5rem; background: var(--line); border-radius: 1px; overflow: hidden; }
   :is(.progress .bar, .timer-fill, .break-fill) { height: 2px; background: var(--accent); }
   .timer-fill { width: 100%; }
-  .study-meta, .timer-meta { display: flex; justify-content: space-between; gap: 1rem; margin-top: .4rem; font-size: .875rem; color: var(--muted); & a { color: inherit; } }
+  .study-meta, .timer-meta { display: flex; justify-content: space-between; gap: 1rem; margin-top: .5rem; font-size: .8125rem; color: var(--muted); & a { color: inherit; } }
   .study-tools, .session-end .end-links { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem 1.5rem; margin-top: 1rem; }
-  .sure-buttons { display: grid; grid-template-columns: 1fr 1fr; gap: .5rem; }
+  /* Under the card the foot is one faint line; the progress is a hairline
+     over the card. */
+  .study-foot {
+    display: grid;
+    grid-template: "meta tools" auto / 1fr auto;
+    align-items: center;
+    gap: 0 1.25rem;
+    margin-top: 4.5rem;
+    font-size: .8125rem;
+    color: var(--faint);
+    & .progress { position: fixed; inset: 0 0 auto; z-index: 1; margin: 0; border-radius: 0; background: none; }
+    & .study-meta { grid-area: meta; margin: 0; color: inherit; justify-content: flex-start; flex-wrap: wrap; gap: 0 .9rem; }
+    & .study-tools { grid-area: tools; margin: 0; gap: 0 1.1rem; }
+    & .study-tools :is(a, button) { display: inline-flex; align-items: center; min-height: 2rem; color: inherit; font-size: inherit; text-decoration: none; &:hover { color: var(--ink); text-decoration: none; } }
+    & :is(.pause-cover, .leech-note) { grid-column: 1 / -1; margin-top: 1rem; }
+    & .leech-note { color: var(--muted); }
+    @media (width < 30rem) { grid-template: "meta" "tools" / 1fr; & .study-tools { margin-top: .25rem; } }
+  }
+  .sure-buttons { display: grid; grid-template-columns: 1fr 1fr; gap: .6rem; }
+  .sure-ask { color: var(--muted); }
   .pause-cover { text-align: center; }
+  .timeout-note { color: var(--muted); }
 
   /* Multicards: tick what you remembered. */
   ol.list-items {
