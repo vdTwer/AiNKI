@@ -349,13 +349,13 @@ pub(crate) fn week_note(w: &insight::Week) -> Markup {
             html! { p.tip { span { (count(w.attention, "card")) " keep slipping or ask too much at once. Fixing them saves more time than reviewing them. " a href="/attention" { "Have a look" } } } },
         ),
         insight::Tip::BelowTarget => Some(
-            html! { p.tip { span { "You forgot more than you aim for. Fewer new cards for a while, or optimizing FSRS, usually brings it back. " a href="/learn/desired-retention" { "Why" } } } },
+            html! { p.tip { span { "You forgot more than you aim for. Fewer new cards for a while, or optimizing FSRS, usually brings it back. " a href="/settings#fsrs" { "Optimize" } } } },
         ),
         insight::Tip::AboveTarget => Some(
             html! { p.tip { span { "You remember more than you aim for. Optimizing lets FSRS space your cards further apart. " a href="/settings#fsrs" { "Optimize" } } } },
         ),
         insight::Tip::Spread => Some(
-            html! { p.tip { span { "A little every day works better than a lot on a few days. " a href="/learn/spacing" { "Why" } } } },
+            html! { p.tip { span { "A little every day works better than a lot on a few days, because the gaps are what make cards stick." } } },
         ),
         insight::Tip::Nothing => None,
     };
