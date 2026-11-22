@@ -127,5 +127,4 @@ mod tests {
     fn retention_without_answers_says_so() {
         assert!(retention(&[(0, 0); 12], None).into_string().contains("No reviews"));
     }
-
 }

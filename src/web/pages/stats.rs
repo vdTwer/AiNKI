@@ -58,11 +58,8 @@ impl StatsPage {
             retention.into_iter().filter(|d| d.reviews > 0 && deck.is_none_or(|id| id == d.deck_id)).collect();
         // The week and the coach speak about everything: all decks only.
         let (week, notes) = if deck.is_none() {
-            let (flagged, overdue, reads) = tokio::try_join!(
-                app.attention(access, None),
-                app.overdue(access),
-                app.coach_reads(access),
-            )?;
+            let (flagged, overdue, reads) =
+                tokio::try_join!(app.attention(access, None), app.overdue(access), app.coach_reads(access),)?;
             let attention = num::usize_i64(flagged.len());
             let week = app.week_with(access, attention).await?;
             let known = advice::Known { decks: &active, stats: &s, attention: &flagged, overdue };
@@ -233,7 +230,6 @@ fn numbers_sure(d: &StatsPage) -> Markup {
     }
     }
 }
-
 
 /// Rounds a forecast the way people say it: whole cards below a hundred,
 /// two significant figures above.

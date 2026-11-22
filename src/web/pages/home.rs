@@ -313,4 +313,3 @@ pub(crate) fn week_note_with(w: &insight::Week, tip: Option<Markup>) -> Markup {
         }
     }
 }
-
