@@ -329,9 +329,10 @@
     grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
     gap: 1.5rem;
     & > * { margin: 0; }
-    & .n { font-size: 2rem; font-variant-numeric: tabular-nums; line-height: 1.2; }
+    & .n { font-size: 2.75rem; font-weight: 300; letter-spacing: -.03em; line-height: 1.1; margin-top: .35rem; }
   }
-  .chart-sec, details.numbers { margin-top: 2.5rem; }
+  .chart-sec, details.numbers { margin-top: 3.5rem; }
+  .chart-sec > h2 + p { margin-top: .25rem; }
   svg.chart {
     display: block;
     width: 100%;
@@ -339,16 +340,14 @@
     font: 11px system-ui, sans-serif;
     & .grid { stroke: var(--line); }
     & .aim { stroke: var(--muted); stroke-dasharray: 4 4; }
-    & .line { fill: none; stroke: var(--accent); stroke-width: 2; }
-    & :is(.dot, .bar, .l4) { fill: var(--accent); }
+    & .line { fill: none; stroke: var(--accent); stroke-width: 2; stroke-linejoin: round; }
+    & .dot { fill: var(--bg); stroke: var(--accent); stroke-width: 2; }
+    & .bar { fill: var(--accent); }
     & .axis { fill: var(--muted); }
     & .strong { fill: var(--ink); }
-    &.days { max-width: 22rem; }
     &.calibration { max-width: 16rem; }
-    & .l0 { fill: var(--soft); }
-    & .l1 { fill: color-mix(in srgb, var(--accent) 30%, var(--bg)); }
-    & .l2 { fill: color-mix(in srgb, var(--accent) 55%, var(--bg)); }
-    & .l3 { fill: color-mix(in srgb, var(--accent) 80%, var(--bg)); }
+    /* The chart shrinks with the column; its labels must not. */
+    @media (width < 30rem) { &:not(.calibration) { font-size: 22px; } }
   }
   table.forecast {
     & th { font-weight: 400; white-space: nowrap; width: 5rem; }
@@ -357,11 +356,12 @@
     & :is(th, td) { border: 0; padding-block: .15rem; }
   }
   table.by-deck tr.short td { font-weight: 600; }
+  :is(table.by-deck, table.retention) a { color: var(--ink); }
   .sure-bars {
     display: grid;
     gap: .4rem;
     & > div { display: grid; grid-template-columns: 5rem 1fr 3rem; gap: .5rem; align-items: center; }
-    & .track { height: .5rem; background: var(--soft); }
+    & .track { height: .5rem; border-radius: .25rem; overflow: hidden; background: var(--soft); }
     & .fill { display: block; height: 100%; background: var(--accent); &.grey { background: var(--muted); } }
   }
 

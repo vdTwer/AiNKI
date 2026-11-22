@@ -63,11 +63,6 @@ impl StatsPage {
         Ok(Self { deck: the_deck, s, cal, sure, week, retention, history, notes })
     }
 
-    fn study_url(&self) -> String {
-        study_url(self.deck.as_ref().map(|d| d.id))
-    }
-
-    /// Share of due learned cards remembered this week.
     fn this_week(&self) -> Option<f64> {
         let (total, passed) = self.history.weeks.last().copied().unwrap_or((0, 0));
         (total > 0).then(|| num::i64_f64(passed) / num::i64_f64(total))
@@ -258,7 +253,7 @@ pub(crate) const WHY_STREAK: &str =
 
 /// Stats open with three numbers to act on; the charts follow.
 fn desk_big3(d: &StatsPage) -> Markup {
-    let (s, study, this_week, aim, worst, last7) = (&d.s, d.study_url(), d.this_week(), d.aim(), d.worst(), d.last7());
+    let (s, this_week, aim, worst, last7) = (&d.s, d.this_week(), d.aim(), d.worst(), d.last7());
     let minutes = s.seconds_per_review.map(|sec| sec * num::i64_f64(s.due_now) / 60.0);
     html! {
     section.big3 {
@@ -268,7 +263,6 @@ fn desk_big3(d: &StatsPage) -> Markup {
             p.small.muted {
                 @if let Some(m) = minutes.filter(|_| s.due_now > 0) { (capitalize(&format::minutes(m))) "." } @else if s.due_now == 0 { "Nothing waiting." }
             }
-            @if s.due_now > 0 { a.small href=(study) { "Start studying" } }
         }
         div {
             p.kicker title=(WHY_WEEK) { "This week" }
@@ -307,33 +301,17 @@ fn desk_coach(d: &StatsPage) -> Markup {
 }
 
 fn desk_charts(user: &User, d: &StatsPage) -> Markup {
-    let (s, last7) = (&d.s, d.last7());
-    let forecast: Vec<(String, i64)> = s.forecast.iter().map(|(day, n)| (forecast_day(user, day), *n)).collect();
-    let aim = d.aim();
+    let forecast: Vec<(String, i64)> = d.s.forecast.iter().map(|(day, n)| (forecast_day(user, day), *n)).collect();
     html! {
     section.chart-sec {
-        div.chart-main {
-            h2 title="Each point is one week: of the learned cards that came due, the share you remembered. The dashed line is your aim. Hover a week for its numbers." { "Are you remembering what you aim for?" }
-            p.small.muted { "Share of due cards you remembered, week by week." }
-            (charts::retention(&d.history.weeks, aim))
-        }
-        aside.chart-side {
-            p.kicker title="Each square is a day and each column a week, oldest on the left; today is the last square. The stronger the color, the more you reviewed." { "Study days" }
-            (charts::days(&d.history.days))
-            p.small.muted { "Stronger color means more reviews. " (last7) " of the last 7 days." }
-        }
+        h2 title="Each point is one week: of the learned cards that came due, the share you remembered. The dashed line is your aim. Hover a week for its numbers." { "Are you remembering what you aim for?" }
+        p.small.muted { "Share of due cards you remembered, week by week." }
+        (charts::retention(&d.history.weeks, d.aim()))
     }
     section.chart-sec {
-        div.chart-main {
-            h2 title="How many learned cards come due on each day, as they are scheduled now. Every review you do schedules its card again, so later days fill up as you study." { "Next two weeks" }
-            p.small.muted { "Cards due each day." }
-            (charts::bars(&forecast, "Cards due on each of the next fourteen days"))
-        }
-        aside.chart-side {
-            p.kicker title="New cards were never studied. Learning cards are in their first short steps. Review cards are learned, and FSRS spaces them out. Suspended cards are paused and never shown." { "Cards" }
-            p.serif-note { (count(s.total, "card")) ". " (format::number(s.review)) " in review, " (format::number(s.new)) " still new." }
-            p.small.muted { (format::number(s.learning)) " learning, " (format::number(s.suspended)) " suspended." }
-        }
+        h2 title="How many learned cards come due on each day, as they are scheduled now. Every review you do schedules its card again, so later days fill up as you study." { "Next two weeks" }
+        p.small.muted { "Cards due each day." }
+        (charts::bars(&forecast, "Cards due on each of the next fourteen days"))
     }
     }
 }
