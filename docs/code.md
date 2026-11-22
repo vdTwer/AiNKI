@@ -16,7 +16,6 @@ AiNKI is one Rust binary. `src/service/` holds everything a user can do; the web
 - `src/coach.rs`: the card coach (leeches, split hints, near duplicates, splitting).
 - `src/advice.rs`: the home and Stats coach, static rules over a snapshot of numbers.
 - `src/insight.rs`: the week and retention per deck.
-- `src/lessons.rs` and `src/lessons/*.md`: the built-in lessons, one Markdown file each.
 - `src/merge.rs`: merged decks.
 - `src/share.rs`: deck sharing.
 - `src/invites.rs`: invitations and the admin panel.

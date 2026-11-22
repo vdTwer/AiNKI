@@ -166,10 +166,9 @@ fn home_decks(user: &User, h: &Home) -> Markup {
     } @else if decks.is_empty() {
         // Someone new gets three quiet ways in.
         div.first-steps {
-            p.lede { "Three ways to begin." }
+            p.lede { "Two ways to begin." }
             ul.list.links {
                 @for (href, name, sub) in [
-                    ("/learn", "Read a short lesson", "How memory works, in a few minutes. Each lesson can become your first deck."),
                     ("/decks/new", "Make a deck", "Write your own cards, one fact on each."),
                     ("/import", "Bring your Anki decks", "From an .apkg or a CSV file."),
                 ] {
@@ -349,13 +348,13 @@ pub(crate) fn week_note(w: &insight::Week) -> Markup {
             html! { p.tip { span { (count(w.attention, "card")) " keep slipping or ask too much at once. Fixing them saves more time than reviewing them. " a href="/attention" { "Have a look" } } } },
         ),
         insight::Tip::BelowTarget => Some(
-            html! { p.tip { span { "You forgot more than you aim for. Fewer new cards for a while, or optimizing FSRS, usually brings it back. " a href="/learn/desired-retention" { "Why" } } } },
+            html! { p.tip { span { "You forgot more than you aim for. Fewer new cards for a while, or optimizing FSRS, usually brings it back. " a href="/settings#fsrs" { "Optimize" } } } },
         ),
         insight::Tip::AboveTarget => Some(
             html! { p.tip { span { "You remember more than you aim for. Optimizing lets FSRS space your cards further apart. " a href="/settings#fsrs" { "Optimize" } } } },
         ),
         insight::Tip::Spread => Some(
-            html! { p.tip { span { "A little every day works better than a lot on a few days. " a href="/learn/spacing" { "Why" } } } },
+            html! { p.tip { span { "A little every day works better than a lot on a few days, because the gaps are what make cards stick." } } },
         ),
         insight::Tip::Nothing => None,
     };
