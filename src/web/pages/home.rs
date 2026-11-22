@@ -166,10 +166,9 @@ fn home_decks(user: &User, h: &Home) -> Markup {
     } @else if decks.is_empty() {
         // Someone new gets three quiet ways in.
         div.first-steps {
-            p.lede { "Three ways to begin." }
+            p.lede { "Two ways to begin." }
             ul.list.links {
                 @for (href, name, sub) in [
-                    ("/learn", "Read a short lesson", "How memory works, in a few minutes. Each lesson can become your first deck."),
                     ("/decks/new", "Make a deck", "Write your own cards, one fact on each."),
                     ("/import", "Bring your Anki decks", "From an .apkg or a CSV file."),
                 ] {

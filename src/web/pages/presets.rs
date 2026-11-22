@@ -227,8 +227,7 @@ fn preset_cost(user: &User, p: &crate::service::Preset, workload: &[crate::tunin
             }
             ", with your memory model and "
             @if p.new_per_day == 0 { "no new cards" } @else { (count(p.new_per_day, "new card")) " a day" }
-            ". Higher retention means more reviews but more remembered. "
-            a href="/learn/desired-retention" { "How to choose" }
+            ". Higher retention means more reviews but more remembered."
         }
         div.fit {
             table.workload {
