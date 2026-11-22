@@ -108,14 +108,17 @@ test.describe('desktop', () => {
       await page.goto(path);
       await expect(page.locator('.keys-hint')).toHaveCount(1);
     }
+    // While a card is up, the hint keeps out of sight; the key still works.
     await page.goto('/study');
+    await expect(page.locator('.keys-hint')).toBeHidden();
     await page.keyboard.press('?');
     const sheet = page.locator('#keys');
     await expect(sheet).toBeVisible();
     await expect(sheet).toContainText(/space/i);
     await page.keyboard.press('Escape');
     await expect(sheet).toBeHidden();
-    // The hint opens it with a click, no script needed.
+    // Elsewhere the hint opens it with a click, no script needed.
+    await page.goto('/');
     await page.locator('.keys-hint button').click();
     await expect(sheet).toBeVisible();
   });

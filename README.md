@@ -33,7 +33,7 @@ Ready to try it? Jump to the [installation instructions](#installation).
 ### One plain look
 
 - One narrow column, the system font and one accent color for what you can press, on phones and desktops alike. Dark mode follows the system, and e-ink readers get black on white with nothing moving. Images are dithered to 16 gray levels on upload.
-- Every page works without JavaScript. With it, studying never reloads, a fuzzy quick find (any letter, `/` or Ctrl+K) reaches every deck, card and page, and `?` lists the keyboard shortcuts. Home shows the cards due over the next 7 days.
+- Every page works without JavaScript. With it, studying never reloads, a fuzzy quick find (any letter, `/` or Ctrl+K) reaches every deck, card and page, and `?` lists the keyboard shortcuts. Stats forecasts the next 7 days, counting the cards that come back after you study them.
 
 ### Agents
 

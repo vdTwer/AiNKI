@@ -1,4 +1,4 @@
-//! The home page, with the coming week and the coach's notes.
+//! The home page, with the decks and the coach's notes.
 
 #[allow(
     clippy::wildcard_imports,
@@ -22,7 +22,6 @@ pub(crate) struct Home {
     pub(crate) overdue: i64,
     pub(crate) quiet: Option<i64>,
     pub(crate) week: insight::Week,
-    pub(crate) outlook: Outlook,
     pub(crate) notes: Vec<Advice>,
 }
 
@@ -40,7 +39,7 @@ impl Home {
         let (archived, decks): (Vec<_>, Vec<_>) =
             summaries.into_iter().partition(|d| d.deck.status == DeckStatus::Archived);
         let attention = num::usize_i64(flagged.len());
-        let (week, outlook) = tokio::try_join!(app.week_with(access, attention), app.outlook(access, &decks))?;
+        let week = app.week_with(access, attention).await?;
         let known = advice::Known { decks: &decks, stats: &stats, attention: &flagged, overdue };
         let notes = advice::advice_with(access, &known, reads);
         Ok(Self {
@@ -51,7 +50,6 @@ impl Home {
             overdue,
             quiet: study::quiet_until(&access.user, now()),
             week,
-            outlook,
             notes,
             decks,
             stats,
@@ -84,7 +82,7 @@ pub(crate) async fn home(State(app): State<AppState>, user: WebUser, Flash(msg):
         div.hero { (home_today(u, &h)) (home_side(u, &h)) }
         (home_shares(&h.shares))
         (home_decks(u, &h))
-        (home_footer(u, &h))
+        (home_footer(&h))
     };
     Ok(page(Some(Nav::Decks), "Decks", Some(u), Some("home"), body).into_response())
 }
@@ -211,9 +209,8 @@ fn home_decks(user: &User, h: &Home) -> Markup {
     }
 }
 
-fn home_footer(user: &User, h: &Home) -> Markup {
-    let (decks, archived, attention, total_due, outlook, stats) =
-        (&h.decks, h.archived, h.attention, h.total_due, &h.outlook, &h.stats);
+fn home_footer(h: &Home) -> Markup {
+    let (archived, attention) = (h.archived, h.attention);
     html! {
     @if archived > 0 {
         p.small.archived-link { a href="/decks/archived" { (count(num::usize_i64(archived), "archived deck")) } }
@@ -226,118 +223,6 @@ fn home_footer(user: &User, h: &Home) -> Markup {
         a.btn href=("/decks/new") { "New deck" }
         a.btn href=("/import") { "Import" }
     }
-    @if !decks.is_empty() {
-        (week_home(user, total_due, outlook, stats.seconds_per_review))
-    }
-    }
-}
-
-/// Rounds a forecast the way people say it: whole cards below a hundred,
-/// two significant figures above.
-pub(crate) const fn about(n: f64) -> i64 {
-    let n = num::f64_i64(n.max(0.0).round());
-    if n < 100 {
-        return n;
-    }
-    let step = 10i64.pow(n.ilog10() - 1);
-    (n + step / 2) / step * step
-}
-
-pub(crate) const WHY_OUTLOOK: &str = "Cards come back after you study them: a miss the next day, a young card a few days later. The forecast counts them too, if you study every day and add no more cards.";
-
-/// The home page's week looks ahead: what tomorrow asks for, what the
-/// next seven days probably ask for (with the forecast and its range on
-/// hover), then a bar for each day, today first and in bold. Today holds
-/// what the page says to study now (new cards and limits included); later
-/// days hold the forecast, which counts the cards that come back after you
-/// review them (see `outlook`).
-/// The numbers behind the week ahead, worked out apart from the markup.
-struct WeekAhead {
-    /// Each day from today with its count: today's is settled, later days'
-    /// are forecasts.
-    days: Vec<(chrono::NaiveDate, f64)>,
-    tomorrow: i64,
-    /// Only cards answered today can still move tomorrow, so a fraction
-    /// left in its forecast means it isn't settled yet.
-    tomorrow_settled: bool,
-    week: f64,
-    range: (i64, i64),
-    total: i64,
-    /// The tallest bar.
-    most: i64,
-}
-
-impl WeekAhead {
-    fn new(clock: &scheduler::Clock, today_due: i64, outlook: &Outlook) -> Self {
-        let due = today_due.max(0);
-        let today_due = num::i64_f64(due);
-        let days: Vec<(chrono::NaiveDate, f64)> = (outlook.days.iter().enumerate())
-            .map(|(i, &forecast)| {
-                (clock.today() + chrono::Duration::days(num::usize_i64(i)), if i == 0 { today_due } else { forecast })
-            })
-            .collect();
-        let tomorrow = outlook.days[1];
-        let week = today_due + outlook.later();
-        let (low, high) = outlook.later_range();
-        Self {
-            most: days.iter().map(|&(_, n)| num::f64_i64(n.round())).max().unwrap_or(0).max(1),
-            days,
-            tomorrow: num::f64_i64(tomorrow.round()),
-            tomorrow_settled: (tomorrow - tomorrow.round()).abs() < 0.05,
-            week,
-            range: (low + due, high + due),
-            total: num::f64_i64(week.round()),
-        }
-    }
-}
-
-pub(crate) fn week_home(user: &User, today_due: i64, outlook: &Outlook, seconds_per_review: Option<f64>) -> Markup {
-    let clock = user.clock();
-    let w = WeekAhead::new(&clock, today_due, outlook);
-    let tip = |i: usize, date: chrono::NaiveDate, n: f64| {
-        let r = num::f64_i64(n.round());
-        let words = if r == 0 { "nothing due".to_string() } else { count(r, "card") };
-        let about = if i >= 2 && r > 0 { "about " } else { "" };
-        format!("{}: {about}{words}", format::short_day(&clock, date))
-    };
-    let WeekAhead { days, tomorrow: tomorrow_n, tomorrow_settled, week, range: (low, high), total, most } = w;
-    html! {
-        div.week-home {
-            section.week aria-label="Next seven days" {
-                h2 { "Next seven days" }
-                @if total == 0 {
-                    p { "Nothing comes due in the next week." }
-                } @else {
-                    p {
-                        @if tomorrow_n == 0 {
-                            "Nothing due tomorrow."
-                        } @else {
-                            (if tomorrow_settled { "" } else { "About " })
-                            (count(tomorrow_n, "card")) " tomorrow."
-                        }
-                        " Probably "
-                        span.forecast
-                            title=(format!("Forecast: {}. Likely {} to {}. {WHY_OUTLOOK}", count(total, "card"), format::number(low), format::number(high))) {
-                            "about " (format::number(about(week)))
-                        }
-                        " in the next week"
-                        @if let Some(sec) = seconds_per_review { ", " (format::minutes(sec * week / 60.0)) " of study" }
-                        "."
-                    }
-                }
-            }
-            @if total > 0 {
-            div.week-bars role="img" aria-label=(format!("Cards due on each of the next seven days. {}", days.iter().enumerate().map(|(i, &(d, n))| tip(i, d, n)).collect::<Vec<_>>().join(", "))) {
-                @for (i, &(date, n)) in days.iter().enumerate() {
-                    @let r = num::f64_i64(n.round());
-                    div.day.today[i == 0] title=(tip(i, date, n)) {
-                        span.bar.empty[r == 0] style=(format!("height: {}%", (r * 100 / most).max(3))) {}
-                        span.letter { (date.format("%a").to_string().chars().next().unwrap_or(' ')) }
-                    }
-                }
-            }
-            }
-        }
     }
 }
 
@@ -425,20 +310,5 @@ pub(crate) fn week_note_with(w: &insight::Week, tip: Option<Markup>) -> Markup {
             }
             @if let Some(t) = tip { (t) }
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::about;
-
-    #[test]
-    fn forecasts_round_the_way_people_say_them() {
-        assert_eq!(about(0.4), 0);
-        assert_eq!(about(42.5), 43);
-        assert_eq!(about(99.4), 99);
-        assert_eq!(about(312.4), 310);
-        assert_eq!(about(315.0), 320);
-        assert_eq!(about(1_234.0), 1_200);
     }
 }

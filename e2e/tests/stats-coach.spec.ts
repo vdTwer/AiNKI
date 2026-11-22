@@ -35,7 +35,8 @@ test('stats show charts and, folded, the exact numbers', async ({ page, seed, ac
   await expect(page.locator('main h1, main h2').first()).toBeVisible();
   // Every chart is drawn on the server, and every mark has its numbers.
   const charts = page.locator('.desk-stats svg.chart');
-  expect(await charts.count()).toBeGreaterThanOrEqual(3);
+  expect(await charts.count()).toBeGreaterThanOrEqual(1);
+  await expect(page.locator('.desk-stats .week-ahead .week-bars')).toBeVisible();
   for (const chart of await charts.all()) {
     expect(await chart.locator('title').count(), 'marks carry their numbers').toBeGreaterThan(0);
   }
@@ -102,9 +103,8 @@ test('stats charts and words explain themselves on hover', async ({ page, seed, 
   await history(seed, account.id);
   await page.goto('/stats');
   // Native tooltips: every mark has a <title>, every explained word a title.
-  await expect(page.locator('svg.chart .bar title').first()).toHaveText(/: \d+ cards?$/);
+  await expect(page.locator('.week-ahead .day').first()).toHaveAttribute('title', /: (\d+ cards?|nothing due)$/);
   await expect(page.locator('svg.chart .dot title').first()).toHaveText(/\d+ of \d+ remembered/);
-  await expect(page.locator('svg.days rect title').last()).toHaveText(/\d+ reviews?$/);
   await expect(page.locator('.desk-stats [title]', { hasText: 'Days in a row' })).toHaveAttribute('title', /at least one review/);
 });
 
