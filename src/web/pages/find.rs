@@ -1,4 +1,4 @@
-//! The quick find: fuzzy search over decks, cards, lessons and places.
+//! The quick find: fuzzy search over decks, cards and places.
 
 #[allow(
     clippy::wildcard_imports,
@@ -12,7 +12,7 @@ pub(crate) struct FindQuery {
     pub(crate) q: String,
 }
 
-/// Places the quick find knows besides decks, lessons and cards. The words
+/// Places the quick find knows besides decks and cards. The words
 /// after the name are what people may type for it.
 pub(crate) const FIND_PLACES: &[(&str, &str, &str)] = &[
     ("Today", "/", "home decks start"),
@@ -21,7 +21,6 @@ pub(crate) const FIND_PLACES: &[(&str, &str, &str)] = &[
     ("New deck", "/decks/new", "create deck"),
     ("Import", "/import", "anki apkg csv upload"),
     ("Stats", "/stats", "statistics progress charts week retention"),
-    ("Learn", "/learn", "lessons how memory works"),
     ("Settings", "/settings", "preferences options account password quiet hours breaks"),
     ("Presets", "/presets", "fsrs retention limits steps"),
     ("Agent access", "/access", "tokens claude mcp api keys"),
@@ -96,7 +95,7 @@ pub(crate) async fn find_page(State(app): State<AppState>, user: WebUser, Query(
 pub(crate) fn find_form(q: &str) -> Markup {
     html! {
         form.search.find-form method="get" action="/find" role="search" {
-            input type="search" name="q" value=(q) placeholder="Decks, cards, lessons, places" aria-label="Find"
+            input type="search" name="q" value=(q) placeholder="Decks, cards, places" aria-label="Find"
                 autocomplete="off" spellcheck="false";
             button type="submit" { "Find" }
         }
@@ -135,15 +134,15 @@ impl Found {
 
 /// Nothing typed yet: the main places, then the decks.
 fn browse(decks: &[Deck]) -> Vec<Found> {
-    let places = FIND_PLACES.iter().filter(|p| matches!(p.1, "/" | "/stats" | "/learn" | "/settings"));
+    let places = FIND_PLACES.iter().filter(|p| matches!(p.1, "/" | "/stats" | "/settings"));
     let mut found: Vec<Found> = places.map(|(name, href, _)| Found::place(name, href, 0)).collect();
     found.extend(decks.iter().map(|d| Found::deck(d, deck_plain(&d.name), 0)));
     found.truncate(FIND_MAX);
     found
 }
 
-/// The best matches for `q` among places, decks, lessons and cards. Places
-/// rank above decks above lessons on a tie; cards come in by their own
+/// The best matches for `q` among places, decks and cards. Places
+/// rank above decks on a tie; cards come in by their own
 /// score, at most `FIND_MAX_CARDS` of them.
 fn find(q: &str, decks: &[Deck], cards: &[crate::service::CardText]) -> Vec<Found> {
     let mut found: Vec<Found> = FIND_PLACES
@@ -155,12 +154,6 @@ fn find(q: &str, decks: &[Deck], cards: &[crate::service::CardText]) -> Vec<Foun
         let title = names.get(&d.id).cloned().unwrap_or_default();
         if let Some(s) = find_score(q, &title, &d.description) {
             found.push(Found::deck(d, title, s + 3));
-        }
-    }
-    for l in lessons::all() {
-        if let Some(s) = find_score(q, &l.title, &l.summary) {
-            let href = format!("/learn/{}", l.slug);
-            found.push(Found { kind: "lesson", title: l.title.clone(), sub: "Lesson".into(), href, score: s + 1 });
         }
     }
     let mut matched: Vec<Found> = cards
@@ -208,6 +201,6 @@ mod tests {
     #[test]
     fn nothing_typed_lists_the_main_places() {
         let hrefs: Vec<String> = browse(&[]).into_iter().map(|f| f.href).collect();
-        assert_eq!(hrefs, ["/", "/stats", "/learn", "/settings"]);
+        assert_eq!(hrefs, ["/", "/stats", "/settings"]);
     }
 }

@@ -28,17 +28,16 @@ Ready to try it? Jump to the [installation instructions](#installation).
 ### Learning to learn
 
 - A rule-based coach flags cards that keep slipping, ask too much at once or look like another card, and offers to split them. On Home and Stats it gives one piece of advice at a time. AiNKI calls no AI model itself; you decide.
-- 18 short lessons explain FSRS, what memory research says, with how strong the evidence is, and how to write good cards. Each can be added as a deck.
 - Stats show the week, retention per deck against its aim, how well FSRS predicts your memory and how often you were right when you felt sure. They are charts drawn on the server, with a hover for every value, and the exact tables fold out below them.
 
 ### One plain look
 
 - One narrow column, the system font and one accent color for what you can press, on phones and desktops alike. Dark mode follows the system, and e-ink readers get black on white with nothing moving. Images are dithered to 16 gray levels on upload.
-- Every page works without JavaScript. With it, studying never reloads, a fuzzy quick find (any letter, `/` or Ctrl+K) reaches every deck, card and lesson, and `?` lists the keyboard shortcuts. Home shows the cards due over the next 7 days.
+- Every page works without JavaScript. With it, studying never reloads, a fuzzy quick find (any letter, `/` or Ctrl+K) reaches every deck, card and page, and `?` lists the keyboard shortcuts. Home shows the cards due over the next 7 days.
 
 ### Agents
 
-- A full MCP server with 40 tools: decks, cards, images, studying, presets, imports, sharing, the coach, stats and lessons.
+- A full MCP server with 38 tools: decks, cards, images, studying, presets, imports, sharing, the coach and stats.
 - Connecting Claude takes the server's URL and one click, through the standard OAuth 2.1 flow. Clients without OAuth use a hand-made token.
 - Access is scoped: read-only, studying, or editing, and all decks or only some. Agents can never change your password or settings, and their reviews are labelled so you can leave them out of FSRS optimization.
 
@@ -70,7 +69,7 @@ flowchart LR
         oauth["OAuth 2.1<br/>authorization server"]
         service["Service layer<br/>decks, cards, study, stats"]
         fsrs["FSRS-6<br/>scheduler and optimizer"]
-        coach["Coach and lessons"]
+        coach["Coach"]
         importer["Anki and CSV import"]
     end
     db[("SQLite<br/>ainki.db")]
@@ -221,7 +220,7 @@ AiNKI stands on other people's work:
 
 - The [open-spaced-repetition](https://github.com/open-spaced-repetition) project created FSRS, and its [fsrs-rs](https://github.com/open-spaced-repetition/fsrs-rs) crate does all of AiNKI's scheduling and optimization. Its default parameters were fitted on about 10,000 Anki collections.
 - [Anki](https://apps.ankiweb.net/)'s file format lets you bring your decks and review history along.
-- The lessons draw on memory research by Hermann Ebbinghaus, Piotr Wozniak, Robert and Elizabeth Bjork, Henry Roediger, Harold Pashler, Nicholas Cepeda, Nate Kornell and others, cited in each lesson.
+- The coach's advice draws on memory research by Hermann Ebbinghaus, Piotr Wozniak, Robert and Elizabeth Bjork, Henry Roediger, Harold Pashler, Nicholas Cepeda, Nate Kornell and others.
 - [EB Garamond](https://github.com/octaviopardo/EBGaramond12), by the EB Garamond Project Authors, sets the desktop look's titles.
 - The Rust crates listed under [Tech stack](#tech-stack), the [Model Context Protocol](https://modelcontextprotocol.io/) and [Playwright](https://playwright.dev/) make the rest possible.
 

@@ -41,7 +41,7 @@ test.describe('logged in from v1', () => {
   test('every v2 page works on v1 data', async ({ page }) => {
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(e.message));
-    for (const path of ['/', `/decks/${state.deckId}`, `/cards/${state.listCardId}`, `/cards/${state.imageCardId}`, '/stats', '/settings', '/presets', '/learn', '/attention', '/invites', '/access', '/import', '/cards/new']) {
+    for (const path of ['/', `/decks/${state.deckId}`, `/cards/${state.listCardId}`, `/cards/${state.imageCardId}`, '/stats', '/settings', '/presets', '/attention', '/invites', '/access', '/import', '/cards/new']) {
       const res = await page.goto(path);
       expect(res?.status(), path).toBe(200);
       await expect(page.locator('main'), path).not.toContainText(/NaN|undefined/);

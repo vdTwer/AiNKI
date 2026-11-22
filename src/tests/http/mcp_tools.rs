@@ -101,8 +101,6 @@ async fn every_tool_is_listed_with_a_description_and_schema() {
         "split_card",
         "get_insights",
         "get_workload",
-        "list_lessons",
-        "get_lesson",
         "optimize_fsrs",
         "import_csv",
         "import_apkg",
@@ -255,12 +253,6 @@ async fn an_agent_can_run_a_whole_session() {
     let work = ok(&app, t, "get_workload", json!({ "preset_id": preset_id, "days": 30 })).await;
     assert_eq!(work["days"], 30);
     assert_eq!(ok(&app, t, "delete_preset", json!({ "preset_id": preset_id })).await["deleted"], true);
-
-    // Lessons.
-    let lessons = ok(&app, t, "list_lessons", json!({})).await;
-    let slug = lessons["lessons"][0]["slug"].as_str().unwrap().to_string();
-    assert_ne!(ok(&app, t, "get_lesson", json!({ "slug": slug })).await["body"].as_str().unwrap(), "");
-    assert!(call(&app, t, "get_lesson", json!({ "slug": "no-such-lesson" })).await.is_err());
 
     // Optimizing with almost no history is refused with the reason.
     let e = call(&app, t, "optimize_fsrs", json!({})).await.unwrap_err();
