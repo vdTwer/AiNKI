@@ -401,11 +401,11 @@ fn pile_up(s: &Signals) -> Option<Advice> {
         ..note(
             Rule::PileUp,
             format!(
-                "{} piled up. Catch up over about {}, the ones you most likely still know first.",
+                "{} piled up. Catch up over about {}, the ones you most likely still know first: a forgotten card is lost already, a remembered one is still at risk.",
                 cards(s.overdue),
                 days(spread)
             ),
-            link("/learn/backlog", "Catch up"),
+            link("/settings#studying", "Catch up"),
         )
     })
 }
@@ -427,8 +427,8 @@ fn late(s: &Signals) -> Option<Advice> {
     (late && !s.quiet && s.minutes_due > 15).then(|| {
         note(
             Rule::Late,
-            "It's late. Sleep helps today's cards settle. Do a short round now and the rest in the morning.".into(),
-            link("/learn/sleep", "Why"),
+            "It's late. Sleep helps today's cards settle, and FSRS can wait a day. Do a short round now and the rest in the morning.".into(),
+            link("/settings#studying", "Set quiet hours"),
         )
     })
 }
@@ -484,7 +484,7 @@ fn cause(s: &Signals, deck: Option<&DeckSignal>) -> (String, Option<Link>) {
             link("/settings#fsrs", "Optimize"),
         );
     }
-    ("Cards that ask less are easier to keep.".into(), link("/learn/desired-retention", "Why"))
+    ("Cards that ask less are easier to keep.".into(), None)
 }
 
 /// One deck clearly under its target while the rest is fine.
@@ -559,9 +559,9 @@ fn too_sure(s: &Signals) -> Option<Advice> {
     Some(note(
         Rule::TooSure,
         format!(
-            "You forget 1 in {one_in} cards you feel sure about. Say the answer out loud before you turn the card."
+            "You forget 1 in {one_in} cards you feel sure about. Knowing an answer when you see it isn't recalling it, so say it out loud before you turn the card."
         ),
-        link("/learn/illusions", "Why"),
+        None,
     ))
 }
 
@@ -600,7 +600,7 @@ fn too_fast(s: &Signals) -> Option<Advice> {
             num::f64_i64(new.round()),
             num::f64_i64((new * REVIEWS_PER_NEW_CARD).round())
         ),
-        link("/learn/backlog", "Why"),
+        link("/presets", "Change new cards"),
     ))
 }
 
@@ -641,10 +641,10 @@ fn few_days(s: &Signals) -> Option<Advice> {
         note(
             Rule::FewDays,
             format!(
-                "You studied on {} of the last seven. A little every day works better than a lot on a few days.",
+                "You studied on {} of the last seven. A little every day works better than a lot on a few days, because the gaps are what make cards stick.",
                 days(s.days_studied_7)
             ),
-            link("/learn/spacing", "Why"),
+            None,
         )
     })
 }
@@ -658,7 +658,7 @@ fn long_sittings(s: &Signals) -> Option<Advice> {
                 "Your sessions ran about {} minutes last week. A short break every half hour keeps you sharp.",
                 num::f64_i64(m.round())
             ),
-            link("/settings#study", "Suggest breaks"),
+            link("/settings#studying", "Suggest breaks"),
         )
     })
 }
@@ -669,10 +669,10 @@ fn slow_answers(s: &Signals) -> Option<Advice> {
         note(
             Rule::SlowAnswers,
             format!(
-                "A card takes you about {} seconds. Cards that ask for less are quicker and stick better.",
+                "A card takes you about {} seconds. Cards that ask one clear thing, with a short answer, are quicker and stick better.",
                 num::f64_i64(secs.round())
             ),
-            link("/learn/good-cards", "Why"),
+            None,
         )
     })
 }

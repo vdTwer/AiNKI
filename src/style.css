@@ -8,19 +8,24 @@
 @layer base {
   :root {
     color-scheme: light dark;
-    --ink: light-dark(#1b1b1f, #ececf0);
-    --muted: light-dark(#62626b, #a2a2ad);
-    --line: light-dark(#e2e2e7, #2e2e35);
-    --soft: light-dark(#f4f4f6, #1d1d22);
-    --bg: light-dark(#fff, #121215);
+    --ink: light-dark(#1c1a1d, #ecebee);
+    --muted: light-dark(#6b6870, #9f9ca6);
+    --faint: light-dark(#84818a, #7c7983);
+    --line: light-dark(#ebe9ee, #2a282e);
+    --bg: light-dark(#fff, #131215);
     --accent: light-dark(#a8336d, #e58ab8);
-    --on-accent: light-dark(#fff, #121215);
+    /* Filled buttons: deeper than the link color in the dark. */
+    --fill: light-dark(#a8336d, #b13a75);
+    --on-fill: #fff;
+    /* A hint of the accent in every quiet surface. */
+    --soft: light-dark(color-mix(in oklab, #a8336d 6%, #fff), color-mix(in oklab, #e58ab8 10%, #131215));
+    --r: .625rem;
     --tap: 2.75rem;
     --scale: 1;
   }
   /* E-ink: black on white, every line visible. */
   @media (monochrome), (update: slow) {
-    :root { --accent: var(--ink); --muted: var(--ink); --line: var(--ink); --soft: var(--bg); }
+    :root { --accent: var(--ink); --fill: var(--ink); --on-fill: var(--bg); --muted: var(--ink); --faint: var(--ink); --line: var(--ink); --soft: var(--bg); }
   }
   *, *::before, *::after { box-sizing: border-box; transition: none !important; animation: none !important; }
   [hidden] { display: none !important; }
@@ -28,26 +33,30 @@
   img, svg { max-width: 100%; }
   button, input, select, textarea { font: inherit; color: inherit; }
 
-  html { font: calc(17px * var(--scale)) / 1.5 system-ui, sans-serif; -webkit-text-size-adjust: 100%; }
-  body { background: var(--bg); color: var(--ink); }
-  main, nav.top { max-width: 40rem; margin-inline: auto; padding-inline: 1rem; }
-  main { padding-block: 1.5rem 5rem; container-type: inline-size; }
+  html { font: calc(17px * var(--scale)) / 1.55 system-ui, sans-serif; -webkit-text-size-adjust: 100%; text-rendering: optimizeLegibility; -webkit-font-smoothing: antialiased; }
+  body { background: var(--bg); color: var(--ink); font-variant-numeric: tabular-nums; }
+  main, nav.top { max-width: 40rem; margin-inline: auto; padding-inline: 1.25rem; }
+  main { padding-block: 2rem 6rem; }
   :where(main, section, .sheet, .card-area, .chart-sec) > * + * { margin-top: 1rem; }
 
-  h1 { font-size: 1.5rem; line-height: 1.25; font-weight: 600; text-wrap: balance; }
-  h2 { margin-top: 2.5rem; font-size: 1rem; font-weight: 600; }
-  a { color: var(--accent); text-underline-offset: .2em; }
+  h1 { font-size: 1.75rem; line-height: 1.2; font-weight: 650; letter-spacing: -.02em; text-wrap: balance; }
+  h2 { margin-top: 3rem; font-size: 1.0625rem; font-weight: 650; letter-spacing: -.01em; }
+  p, li { text-wrap: pretty; }
+  a { color: var(--accent); text-decoration: none; &:hover { text-decoration: underline; text-underline-offset: .2em; } }
   :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   hr { border: 0; border-top: 1px solid var(--line); }
   code, pre, kbd { font-family: ui-monospace, monospace; font-size: .9em; }
-  pre { white-space: pre-wrap; overflow-wrap: anywhere; background: var(--soft); padding: .75rem; }
+  pre { white-space: pre-wrap; overflow-wrap: anywhere; background: var(--soft); padding: .75rem; border-radius: var(--r); }
   pre.copy { user-select: all; }
   table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
-  th, td { text-align: left; padding: .4rem .3rem; border-bottom: 1px solid var(--line); }
-  th { font-weight: 600; }
+  th, td { text-align: left; padding: .55rem .75rem .55rem 0; border-bottom: 1px solid var(--line); &:last-child { padding-right: 0; } }
+  thead th { font-size: .75rem; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+  tbody th { font-weight: 400; }
   .num { text-align: right; font-variant-numeric: tabular-nums; }
   .muted, .kicker, .sub, .deck-path, .list-known, .list-how { color: var(--muted); }
-  .small, .kicker, .sub, .deck-path { font-size: .875rem; }
+  .small, .sub, .deck-path { font-size: .875rem; }
+  /* The quiet label above a number or a group: small tracked caps. */
+  .kicker, .card-state { font-size: .75rem; font-weight: 600; letter-spacing: .07em; text-transform: uppercase; color: var(--muted); }
   .sub, .deck-path { display: block; }
   .grow { flex: 1; min-width: 0; overflow-wrap: anywhere; }
   .fit, .graph-wrap, .table-wrap { overflow-x: auto; }
@@ -59,13 +68,16 @@
   /* The menu: the name, then the pages, on one line that scrolls if it must. */
   nav.top {
     display: flex;
-    gap: 1.25rem;
+    gap: 1.4rem;
     overflow-x: auto;
-    border-bottom: 1px solid var(--line);
+    padding-top: .5rem;
+    font-size: .9375rem;
     & a { flex: none; padding-block: .9rem; color: var(--muted); text-decoration: none; }
     & a:hover, & a[aria-current="page"] { color: var(--ink); }
-    & a.brand { margin-right: auto; color: var(--ink); font-weight: 700; }
-    @media (width < 30rem) { gap: .7rem; font-size: .9375rem; }
+    & a[aria-current="page"]:not(.brand) { text-decoration: underline 2px var(--accent); text-underline-offset: .45em; }
+    & a.brand { margin-right: auto; color: var(--ink); font-weight: 750; letter-spacing: -.01em; }
+    & a.brand .i { color: var(--accent); }
+    @media (width < 30rem) { gap: .8rem; font-size: .875rem; }
   }
 
   /* Pressable things read as links; the page's one primary is filled. */
@@ -82,25 +94,49 @@
     text-decoration: none;
     cursor: pointer;
     touch-action: manipulation;
-    &:hover { text-decoration: underline; }
-    &.primary { padding: .5rem 1.25rem; background: var(--accent); color: var(--on-accent); font-weight: 600; }
+    &:hover { text-decoration: underline; text-underline-offset: .2em; }
+    &.primary {
+      padding: .55rem 1.4rem;
+      border-radius: var(--r);
+      background: var(--fill);
+      color: var(--on-fill);
+      font-weight: 600;
+      &:hover { text-decoration: none; background: color-mix(in oklab, var(--fill) 88%, black); }
+      &:active { transform: translateY(1px); }
+    }
     &.danger { color: light-dark(#a12f2f, #f08080); }
     &.wide, &.start { display: flex; width: 100%; }
   }
-  button.link { min-height: 0; text-decoration: underline; }
+  button.link { min-height: 0; }
   /* Where a choice is the whole point (answers, sure/not sure, a form's
-     submit), each option is a box you can hit with a thumb. */
+     submit), each option is a soft block you can hit with a thumb. */
   :is(.answers, .sure-buttons, .pause-cover) .btn:not(.primary), form > button:not(.link, .primary) {
-    padding: .5rem 1.25rem;
-    border: 1px solid var(--line);
+    padding: .55rem 1.4rem;
+    border-radius: var(--r);
+    background: var(--soft);
     color: var(--ink);
+    &:hover { text-decoration: none; background: color-mix(in oklab, var(--accent) 12%, var(--bg)); }
+  }
+  input[type=file] {
+    font-size: .875rem;
+    color: var(--muted);
+    &::file-selector-button {
+      margin-right: .75rem;
+      padding: .4rem .9rem;
+      border: 0;
+      border-radius: var(--r);
+      background: var(--soft);
+      color: var(--ink);
+      font: inherit;
+      cursor: pointer;
+    }
   }
   .actions { display: flex; flex-wrap: wrap; gap: 0 1.5rem; }
   main :is(dl, .actions, .start, form.search) { margin-block: 1rem; }
 
   /* Forms */
   form { margin: 0; }
-  label { display: block; margin-bottom: 1rem; }
+  label { display: block; margin-bottom: 1.25rem; font-weight: 500; }
   h2 + :is(form, label, fieldset) { margin-top: .75rem; }
   label.check { display: flex; gap: .6rem; align-items: center; min-height: var(--tap); margin: 0; font-weight: 400; }
   label.check.indent { padding-left: 1.8rem; }
@@ -111,10 +147,12 @@
     min-height: var(--tap);
     margin-top: .3rem;
     padding: .5rem .7rem;
-    border: 1px solid var(--line);
+    border: 1px solid color-mix(in oklab, var(--ink) 16%, var(--bg));
+    border-radius: var(--r);
     background: var(--bg);
     font-weight: 400;
-    &:focus { border-color: var(--accent); outline: none; }
+    &::placeholder { color: var(--faint); }
+    &:focus { border-color: var(--accent); outline: 3px solid color-mix(in oklab, var(--accent) 18%, transparent); outline-offset: 0; }
   }
   textarea { resize: vertical; field-sizing: content; min-height: 5rem; }
   fieldset { border: 0; margin: 0 0 1rem; padding: 0; }
@@ -131,24 +169,23 @@
   }
   details > summary { cursor: pointer; min-height: var(--tap); display: flex; align-items: center; color: var(--accent); }
   details.danger > summary { color: light-dark(#a12f2f, #f08080); }
-  .notice, .coach, .typed-echo { padding: .75rem 1rem; background: var(--soft); }
+  .notice, .coach, .typed-echo { padding: 1rem 1.15rem; border-radius: var(--r); background: var(--soft); }
   .coach-flag + .coach-flag { border-top: 1px solid var(--line); margin-top: .75rem; padding-top: .75rem; }
 
   /* Lists: hairlines, and a whole row is the link. */
   ul:is(.list, .decks) { list-style: none; padding: 0; border-top: 1px solid var(--line); & li { border-bottom: 1px solid var(--line); } }
-  a.row, li.item { display: flex; gap: .75rem; align-items: center; min-height: 3.25rem; padding: .6rem .25rem; }
-  a.row { color: var(--ink); text-decoration: none; &:hover, &.on { background: var(--soft); } }
+  a.row, li.item { display: flex; gap: .75rem; align-items: center; min-height: 3.25rem; padding-block: .6rem; }
+  a.row { margin-inline: -.6rem; padding-inline: .6rem; border-radius: var(--r); color: var(--ink); text-decoration: none; &:hover, &.on { background: var(--soft); text-decoration: none; } }
   .counts, a.row .num { white-space: nowrap; font-variant-numeric: tabular-nums; }
   .deck-path .sep { margin-inline: .3em; &:last-child { display: none; } }
   .parent a { text-decoration: none; }
-  .evidence { flex: none; font-size: .75rem; color: var(--muted); }
 
   /* Add: card, deck or import. */
   nav.tabs {
     display: flex;
     gap: 1.5rem;
     & a { color: var(--muted); text-decoration: none; }
-    & a[aria-current="page"] { color: var(--ink); font-weight: 600; }
+    & a[aria-current="page"] { color: var(--ink); text-decoration: underline 2px var(--accent); text-underline-offset: .45em; }
   }
 
   /* Card text */
@@ -156,7 +193,7 @@
     & p { margin: 0 0 .6em; &:last-child { margin: 0; } }
     & :is(td, th) { border: 1px solid var(--line); padding: .2rem .4rem; }
     & blockquote { margin: 0; padding-left: .8rem; border-left: 3px solid var(--line); }
-    & img { display: block; height: auto; margin: 0 auto .75rem; }
+    & img { display: block; height: auto; margin: 0 auto .75rem; border-radius: calc(var(--r) / 2); }
   }
   img.thumb { display: block; max-height: 10rem; height: auto; }
 
@@ -164,8 +201,8 @@
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr));
     gap: 1rem;
-    & dt { font-size: .875rem; color: var(--muted); }
-    & dd { font-size: 1.5rem; font-variant-numeric: tabular-nums; }
+    & dt { font-size: .75rem; font-weight: 600; letter-spacing: .07em; text-transform: uppercase; color: var(--muted); }
+    & dd { font-size: 1.75rem; font-weight: 300; letter-spacing: -.02em; }
   }
   dl.kv { display: grid; grid-template-columns: auto 1fr; gap: .3rem 1rem; & dt { color: var(--muted); } }
 
@@ -174,63 +211,104 @@
     width: min(36rem, calc(100% - 2rem));
     max-height: 80vh;
     margin: 12vh auto auto;
-    padding: 1.25rem;
+    padding: 1.5rem;
     border: 1px solid var(--line);
+    border-radius: calc(var(--r) * 1.5);
     background: var(--bg);
     color: var(--ink);
-    &::backdrop { background: rgb(0 0 0 / .3); }
+    box-shadow: 0 1rem 3rem rgb(0 0 0 / .18);
+    &::backdrop { background: rgb(0 0 0 / .25); }
   }
   .key-sheet { & h2 { margin: 0; } & h3 { margin-top: 1rem; font-size: 1rem; } & .kv { grid-template-columns: 6rem 1fr; } }
   ainki-find #find-results { margin-top: .75rem; }
-  .keys-hint { margin-top: 4rem; font-size: .8rem; color: var(--muted); & button { color: inherit; } }
+  .keys-hint { margin-top: 5rem; font-size: .8rem; color: var(--faint); & button { color: inherit; } }
   @media (hover: none) { .keys-hint { display: none; } }
 }
 
 @layer pages {
+  /* Air under a page title, unless a subtitle belongs to it. */
+  main h1 + :not(.sub, .facts, .muted, .small) { margin-top: 1.75rem; }
+  .notice :is(.btn, button):not(.primary, .link) { background: var(--bg); }
+
   /* Home */
   .today :is(.date, .facts) { color: var(--muted); }
-  .table-head { display: flex; gap: .75rem; margin-top: 2.5rem; padding: 0 .25rem .4rem; font-weight: 600; }
+  .table-head { display: flex; gap: .75rem; margin-top: 3rem; padding-bottom: .5rem; font-size: .75rem; font-weight: 600; letter-spacing: .07em; text-transform: uppercase; color: var(--muted); }
+  .today h1 { margin-top: .25rem; }
+  .today .start { margin-top: 1.75rem; }
   .week-bars {
     display: grid;
     grid-template-columns: repeat(7, 1fr);
     gap: .5rem;
-    height: 5rem;
+    height: 6rem;
     & .day { display: flex; flex-direction: column; justify-content: flex-end; align-items: center; gap: .25rem; }
-    & .bar { width: 100%; max-width: 2rem; background: var(--line); }
+    & .bar { width: 100%; max-width: 2rem; min-height: 2px; border-radius: 3px 3px 0 0; background: color-mix(in oklab, var(--accent) 18%, var(--bg)); }
     & .today .bar { background: var(--accent); }
     & .letter { font-size: .75rem; color: var(--muted); }
   }
   .done-check, .end-mark .check { color: var(--accent); vertical-align: -.1em; }
   .end-mark .check { width: 2rem; height: 2rem; }
 
-  /* Studying */
+  /* Studying: the card, lots of air, one big button. Everything else is
+     small, faint and out of the way; the menu steps back to the name. */
+  body[data-page="study"]:has(.study) {
+    & nav.top a:not(.brand), & .keys-hint { display: none; }
+    & nav.top a.brand { color: var(--faint); font-weight: 600; & .i { color: inherit; } &:hover { color: var(--ink); } }
+    & main { padding-top: clamp(1.5rem, 9vh, 6rem); }
+  }
   .study {
-    & .card-state { font-size: .875rem; color: var(--muted); }
-    & .face { font-size: 1.35rem; padding-block: .5rem; overflow-wrap: anywhere; }
-    & hr.divider { width: 3rem; margin: 0; }
-    & .show { display: flex; width: 100%; margin-top: 1rem; }
+    & .card-state { color: var(--faint); }
+    & .face { font-size: 1.5rem; line-height: 1.4; padding-block: .25rem; overflow-wrap: anywhere; text-wrap: pretty; }
+    & .face.front { font-size: clamp(1.5rem, 1.2rem + 1.4vw, 1.9rem); letter-spacing: -.01em; }
+    & .face.back { font-size: 1.25rem; color: color-mix(in oklab, var(--ink) 86%, var(--bg)); }
+    & .card-area > .face.back { margin-top: 1.5rem; }
+    & hr.divider { width: 2.5rem; margin: 2rem 0 0; border-top: 2px solid color-mix(in oklab, var(--accent) 35%, var(--bg)); }
+    & .reveal { margin-top: 3rem; }
+    & .show, & .answers .btn, & .sure-buttons .btn { min-height: 3.75rem; font-size: 1.0625rem; border-radius: calc(var(--r) * 1.2); }
+    & .show { display: flex; width: 100%; }
     &.paused .card-area { visibility: hidden; }
   }
   .answers {
     display: grid;
     grid-template-columns: repeat(var(--n, 2), 1fr);
-    gap: .5rem;
-    margin-top: 1.5rem;
+    gap: .6rem;
+    margin-top: 3rem;
     &.cols-1 { --n: 1; }
     &.cols-4 { --n: 4; }
-    & .btn { flex-direction: column; gap: 0; min-height: 3.5rem; }
-    & .ivl { font-size: .8rem; opacity: .8; }
+    & .btn { flex-direction: column; gap: 0; }
+    & .ivl { font-size: .75rem; font-weight: 400; opacity: .7; }
   }
-  @container (width < 24rem) { .answers.cols-4 { --n: 2; } }
-  /* On phones the answers wait at the thumb. */
-  @container (width < 30rem) { .answers { position: sticky; bottom: 0; padding-block: .75rem; background: var(--bg); } }
-  .progress, .timer-line, .break-line { height: 2px; margin-top: 2.5rem; background: var(--line); }
+  @media (width < 24rem) { .answers.cols-4 { --n: 2; } }
+  /* On phones the big button waits at the thumb. */
+  @media (width < 30rem) {
+    .answers, .study .reveal { position: sticky; bottom: 0; margin-inline: -1.25rem; padding: .75rem 1.25rem; background: var(--bg); }
+  }
+  .progress, .timer-line, .break-line { height: 2px; margin-top: 2.5rem; background: var(--line); border-radius: 1px; overflow: hidden; }
   :is(.progress .bar, .timer-fill, .break-fill) { height: 2px; background: var(--accent); }
   .timer-fill { width: 100%; }
-  .study-meta, .timer-meta { display: flex; justify-content: space-between; gap: 1rem; margin-top: .4rem; font-size: .875rem; color: var(--muted); & a { color: inherit; } }
+  .study-meta, .timer-meta { display: flex; justify-content: space-between; gap: 1rem; margin-top: .5rem; font-size: .8125rem; color: var(--muted); & a { color: inherit; } }
   .study-tools, .session-end .end-links { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem 1.5rem; margin-top: 1rem; }
-  .sure-buttons { display: grid; grid-template-columns: 1fr 1fr; gap: .5rem; }
+  /* Under the card the foot is one faint line; the progress is a hairline
+     over the card. */
+  .study-foot {
+    display: grid;
+    grid-template: "meta tools" auto / 1fr auto;
+    align-items: center;
+    gap: 0 1.25rem;
+    margin-top: 4.5rem;
+    font-size: .8125rem;
+    color: var(--faint);
+    & .progress { position: fixed; inset: 0 0 auto; z-index: 1; margin: 0; border-radius: 0; background: none; }
+    & .study-meta { grid-area: meta; margin: 0; color: inherit; justify-content: flex-start; flex-wrap: wrap; gap: 0 .9rem; }
+    & .study-tools { grid-area: tools; margin: 0; gap: 0 1.1rem; }
+    & .study-tools :is(a, button) { display: inline-flex; align-items: center; min-height: 2rem; color: inherit; font-size: inherit; text-decoration: none; &:hover { color: var(--ink); text-decoration: none; } }
+    & :is(.pause-cover, .leech-note) { grid-column: 1 / -1; margin-top: 1rem; }
+    & .leech-note { color: var(--muted); }
+    @media (width < 30rem) { grid-template: "meta" "tools" / 1fr; & .study-tools { margin-top: .25rem; } }
+  }
+  .sure-buttons { display: grid; grid-template-columns: 1fr 1fr; gap: .6rem; }
+  .sure-ask { color: var(--muted); }
   .pause-cover { text-align: center; }
+  .timeout-note { color: var(--muted); }
 
   /* Multicards: tick what you remembered. */
   ol.list-items {
@@ -250,9 +328,10 @@
     grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
     gap: 1.5rem;
     & > * { margin: 0; }
-    & .n { font-size: 2rem; font-variant-numeric: tabular-nums; line-height: 1.2; }
+    & .n { font-size: 2.75rem; font-weight: 300; letter-spacing: -.03em; line-height: 1.1; margin-top: .35rem; }
   }
-  .chart-sec, details.numbers { margin-top: 2.5rem; }
+  .chart-sec, details.numbers { margin-top: 3.5rem; }
+  .chart-sec > h2 + p { margin-top: .25rem; }
   svg.chart {
     display: block;
     width: 100%;
@@ -260,16 +339,14 @@
     font: 11px system-ui, sans-serif;
     & .grid { stroke: var(--line); }
     & .aim { stroke: var(--muted); stroke-dasharray: 4 4; }
-    & .line { fill: none; stroke: var(--accent); stroke-width: 2; }
-    & :is(.dot, .bar, .l4) { fill: var(--accent); }
+    & .line { fill: none; stroke: var(--accent); stroke-width: 2; stroke-linejoin: round; }
+    & .dot { fill: var(--bg); stroke: var(--accent); stroke-width: 2; }
+    & .bar { fill: var(--accent); }
     & .axis { fill: var(--muted); }
     & .strong { fill: var(--ink); }
-    &.days { max-width: 22rem; }
     &.calibration { max-width: 16rem; }
-    & .l0 { fill: var(--soft); }
-    & .l1 { fill: color-mix(in srgb, var(--accent) 30%, var(--bg)); }
-    & .l2 { fill: color-mix(in srgb, var(--accent) 55%, var(--bg)); }
-    & .l3 { fill: color-mix(in srgb, var(--accent) 80%, var(--bg)); }
+    /* The chart shrinks with the column; its labels must not. */
+    @media (width < 30rem) { &:not(.calibration) { font-size: 22px; } }
   }
   table.forecast {
     & th { font-weight: 400; white-space: nowrap; width: 5rem; }
@@ -278,11 +355,12 @@
     & :is(th, td) { border: 0; padding-block: .15rem; }
   }
   table.by-deck tr.short td { font-weight: 600; }
+  :is(table.by-deck, table.retention) a { color: var(--ink); }
   .sure-bars {
     display: grid;
     gap: .4rem;
     & > div { display: grid; grid-template-columns: 5rem 1fr 3rem; gap: .5rem; align-items: center; }
-    & .track { height: .5rem; background: var(--soft); }
+    & .track { height: .5rem; border-radius: .25rem; overflow: hidden; background: var(--soft); }
     & .fill { display: block; height: 100%; background: var(--accent); &.grey { background: var(--muted); } }
   }
 

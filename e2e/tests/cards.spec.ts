@@ -181,8 +181,9 @@ test('editing, suspending, forgetting and deleting a card', async ({ page, seed 
   await page.goto(`/cards/${id}`);
   await open(page.locator('details.danger'));
   await page.getByRole('button', { name: 'Delete card' }).click();
-  expect(sql('SELECT 1 FROM cards WHERE id = ?', id)).toHaveLength(0);
+  // The redirect to the deck comes after the delete; check the database then.
   await expect(page).toHaveURL(new RegExp(`/decks/${deck}`));
+  expect(sql('SELECT 1 FROM cards WHERE id = ?', id)).toHaveLength(0);
 });
 
 test('deck page: search, filter, edit, export and delete', async ({ page, seed, account }) => {

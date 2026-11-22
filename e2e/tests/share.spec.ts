@@ -1,38 +1,6 @@
-// Lessons, and decks shared between accounts.
+// Decks shared between accounts.
 import { test, expect, sql, makeAccount, logIn } from '../support/fixtures.ts';
 import { flash } from '../support/ui.ts';
-
-test('a lesson can be read and added as a deck', async ({ page, account }) => {
-  await page.goto('/learn');
-  const lessons = page.locator('main a.row');
-  expect(await lessons.count()).toBeGreaterThanOrEqual(18);
-  await lessons.first().click();
-  await expect(page).toHaveURL(/\/learn\/[\w-]+$/);
-  const title = (await page.locator('main h1').innerText()).trim();
-  await page.getByRole('button', { name: 'Add as a deck' }).click();
-  const [deck] = sql<{ id: number; n: number }>(
-    'SELECT d.id, (SELECT COUNT(*) FROM cards c WHERE c.deck_id = d.id) AS n FROM decks d WHERE d.user_id = ?',
-    account.id,
-  );
-  expect(deck.n).toBeGreaterThan(0);
-  // Once added, the lesson links to its deck instead.
-  await page.goBack();
-  await page.reload();
-  await expect(page.locator('main')).toContainText('This lesson is in your decks.');
-  await expect(page.locator('main h1')).toHaveText(title);
-});
-
-test('every lesson opens and links to lessons that exist', async ({ page }) => {
-  await page.goto('/learn');
-  const hrefs = await page.locator('main a.row').evaluateAll((as) => as.map((a) => a.getAttribute('href')!));
-  for (const href of hrefs) {
-    const res = await page.goto(href);
-    expect(res?.status(), href).toBe(200);
-    for (const link of await page.locator('main a[href^="/learn/"]').evaluateAll((as) => as.map((a) => a.getAttribute('href')!))) {
-      expect(hrefs, `${href} links to ${link}`).toContain(link.replace(/#.*$/, ''));
-    }
-  }
-});
 
 test('a shared deck arrives as an independent copy', async ({ page, seed, browser }) => {
   const deck = await seed.deck('Languages::Spanish');

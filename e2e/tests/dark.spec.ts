@@ -118,7 +118,7 @@ test('every pressable thing is readable in dark mode', async ({ page, seed, acco
   test.setTimeout(300_000);
   const { deck, card, list } = await seedPages(seed, account.id);
   const paths = ['/', `/decks/${deck}`, `/decks/${deck}/edit`, `/cards/${card}`, `/cards/${list}`, '/cards/new', '/decks/new',
-    '/import', '/stats', '/settings', '/presets', '/presets/new', '/learn', '/attention', '/invites', '/access', '/study'];
+    '/import', '/stats', '/settings', '/presets', '/presets/new', '/attention', '/invites', '/access', '/study'];
   const problems: string[] = [];
   // 3:1, the bar for large text and controls: the quiet grey words pass it.
   const min = 3;

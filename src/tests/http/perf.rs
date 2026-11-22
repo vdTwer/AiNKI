@@ -15,7 +15,7 @@ const DECKS: usize = 5;
 /// quick find 38, attention 38). Before that day's fixes, home took 900 ms
 /// and stats 970, so a page that starts to scale with the answers again
 /// fails here, while a slower runner does not.
-const BUDGETS: [(&str, u128); 9] = [
+const BUDGETS: [(&str, u128); 8] = [
     ("/", 300),
     ("/stats", 300),
     ("/study", 100),
@@ -24,7 +24,6 @@ const BUDGETS: [(&str, u128); 9] = [
     ("/attention", 100),
     ("/settings", 100),
     ("/presets", 100),
-    ("/learn", 50),
 ];
 
 async fn seed(app: &App, a: &Access) -> i64 {

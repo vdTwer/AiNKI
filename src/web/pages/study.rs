@@ -582,7 +582,6 @@ pub(crate) fn rest_page(user: &User, msg: Option<&str>, deck: Option<i64>, until
                 p.summary { "Agents won't quiz you now either." }
                 div.end-links {
                     a href="/" { "Back to decks" }
-                    a href="/learn/sleep" { "Why sleep helps" }
                     form method="post" action="/study/anyway" {
                         @if let Some(d) = deck { input type="hidden" name="deck" value=(d); }
                         button.link type="submit" { "Study anyway" }
@@ -731,7 +730,6 @@ pub(crate) fn catch_up_note(user: &User, overdue: i64) -> Markup {
                         button.link type="submit" { "Turn catch-up mode off" }
                     } @else {
                         "Catch-up mode: no new cards, at most " (user.catch_up_reviews) " reviews a day, the ones you most likely still know first. "
-                        a href="/learn/backlog" { "Why" }
                         button.link type="submit" { "Turn off catch-up mode" }
                     }
                 }

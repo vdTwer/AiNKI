@@ -13,7 +13,7 @@ const H: f64 = 200.0;
 /// Room for the axis labels left and below.
 const LEFT: f64 = 40.0;
 const BOTTOM: f64 = 24.0;
-const TOP: f64 = 10.0;
+const TOP: f64 = 18.0;
 
 fn pct(v: f64) -> String {
     format!("{:.0}%", v * 100.0)
@@ -57,17 +57,19 @@ pub fn retention(weeks: &[(i64, i64)], aim: Option<f64>) -> Markup {
         &html! {
             @for g in &grid {
                 line.grid x1=(LEFT) x2=(W - 8.0) y1=(y(*g)) y2=(y(*g)) {}
-                text.axis x="0" y=(y(*g) + 4.0) { (pct(*g)) }
+                @if (g * 10.0).fract().abs() < 1e-6 || (g * 10.0).fract() > 1.0 - 1e-6 {
+                    text.axis x="0" y=(y(*g) + 4.0) { (pct(*g)) }
+                }
             }
             @if let Some(a) = aim {
                 line.aim x1=(LEFT) x2=(W - 8.0) y1=(y(a)) y2=(y(a)) {}
-                text.axis.strong x=(W - 8.0) y=(y(a) - 6.0) text-anchor="end" { "aim " (pct(a)) }
+                text.axis.strong x=(LEFT + 56.0) y=(y(a) - 6.0) { "aim " (pct(a)) }
             }
             path.line d=(path) {}
             @for (i, (v, &(n, p))) in vals.iter().zip(weeks).enumerate() {
                 @if let Some(v) = v {
                     @let ago = last - i;
-                    circle.dot cx=(x(i)) cy=(y(*v)) r="4" {
+                    circle.dot cx=(x(i)) cy=(y(*v)) r="3.5" {
                         title { (week_name(ago)) ": " (pct(*v)) ", " (p) " of " (n) " remembered" }
                     }
                 }
@@ -84,52 +86,6 @@ fn week_name(ago: usize) -> String {
         1 => "Last week".into(),
         n => format!("{n} weeks ago"),
     }
-}
-
-/// Reviews per day as squares: a column per week, oldest on the left. The
-/// stronger the square, the more reviews (four steps of the day's share of
-/// the busiest day).
-pub fn days(days: &[(String, i64)]) -> Markup {
-    const S: f64 = 14.0;
-    const GAP: f64 = 3.0;
-    let most = days.iter().map(|d| d.1).max().unwrap_or(0).max(1);
-    let cols = days.len().div_ceil(7);
-    let w = num::usize_f64(cols) * (S + GAP);
-    let h = 7.0 * (S + GAP);
-    html! {
-        svg.chart.days viewBox=(format!("0 0 {w} {h}")) role="img" aria-label="Reviews per day, last twelve weeks" {
-            @for (i, (day, n)) in days.iter().enumerate() {
-                @let level = if *n == 0 { 0 } else { 1 + (n * 3 / most) };
-                rect class=(format!("l{level}")) x=(num::usize_f64(i / 7) * (S + GAP)) y=(num::usize_f64(i % 7) * (S + GAP)) width=(S) height=(S) {
-                    title { (day) ": " (n) (if *n == 1 { " review" } else { " reviews" }) }
-                }
-            }
-        }
-    }
-}
-
-/// Bars, one per labeled value: cards due on each coming day.
-pub fn bars(values: &[(String, i64)], label: &str) -> Markup {
-    let most = values.iter().map(|v| v.1).max().unwrap_or(0).max(1);
-    let n = values.len().max(1);
-    let slot = (W - 8.0) / num::usize_f64(n);
-    let y = |v: i64| (1.0 - num::i64_f64(v) / num::i64_f64(most)).mul_add(H - TOP - BOTTOM, TOP);
-    svg(
-        label,
-        &html! {
-            line.grid x1="0" x2=(W) y1=(H - BOTTOM) y2=(H - BOTTOM) {}
-            text.axis x="0" y=(TOP + 4.0) { (most) }
-            @for (i, (name, v)) in values.iter().enumerate() {
-                @let x = num::usize_f64(i) * slot;
-                rect.bar x=(slot.mul_add(0.15, x)) y=(y(*v)) width=(slot * 0.7) height=((H - BOTTOM - y(*v)).max(1.0)) {
-                    title { (name) ": " (v) (if *v == 1 { " card" } else { " cards" }) }
-                }
-                @if i == 0 || i + 1 == n || i % 7 == 0 {
-                    text.axis x=(slot.mul_add(0.5, x)) y=(H - 6.0) text-anchor="middle" { (name) }
-                }
-            }
-        },
-    )
 }
 
 /// Expected against remembered: one dot per group of reviews, on a square
@@ -170,19 +126,5 @@ mod tests {
     #[test]
     fn retention_without_answers_says_so() {
         assert!(retention(&[(0, 0); 12], None).into_string().contains("No reviews"));
-    }
-
-    #[test]
-    fn days_grade_by_the_busiest_day() {
-        let svg = days(&[("2026-11-20".into(), 0), ("2026-11-21".into(), 30), ("2026-11-22".into(), 5)]).into_string();
-        assert!(svg.contains(r#"class="l0""#) && svg.contains(r#"class="l4""#) && svg.contains(r#"class="l1""#));
-        assert!(svg.contains("<title>2026-11-21: 30 reviews</title>"));
-    }
-
-    #[test]
-    fn bars_scale_to_the_most_and_keep_zero_visible() {
-        let svg = bars(&[("Mon".into(), 0), ("Tue".into(), 4)], "x").into_string();
-        assert!(svg.contains("<title>Tue: 4 cards</title>"));
-        assert!(svg.contains(r#"height="1""#), "an empty day still shows a sliver: {svg}");
     }
 }

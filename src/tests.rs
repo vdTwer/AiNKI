@@ -795,9 +795,8 @@ mod http {
         assert_eq!(card.1, "hablar");
         // Only your own cards.
         assert!(!find("secreto").await.iter().any(|x| x.2 == "card"));
-        // Places by other words for them, lessons by title.
+        // Places by other words for them.
         assert_eq!(find("password").await[0].0, "/settings");
-        assert!(find("forgetting").await.iter().any(|x| x.2 == "lesson"));
         // Nothing typed: the places and the decks.
         let r = find("").await;
         assert_eq!(r[0].1, "Today");
@@ -984,33 +983,6 @@ mod http {
         let res = submit(&app, &cookie, "/study/anyway", "").await;
         assert_eq!(location(&res), "/study");
         assert!(text(page(cookie.clone()).await).await.contains("el perro"));
-    }
-
-    #[tokio::test]
-    async fn a_lesson_can_be_read_and_added_as_a_deck() {
-        let app = app().await;
-        let a = user(&app, "kolja").await;
-        let cookie = login_cookie(&app, "kolja").await;
-        let get = |path: &str| {
-            send(&app, Request::get(path).header(header::COOKIE, cookie.clone()).body(Body::empty()).unwrap())
-        };
-        assert!(text(get("/learn").await).await.contains("The spacing effect"));
-        let page = text(get("/learn/spacing").await).await;
-        assert!(page.contains("Strong evidence") && page.contains("Add as a deck"));
-        assert_eq!(get("/learn/no-such-lesson").await.status(), StatusCode::NOT_FOUND);
-
-        let res = submit(&app, &cookie, "/learn/spacing/deck", "").await;
-        assert_eq!(flash(&res), "Lesson added as a deck.");
-        let deck = app.deck_by_name(&a, "AiNKI lessons::The spacing effect").await.unwrap().unwrap();
-        assert_eq!(location(&res), format!("/decks/{}", deck.id));
-        let (cards, _) =
-            app.list_cards(&a, &CardFilter { deck_id: Some(deck.id), ..Default::default() }).await.unwrap();
-        assert_eq!(cards.len(), crate::lessons::find("spacing").unwrap().cards.len());
-
-        // Twice makes no second copy.
-        let res = submit(&app, &cookie, "/learn/spacing/deck", "").await;
-        assert_eq!(flash(&res), "You already have this deck.");
-        assert!(text(get("/learn/spacing").await).await.contains("This lesson is in your decks"));
     }
 
     #[tokio::test]
@@ -1526,7 +1498,7 @@ mod http {
     }
 
     #[tokio::test]
-    async fn agents_respect_quiet_hours_and_see_the_coach_and_lessons() {
+    async fn agents_respect_quiet_hours_and_see_the_coach() {
         use chrono::{TimeZone, Timelike};
         let app = app().await;
         let a = user(&app, "kolja").await;
@@ -1545,11 +1517,6 @@ mod http {
         );
         let overview = mcp_tool(&app, &token, "get_overview", serde_json::json!({})).await;
         assert_eq!(overview["studying"]["quiet_now"], true);
-
-        let lessons = mcp_tool(&app, &token, "list_lessons", serde_json::json!({})).await;
-        assert_eq!(lessons["lessons"].as_array().unwrap().len(), crate::lessons::all().len());
-        let lesson = mcp_tool(&app, &token, "get_lesson", serde_json::json!({ "slug": "learning-styles" })).await;
-        assert_eq!(lesson["evidence"], "Not supported by evidence");
 
         let attention = mcp_tool(&app, &token, "list_cards_needing_attention", serde_json::json!({})).await;
         assert_eq!(attention["cards"].as_array().unwrap().as_slice(), [] as [serde_json::Value; 0]);

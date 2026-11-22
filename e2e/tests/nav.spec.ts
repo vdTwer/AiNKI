@@ -6,7 +6,6 @@ const PLACES: [string, RegExp][] = [
   ['Study', /\/study$/],
   ['Add', /\/cards\/new$/],
   ['Stats', /\/stats$/],
-  ['Learn', /\/learn$/],
   ['Settings', /\/settings$/],
   ['AiNKI', /\/$/],
 ];
@@ -22,10 +21,10 @@ test('every place is reachable from the navigation', async ({ page, seed }) => {
   }
 });
 
-test('the menu reads Study, Add, Stats, Learn, Settings, Find', async ({ page }) => {
+test('the menu reads Study, Add, Stats, Settings, Find', async ({ page }) => {
   await page.goto('/stats');
   const names = await page.locator('nav.top a:not(.brand)').allTextContents();
-  expect(names).toEqual(['Study', 'Add', 'Stats', 'Learn', 'Settings', 'Find']);
+  expect(names).toEqual(['Study', 'Add', 'Stats', 'Settings', 'Find']);
 });
 
 test('quick find forgives typos and goes where you pick', async ({ page, seed }) => {
@@ -109,14 +108,17 @@ test.describe('desktop', () => {
       await page.goto(path);
       await expect(page.locator('.keys-hint')).toHaveCount(1);
     }
+    // While a card is up, the hint keeps out of sight; the key still works.
     await page.goto('/study');
+    await expect(page.locator('.keys-hint')).toBeHidden();
     await page.keyboard.press('?');
     const sheet = page.locator('#keys');
     await expect(sheet).toBeVisible();
     await expect(sheet).toContainText(/space/i);
     await page.keyboard.press('Escape');
     await expect(sheet).toBeHidden();
-    // The hint opens it with a click, no script needed.
+    // Elsewhere the hint opens it with a click, no script needed.
+    await page.goto('/');
     await page.locator('.keys-hint button').click();
     await expect(sheet).toBeVisible();
   });
