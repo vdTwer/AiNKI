@@ -110,3 +110,37 @@ test('without JavaScript the list is one plain form', async ({ browser, page: lo
   expect(sql<{ items_recalled: number }>('SELECT items_recalled FROM review_log r JOIN cards c ON c.id = r.card_id WHERE c.deck_id = ?', deck)[0].items_recalled).toBe(1);
   await context.close();
 });
+
+test('marked words: the editor picks them, and each is tapped in place', async ({ page, seed, account }) => {
+  const deck = await seed.deck('Life');
+  await page.goto(`/cards/new?deck=${deck}`);
+  await page.locator('#front').fill('What is life?');
+  await page.locator('#back').fill('Both good and bad.');
+  // Ctrl+M marks the selected word.
+  await page.locator('#back').evaluate((t: HTMLTextAreaElement) => t.setSelectionRange(5, 9));
+  await page.locator('#back').press('Control+m');
+  await page.locator('#back').evaluate((t: HTMLTextAreaElement) => t.setSelectionRange(18, 21));
+  await page.locator('#back').press('Control+m');
+  await expect(page.locator('#back')).toHaveValue('Both {{good}} and {{bad}}.');
+  await expect(page.locator('.multi-pick [data-split=marked] input')).toBeChecked();
+  await page.getByRole('button', { name: /add card/i }).click();
+  await expect(flash(page)).toHaveText('Card added.');
+  const [card] = sql<{ id: number; multi: string }>('SELECT id, multi FROM cards WHERE user_id = ?', account.id);
+  expect(card.multi).toBe('marked');
+
+  await page.goto('/study');
+  await page.keyboard.press(' ');
+  const back = page.locator('main form.list-answer .face.back');
+  // The sentence stays one sentence, with the words in it.
+  await expect(back.locator('.marked p')).toHaveText('Both good and bad.');
+  await back.locator('label.seg', { hasText: 'bad' }).click();
+  const done = page.locator('main form.list-answer').getByRole('button', { name: /done/i });
+  await expect(done).toContainText('1 of 2 remembered');
+  await done.click();
+  await expect
+    .poll(() => sql<{ position: number; rating: number }>(
+      'SELECT ci.position, r.rating FROM item_review_log r JOIN card_items ci ON ci.id = r.item_id WHERE ci.card_id = ? ORDER BY ci.position',
+      card.id,
+    ).map((i) => i.rating))
+    .toEqual([1, 3]);
+});
