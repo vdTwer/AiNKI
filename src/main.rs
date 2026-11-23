@@ -34,6 +34,7 @@ mod study;
 #[cfg(test)]
 mod tests;
 mod tuning;
+mod types;
 mod web;
 
 #[derive(Debug, Clone)]

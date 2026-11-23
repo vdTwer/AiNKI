@@ -33,6 +33,10 @@ pub struct Card {
     /// How a multicard's back is split into items; `None` for a plain card.
     /// See `multi`.
     pub multi: Option<Split>,
+    /// The brought card type it was written with, see `types`; `None` for
+    /// the built-in kinds.
+    #[serde(default)]
+    pub type_id: Option<i64>,
 }
 
 /// Every column of a card as one JSON object, for reading many cards in one
@@ -43,7 +47,7 @@ pub(crate) const CARD_JSON: &str = "json_object('id', id, 'user_id', user_id, 'd
     'back', back, 'front_image', front_image, 'back_image', back_image, 'state', state, 'step', step,
     'stability', stability, 'difficulty', difficulty, 'due', due, 'last_review', last_review, 'reps', reps,
     'lapses', lapses, 'suspended', suspended, 'position', position, 'created_by', created_by,
-    'created_at', created_at, 'updated_at', updated_at, 'multi', multi)";
+    'created_at', created_at, 'updated_at', updated_at, 'multi', multi, 'type_id', type_id)";
 
 /// A card state as stored, a number (the API writes it as a word).
 fn stored_state<'de, D: serde::Deserializer<'de>>(d: D) -> std::result::Result<CardState, D::Error> {
@@ -266,6 +270,9 @@ impl App {
     pub async fn update_card(&self, access: &Access, id: i64, input: CardInput) -> Result<Card> {
         access.require_write()?;
         let mut card = self.card(access, id).await?;
+        if card.type_id.is_some() && (input.front.is_some() || input.back.is_some() || input.multi != Patch::Keep) {
+            return Err(AppError::bad("this card's type writes its sides; change its fields instead"));
+        }
         let was = card.multi;
         let multi = input.multi.or(was);
         if let Some(f) = input.front {

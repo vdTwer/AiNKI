@@ -16,6 +16,7 @@ use crate::{
 };
 
 mod anki;
+mod card_types;
 mod concurrency;
 mod merge;
 mod upgrade;
