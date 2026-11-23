@@ -2,8 +2,8 @@
    --ink, --muted, --accent and so on). The board is something you press,
    so the answer's arrow is the accent; your other move is faint ink. */
 :root {
-  --sq-light: light-dark(#f7f4f1, #3b3734);
-  --sq-dark: light-dark(#ddd5cc, #2a2725);
+  --sq-light: light-dark(#f7f4f1, #8f8880);
+  --sq-dark: light-dark(#ddd5cc, #66605a);
 }
 .to-move { margin: 0 0 .75rem; text-align: center; font-size: .75rem; font-weight: 600; letter-spacing: .07em; text-transform: uppercase; color: var(--muted); }
 .board { max-width: min(26rem, 100%); margin: 0 auto; border-radius: 6px; overflow: hidden; touch-action: none; }
