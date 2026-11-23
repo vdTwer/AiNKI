@@ -32,6 +32,9 @@ const SPLIT_VERSION: i64 = 1;
 #[serde(rename_all = "lowercase")]
 #[sqlx(type_name = "TEXT", rename_all = "lowercase")]
 pub enum Split {
+    /// The words you marked with `{{` and `}}`, inline or whole list
+    /// items. Everything else on the back is shown, never asked.
+    Marked,
     /// The items of the back's lists, numbered or not. Sub-items belong to
     /// their item.
     List,
@@ -42,10 +45,11 @@ pub enum Split {
 }
 
 impl Split {
-    pub const ALL: [Self; 3] = [Self::List, Self::Sections, Self::Parts];
+    pub const ALL: [Self; 4] = [Self::Marked, Self::List, Self::Sections, Self::Parts];
 
     pub const fn as_str(self) -> &'static str {
         match self {
+            Self::Marked => "marked",
             Self::List => "list",
             Self::Sections => "sections",
             Self::Parts => "parts",
@@ -59,6 +63,7 @@ impl Split {
     /// What the editor calls it.
     pub const fn label(self) -> &'static str {
         match self {
+            Self::Marked => "Marked words",
             Self::List => "List items",
             Self::Sections => "Sections",
             Self::Parts => "Parts",
@@ -78,6 +83,7 @@ pub enum Piece {
 pub fn split(back: &str, how: Split) -> Option<Vec<Piece>> {
     let back = &markdown::tidy(back);
     let items = match how {
+        Split::Marked => marks(back),
         Split::List => list_items(back),
         Split::Sections => sections(back),
         Split::Parts => parts(back),
@@ -177,6 +183,36 @@ fn item_text(src: &str, range: Range<usize>) -> String {
         out.push_str(&line[lead.min(indent)..]);
     }
     out.trim().to_string()
+}
+
+/// The segments marked `{{like this}}`, with their braces' range and the
+/// words inside. Braces in code are code; an empty mark, an unclosed one or
+/// one running across a blank line is left as text.
+pub fn marks(src: &str) -> Vec<(Range<usize>, String)> {
+    let mut code: Vec<Range<usize>> = Vec::new();
+    walk(src, |_, e, range| {
+        if matches!(e, Event::Code(_) | Event::Start(Tag::CodeBlock(_))) {
+            code.push(range);
+        }
+    });
+    let in_code = |at: usize| code.iter().any(|r| r.contains(&at));
+    let mut out = Vec::new();
+    let mut at = 0;
+    while let Some(open) = src.get(at..).and_then(|rest| rest.find("{{")).map(|i| at + i) {
+        let Some(close) = src.get(open + 2..).and_then(|rest| rest.find("}}")).map(|i| open + 2 + i) else { break };
+        let inner = src.get(open + 2..close).unwrap_or("");
+        if in_code(open) {
+            at = open + 2;
+            continue;
+        }
+        if inner.contains("{{") || inner.contains("\n\n") || inner.trim().is_empty() {
+            at = open + 2;
+            continue;
+        }
+        out.push((open..close + 2, inner.trim().to_string()));
+        at = close + 2;
+    }
+    out
 }
 
 /// One item per heading of the highest level used at the top of the back,
@@ -575,6 +611,7 @@ impl App {
 
 pub fn no_items(how: Split) -> AppError {
     let what = match how {
+        Split::Marked => "marked parts, like {{this}},",
         Split::List => "list items",
         Split::Sections => "sections with headings",
         Split::Parts => "parts between --- lines",
@@ -786,6 +823,40 @@ mod tests {
         // Text right above --- is a heading, not a part.
         assert!(split("one\n---\ntwo", Split::Parts).is_none());
         assert_eq!(splits("- a\n- b"), [Split::List]);
+    }
+
+    #[test]
+    fn finds_marked_segments_inline_and_in_lists() {
+        assert_eq!(texts("Both {{good}} and {{ bad }}.", Split::Marked), ["good", "bad"]);
+        assert_eq!(
+            texts("- {{an action in progress}}\n- {{a temporary situation}}, mostly", Split::Marked),
+            ["an action in progress", "a temporary situation"]
+        );
+        // Text around the segments stays, in place.
+        assert_eq!(
+            split("Both {{good}} and {{bad}}.", Split::Marked).unwrap(),
+            [
+                Piece::Text("Both".into()),
+                Piece::Item("good".into()),
+                Piece::Text("and".into()),
+                Piece::Item("bad".into()),
+                Piece::Text(".".into()),
+            ]
+        );
+    }
+
+    #[test]
+    fn marks_skip_code_and_broken_braces() {
+        // Braces in code are code, an empty or unclosed mark is text, and a
+        // mark never runs across a blank line.
+        assert!(split("`{{a}}` and {{b}}", Split::Marked).is_none());
+        assert!(split("```\n{{a}}\n```\n{{b}}", Split::Marked).is_none());
+        assert!(split("{{}} {{ }} {{a}}", Split::Marked).is_none());
+        assert!(split("{{a}} {{b", Split::Marked).is_none());
+        assert!(split("{{a\n\nb}} {{c}}", Split::Marked).is_none());
+        assert_eq!(texts("{{a}}{{b}}", Split::Marked), ["a", "b"]);
+        // Marked comes first: it is what you meant when you marked words.
+        assert_eq!(splits("- {{a}}\n- {{b}}"), [Split::Marked, Split::List]);
     }
 
     #[test]
