@@ -82,6 +82,29 @@ test('keys: space shows the answer, 1 and 3 rate', async ({ page, seed, account 
   expect(ratings).toEqual([1, 3]);
 });
 
+test('keys: Enter shows the answer and means Again, left arrow undoes', async ({ page, seed, account }) => {
+  await threeCards(seed);
+  await page.goto('/study');
+  await markWindow(page);
+
+  const first = (await front(page).innerText()).trim();
+  await page.keyboard.press('Enter');
+  await expect(back(page)).toBeVisible();
+  await page.keyboard.press('Enter'); // Again, never Good
+  await expect(front(page)).not.toHaveText(first);
+  await expect(back(page)).toBeHidden();
+
+  await page.keyboard.press('ArrowLeft');
+  await expect(front(page)).toHaveText(first);
+  await expect(back(page)).toBeVisible();
+  await page.keyboard.press(' '); // Good
+  await expect(back(page)).toBeHidden();
+  await expectSameWindow(page);
+
+  const ratings = sql<{ rating: number }>('SELECT rating FROM review_log WHERE user_id = ? ORDER BY id', account.id).map((r) => r.rating);
+  expect(ratings).toEqual([3]);
+});
+
 test('undo brings the last card back, answer showing', async ({ page, seed, account }) => {
   await threeCards(seed);
   await page.goto('/study');

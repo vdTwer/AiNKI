@@ -505,9 +505,11 @@ fn key_sheet() -> Markup {
         (
             "Studying",
             &[
-                ("Space", "Show the answer, or Done on a multicard"),
+                ("Space", "Show the answer, then Good, or Done on a multicard"),
+                ("Enter", "Show the answer, then Again"),
                 ("1", "Again"),
                 ("3", "Good"),
+                ("←", "Undo the last answer"),
                 ("2  4", "Hard and Easy, when shown"),
                 ("+", "Ten more seconds on a timed card"),
                 ("P", "Pause: the card waits, and the clock with it"),
