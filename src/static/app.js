@@ -76,6 +76,7 @@
     // The coach's hints while writing: a long list, or a card like this one.
     var hintBox = document.querySelector('.card-form .write-hints');
     var previewing = false;
+    var picked = multiPick.querySelector('input[name=multi]:checked:not([value=""])') !== null;
     var asked = 0;
     var chosen = function () {
       var r = multiPick.querySelector('input[name=multi]:checked');
@@ -105,6 +106,14 @@
           any = any || !label.hidden;
         });
         multiPick.hidden = !any;
+        // Marking words means learning them one by one: picked for you
+        // until you pick something yourself.
+        var marked = multiPick.querySelector('[data-split=marked] input');
+        if (marked && !picked && v.splits.indexOf('marked') >= 0 && !marked.checked) {
+          marked.checked = true;
+          refresh();
+          return;
+        }
         previewBox.innerHTML = v.html;
         setup(previewBox);
         if (hintBox && typeof v.hints === 'string') hintBox.innerHTML = v.hints;
@@ -117,7 +126,25 @@
     };
     frontText.addEventListener('input', later);
     backText.addEventListener('input', later);
-    multiPick.addEventListener('change', refresh);
+    multiPick.addEventListener('change', function () { picked = true; refresh(); });
+    // Ctrl/Cmd+M marks the selected words on the back, or unmarks them.
+    backText.addEventListener('keydown', function (e) {
+      if (!(e.ctrlKey || e.metaKey) || e.altKey || e.key.toLowerCase() !== 'm') return;
+      e.preventDefault();
+      var a = backText.selectionStart, b = backText.selectionEnd, v = backText.value;
+      var words = v.slice(a, b);
+      var lead = words.length - words.trimStart().length, tail = words.length - words.trimEnd().length;
+      a += lead; b -= tail; words = v.slice(a, b);
+      if (v.slice(a - 2, a) === '{{' && v.slice(b, b + 2) === '}}') {
+        backText.setRangeText(words, a - 2, b + 2, 'select');
+      } else if (words) {
+        backText.setRangeText('{{' + words + '}}', a, b, 'end');
+      } else {
+        backText.setRangeText('{{}}', a, b, 'start');
+        backText.selectionStart = backText.selectionEnd = a + 2;
+      }
+      backText.dispatchEvent(new Event('input', { bubbles: true }));
+    });
     previewToggle.hidden = false;
     previewToggle.addEventListener('click', function () {
       previewing = !previewing;
@@ -556,9 +583,9 @@
   // A list card's Done says how many you remembered.
   document.addEventListener('change', function (e) {
     var box = e.target;
-    if (!box.matches || !box.matches('.list-items input[type=checkbox]')) return;
-    var boxes = box.form.querySelectorAll('.list-items input[type=checkbox]');
-    var got = box.form.querySelectorAll('.list-items input[type=checkbox]:checked').length;
+    if (!box.matches || !box.matches(':is(.list-items, .marked) input[type=checkbox]')) return;
+    var boxes = box.form.querySelectorAll(':is(.list-items, .marked) input[type=checkbox]');
+    var got = box.form.querySelectorAll(':is(.list-items, .marked) input[type=checkbox]:checked').length;
     var count = box.form.querySelector('[data-remembered]');
     if (count) count.textContent = got === boxes.length ? 'All ' + got + ' remembered' : got + ' of ' + boxes.length + ' remembered';
   });
