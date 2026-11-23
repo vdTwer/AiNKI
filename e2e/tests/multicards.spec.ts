@@ -148,13 +148,16 @@ test('marked words: the editor picks them, and each is tapped in place', async (
 test('relearning marked words: the known ones stay, the missed ones are gaps', async ({ page, seed }) => {
   const deck = await seed.deck('Life');
   const card = await seed.card(deck, 'What is life?', 'Both {{good}} and {{bad}}.', { multi: 'marked' });
-  await page.goto('/study');
-  await page.keyboard.press(' ');
-  await page.locator('main label.seg', { hasText: 'good' }).click();
-  await page.locator('main form.list-answer').getByRole('button', { name: /done/i }).click();
-  await expect.poll(() => sql('SELECT id FROM review_log WHERE card_id = ?', card).length).toBe(1);
+  // Good is known for weeks; bad was forgotten and is due again.
+  sql(
+    `UPDATE card_items SET state = 2, stability = 30, difficulty = 5, reps = 3,
+       last_review = unixepoch() - 86400, due = unixepoch() + 20 * 86400
+     WHERE card_id = ? AND position = 0`,
+    card,
+  );
+  sql('UPDATE card_items SET state = 3, stability = 1, difficulty = 7, reps = 3, lapses = 1, last_review = unixepoch() - 600, due = unixepoch() - 60 WHERE card_id = ? AND position = 1', card);
+  sql('UPDATE cards SET state = 3, reps = 3, lapses = 1, due = unixepoch() - 60, stability = 1, last_review = unixepoch() - 600 WHERE id = ?', card);
 
-  sql('UPDATE cards SET due = 0 WHERE id = ?', card);
   await page.goto('/study');
   const skeleton = page.locator('main .skeleton');
   await expect(skeleton).toContainText('Both good and');
