@@ -347,10 +347,11 @@
       &:has(input:focus-visible) { outline: 2px solid var(--accent); }
       &:has(input:checked) { background: var(--fill); color: var(--on-fill); outline-color: transparent; }
     }
-    /* A part to recall again: a gap as long as its words. */
+    /* A part to recall again: a gap, always as wide, so its width gives
+       nothing away. */
     & .seg.gap {
       display: inline-block;
-      width: var(--w);
+      width: 6em;
       height: 1.1em;
       padding: 0;
       vertical-align: -.12em;

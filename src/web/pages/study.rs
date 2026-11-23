@@ -465,12 +465,12 @@ pub(crate) fn marked_back(back: &str, asked: &[bool], tap: bool) -> Markup {
 }
 
 /// While relearning, the front shows the back's skeleton: what you already
-/// know in place, and a gap for each segment you are asked again.
+/// know in place, and a gap for each segment you are asked again. Every
+/// gap is as wide as the others, so none hints at its answer's length.
 pub(crate) fn marked_skeleton(back: &str, asked: &[bool]) -> Markup {
     marked_with(back, |n, words| {
         if asked.get(n).copied().unwrap_or(true) {
-            let width = words.chars().count().clamp(3, 32);
-            html! { span.seg.gap style=(format!("--w: {width}ch")) aria-label="a part to recall" {} }
+            html! { span.seg.gap aria-label="a part to recall" {} }
         } else {
             html! { span.seg.known { (item_md(words)) } }
         }

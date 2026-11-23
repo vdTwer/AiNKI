@@ -160,6 +160,8 @@ test('relearning marked words: the known ones stay, the missed ones are gaps', a
   await expect(skeleton).toContainText('Both good and');
   await expect(skeleton).not.toContainText('bad');
   await expect(skeleton.locator('.seg.gap')).toHaveCount(1);
+  // Every gap has the same width, so none hints at how long its answer is.
+  expect(await skeleton.locator('.seg.gap').evaluate((g) => g.style.cssText)).toBe('');
   await page.keyboard.press(' ');
   await expect(skeleton).toBeHidden();
   // Only the missed word is asked again.
