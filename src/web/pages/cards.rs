@@ -231,7 +231,7 @@ pub(crate) fn card_form(
             div.write-hints aria-live="polite" { (hint_lines(hints)) }
             div.form-foot {
                 p.muted.small {
-                    "Text supports Markdown: **bold**, *italic*, lists, # headings, `code`."
+                    "Text supports Markdown: **bold**, *italic*, lists, # headings, `code`. Mark parts to learn one by one: {{like this}} (Ctrl M)."
                     " " button.link.preview-toggle type="button" hidden { "Preview" }
                 }
                 button.btn.primary.wide type="submit" { (submit) span.key.submit-key hidden { "Ctrl ⏎" } }
@@ -646,6 +646,7 @@ pub(crate) fn card_preview(front: &str, back: &str, how: Option<Split>) -> Marku
         section.face.front { (face(front, None)) }
         hr.divider;
         @match &pieces {
+            Some(_) if how == Some(Split::Marked) => section.face.back.list { (marked_back(back, &[], false)) },
             Some(p) => section.face.back.list { (multi_back(p, &[], false)) },
             None => section.face.back { (face(back, None)) },
         }
