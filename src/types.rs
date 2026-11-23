@@ -684,8 +684,13 @@ fn fields_text(fields: &BTreeMap<String, String>) -> String {
 
 /// The plain front and back of a typed card.
 fn summary(m: &Manifest, fields: &BTreeMap<String, String>) -> Result<(String, String)> {
-    let front = fill(&m.summary.front, fields);
-    let back = fill(&m.summary.back, fields);
+    // An empty optional field leaves no `{key}` behind.
+    let mut all = fields.clone();
+    for f in &m.fields {
+        all.entry(f.key.clone()).or_default();
+    }
+    let front = fill(&m.summary.front, &all);
+    let back = fill(&m.summary.back, &all);
     if front.is_empty() {
         return Err(bad("the card's summary came out empty; fill in more fields"));
     }

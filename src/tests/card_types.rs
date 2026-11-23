@@ -12,9 +12,10 @@ const MANIFEST: &str = r#"{
     "module": "chess.js",
     "fields": [
         {"key": "fen", "label": "Position"},
-        {"key": "moves", "label": "Solution"}
+        {"key": "moves", "label": "Solution"},
+        {"key": "note", "label": "Note", "kind": "text", "optional": true}
     ],
-    "summary": {"front": "Chess: {fen}", "back": "{moves}"}
+    "summary": {"front": "Chess: {fen}", "back": "{moves}\n\n{note}"}
 }"#;
 
 pub(super) fn package(js: &str) -> Vec<u8> {
