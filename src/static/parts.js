@@ -183,8 +183,116 @@ class AinkiBreak extends HTMLElement {
   }
 }
 
+/**
+ * `<ainki-card-type data-fields data-side>`: a card drawn by a type someone
+ * brought (see src/types.rs). It holds the type's sandboxed frame and is the
+ * only part of the page that talks to it: it hands over the card's fields
+ * and the page's colors, and hears the frame's height and the learner's
+ * response. A response turns the card over, as Space would; app.js says
+ * when the card is turned (`ainki:reveal`), and the frame then draws the
+ * solution. With `data-preview` (the card form) the fields come from the
+ * form as it is written, and the Front and Back buttons pick the side.
+ */
+class AinkiCardType extends HTMLElement {
+  /** @type {Set<AinkiCardType>} */
+  static all = new Set();
+  static THEME = ['ink', 'muted', 'faint', 'line', 'bg', 'accent', 'fill', 'on-fill', 'soft', 'r', 'scale'];
+  /** @type {HTMLIFrameElement | null} */ frame = null;
+  /** @type {string | null} */ response = null;
+  side = 'challenge';
+  timer = 0;
+
+  connectedCallback() {
+    this.frame = this.querySelector('iframe');
+    if (!this.frame) return;
+    this.side = this.dataset.side === 'solution' ? 'solution' : 'challenge';
+    AinkiCardType.all.add(this);
+    this.closest('.study')?.addEventListener('ainki:reveal', this.onReveal);
+    const form = this.closest('form');
+    if (this.hasAttribute('data-preview') && form) {
+      form.addEventListener('input', this.onInput);
+      for (const b of this.querySelectorAll('button[data-side]')) b.addEventListener('click', this.onSide);
+    }
+    this.show();
+  }
+
+  disconnectedCallback() {
+    AinkiCardType.all.delete(this);
+    this.closest('.study')?.removeEventListener('ainki:reveal', this.onReveal);
+  }
+
+  /** The frame is told what to draw; it draws a side only once. */
+  show() {
+    const style = getComputedStyle(document.documentElement);
+    /** @type {Record<string, string>} */
+    const theme = {};
+    for (const k of AinkiCardType.THEME) {
+      const v = style.getPropertyValue('--' + k).trim();
+      if (v) theme[k] = v;
+    }
+    let fields = {};
+    try { fields = JSON.parse(this.dataset.fields ?? '{}'); } catch { /* left empty */ }
+    this.frame?.contentWindow?.postMessage({ type: 'show', side: this.side, fields, response: this.response, theme }, '*');
+  }
+
+  onReveal = () => {
+    this.side = 'solution';
+    this.show();
+  };
+
+  /** @param {Event} e */
+  onSide = (e) => {
+    const b = /** @type {HTMLElement} */ (e.currentTarget);
+    this.side = b.dataset.side === 'solution' ? 'solution' : 'challenge';
+    for (const o of this.querySelectorAll('button[data-side]')) o.setAttribute('aria-pressed', String(o === b));
+    this.show();
+  };
+
+  onInput = () => {
+    clearTimeout(this.timer);
+    this.timer = window.setTimeout(() => {
+      const form = this.closest('form');
+      if (!form) return;
+      /** @type {Record<string, string>} */
+      const fields = {};
+      for (const [k, v] of new FormData(form)) {
+        if (k.startsWith('f.') && typeof v === 'string' && v.trim()) fields[k.slice(2)] = v.trim();
+      }
+      this.dataset.fields = JSON.stringify(fields);
+      this.show();
+    }, 250);
+  };
+
+  /** @param {unknown} m */
+  heard(m) {
+    if (!m || typeof m !== 'object' || !this.frame) return;
+    const msg = /** @type {Record<string, unknown>} */ (m);
+    if (msg.type === 'ready') {
+      this.show();
+    } else if (msg.type === 'height' && typeof msg.height === 'number') {
+      this.frame.style.height = `${Math.max(0, Math.min(4000, Math.round(msg.height)))}px`;
+    } else if (msg.type === 'response' && typeof msg.response === 'string' && msg.response.length <= 4096) {
+      if (this.side !== 'challenge' || this.hasAttribute('data-preview')) return;
+      this.response = msg.response;
+      const study = this.closest('.study');
+      for (const f of study?.querySelectorAll('input[name=response]') ?? []) {
+        /** @type {HTMLInputElement} */ (f).value = msg.response;
+      }
+      document.dispatchEvent(new CustomEvent('ainki:respond'));
+    }
+  }
+}
+
+// Messages from frames: each goes to the element whose frame sent it.
+addEventListener('message', (e) => {
+  for (const el of AinkiCardType.all) {
+    if (el.frame && e.source === el.frame.contentWindow) el.heard(e.data);
+  }
+});
+
 customElements.define('ainki-find', AinkiFind);
 customElements.define('ainki-break', AinkiBreak);
+customElements.define('ainki-card-type', AinkiCardType);
 
 // The ? key shows or hides the key sheet (a popover the ? hint opens too).
 document.addEventListener('keydown', (e) => {

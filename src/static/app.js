@@ -301,8 +301,20 @@
     var shows = study.querySelectorAll('.reveal, .timer');
     for (var j = 0; j < shows.length; j++) shows[j].hidden = true;
     setup(study);
+    // A brought card type draws its solution now (parts.js).
+    study.dispatchEvent(new Event('ainki:reveal'));
     return true;
   }
+
+  // What the learner did in a brought card type turns the card over,
+  // unless the sure check still wants an answer first.
+  document.addEventListener('ainki:respond', function () {
+    if (document.querySelector('.study:not(.revealed) .sure-buttons') || !reveal()) return;
+    // The keys rate the card again, not the frame.
+    var study = document.querySelector('.study');
+    study.setAttribute('tabindex', '-1');
+    study.focus({ preventScroll: true });
+  });
 
   // ----- timed cards ------------------------------------------------------------
 

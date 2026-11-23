@@ -165,7 +165,9 @@ pub(crate) async fn study_card(
     // a new card can't be known yet.
     let seen = card.card_state() != CardState::New;
     let limit = if seen { preset.time_limit } else { 0 };
-    let typed = seen && preset.typed_answers;
+    // A brought card type asks in its own way; typing an answer is not it.
+    let brought = app.typed_card(card).await?;
+    let typed = seen && preset.typed_answers && brought.is_none();
     let ask_sure = seen && user.confidence_check;
     // Without JavaScript the time counts until the answer is shown.
     let timed_out = revealed && limit > 0 && now() - shown.at > limit + 1;
@@ -204,6 +206,12 @@ pub(crate) async fn study_card(
         };
         let multi = multi_study(card, how, &app.card_items(card).await?, q_deck, shown, &extras);
         html! { (multi) (timer) @if reveal_form { (reveal) } (timeout) (foot) }
+    } else if let Some(b) = &brought {
+        // What the learner did in the frame goes with the rating.
+        let fields = html! { (sure_field) input.response-field type="hidden" name="response"; };
+        let answers =
+            answer_form(card, shown, q_deck, user.four_buttons, revealed && !timed_out, &previews, &fields);
+        html! { (typed_faces(card, b, revealed)) (timer) (reveal) (timeout) (answers) (foot) }
     } else {
         let answers =
             answer_form(card, shown, q_deck, user.four_buttons, revealed && !timed_out, &previews, &sure_field);
@@ -743,6 +751,8 @@ pub(crate) struct AnswerForm {
     pub(crate) away_ms: Option<i64>,
     pub(crate) paused_ms: Option<i64>,
     pub(crate) input: Option<String>,
+    /// A brought card type's record of what the learner did, as JSON.
+    pub(crate) response: Option<String>,
 }
 
 pub(crate) async fn study_answer(State(app): State<AppState>, user: WebUser, Form(f): Form<AnswerForm>) -> WebResult {
@@ -770,6 +780,13 @@ pub(crate) async fn study_answer(State(app): State<AppState>, user: WebUser, For
     if answered.is_ok() {
         let timing = study::Timing::checked(f.think_ms, f.answer_ms, f.away_ms, f.paused_ms, f.input.as_deref());
         app.note_answer(&access, f.card, sure, timed_out, &timing).await?;
+        if let Some(r) = f.response.as_deref().filter(|r| !r.is_empty()) {
+            // The rating stands either way; a broken response is the type's
+            // bug, not the learner's.
+            if let Err(e) = app.note_response(&access, f.card, r).await {
+                tracing::warn!("card {}: response not kept: {e:?}", f.card);
+            }
+        }
         app.note_rest(&access).await?;
     }
     match answered {

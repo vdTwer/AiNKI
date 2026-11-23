@@ -243,10 +243,14 @@ pub(crate) fn card_form(
 #[derive(Deserialize)]
 pub(crate) struct NewCardQuery {
     pub(crate) deck: Option<i64>,
+    /// A brought card type, see `types`.
+    #[serde(rename = "type")]
+    pub(crate) ty: Option<i64>,
 }
 
 pub(crate) fn card_new_view(
     user: &User,
+    types: &[crate::types::CardType],
     decks: &[Deck],
     c: &CardDraft,
     msg: Option<&str>,
@@ -258,6 +262,7 @@ pub(crate) fn card_new_view(
         Some(user),
         html! {
             (add_head("card", "Add card", flash(msg)))
+            (type_pick(types, None, c.deck))
             (form_error(error))
             (card_form("/cards/new", decks, c, "Add card", true, &[]))
         },
@@ -270,7 +275,11 @@ pub(crate) async fn card_new_page(
     Flash(msg): Flash,
     Query(q): Query<NewCardQuery>,
 ) -> WebResult {
+    if let Some(ty) = q.ty {
+        return Ok(typed_new_page(&app, &user.0, ty, q.deck, msg.as_deref()).await?.into_response());
+    }
     let access = user.access();
+    let types = app.latest_card_types(&access).await?;
     let decks = open_decks(app.decks(&access).await?, q.deck);
     // The deck from the link, else the one last added to, else the first.
     let deck = match q.deck {
@@ -287,7 +296,7 @@ pub(crate) async fn card_new_page(
         back_image: &None,
         multi: None,
     };
-    Ok(card_new_view(&user.0, &decks, &draft, msg.as_deref(), None).into_response())
+    Ok(card_new_view(&user.0, &types, &decks, &draft, msg.as_deref(), None).into_response())
 }
 
 /// A picked image can't be put back into a form; say so with the problem.
@@ -345,7 +354,8 @@ pub(crate) async fn card_create(State(app): State<AppState>, user: WebUser, mp: 
                 back_image: &None,
                 multi: f.multi,
             };
-            Ok(form_again(card_new_view(&user.0, &decks, &draft, None, Some(&msg))))
+            let types = app.latest_card_types(&access).await?;
+            Ok(form_again(card_new_view(&user.0, &types, &decks, &draft, None, Some(&msg))))
         }
     }
 }
@@ -376,6 +386,14 @@ impl CardFrom {
     }
 }
 
+/// What an edit sent, when it comes back with a problem.
+#[derive(Clone, Copy)]
+pub(crate) enum Sent<'a> {
+    Nothing,
+    Plain(&'a CardFormData),
+    Typed(&'a TypedSent),
+}
+
 /// The card page; `sent` and `error` when an edit comes back with a problem.
 pub(crate) async fn card_view(
     app: &App,
@@ -383,11 +401,12 @@ pub(crate) async fn card_view(
     id: i64,
     from: &CardFrom,
     msg: Option<&str>,
-    sent: Option<&CardFormData>,
+    sent: Sent<'_>,
     error: Option<&str>,
 ) -> Result<Markup, AppError> {
     let access = Access::web(user.clone());
     let card = app.card(&access, id).await?;
+    let typed = app.typed_card(&card).await?;
     let decks = open_decks(app.decks(&access).await?, Some(card.deck_id));
     let history = app.card_history(&access, id).await?;
     let items = app.card_items(&card).await?;
@@ -401,28 +420,7 @@ pub(crate) async fn card_view(
         .collect();
     let clock = user.clock();
     let decay = scheduler::decay_for(&app.deck_params(&access, card.deck_id).await?)?;
-    let draft = match sent {
-        Some(f) => CardDraft {
-            id: Some(card.id),
-            deck: f.deck.or(Some(card.deck_id)),
-            new_deck: "",
-            front: &f.front,
-            back: &f.back,
-            front_image: if f.remove_front_image { &None } else { &card.front_image },
-            back_image: if f.remove_back_image { &None } else { &card.back_image },
-            multi: f.multi,
-        },
-        None => CardDraft {
-            id: Some(card.id),
-            deck: Some(card.deck_id),
-            new_deck: "",
-            front: &card.front,
-            back: &card.back,
-            front_image: &card.front_image,
-            back_image: &card.back_image,
-            multi: card.multi,
-        },
-    };
+    let draft = edit_draft(&card, sent);
     Ok(layout_in(
         Nav::Decks,
         "Edit card",
@@ -437,12 +435,65 @@ pub(crate) async fn card_view(
             h1 { "Edit card" }
             (form_error(error))
             (coach_box(&card, &flags))
-            (card_form(&format!("/cards/{id}{}", from.query()), &decks, &draft, "Save", false, &hints))
+            @if let Some(t) = &typed {
+                (typed_edit_form(&decks, &card, t, sent, from))
+            } @else {
+                (card_form(&format!("/cards/{id}{}", from.query()), &decks, &draft, "Save", false, &hints))
+            }
             (card_schedule(&card, &items, decay, &clock))
             (card_actions(&card))
             (card_log(&history, &clock))
         },
     ))
+}
+
+/// The plain edit form's content: the card, or what was sent.
+fn edit_draft<'a>(card: &'a Card, sent: Sent<'a>) -> CardDraft<'a> {
+    match sent {
+        Sent::Plain(f) => CardDraft {
+            id: Some(card.id),
+            deck: f.deck.or(Some(card.deck_id)),
+            new_deck: "",
+            front: &f.front,
+            back: &f.back,
+            front_image: if f.remove_front_image { &None } else { &card.front_image },
+            back_image: if f.remove_back_image { &None } else { &card.back_image },
+            multi: f.multi,
+        },
+        Sent::Nothing | Sent::Typed(_) => CardDraft {
+            id: Some(card.id),
+            deck: Some(card.deck_id),
+            new_deck: "",
+            front: &card.front,
+            back: &card.back,
+            front_image: &card.front_image,
+            back_image: &card.back_image,
+            multi: card.multi,
+        },
+    }
+}
+
+/// A typed card's edit form, with what was sent when it comes back.
+fn typed_edit_form(
+    decks: &[Deck],
+    card: &Card,
+    t: &crate::types::TypedCard,
+    sent: Sent<'_>,
+    from: &CardFrom,
+) -> Markup {
+    let (values, deck) = match sent {
+        Sent::Typed(s) => (&s.fields, s.deck.or(Some(card.deck_id))),
+        _ => (&t.fields, Some(card.deck_id)),
+    };
+    typed_form(decks, &TypedDraft {
+        action: format!("/cards/{}/fields{}", card.id, from.query()),
+        deck,
+        new_deck: "",
+        ty: &t.ty,
+        values,
+        submit: "Save",
+        allow_new_deck: false,
+    })
 }
 
 fn card_schedule(card: &Card, items: &[crate::multi::CardItem], decay: f32, clock: &scheduler::Clock) -> Markup {
@@ -537,7 +588,7 @@ pub(crate) async fn card_page(
     Query(from): Query<CardFrom>,
     Flash(msg): Flash,
 ) -> WebResult {
-    Ok(card_view(&app, &user.0, id, &from, msg.as_deref(), None, None).await?.into_response())
+    Ok(card_view(&app, &user.0, id, &from, msg.as_deref(), Sent::Nothing, None).await?.into_response())
 }
 
 pub(crate) async fn card_update(
@@ -584,7 +635,7 @@ pub(crate) async fn card_update(
         Ok(()) => Ok(redirect_msg(from.study_url().unwrap_or_else(|| format!("/cards/{id}")), "Card saved.")),
         Err(e) => {
             let msg = with_image_hint(fixable(&e).ok_or(e)?, &f);
-            Ok(form_again(card_view(&app, &user.0, id, &from, None, Some(&f), Some(&msg)).await?))
+            Ok(form_again(card_view(&app, &user.0, id, &from, None, Sent::Plain(&f), Some(&msg)).await?))
         }
     }
 }

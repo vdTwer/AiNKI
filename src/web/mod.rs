@@ -61,11 +61,12 @@ mod pages {
     pub mod stats;
     pub mod study;
     pub mod tokens;
+    pub mod types;
 }
 #[allow(clippy::wildcard_imports, reason = "the router and every page reach every handler by name")]
 use pages::{
     admin::*, auth::*, cards::*, coach::*, decks::*, find::*, home::*, import::*, invites::*, media::*, presets::*,
-    settings::*, sharing::*, stats::*, study::*, tokens::*,
+    settings::*, sharing::*, stats::*, study::*, tokens::*, types::*,
 };
 // The consent page for OAuth clients asks for permissions the same way.
 pub(crate) use pages::tokens::permission_fields;
@@ -180,6 +181,10 @@ pub fn router(app: AppState) -> Router {
         .route("/settings/study", post(study_settings_update))
         .route("/settings/catch-up", post(catch_up_update))
         .route("/settings/reset-params", post(reset_params))
+        .route("/settings/types/{id}/delete", post(type_delete))
+        .route("/settings/types/chess.zip", get(chess_download))
+        .route("/cards/new/typed", post(typed_create))
+        .route("/cards/{id}/fields", post(typed_update))
         .route("/access", get(access_page))
         .route("/access/new", get(|| async { Redirect::to("/access") }).post(token_create))
         .route("/access/{id}/revoke", post(token_revoke))
@@ -190,6 +195,7 @@ pub fn router(app: AppState) -> Router {
         .layer(small)
         .route("/cards/preview", post(card_preview_json))
         .route("/find", get(find_page))
+        .route("/settings/types", get(types_page).post(type_upload).layer(DefaultBodyLimit::max(UPLOAD_LIMIT)))
         .route("/cards/new", get(card_new_page).post(card_create).layer(card_upload))
         .route("/cards/{id}", get(card_page).post(card_update).layer(card_upload))
         .route(
@@ -210,7 +216,12 @@ pub fn router(app: AppState) -> Router {
             "/speculation.json",
             get(|q: RawQuery| async move { asset(q, "application/speculationrules+json", SPECULATION) }),
         )
-        .route("/healthz", get(|| async { "ok" }));
+        .route("/healthz", get(|| async { "ok" }))
+        // Brought card types: the frame they draw in and their files. No
+        // login: the sandboxed frame sends no cookies, the token is the key.
+        .route("/types/frame.js", get(frame_js))
+        .route("/types/{token}/frame", get(type_frame))
+        .route("/types/{token}/{*path}", get(type_file));
     Router::new()
         .merge(browser_routes)
         .merge(static_routes)
@@ -401,7 +412,7 @@ pub fn urlenc(s: &str) -> String {
 fn asset_version() -> &'static str {
     static VERSION: std::sync::OnceLock<String> = std::sync::OnceLock::new();
     VERSION.get_or_init(|| {
-        let all = [CSS, APP_JS, PARTS_JS].concat();
+        let all = [CSS, APP_JS, PARTS_JS, FRAME_JS].concat();
         crate::auth::sha256_hex(&all)[..10].to_string()
     })
 }
