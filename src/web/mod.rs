@@ -509,6 +509,7 @@ fn key_sheet() -> Markup {
                 ("Enter", "Show the answer, then Again"),
                 ("1", "Again"),
                 ("3", "Good"),
+                ("←", "Undo the last answer"),
                 ("2  4", "Hard and Easy, when shown"),
                 ("+", "Ten more seconds on a timed card"),
                 ("P", "Pause: the card waits, and the clock with it"),

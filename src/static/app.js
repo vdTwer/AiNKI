@@ -577,13 +577,21 @@
   });
 
   // Keyboard: space shows the answer (then means Good, or Done on a list
-  // card), Enter shows it too (then means Again), 1-4 answer; on a list
-  // card 1-9 mark items as remembered. With the sure check S and U show
-  // the answer, and + adds time to a timed card.
+  // card), Enter shows it too (then means Again), 1-4 answer, left arrow
+  // undoes the last answer; on a list card 1-9 mark items as remembered.
+  // With the sure check S and U show the answer, and + adds time to a
+  // timed card.
   document.addEventListener('keydown', function (e) {
     if (e.ctrlKey || e.metaKey || e.altKey) return;
     var tag = e.target.tagName;
     if ((tag === 'INPUT' && e.target.type !== 'checkbox') || tag === 'TEXTAREA' || tag === 'SELECT') return;
+    if (e.key === 'ArrowLeft' && !paused()) {
+      var undo = document.querySelector('main .study-foot form[action="/study/undo"] button, main .end-links form[action="/study/undo"] button');
+      if (!undo) return;
+      e.preventDefault();
+      if (!busy) undo.click();
+      return;
+    }
     if (!document.querySelector('main .study')) return;
     // Paused, P, Esc, space or Enter carry on and every other key waits.
     if (paused()) {
