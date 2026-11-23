@@ -1,0 +1,29 @@
+{
+  "name": "Chess",
+  "description": "A position, and the move to find. A whole line works too: the board plays the replies.",
+  "module": "chess.js",
+  "styles": ["board.css", "chess.css"],
+  "fields": [
+    {
+      "key": "fen",
+      "label": "Position (FEN)",
+      "hint": "Copy it from Lichess or chess.com (Share, then FEN). The side to move plays the answer."
+    },
+    {
+      "key": "moves",
+      "label": "Answer",
+      "hint": "The move to find, like Nf3. Or a line, like Nf3 Nc6 Bb5: your moves and the replies between them."
+    },
+    {
+      "key": "note",
+      "label": "Why",
+      "kind": "text",
+      "optional": true,
+      "hint": "Shown with the answer."
+    }
+  ],
+  "summary": {
+    "front": "Chess: {fen}",
+    "back": "{moves}\n\n{note}"
+  }
+}

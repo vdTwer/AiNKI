@@ -1,0 +1,27 @@
+/* Chess cards in the study page's own colors (the frame gets them as
+   --ink, --muted, --accent and so on). The board is something you press,
+   so the answer's arrow is the accent; your other move is faint ink. */
+:root {
+  --sq-light: light-dark(#f7f4f1, #3b3734);
+  --sq-dark: light-dark(#ddd5cc, #2a2725);
+}
+.to-move { margin: 0 0 .75rem; text-align: center; font-size: .75rem; font-weight: 600; letter-spacing: .07em; text-transform: uppercase; color: var(--muted); }
+.board { max-width: min(26rem, 100%); margin: 0 auto; border-radius: 6px; overflow: hidden; touch-action: none; }
+.cm-chessboard.ainki .board .square.white { fill: var(--sq-light); }
+.cm-chessboard.ainki .board .square.black { fill: var(--sq-dark); }
+.cm-chessboard.ainki .board .border { fill: var(--sq-dark); stroke: none; stroke-width: 0; }
+.cm-chessboard.ainki .coordinates .coordinate { font-size: 7px; fill: var(--muted); }
+.cm-chessboard.ainki .coordinates .coordinate.black, .cm-chessboard.ainki .coordinates .coordinate.white { fill: var(--muted); opacity: .8; }
+.cm-chessboard.ainki .markers .marker.marker-square { fill: var(--accent); opacity: .18; }
+.cm-chessboard.ainki .markers .marker.marker-dot { fill: var(--accent); opacity: .35; }
+.cm-chessboard .arrow-success .arrow-head, .cm-chessboard .arrow-success .arrow-line { fill: var(--accent); stroke: var(--accent); }
+.cm-chessboard .arrow-danger .arrow-head, .cm-chessboard .arrow-danger .arrow-line { fill: var(--faint); stroke: var(--faint); }
+.line { display: flex; flex-wrap: wrap; justify-content: center; align-items: baseline; gap: .25rem .5rem; margin: 1rem 0 0; font-size: 1.125rem; }
+.line .label { font-size: .75rem; font-weight: 600; letter-spacing: .07em; text-transform: uppercase; color: var(--muted); margin-right: .25rem; }
+.line.yours { margin-top: .25rem; font-size: 1rem; }
+.move { font: inherit; color: var(--ink); background: none; border: 0; padding: .125rem .25rem; border-radius: var(--r, .5rem); }
+button.move { cursor: pointer; color: var(--accent); }
+button.move:hover { background: var(--soft); }
+button.move[aria-pressed="true"] { background: var(--fill); color: var(--on-fill, #fff); }
+.move.other { color: var(--muted); text-decoration: line-through; text-decoration-color: var(--faint); }
+.note { margin: 1rem auto 0; max-width: 32rem; white-space: pre-line; text-align: center; }
