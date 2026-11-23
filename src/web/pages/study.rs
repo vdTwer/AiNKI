@@ -420,12 +420,11 @@ pub(crate) fn multi_back(pieces: &[Piece], asked: &[bool], tap: bool) -> Markup 
     }
 }
 
-/// A back with marked segments, as it is studied: the whole text as it is
-/// written, every asked segment a word to tap when you remembered it (when
-/// `tap`; the editor's preview only shows them), the others as known. The
-/// marks become placeholders before the Markdown is rendered, so segments
-/// sit where they were written, inside sentences and list items alike.
-pub(crate) fn marked_back(back: &str, asked: &[bool], tap: bool) -> Markup {
+/// A back with marked segments, rendered as it is written with every
+/// segment drawn by `segment` (its number and words). The marks become
+/// placeholders before the Markdown is rendered, so segments sit where they
+/// were written, inside sentences and list items alike.
+fn marked_with(back: &str, segment: impl Fn(usize, &str) -> Markup) -> Markup {
     let src = markdown::tidy(back);
     let marks = multi::marks(&src);
     let hole = |n: usize| format!("\u{E000}{n}\u{E001}");
@@ -439,7 +438,19 @@ pub(crate) fn marked_back(back: &str, asked: &[bool], tap: bool) -> Markup {
     text.push_str(src.get(at..).unwrap_or(""));
     let mut html = markdown::render(&text);
     for (n, (_, words)) in marks.iter().enumerate() {
-        let segment = if asked.get(n).copied().unwrap_or(true) && tap {
+        html = html.replace(&hole(n), &segment(n, words).into_string());
+    }
+    html! { div.md.marked { (PreEscaped(html)) } }
+}
+
+/// A marked back as it is studied: every asked segment a word to tap when
+/// you remembered it (when `tap`; the editor's preview only shows them),
+/// the others plain, as known.
+pub(crate) fn marked_back(back: &str, asked: &[bool], tap: bool) -> Markup {
+    marked_with(back, |n, words| {
+        if !tap {
+            html! { span.seg.shown { (item_md(words)) } }
+        } else if asked.get(n).copied().unwrap_or(true) {
             html! {
                 label.seg data-key=[(n < 9).then(|| (n + 1).to_string())] {
                     input type="hidden" name="asked" value=(n);
@@ -448,17 +459,33 @@ pub(crate) fn marked_back(back: &str, asked: &[bool], tap: bool) -> Markup {
                 }
             }
         } else {
-            html! { span.seg.known[tap].shown[!tap] { (item_md(words)) } }
-        };
-        html = html.replace(&hole(n), &segment.into_string());
-    }
-    html! { div.md.marked { (PreEscaped(html)) } }
+            html! { span.seg.known { (item_md(words)) } }
+        }
+    })
+}
+
+/// While relearning, the front shows the back's skeleton: what you already
+/// know in place, and a gap for each segment you are asked again.
+pub(crate) fn marked_skeleton(back: &str, asked: &[bool]) -> Markup {
+    marked_with(back, |n, words| {
+        if asked.get(n).copied().unwrap_or(true) {
+            let width = words.chars().count().clamp(3, 32);
+            html! { span.seg.gap style=(format!("--w: {width}ch")) aria-label="a part to recall" {} }
+        } else {
+            html! { span.seg.known { (item_md(words)) } }
+        }
+    })
+}
+
+/// The back still marks exactly the stored items.
+fn marked_fits(card: &Card, how: Split, items: &[multi::CardItem]) -> bool {
+    how == Split::Marked && multi::items(&card.back, how).is_some_and(|i| i.len() == items.len())
 }
 
 /// A multicard's back for its stored items: marked segments in place when
 /// the back still marks exactly those, else rows (see [`multi_back`]).
 pub(crate) fn multi_answer(card: &Card, how: Split, items: &[multi::CardItem], asked: &[bool], tap: bool) -> Markup {
-    if how == Split::Marked && multi::items(&card.back, how).is_some_and(|i| i.len() == items.len()) {
+    if marked_fits(card, how, items) {
         return marked_back(&card.back, asked, tap);
     }
     multi_back(&pieces_for(card, how, items), asked, tap)
@@ -499,7 +526,11 @@ pub(crate) fn multi_study(
             div.card-area {
                 (state_tag(card.card_state()))
                 section.face.front { (face(&card.front, card.front_image.as_deref())) }
-                @if !known.is_empty() {
+                @if !known.is_empty() && marked_fits(card, how, items) {
+                    @if !revealed {
+                        div.skeleton { (marked_skeleton(&card.back, &asked)) }
+                    }
+                } @else if !known.is_empty() {
                     div.list-known {
                         p.known-label { "You know" }
                         ul { @for i in &known { li { (item_md(multi::title(&i.text))) } } }

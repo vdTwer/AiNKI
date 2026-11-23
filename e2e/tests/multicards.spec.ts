@@ -144,3 +144,24 @@ test('marked words: the editor picks them, and each is tapped in place', async (
     ).map((i) => i.rating))
     .toEqual([1, 3]);
 });
+
+test('relearning marked words: the known ones stay, the missed ones are gaps', async ({ page, seed }) => {
+  const deck = await seed.deck('Life');
+  const card = await seed.card(deck, 'What is life?', 'Both {{good}} and {{bad}}.', { multi: 'marked' });
+  await page.goto('/study');
+  await page.keyboard.press(' ');
+  await page.locator('main label.seg', { hasText: 'good' }).click();
+  await page.locator('main form.list-answer').getByRole('button', { name: /done/i }).click();
+  await expect.poll(() => sql('SELECT id FROM review_log WHERE card_id = ?', card).length).toBe(1);
+
+  sql('UPDATE cards SET due = 0 WHERE id = ?', card);
+  await page.goto('/study');
+  const skeleton = page.locator('main .skeleton');
+  await expect(skeleton).toContainText('Both good and');
+  await expect(skeleton).not.toContainText('bad');
+  await expect(skeleton.locator('.seg.gap')).toHaveCount(1);
+  await page.keyboard.press(' ');
+  await expect(skeleton).toBeHidden();
+  // Only the missed word is asked again.
+  await expect(page.locator('main .face.back label.seg')).toHaveText(['bad']);
+});
