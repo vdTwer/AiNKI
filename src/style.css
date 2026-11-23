@@ -328,29 +328,38 @@
     line-height: 1.75;
     & :is(p, ul, ol) { margin: 0 0 .9rem; &:last-child { margin-bottom: 0; } }
     & li + li { margin-top: .45rem; }
-    & .seg {
-      padding: .12em .45em;
-      border-radius: .45em;
-      background: var(--soft);
-      box-decoration-break: clone;
-      -webkit-box-decoration-break: clone;
-    }
-    & .seg.known { background: none; color: var(--muted); }
+    & .seg { padding: .12em .45em; border-radius: .45em; box-decoration-break: clone; -webkit-box-decoration-break: clone; }
+    & .seg.shown { background: var(--soft); }
+    & .seg.known { padding: 0; }
+    /* Not tapped yet: grey, so what you remembered stands out once tapped. */
     & label.seg {
       display: inline;
       position: relative;
       margin: 0;
       font-weight: inherit;
+      color: var(--faint);
       cursor: pointer;
-      outline: 1px dashed color-mix(in oklab, var(--accent) 45%, transparent);
+      outline: 1px dashed color-mix(in oklab, var(--faint) 55%, transparent);
       outline-offset: -1px;
       transition: background .12s, color .12s;
       & input { position: absolute; left: 50%; top: 50%; opacity: 0; width: 1px; height: 1px; margin: 0; pointer-events: none; }
-      &:hover { background: color-mix(in oklab, var(--accent) 14%, var(--bg)); }
+      &:hover { color: var(--ink); background: var(--soft); }
       &:has(input:focus-visible) { outline: 2px solid var(--accent); }
       &:has(input:checked) { background: var(--fill); color: var(--on-fill); outline-color: transparent; }
     }
+    /* A part to recall again: a gap as long as its words. */
+    & .seg.gap {
+      display: inline-block;
+      width: var(--w);
+      height: 1.1em;
+      padding: 0;
+      vertical-align: -.12em;
+      border-radius: .3em;
+      background: color-mix(in oklab, var(--faint) 18%, var(--bg));
+    }
   }
+  .skeleton { margin-top: 1.5rem; font-size: 1.25rem; color: color-mix(in oklab, var(--ink) 86%, var(--bg)); }
+  .study.revealed .skeleton { display: none; }
 
   /* Stats */
   .big3 {
