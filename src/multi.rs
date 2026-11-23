@@ -189,6 +189,11 @@ fn item_text(src: &str, range: Range<usize>) -> String {
 /// words inside. Braces in code are code; an empty mark, an unclosed one or
 /// one running across a blank line is left as text.
 pub fn marks(src: &str) -> Vec<(Range<usize>, String)> {
+    // Most backs mark nothing: they skip the Markdown parse below, which
+    // pages that check every card's splits (Home, Stats) would pay for.
+    if !src.contains("{{") {
+        return Vec::new();
+    }
     let mut code: Vec<Range<usize>> = Vec::new();
     walk(src, |_, e, range| {
         if matches!(e, Event::Code(_) | Event::Start(Tag::CodeBlock(_))) {
