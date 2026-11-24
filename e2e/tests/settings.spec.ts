@@ -273,17 +273,14 @@ test('smart breaks: chosen in Settings, suggested when the work stretch is up', 
   expect(sql<{ w: number }>('SELECT break_work_min AS w FROM users WHERE id = ?', account.id)[0].w).toBeCloseTo(27.5);
 });
 
-test('the FSRS parameters show as code, and copy as a plain list', async ({ page }) => {
+test('the FSRS parameters show as pills, and copy for Anki', async ({ page }) => {
   await page.goto('/settings');
-  const code = page.locator('details.params pre.code');
-  await expect(code).toBeHidden();
+  const pills = page.locator('details.params .pill');
+  await expect(pills.first()).toBeHidden();
   await page.locator('details.params summary').click();
-  await expect(code).toBeVisible();
-  await expect(code).toContainText('// FSRS-6 · defaults');
-  await expect(code).toContainText('// 20');
-  // 21 weights, the last one the FSRS-6 decay.
-  const plain = await page.locator('#fsrs-weights').textContent();
-  const w = JSON.parse(plain!) as number[];
-  expect(w).toHaveLength(21);
-  expect(w[20]).toBeCloseTo(0.1542, 4);
+  await expect(pills).toHaveCount(21);
+  await expect(pills.last()).toHaveText('0.1542');
+  // Copy gives what Anki's parameters field takes: numbers and commas.
+  const plain = (await page.locator('#fsrs-weights').textContent())!.trim();
+  expect(plain).toMatch(/^\d+\.\d{4}(, \d+\.\d{4}){20}$/);
 });

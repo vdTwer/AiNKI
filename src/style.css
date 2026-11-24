@@ -48,16 +48,18 @@
   code, pre, kbd { font-family: ui-monospace, monospace; font-size: .9em; }
   pre { white-space: pre-wrap; overflow-wrap: anywhere; background: var(--soft); padding: .75rem; border-radius: var(--r); }
   pre.copy { user-select: all; }
-  /* Code to read: lines kept whole, comments quiet. */
-  pre.code {
-    white-space: pre;
-    overflow-x: auto;
-    padding: 1rem 1.15rem;
+  /* Numbers to copy, each in its own pill; the commas are there for
+     copying, not for the eye. */
+  .pills {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .4rem;
+    font-family: ui-monospace, monospace;
     font-size: .8125rem;
-    line-height: 1.7;
-    & .c { color: var(--faint); }
-    & .k { font-weight: 650; }
+    & .pill { padding: .2rem .55rem; border-radius: 999px; background: var(--soft); font-variant-numeric: tabular-nums; }
+    & .sep { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
   }
+  .pills + button { margin-top: .5rem; }
   table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
   th, td { text-align: left; padding: .55rem .75rem .55rem 0; border-bottom: 1px solid var(--line); &:last-child { padding-right: 0; } }
   thead th { font-size: .75rem; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }

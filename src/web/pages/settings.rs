@@ -130,7 +130,7 @@ fn fsrs_section(u: &User, reviews: i64, custom: bool) -> Markup {
                 "Optimizing fits FSRS to your own memory. It helps once you have a few hundred reviews. New parameters are only kept when they predict your reviews better."
             }
         }
-        (params_code(u, custom))
+        (params_pills(u, custom))
         div.form-foot.end {
             form method="post" action="/settings/optimize" {
                 button.btn type="submit" { "Optimize now" }
@@ -148,40 +148,22 @@ fn fsrs_section(u: &User, reviews: i64, custom: bool) -> Markup {
     }
 }
 
-/// What each run of FSRS-6 weights does, as (first index, count, note).
-const PARAM_GROUPS: [(usize, usize, &str); 8] = [
-    (0, 4, "initial stability"),
-    (4, 2, "initial difficulty"),
-    (6, 2, "difficulty change"),
-    (8, 3, "stability after recall"),
-    (11, 4, "stability after a lapse"),
-    (15, 2, "Hard penalty, Easy bonus"),
-    (17, 3, "same-day reviews"),
-    (20, 1, "forgetting curve decay"),
-];
-
-/// The 21 weights as code: one line per group, values aligned, a comment
-/// on what they do. Copy gives the plain list.
-fn params_code(u: &User, custom: bool) -> Markup {
+/// The 21 weights, each a pill. Copy gives them comma-separated, the way
+/// Anki's FSRS parameters field takes them.
+fn params_pills(u: &User, custom: bool) -> Markup {
     let raw = if custom { u.params() } else { fsrs::DEFAULT_PARAMETERS.to_vec() };
     // Older fits have fewer weights; FSRS fills them in the same way.
     let w = fsrs::check_and_fill_parameters(&raw).unwrap_or(raw);
-    let plain = format!("[{}]", w.iter().map(|x| format!("{x:.4}")).collect::<Vec<_>>().join(", "));
-    let source = if custom { "fitted to your reviews" } else { "defaults" };
+    let vals: Vec<String> = w.iter().map(|x| format!("{x:.4}")).collect();
     html! {
         details.params {
             summary { "Show the parameters" }
-            pre.code {
-                span.c { "// FSRS-6 · " (source) } "\n"
-                span.k { "w" } " = [\n"
-                @for (first, n, note) in PARAM_GROUPS {
-                    @let vals = w.iter().skip(first).take(n).map(|x| format!("{x:>7.4},")).collect::<Vec<_>>().join(" ");
-                    @let span_ = if n == 1 { format!("{first}") } else { format!("{first}–{}", first + n - 1) };
-                    "  " (format!("{vals:<36}")) span.c { "// " (format!("{span_:<6}")) (note) } "\n"
+            div.pills id="fsrs-weights" {
+                @for (i, v) in vals.iter().enumerate() {
+                    span.pill { (v) }
+                    @if i + 1 < vals.len() { span.sep { ", " } }
                 }
-                "]"
             }
-            code id="fsrs-weights" hidden { (plain) }
             button.link type="button" data-copy="fsrs-weights" hidden { "Copy" }
         }
     }
