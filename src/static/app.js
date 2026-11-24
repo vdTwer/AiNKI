@@ -29,6 +29,18 @@
     try { tz.value = Intl.DateTimeFormat().resolvedOptions().timeZone; } catch (e) {}
   }
 
+  // Study foot: "14 of 32" and "19 cards left" swap on click, remembered.
+  var countKey = 'ainki.count';
+  try { if (localStorage.getItem(countKey) === 'left') document.documentElement.classList.add('count-left'); } catch (e) {}
+  document.addEventListener('click', function (e) {
+    var count = e.target.closest('.study-foot .count');
+    if (!count) return;
+    // Let go of it, or the next space would swap again instead of revealing.
+    count.blur();
+    var left = document.documentElement.classList.toggle('count-left');
+    try { localStorage.setItem(countKey, left ? 'left' : 'of'); } catch (e2) {}
+  });
+
   // Invite links: a Copy button, where the browser lets us copy.
   Array.prototype.forEach.call(document.querySelectorAll('button[data-copy]'), function (b) {
     var from = document.getElementById(b.getAttribute('data-copy'));
@@ -278,7 +290,54 @@
     for (var f = 0; f < faces.length; f++) {
       if ((faces[f].textContent || '').trim().length > LONG_TEXT) faces[f].classList.add('long');
     }
+    explainers(scope);
   }
+
+  // Explanations: a title (or an SVG mark's <title>) shows at once in a
+  // quiet box by the pointer, instead of the browser's late tooltip.
+  function explainers(scope) {
+    Array.prototype.forEach.call(scope.querySelectorAll('main [title], main svg :not(svg) > title'), function (x) {
+      var el = x.tagName.toLowerCase() === 'title' ? x.parentNode : x;
+      var text = el === x ? x.getAttribute('title') : x.textContent;
+      if (el === x) x.removeAttribute('title'); else x.remove();
+      if (!text) return;
+      el.setAttribute('data-tip', text);
+      if (!el.hasAttribute('aria-label')) el.setAttribute(el.namespaceURI === 'http://www.w3.org/2000/svg' ? 'aria-label' : 'aria-description', text);
+      if (el.namespaceURI === 'http://www.w3.org/2000/svg' && !el.hasAttribute('tabindex')) el.setAttribute('tabindex', '0');
+    });
+  }
+  var tip = null;
+  function showTip(el, x, y) {
+    if (!tip) {
+      tip = document.createElement('div');
+      tip.className = 'hover-tip';
+      tip.setAttribute('aria-hidden', 'true');
+      document.body.appendChild(tip);
+    }
+    tip.textContent = el.getAttribute('data-tip');
+    tip.hidden = false;
+    var w = tip.offsetWidth, h = tip.offsetHeight;
+    var left = Math.min(Math.max(8, x - w / 2), window.innerWidth - w - 8);
+    var top = y - h - 14 < 8 ? y + 22 : y - h - 14;
+    tip.style.left = left + 'px';
+    tip.style.top = top + 'px';
+  }
+  function hideTip() { if (tip) tip.hidden = true; }
+  ['pointermove', 'pointerdown'].forEach(function (t) {
+    document.addEventListener(t, function (e) {
+      var el = e.target.closest && e.target.closest('[data-tip]');
+      if (el) showTip(el, e.clientX, e.clientY); else hideTip();
+    });
+  });
+  document.addEventListener('pointerout', function (e) { if (!e.relatedTarget) hideTip(); });
+  document.addEventListener('focusin', function (e) {
+    var el = e.target.closest && e.target.closest('[data-tip]');
+    if (!el || lastInput !== 'key') return;
+    var r = el.getBoundingClientRect();
+    showTip(el, r.left + r.width / 2, r.top);
+  });
+  document.addEventListener('focusout', hideTip);
+  window.addEventListener('scroll', hideTip, { passive: true });
   setup(document);
 
   // ----- studying without reloads ---------------------------------------------

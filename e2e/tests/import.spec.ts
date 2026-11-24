@@ -69,7 +69,7 @@ test('an Anki package brings decks, schedule and images', async ({ page, account
 
   // Today: the new cards only (the review is days away, one is suspended).
   await page.goto('/study');
-  await expect(page.locator('main .study-meta .count')).toHaveText('1 of 2');
+  await expect(page.locator('main .study-meta .count .of')).toHaveText('1 of 2');
 });
 
 test('a file that is not an Anki package says so', async ({ page, account, allowErrors }) => {

@@ -7,7 +7,7 @@ const front = (page: Page) => page.locator('main .study .face.front');
 const back = (page: Page) => page.locator('main .study .face.back');
 const showAnswer = (page: Page) => page.locator('main .study .reveal a.show');
 const answers = (page: Page) => page.locator('main .study form.answers');
-const count = (page: Page) => page.locator('main .study-meta .count');
+const count = (page: Page) => page.locator('main .study-meta .count .of');
 
 async function threeCards(seed: Seed) {
   const deck = await seed.deck('Languages::Spanish');
@@ -253,4 +253,24 @@ test('a pause covers the card, and its time is kept apart', async ({ page, seed,
   near(t.answer_ms, 400);
   near(t.paused_ms, 60_000);
   expect(t.away_ms).toBe(0);
+});
+
+test('the count swaps to cards left on click, and stays that way', async ({ page, seed }) => {
+  await threeCards(seed);
+  await page.goto('/study');
+  const foot = page.locator('main .study-meta .count');
+  await expect(foot).toHaveText('1 of 3', { useInnerText: true });
+  await foot.click();
+  await expect(foot).toHaveText('3 cards left', { useInnerText: true });
+  // Kept across answers (no reload) and across page loads.
+  await showAnswer(page).click();
+  await answers(page).getByRole('button', { name: /good/i }).click();
+  await expect(foot).toHaveText('2 cards left', { useInnerText: true });
+  await page.reload();
+  await expect(foot).toHaveText('2 cards left', { useInnerText: true });
+  // Space still shows the answer, not the count again.
+  await page.keyboard.press('Space');
+  await expect(back(page)).toBeVisible();
+  await foot.click();
+  await expect(foot).toHaveText('2 of 3', { useInnerText: true });
 });

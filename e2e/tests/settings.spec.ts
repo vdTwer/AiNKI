@@ -141,7 +141,7 @@ test('catch-up mode holds back new cards', async ({ page, seed, account }) => {
   await form.getByRole('button', { name: 'Save' }).click();
   await expect.poll(() => sql<{ catch_up: number }>('SELECT catch_up FROM users WHERE id = ?', account.id)[0].catch_up).toBe(1);
   await page.goto('/study');
-  await expect(page.locator('main .study-meta .count')).toHaveText('1 of 1');
+  await expect(page.locator('main .study-meta .count .of')).toHaveText('1 of 1');
   await expect(page.locator('main .study .face.front')).toHaveText('old');
 });
 
@@ -271,4 +271,16 @@ test('smart breaks: chosen in Settings, suggested when the work stretch is up', 
   await expect(main.locator('.study .face.front')).toHaveText('q');
   // Waved off right away: the next stretches get a little longer.
   expect(sql<{ w: number }>('SELECT break_work_min AS w FROM users WHERE id = ?', account.id)[0].w).toBeCloseTo(27.5);
+});
+
+test('the FSRS parameters show as pills, and copy for Anki', async ({ page }) => {
+  await page.goto('/settings');
+  const pills = page.locator('details.params .pill');
+  await expect(pills.first()).toBeHidden();
+  await page.locator('details.params summary').click();
+  await expect(pills).toHaveCount(21);
+  await expect(pills.last()).toHaveText('0.1542');
+  // Copy gives what Anki's parameters field takes: numbers and commas.
+  const plain = (await page.locator('#fsrs-weights').textContent())!.trim();
+  expect(plain).toMatch(/^\d+\.\d{4}(, \d+\.\d{4}){20}$/);
 });

@@ -48,6 +48,18 @@
   code, pre, kbd { font-family: ui-monospace, monospace; font-size: .9em; }
   pre { white-space: pre-wrap; overflow-wrap: anywhere; background: var(--soft); padding: .75rem; border-radius: var(--r); }
   pre.copy { user-select: all; }
+  /* Numbers to copy, each in its own pill; the commas are there for
+     copying, not for the eye. */
+  .pills {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .4rem;
+    font-family: ui-monospace, monospace;
+    font-size: .8125rem;
+    & .pill { padding: .2rem .55rem; border-radius: 999px; background: var(--soft); font-variant-numeric: tabular-nums; }
+    & .sep { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+  }
+  .pills + button { margin-top: .5rem; }
   table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
   th, td { text-align: left; padding: .55rem .75rem .55rem 0; border-bottom: 1px solid var(--line); &:last-child { padding-right: 0; } }
   thead th { font-size: .75rem; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
@@ -167,6 +179,32 @@
     & input { flex: 2 1 12rem; margin: 0; }
     & select { flex: 1 1 7rem; width: auto; margin: 0; }
   }
+  /* A form's rows: a hint sits tight under its control, a fact row puts
+     its value at the right, the submit keeps a gap above. */
+  div.line { display: block; margin-bottom: 1.25rem; font-weight: 500; }
+  div.line:has(> .value) {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 1rem;
+    margin-bottom: .75rem;
+    & .value { font-weight: 400; text-align: right; }
+  }
+  .field.quiet { & .select { flex: none; } & select { margin: 0; } }
+  .hint { margin-bottom: 1.25rem; }
+  :is(label, div.line):has(+ .hint) { margin-bottom: .35rem; }
+  .sheet > :last-child { margin-bottom: 0; }
+  .form-foot { margin-top: 1.5rem; }
+  .form-foot button:not(.primary, .link) {
+    padding: .55rem 1.4rem;
+    border-radius: var(--r);
+    background: var(--soft);
+    color: var(--ink);
+    &:hover { text-decoration: none; background: color-mix(in oklab, var(--accent) 12%, var(--bg)); }
+  }
+  h1 + p.muted + ul.list { margin-top: 1.5rem; }
+  form.logout { margin-top: 1rem; }
+  p.build { margin-top: .75rem; }
   details > summary { cursor: pointer; min-height: var(--tap); display: flex; align-items: center; color: var(--accent); }
   details.danger > summary { color: light-dark(#a12f2f, #f08080); }
   .notice, .coach, .typed-echo { padding: 1rem 1.15rem; border-radius: var(--r); background: var(--soft); }
@@ -244,6 +282,25 @@
     & .bar { width: 100%; max-width: 2rem; min-height: 2px; border-radius: 3px 3px 0 0; background: color-mix(in oklab, var(--accent) 18%, var(--bg)); }
     & .today .bar { background: var(--accent); }
     & .letter { font-size: .75rem; color: var(--muted); }
+    & .day[data-tip]:hover .bar { background: color-mix(in oklab, var(--accent) 45%, var(--bg)); }
+    & .today[data-tip]:hover .bar { background: color-mix(in oklab, var(--fill) 80%, black); }
+  }
+  /* Explanations (app.js): words that have one are underlined on hover,
+     marks grow, and the box follows the pointer. */
+  :is(h2, p, th, td, div, span)[data-tip] { cursor: help; }
+  :is(h2, .kicker, p.n)[data-tip]:hover { text-decoration: underline dotted var(--faint); text-underline-offset: .25em; }
+  svg.chart .dot[data-tip] { cursor: help; outline: none; &:is(:hover, :focus-visible) { r: 6px; fill: var(--accent); } }
+  .hover-tip {
+    position: fixed;
+    z-index: 20;
+    max-width: min(20rem, calc(100vw - 1rem));
+    padding: .5rem .75rem;
+    border-radius: var(--r);
+    background: var(--ink);
+    color: var(--bg);
+    font-size: .8125rem;
+    line-height: 1.45;
+    pointer-events: none;
   }
   .done-check, .end-mark .check { color: var(--accent); vertical-align: -.1em; }
   .end-mark .check { width: 2rem; height: 2rem; }
@@ -300,11 +357,15 @@
     & .progress { position: fixed; inset: 0 0 auto; z-index: 1; margin: 0; border-radius: 0; background: none; }
     & .study-meta { grid-area: meta; margin: 0; color: inherit; justify-content: flex-start; flex-wrap: wrap; gap: 0 .9rem; }
     & .study-tools { grid-area: tools; margin: 0; gap: 0 1.1rem; }
+    & .count { min-height: 0; color: inherit; font-size: inherit; &:hover { color: var(--ink); text-decoration: none; } }
     & .study-tools :is(a, button) { display: inline-flex; align-items: center; min-height: 2rem; color: inherit; font-size: inherit; text-decoration: none; &:hover { color: var(--ink); text-decoration: none; } }
     & :is(.pause-cover, .leech-note) { grid-column: 1 / -1; margin-top: 1rem; }
     & .leech-note { color: var(--muted); }
     @media (width < 30rem) { grid-template: "meta" "tools" / 1fr; & .study-tools { margin-top: .25rem; } }
   }
+  /* "14 of 32" or "19 cards left", as last picked. */
+  .count .left, html.count-left .count .of { display: none; }
+  html.count-left .count .left { display: inline; }
   .sure-buttons { display: grid; grid-template-columns: 1fr 1fr; gap: .6rem; }
   .sure-ask { color: var(--muted); }
   .pause-cover { text-align: center; }
