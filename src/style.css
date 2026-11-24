@@ -244,6 +244,25 @@
     & .bar { width: 100%; max-width: 2rem; min-height: 2px; border-radius: 3px 3px 0 0; background: color-mix(in oklab, var(--accent) 18%, var(--bg)); }
     & .today .bar { background: var(--accent); }
     & .letter { font-size: .75rem; color: var(--muted); }
+    & .day[data-tip]:hover .bar { background: color-mix(in oklab, var(--accent) 45%, var(--bg)); }
+    & .today[data-tip]:hover .bar { background: color-mix(in oklab, var(--fill) 80%, black); }
+  }
+  /* Explanations (app.js): words that have one are underlined on hover,
+     marks grow, and the box follows the pointer. */
+  :is(h2, p, th, td, div, span)[data-tip] { cursor: help; }
+  :is(h2, .kicker, p.n)[data-tip]:hover { text-decoration: underline dotted var(--faint); text-underline-offset: .25em; }
+  svg.chart .dot[data-tip] { cursor: help; outline: none; &:is(:hover, :focus-visible) { r: 6px; fill: var(--accent); } }
+  .hover-tip {
+    position: fixed;
+    z-index: 20;
+    max-width: min(20rem, calc(100vw - 1rem));
+    padding: .5rem .75rem;
+    border-radius: var(--r);
+    background: var(--ink);
+    color: var(--bg);
+    font-size: .8125rem;
+    line-height: 1.45;
+    pointer-events: none;
   }
   .done-check, .end-mark .check { color: var(--accent); vertical-align: -.1em; }
   .end-mark .check { width: 2rem; height: 2rem; }
