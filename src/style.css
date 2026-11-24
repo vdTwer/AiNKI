@@ -300,11 +300,15 @@
     & .progress { position: fixed; inset: 0 0 auto; z-index: 1; margin: 0; border-radius: 0; background: none; }
     & .study-meta { grid-area: meta; margin: 0; color: inherit; justify-content: flex-start; flex-wrap: wrap; gap: 0 .9rem; }
     & .study-tools { grid-area: tools; margin: 0; gap: 0 1.1rem; }
+    & .count { min-height: 0; color: inherit; font-size: inherit; &:hover { color: var(--ink); text-decoration: none; } }
     & .study-tools :is(a, button) { display: inline-flex; align-items: center; min-height: 2rem; color: inherit; font-size: inherit; text-decoration: none; &:hover { color: var(--ink); text-decoration: none; } }
     & :is(.pause-cover, .leech-note) { grid-column: 1 / -1; margin-top: 1rem; }
     & .leech-note { color: var(--muted); }
     @media (width < 30rem) { grid-template: "meta" "tools" / 1fr; & .study-tools { margin-top: .25rem; } }
   }
+  /* "14 of 32" or "19 cards left", as last picked. */
+  .count .left, html.count-left .count .of { display: none; }
+  html.count-left .count .left { display: inline; }
   .sure-buttons { display: grid; grid-template-columns: 1fr 1fr; gap: .6rem; }
   .sure-ask { color: var(--muted); }
   .pause-cover { text-align: center; }

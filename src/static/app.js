@@ -29,6 +29,18 @@
     try { tz.value = Intl.DateTimeFormat().resolvedOptions().timeZone; } catch (e) {}
   }
 
+  // Study foot: "14 of 32" and "19 cards left" swap on click, remembered.
+  var countKey = 'ainki.count';
+  try { if (localStorage.getItem(countKey) === 'left') document.documentElement.classList.add('count-left'); } catch (e) {}
+  document.addEventListener('click', function (e) {
+    var count = e.target.closest('.study-foot .count');
+    if (!count) return;
+    // Let go of it, or the next space would swap again instead of revealing.
+    count.blur();
+    var left = document.documentElement.classList.toggle('count-left');
+    try { localStorage.setItem(countKey, left ? 'left' : 'of'); } catch (e2) {}
+  });
+
   // Invite links: a Copy button, where the browser lets us copy.
   Array.prototype.forEach.call(document.querySelectorAll('button[data-copy]'), function (b) {
     var from = document.getElementById(b.getAttribute('data-copy'));

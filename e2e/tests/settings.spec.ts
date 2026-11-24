@@ -141,7 +141,7 @@ test('catch-up mode holds back new cards', async ({ page, seed, account }) => {
   await form.getByRole('button', { name: 'Save' }).click();
   await expect.poll(() => sql<{ catch_up: number }>('SELECT catch_up FROM users WHERE id = ?', account.id)[0].catch_up).toBe(1);
   await page.goto('/study');
-  await expect(page.locator('main .study-meta .count')).toHaveText('1 of 1');
+  await expect(page.locator('main .study-meta .count .of')).toHaveText('1 of 1');
   await expect(page.locator('main .study .face.front')).toHaveText('old');
 });
 
