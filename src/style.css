@@ -167,6 +167,32 @@
     & input { flex: 2 1 12rem; margin: 0; }
     & select { flex: 1 1 7rem; width: auto; margin: 0; }
   }
+  /* A form's rows: a hint sits tight under its control, a fact row puts
+     its value at the right, the submit keeps a gap above. */
+  div.line { display: block; margin-bottom: 1.25rem; font-weight: 500; }
+  div.line:has(> .value) {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 1rem;
+    margin-bottom: .75rem;
+    & .value { font-weight: 400; text-align: right; }
+  }
+  .field.quiet { & .select { flex: none; } & select { margin: 0; } }
+  .hint { margin-bottom: 1.25rem; }
+  :is(label, div.line):has(+ .hint) { margin-bottom: .35rem; }
+  .sheet > :last-child { margin-bottom: 0; }
+  .form-foot { margin-top: 1.5rem; }
+  .form-foot button:not(.primary, .link) {
+    padding: .55rem 1.4rem;
+    border-radius: var(--r);
+    background: var(--soft);
+    color: var(--ink);
+    &:hover { text-decoration: none; background: color-mix(in oklab, var(--accent) 12%, var(--bg)); }
+  }
+  h1 + p.muted + ul.list { margin-top: 1.5rem; }
+  form.logout { margin-top: 1rem; }
+  p.build { margin-top: .75rem; }
   details > summary { cursor: pointer; min-height: var(--tap); display: flex; align-items: center; color: var(--accent); }
   details.danger > summary { color: light-dark(#a12f2f, #f08080); }
   .notice, .coach, .typed-echo { padding: 1rem 1.15rem; border-radius: var(--r); background: var(--soft); }
