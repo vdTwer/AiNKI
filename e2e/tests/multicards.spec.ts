@@ -110,3 +110,63 @@ test('without JavaScript the list is one plain form', async ({ browser, page: lo
   expect(sql<{ items_recalled: number }>('SELECT items_recalled FROM review_log r JOIN cards c ON c.id = r.card_id WHERE c.deck_id = ?', deck)[0].items_recalled).toBe(1);
   await context.close();
 });
+
+test('marked words: the editor picks them, and each is tapped in place', async ({ page, seed, account }) => {
+  const deck = await seed.deck('Life');
+  await page.goto(`/cards/new?deck=${deck}`);
+  await page.locator('#front').fill('What is life?');
+  await page.locator('#back').fill('Both good and bad.');
+  // Ctrl+M marks the selected word.
+  await page.locator('#back').evaluate((t: HTMLTextAreaElement) => t.setSelectionRange(5, 9));
+  await page.locator('#back').press('Control+m');
+  await page.locator('#back').evaluate((t: HTMLTextAreaElement) => t.setSelectionRange(18, 21));
+  await page.locator('#back').press('Control+m');
+  await expect(page.locator('#back')).toHaveValue('Both {{good}} and {{bad}}.');
+  await expect(page.locator('.multi-pick [data-split=marked] input')).toBeChecked();
+  await page.getByRole('button', { name: /add card/i }).click();
+  await expect(flash(page)).toHaveText('Card added.');
+  const [card] = sql<{ id: number; multi: string }>('SELECT id, multi FROM cards WHERE user_id = ?', account.id);
+  expect(card.multi).toBe('marked');
+
+  await page.goto('/study');
+  await page.keyboard.press(' ');
+  const back = page.locator('main form.list-answer .face.back');
+  // The sentence stays one sentence, with the words in it.
+  await expect(back.locator('.marked p')).toHaveText('Both good and bad.');
+  await back.locator('label.seg', { hasText: 'bad' }).click();
+  const done = page.locator('main form.list-answer').getByRole('button', { name: /done/i });
+  await expect(done).toContainText('1 of 2 remembered');
+  await done.click();
+  await expect
+    .poll(() => sql<{ position: number; rating: number }>(
+      'SELECT ci.position, r.rating FROM item_review_log r JOIN card_items ci ON ci.id = r.item_id WHERE ci.card_id = ? ORDER BY ci.position',
+      card.id,
+    ).map((i) => i.rating))
+    .toEqual([1, 3]);
+});
+
+test('relearning marked words: the known ones stay, the missed ones are gaps', async ({ page, seed }) => {
+  const deck = await seed.deck('Life');
+  const card = await seed.card(deck, 'What is life?', 'Both {{good}} and {{bad}}.', { multi: 'marked' });
+  // Good is known for weeks; bad was forgotten and is due again.
+  sql(
+    `UPDATE card_items SET state = 2, stability = 30, difficulty = 5, reps = 3,
+       last_review = unixepoch() - 86400, due = unixepoch() + 20 * 86400
+     WHERE card_id = ? AND position = 0`,
+    card,
+  );
+  sql('UPDATE card_items SET state = 3, stability = 1, difficulty = 7, reps = 3, lapses = 1, last_review = unixepoch() - 600, due = unixepoch() - 60 WHERE card_id = ? AND position = 1', card);
+  sql('UPDATE cards SET state = 3, reps = 3, lapses = 1, due = unixepoch() - 60, stability = 1, last_review = unixepoch() - 600 WHERE id = ?', card);
+
+  await page.goto('/study');
+  const skeleton = page.locator('main .skeleton');
+  await expect(skeleton).toContainText('Both good and');
+  await expect(skeleton).not.toContainText('bad');
+  await expect(skeleton.locator('.seg.gap')).toHaveCount(1);
+  // Every gap has the same width, so none hints at how long its answer is.
+  expect(await skeleton.locator('.seg.gap').evaluate((g) => g.style.cssText)).toBe('');
+  await page.keyboard.press(' ');
+  await expect(skeleton).toBeHidden();
+  // Only the missed word is asked again.
+  await expect(page.locator('main .face.back label.seg')).toHaveText(['bad']);
+});

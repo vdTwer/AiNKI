@@ -47,7 +47,8 @@ daily new/review limits and short learning steps. Scheduling is FSRS-6. \
 A deck can be paused or archived (update_deck status): its cards rest until it is active again.
 - Images: upload with upload_image (base64), then pass the returned image_id when creating or updating a card.
 - Multicards: when the back holds several things to recall (\"the seven theses on monsters\"), make one card \
-and set multi to how its back splits into items: 'list' (the items of its lists, numbered or not), 'sections' \
+and set multi to how its back splits into items: 'marked' (the parts marked {{like this}}, inline or as whole \
+list items; the rest of the back is shown, not asked), 'list' (the items of its lists, numbered or not), 'sections' \
 (one item per heading) or 'parts' (split at --- lines). Each item then has its own memory, and partial recall \
 (4 of 7) is tracked item by item. Text on the back that is no item (a line above a group, a closing remark) \
 stays and is shown with the answer. Such cards have a multi field and an items array.
@@ -332,7 +333,7 @@ pub struct UpdateCardParams {
     pub back_image_id: Option<String>,
     /// Move the card to this deck.
     pub deck_id: Option<i64>,
-    /// Learn the back item by item: 'list', 'sections' or 'parts'; 'none' makes it a plain card again.
+    /// Learn the back item by item: 'marked', 'list', 'sections' or 'parts'; 'none' makes it a plain card again.
     pub multi: Option<String>,
     /// true is multi 'list', false is 'none' (older name).
     pub list: Option<bool>,
@@ -697,7 +698,7 @@ impl AinkiMcp {
             multi: match (p.multi.as_deref(), p.list) {
                 (Some("none"), _) => Patch::Set(None),
                 (Some(m), _) => {
-                    Patch::Set(Some(Split::parse(m).ok_or("multi is 'list', 'sections', 'parts' or 'none'")?))
+                    Patch::Set(Some(Split::parse(m).ok_or("multi is 'marked', 'list', 'sections', 'parts' or 'none'")?))
                 }
                 (None, l) => l.map_or(Patch::Keep, |l| Patch::Set(l.then_some(Split::List))),
             },

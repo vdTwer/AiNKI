@@ -420,6 +420,77 @@ pub(crate) fn multi_back(pieces: &[Piece], asked: &[bool], tap: bool) -> Markup 
     }
 }
 
+/// A back with marked segments, rendered as it is written with every
+/// segment drawn by `segment` (its number and words). The marks become
+/// placeholders before the Markdown is rendered, so segments sit where they
+/// were written, inside sentences and list items alike.
+fn marked_with(back: &str, segment: impl Fn(usize, &str) -> Markup) -> Markup {
+    let src = markdown::tidy(back);
+    let marks = multi::marks(&src);
+    let hole = |n: usize| format!("\u{E000}{n}\u{E001}");
+    let mut text = String::with_capacity(src.len());
+    let mut at = 0;
+    for (n, (range, _)) in marks.iter().enumerate() {
+        text.push_str(src.get(at..range.start).unwrap_or(""));
+        text.push_str(&hole(n));
+        at = range.end;
+    }
+    text.push_str(src.get(at..).unwrap_or(""));
+    let mut html = markdown::render(&text);
+    for (n, (_, words)) in marks.iter().enumerate() {
+        html = html.replace(&hole(n), &segment(n, words).into_string());
+    }
+    html! { div.md.marked { (PreEscaped(html)) } }
+}
+
+/// A marked back as it is studied: every asked segment a word to tap when
+/// you remembered it (when `tap`; the editor's preview only shows them),
+/// the others plain, as known.
+pub(crate) fn marked_back(back: &str, asked: &[bool], tap: bool) -> Markup {
+    marked_with(back, |n, words| {
+        if !tap {
+            html! { span.seg.shown { (item_md(words)) } }
+        } else if asked.get(n).copied().unwrap_or(true) {
+            html! {
+                label.seg data-key=[(n < 9).then(|| (n + 1).to_string())] {
+                    input type="hidden" name="asked" value=(n);
+                    input type="checkbox" name="recalled" value=(n);
+                    (item_md(words))
+                }
+            }
+        } else {
+            html! { span.seg.known { (item_md(words)) } }
+        }
+    })
+}
+
+/// While relearning, the front shows the back's skeleton: what you already
+/// know in place, and a gap for each segment you are asked again. Every
+/// gap is as wide as the others, so none hints at its answer's length.
+pub(crate) fn marked_skeleton(back: &str, asked: &[bool]) -> Markup {
+    marked_with(back, |n, words| {
+        if asked.get(n).copied().unwrap_or(true) {
+            html! { span.seg.gap aria-label="a part to recall" {} }
+        } else {
+            html! { span.seg.known { (item_md(words)) } }
+        }
+    })
+}
+
+/// The back still marks exactly the stored items.
+fn marked_fits(card: &Card, how: Split, items: &[multi::CardItem]) -> bool {
+    how == Split::Marked && multi::items(&card.back, how).is_some_and(|i| i.len() == items.len())
+}
+
+/// A multicard's back for its stored items: marked segments in place when
+/// the back still marks exactly those, else rows (see [`multi_back`]).
+pub(crate) fn multi_answer(card: &Card, how: Split, items: &[multi::CardItem], asked: &[bool], tap: bool) -> Markup {
+    if marked_fits(card, how, items) {
+        return marked_back(&card.back, asked, tap);
+    }
+    multi_back(&pieces_for(card, how, items), asked, tap)
+}
+
 /// The back's pieces for its stored items. Should the back no longer split
 /// into those (it always does after a save), the items alone are shown.
 pub(crate) fn pieces_for(card: &Card, how: Split, items: &[multi::CardItem]) -> Vec<Piece> {
@@ -445,7 +516,6 @@ pub(crate) fn multi_study(
     let asked = multi::asked(card, items, now());
     let n_asked = asked.iter().filter(|a| **a).count();
     let known: Vec<&multi::CardItem> = items.iter().zip(&asked).filter(|(_, a)| !**a).map(|(i, _)| i).collect();
-    let pieces = pieces_for(card, how, items);
     html! {
         form.list-answer method="post" action="/study/answer" {
             input type="hidden" name="card" value=(card.id);
@@ -456,7 +526,11 @@ pub(crate) fn multi_study(
             div.card-area {
                 (state_tag(card.card_state()))
                 section.face.front { (face(&card.front, card.front_image.as_deref())) }
-                @if !known.is_empty() {
+                @if !known.is_empty() && marked_fits(card, how, items) {
+                    @if !revealed {
+                        div.skeleton { (marked_skeleton(&card.back, &asked)) }
+                    }
+                } @else if !known.is_empty() {
                     div.list-known {
                         p.known-label { "You know" }
                         ul { @for i in &known { li { (item_md(multi::title(&i.text))) } } }
@@ -468,7 +542,7 @@ pub(crate) fn multi_study(
                     (extras.echo)
                     @if let Some(img) = &card.back_image { img src=(format!("/media/{img}")) alt=""; }
                     p.list-how { "Tap the ones you remembered." }
-                    (multi_back(&pieces, &asked, true))
+                    (multi_answer(card, how, items, &asked, true))
                 }
             }
             (extras.reveal_inside)
