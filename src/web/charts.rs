@@ -28,8 +28,10 @@ fn svg(label: &str, body: &Markup) -> Markup {
 /// Recall week by week: (answers, remembered) per week, oldest first, with
 /// the aim as a dashed line. Weeks without answers leave a gap.
 pub fn retention(weeks: &[(i64, i64)], aim: Option<f64>) -> Markup {
-    let vals: Vec<Option<f64>> =
-        weeks.iter().map(|&(n, p)| (n > 0).then(|| num::i64_f64(p) / num::i64_f64(n))).collect();
+    let vals: Vec<Option<f64>> = weeks
+        .iter()
+        .map(|&(n, p)| (n > 0).then(|| num::i64_f64(p) / num::i64_f64(n)))
+        .collect();
     let seen: Vec<f64> = vals.iter().flatten().copied().chain(aim).collect();
     if vals.iter().all(Option::is_none) {
         return html! { p.muted.small { "No reviews of learned cards in the last twelve weeks." } };
@@ -38,20 +40,30 @@ pub fn retention(weeks: &[(i64, i64)], aim: Option<f64>) -> Markup {
     let low = seen.iter().copied().fold(1.0, f64::min);
     let lo = (((low - 0.03) * 20.0).floor() / 20.0).clamp(0.0, 0.8);
     let last = vals.len().saturating_sub(1).max(1);
-    let x = |i: usize| LEFT + num::usize_f64(i) * (W - LEFT - 8.0) / num::usize_f64(last);
+    let x = |i: usize| {
+        LEFT + num::usize_f64(i) * (W - LEFT - 8.0) / num::usize_f64(last)
+    };
     let y = |v: f64| ((1.0 - v) / (1.0 - lo)).mul_add(H - TOP - BOTTOM, TOP);
     let mut path = String::new();
     let mut pen = false;
     for (i, v) in vals.iter().enumerate() {
         match v {
             Some(v) => {
-                path.push_str(&format!("{}{:.1} {:.1}", if pen { 'L' } else { 'M' }, x(i), y(*v)));
+                path.push_str(&format!(
+                    "{}{:.1} {:.1}",
+                    if pen { 'L' } else { 'M' },
+                    x(i),
+                    y(*v)
+                ));
                 pen = true;
             }
             None => pen = false,
         }
     }
-    let grid: Vec<f64> = (0..=20).map(|k| f64::from(k) * 0.05).filter(|g| *g >= lo - 1e-9).collect();
+    let grid: Vec<f64> = (0..=20)
+        .map(|k| f64::from(k) * 0.05)
+        .filter(|g| *g >= lo - 1e-9)
+        .collect();
     svg(
         "Recall by week, last twelve weeks",
         &html! {
@@ -117,14 +129,23 @@ mod tests {
 
     #[test]
     fn retention_leaves_gaps_and_titles_each_week() {
-        let svg = retention(&[(10, 9), (0, 0), (20, 18)], Some(0.9)).into_string();
-        assert_eq!(svg.matches('M').count(), 2, "a week without answers breaks the line: {svg}");
-        assert!(svg.contains("<title>This week: 90%, 18 of 20 remembered</title>"));
+        let svg =
+            retention(&[(10, 9), (0, 0), (20, 18)], Some(0.9)).into_string();
+        assert_eq!(
+            svg.matches('M').count(),
+            2,
+            "a week without answers breaks the line: {svg}"
+        );
+        assert!(
+            svg.contains("<title>This week: 90%, 18 of 20 remembered</title>")
+        );
         assert!(svg.contains("aim 90%"));
     }
 
     #[test]
     fn retention_without_answers_says_so() {
-        assert!(retention(&[(0, 0); 12], None).into_string().contains("No reviews"));
+        assert!(
+            retention(&[(0, 0); 12], None).into_string().contains("No reviews")
+        );
     }
 }

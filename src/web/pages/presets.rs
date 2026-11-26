@@ -6,7 +6,11 @@
 )]
 use crate::web::*;
 
-pub(crate) async fn presets_page(State(app): State<AppState>, user: WebUser, Flash(msg): Flash) -> WebResult {
+pub(crate) async fn presets_page(
+    State(app): State<AppState>,
+    user: WebUser,
+    Flash(msg): Flash,
+) -> WebResult {
     let presets = app.list_presets(&user.access()).await?;
     Ok(layout_in(
         Nav::Settings,
@@ -60,7 +64,10 @@ pub(crate) async fn presets_page(State(app): State<AppState>, user: WebUser, Fla
 
 /// A preset written as a sheet: its name large, a description, then
 /// its numbers as lines.
-pub(crate) fn preset_sheet(p: &crate::service::Preset, used_by: &[String]) -> Markup {
+pub(crate) fn preset_sheet(
+    p: &crate::service::Preset,
+    used_by: &[String],
+) -> Markup {
     html! {
         div.sheet.form {
             label.title { span.face-label { "Name" } input type="text" name="name" required value=(p.name); }
@@ -117,7 +124,10 @@ pub(crate) struct TemplateQuery {
 }
 
 /// A preset as a template would make it, not saved yet.
-pub(crate) fn preset_draft(t: &presets::PresetTemplate, user_id: i64) -> crate::service::Preset {
+pub(crate) fn preset_draft(
+    t: &presets::PresetTemplate,
+    user_id: i64,
+) -> crate::service::Preset {
     crate::service::Preset {
         id: 0,
         user_id,
@@ -163,19 +173,38 @@ pub(crate) fn preset_new_view(
     )
 }
 
-pub(crate) async fn preset_new_page(user: WebUser, Query(q): Query<TemplateQuery>) -> WebResult {
-    let t = presets::template(q.template.as_deref().unwrap_or("standard")).ok_or(AppError::NotFound)?;
-    Ok(preset_new_view(&user.0, t.key, &preset_draft(t, user.0.id), None).into_response())
+pub(crate) async fn preset_new_page(
+    user: WebUser,
+    Query(q): Query<TemplateQuery>,
+) -> WebResult {
+    let t = presets::template(q.template.as_deref().unwrap_or("standard"))
+        .ok_or(AppError::NotFound)?;
+    Ok(preset_new_view(&user.0, t.key, &preset_draft(t, user.0.id), None)
+        .into_response())
 }
 
-pub(crate) async fn preset_create(State(app): State<AppState>, user: WebUser, Form(f): Form<PresetForm>) -> WebResult {
+pub(crate) async fn preset_create(
+    State(app): State<AppState>,
+    user: WebUser,
+    Form(f): Form<PresetForm>,
+) -> WebResult {
     let draft = f.draft(0, user.0.id);
     let template = f.template.clone();
-    match app.create_preset(&user.access(), template.as_deref(), f.into_input()).await {
-        Ok(p) => Ok(redirect_msg(format!("/presets/{}", p.id), "Preset created.")),
+    match app
+        .create_preset(&user.access(), template.as_deref(), f.into_input())
+        .await
+    {
+        Ok(p) => {
+            Ok(redirect_msg(format!("/presets/{}", p.id), "Preset created."))
+        }
         Err(e) => {
             let msg = fixable(&e).ok_or(e)?;
-            Ok(form_again(preset_new_view(&user.0, template.as_deref().unwrap_or("standard"), &draft, Some(&msg))))
+            Ok(form_again(preset_new_view(
+                &user.0,
+                template.as_deref().unwrap_or("standard"),
+                &draft,
+                Some(&msg),
+            )))
         }
     }
 }
@@ -194,8 +223,13 @@ pub(crate) async fn preset_view(
     let access = Access::web(user.clone());
     let p = app.preset(&access, id).await?;
     let workload = app.workload(&access, id, days).await?;
-    let decks: Vec<String> =
-        app.decks(&access).await?.into_iter().filter(|d| d.preset_id == id).map(|d| d.name).collect();
+    let decks: Vec<String> = app
+        .decks(&access)
+        .await?
+        .into_iter()
+        .filter(|d| d.preset_id == id)
+        .map(|d| d.name)
+        .collect();
     Ok(layout_in(
         Nav::Settings,
         "Edit preset",
@@ -215,7 +249,12 @@ pub(crate) async fn preset_view(
     ))
 }
 
-fn preset_cost(user: &User, p: &crate::service::Preset, workload: &[crate::tuning::Workload], days: usize) -> Markup {
+fn preset_cost(
+    user: &User,
+    p: &crate::service::Preset,
+    workload: &[crate::tuning::Workload],
+    days: usize,
+) -> Markup {
     let id = p.id;
     html! {
         h2 id="cost" { "What it costs" }
@@ -283,7 +322,9 @@ pub(crate) async fn preset_page(
     Query(q): Query<PresetQuery>,
 ) -> WebResult {
     let days = q.days.filter(|d| [30, 90, 365].contains(d)).unwrap_or(30);
-    Ok(preset_view(&app, &user.0, id, msg.as_deref(), None, None, days).await?.into_response())
+    Ok(preset_view(&app, &user.0, id, msg.as_deref(), None, None, days)
+        .await?
+        .into_response())
 }
 
 #[derive(Deserialize)]
@@ -321,7 +362,11 @@ impl PresetForm {
     }
 
     /// What was typed, to show the form again.
-    pub(crate) fn draft(&self, id: i64, user_id: i64) -> crate::service::Preset {
+    pub(crate) fn draft(
+        &self,
+        id: i64,
+        user_id: i64,
+    ) -> crate::service::Preset {
         crate::service::Preset {
             id,
             user_id,
@@ -354,12 +399,27 @@ pub(crate) async fn preset_update(
         Ok(_) => Ok(redirect_msg(format!("/presets/{id}"), "Preset saved.")),
         Err(e) => {
             let msg = fixable(&e).ok_or(e)?;
-            Ok(form_again(preset_view(&app, &user.0, id, None, Some(&draft), Some(&msg), 30).await?))
+            Ok(form_again(
+                preset_view(
+                    &app,
+                    &user.0,
+                    id,
+                    None,
+                    Some(&draft),
+                    Some(&msg),
+                    30,
+                )
+                .await?,
+            ))
         }
     }
 }
 
-pub(crate) async fn preset_delete(State(app): State<AppState>, user: WebUser, Path(id): Path<i64>) -> WebResult {
+pub(crate) async fn preset_delete(
+    State(app): State<AppState>,
+    user: WebUser,
+    Path(id): Path<i64>,
+) -> WebResult {
     or_back(
         format!("/presets/{id}"),
         async {

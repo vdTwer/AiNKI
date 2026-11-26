@@ -40,7 +40,12 @@ impl App {
     /// - `NotFound` if the deck isn't the user's or lies outside the token's decks.
     /// - `BadRequest` if no user has the recipient's name or it is the sender.
     /// - `Internal` if the database fails.
-    pub async fn share_deck(&self, access: &Access, deck_id: i64, recipient: &str) -> Result<OutgoingShare> {
+    pub async fn share_deck(
+        &self,
+        access: &Access,
+        deck_id: i64,
+        recipient: &str,
+    ) -> Result<OutgoingShare> {
         access.require_write()?;
         // Sending data to another account is an account-wide decision: a
         // token limited to some decks may not do it.
@@ -49,7 +54,10 @@ impl App {
         let to = match self.find_user(recipient).await {
             Ok(u) => u,
             Err(AppError::NotFound) => {
-                return Err(AppError::bad(format!("no user called '{}'", recipient.trim())));
+                return Err(AppError::bad(format!(
+                    "no user called '{}'",
+                    recipient.trim()
+                )));
             }
             Err(e) => return Err(e),
         };
@@ -75,7 +83,11 @@ impl App {
     ///
     /// - `NotFound` if the deck isn't the user's or lies outside the token's decks.
     /// - `Internal` if the database fails.
-    pub async fn outgoing_shares(&self, access: &Access, deck_id: i64) -> Result<Vec<OutgoingShare>> {
+    pub async fn outgoing_shares(
+        &self,
+        access: &Access,
+        deck_id: i64,
+    ) -> Result<Vec<OutgoingShare>> {
         self.deck(access, deck_id).await?;
         Ok(sqlx::query_as(
             "SELECT s.id, s.deck_id, u.username || '#' || printf('%04d', u.discriminator) AS \"to\", s.created_at
@@ -95,13 +107,19 @@ impl App {
     /// - `Forbidden` if the token is read-only.
     /// - `NotFound` if the share isn't one of the user's decks'.
     /// - `Internal` if the database fails.
-    pub async fn cancel_share(&self, access: &Access, share_id: i64) -> Result<i64> {
+    pub async fn cancel_share(
+        &self,
+        access: &Access,
+        share_id: i64,
+    ) -> Result<i64> {
         access.require_write()?;
-        let deck_id: i64 = sqlx::query_scalar("SELECT deck_id FROM deck_shares WHERE id = ? AND from_user = ?")
-            .bind(share_id)
-            .bind(access.user_id())
-            .fetch_one(&self.db)
-            .await?;
+        let deck_id: i64 = sqlx::query_scalar(
+            "SELECT deck_id FROM deck_shares WHERE id = ? AND from_user = ?",
+        )
+        .bind(share_id)
+        .bind(access.user_id())
+        .fetch_one(&self.db)
+        .await?;
         self.deck(access, deck_id).await?;
         sqlx::query("DELETE FROM deck_shares WHERE id = ? AND from_user = ?")
             .bind(share_id)
@@ -114,7 +132,10 @@ impl App {
     /// # Errors
     ///
     /// `Internal` if the database fails.
-    pub async fn incoming_shares(&self, access: &Access) -> Result<Vec<IncomingShare>> {
+    pub async fn incoming_shares(
+        &self,
+        access: &Access,
+    ) -> Result<Vec<IncomingShare>> {
         Ok(sqlx::query_as(
             "SELECT s.id, s.deck_id, d.name AS deck_name, d.description AS deck_description,
                 (SELECT COUNT(*) FROM cards c WHERE c.deck_id = d.id) AS cards,
@@ -132,14 +153,19 @@ impl App {
     /// - `Forbidden` if the token is read-only.
     /// - `NotFound` if the share isn't open for this user.
     /// - `Internal` if the database fails.
-    pub async fn decline_share(&self, access: &Access, share_id: i64) -> Result<()> {
+    pub async fn decline_share(
+        &self,
+        access: &Access,
+        share_id: i64,
+    ) -> Result<()> {
         access.require_write()?;
-        let n = sqlx::query("DELETE FROM deck_shares WHERE id = ? AND to_user = ?")
-            .bind(share_id)
-            .bind(access.user_id())
-            .execute(&self.db)
-            .await?
-            .rows_affected();
+        let n =
+            sqlx::query("DELETE FROM deck_shares WHERE id = ? AND to_user = ?")
+                .bind(share_id)
+                .bind(access.user_id())
+                .execute(&self.db)
+                .await?
+                .rows_affected();
         if n == 0 { Err(AppError::NotFound) } else { Ok(()) }
     }
 
@@ -150,19 +176,28 @@ impl App {
     /// - `Forbidden` if the token is read-only or limited to some decks.
     /// - `NotFound` if the share isn't open for this user.
     /// - `Internal` if the database fails.
-    pub async fn accept_share(&self, access: &Access, share_id: i64) -> Result<Deck> {
+    pub async fn accept_share(
+        &self,
+        access: &Access,
+        share_id: i64,
+    ) -> Result<Deck> {
         access.require_write()?;
         access.require_all_decks()?;
-        let share =
-            self.incoming_shares(access).await?.into_iter().find(|s| s.id == share_id).ok_or(AppError::NotFound)?;
+        let share = self
+            .incoming_shares(access)
+            .await?
+            .into_iter()
+            .find(|s| s.id == share_id)
+            .ok_or(AppError::NotFound)?;
         // Claim the offer first, so a second press (a double click, a slow
         // phone) finds nothing instead of making a second copy.
-        let claimed = sqlx::query("DELETE FROM deck_shares WHERE id = ? AND to_user = ?")
-            .bind(share_id)
-            .bind(access.user_id())
-            .execute(&self.db)
-            .await?
-            .rows_affected();
+        let claimed =
+            sqlx::query("DELETE FROM deck_shares WHERE id = ? AND to_user = ?")
+                .bind(share_id)
+                .bind(access.user_id())
+                .execute(&self.db)
+                .await?
+                .rows_affected();
         if claimed == 0 {
             return Err(AppError::NotFound);
         }
@@ -181,13 +216,19 @@ impl App {
             .execute(&self.db)
             .await;
             if let Err(e) = offered_again {
-                tracing::warn!("share {share_id} failed to copy and could not be offered again: {e}");
+                tracing::warn!(
+                    "share {share_id} failed to copy and could not be offered again: {e}"
+                );
             }
         }
         copied
     }
 
-    async fn copy_shared_deck(&self, access: &Access, share: &IncomingShare) -> Result<Deck> {
+    async fn copy_shared_deck(
+        &self,
+        access: &Access,
+        share: &IncomingShare,
+    ) -> Result<Deck> {
         #[derive(sqlx::FromRow)]
         struct Src {
             front: String,
@@ -213,17 +254,27 @@ impl App {
                 i += 1;
             }
         }
-        let deck = self.create_deck(access, &name, &share.deck_description, None).await?;
+        let deck = self
+            .create_deck(access, &name, &share.deck_description, None)
+            .await?;
 
         let mut images = std::collections::HashMap::new();
         for c in cards {
-            let front_image = self.copy_image(access.user_id(), c.front_image, &mut images).await?;
-            let back_image = self.copy_image(access.user_id(), c.back_image, &mut images).await?;
+            let front_image = self
+                .copy_image(access.user_id(), c.front_image, &mut images)
+                .await?;
+            let back_image = self
+                .copy_image(access.user_id(), c.back_image, &mut images)
+                .await?;
             let id = self
                 .insert_card(
                     access.user_id(),
                     deck.id,
-                    &NewCard { front_image, back_image, ..NewCard::new(&c.front, &c.back) },
+                    &NewCard {
+                        front_image,
+                        back_image,
+                        ..NewCard::new(&c.front, &c.back)
+                    },
                     "shared",
                 )
                 .await?;
@@ -247,7 +298,10 @@ impl App {
             return Ok(Some(new.clone()));
         }
         let new_id = uuid::Uuid::new_v4().simple().to_string();
-        if tokio::fs::copy(self.media_path(&id), self.media_path(&new_id)).await.is_err() {
+        if tokio::fs::copy(self.media_path(&id), self.media_path(&new_id))
+            .await
+            .is_err()
+        {
             return Ok(None);
         }
         sqlx::query(

@@ -68,7 +68,8 @@ pub fn quiet_until(user: &User, at: i64) -> Option<i64> {
     if !in_window(from, to, i64::from(local.hour())) {
         return None;
     }
-    let end_time = NaiveTime::from_hms_opt(num::i64_u32(to.clamp(0, 23)), 0, 0)?;
+    let end_time =
+        NaiveTime::from_hms_opt(num::i64_u32(to.clamp(0, 23)), 0, 0)?;
     let mut day = local.date_naive();
     loop {
         // A local time that doesn't exist (DST) is taken an hour later.
@@ -76,7 +77,9 @@ pub fn quiet_until(user: &User, at: i64) -> Option<i64> {
         let t = tz
             .from_local_datetime(&end)
             .earliest()
-            .or_else(|| tz.from_local_datetime(&(end + Duration::hours(1))).earliest())?
+            .or_else(|| {
+                tz.from_local_datetime(&(end + Duration::hours(1))).earliest()
+            })?
             .timestamp();
         if t > at {
             return Some(t);
@@ -113,7 +116,9 @@ impl Timing {
             answer_ms: ms(answer_ms),
             away_ms: ms(away_ms),
             paused_ms: ms(paused_ms),
-            input: ["key", "mouse", "touch", "pen"].into_iter().find(|k| input == Some(*k)),
+            input: ["key", "mouse", "touch", "pen"]
+                .into_iter()
+                .find(|k| input == Some(*k)),
         }
     }
 }
@@ -128,11 +133,16 @@ pub struct Confidence {
 
 impl Confidence {
     pub fn sure_pct(&self) -> Option<f64> {
-        (self.sure > 0).then(|| num::i64_f64(self.sure_recalled) * 100.0 / num::i64_f64(self.sure))
+        (self.sure > 0).then(|| {
+            num::i64_f64(self.sure_recalled) * 100.0 / num::i64_f64(self.sure)
+        })
     }
 
     pub fn unsure_pct(&self) -> Option<f64> {
-        (self.unsure > 0).then(|| num::i64_f64(self.unsure_recalled) * 100.0 / num::i64_f64(self.unsure))
+        (self.unsure > 0).then(|| {
+            num::i64_f64(self.unsure_recalled) * 100.0
+                / num::i64_f64(self.unsure)
+        })
     }
 }
 
@@ -195,9 +205,11 @@ impl App {
     ///
     /// `Internal` if the database fails.
     pub async fn session_start(&self, access: &Access) -> Result<Option<i64>> {
-        Ok(self.session_began(access).await?.map(|start| match access.user.break_skipped_at {
-            Some(b) if b > start => b,
-            _ => start,
+        Ok(self.session_began(access).await?.map(|start| {
+            match access.user.break_skipped_at {
+                Some(b) if b > start => b,
+                _ => start,
+            }
         }))
     }
 
@@ -242,7 +254,9 @@ impl App {
         if len <= 0 {
             return Ok(None);
         }
-        let Some(start) = self.session_start(access).await? else { return Ok(None) };
+        let Some(start) = self.session_start(access).await? else {
+            return Ok(None);
+        };
         let minutes = (now() - start) / 60;
         Ok((minutes >= len).then_some(BreakDue {
             studied: minutes,
@@ -253,13 +267,17 @@ impl App {
         }))
     }
 
-    async fn smart_break_due(&self, access: &Access) -> Result<Option<BreakDue>> {
+    async fn smart_break_due(
+        &self,
+        access: &Access,
+    ) -> Result<Option<BreakDue>> {
         let steps = self.break_steps(access).await?;
         // Back after a rest: that was the break.
         if steps.last().is_none_or(|s| now() - s.at >= breaks::REST_SECS) {
             return Ok(None);
         }
-        let st = breaks::replay(&steps, access.user.break_skipped_at.unwrap_or(0));
+        let st =
+            breaks::replay(&steps, access.user.break_skipped_at.unwrap_or(0));
         Ok(breaks::suggest(&st, rhythm(&access.user)).map(|s| BreakDue {
             studied: s.worked,
             length: s.minutes,
@@ -294,8 +312,12 @@ impl App {
         .bind(n - RECOVERY_DAYS * 86_400)
         .fetch_all(&self.db)
         .await?;
-        let usuals =
-            breaks::card_usuals(&rows.iter().map(|r| (r.card_id, r.think_ms.filter(|_| r.plain))).collect::<Vec<_>>());
+        let usuals = breaks::card_usuals(
+            &rows
+                .iter()
+                .map(|r| (r.card_id, r.think_ms.filter(|_| r.plain)))
+                .collect::<Vec<_>>(),
+        );
         Ok(rows
             .iter()
             .zip(usuals)
@@ -360,8 +382,8 @@ impl App {
     /// `Internal` if the database fails.
     pub async fn skip_break(&self, user: &User) -> Result<()> {
         let n = now();
-        let refused =
-            user.session_minutes == SMART_BREAKS && user.break_shown_at.is_some_and(|t| n - t < breaks::REST_SECS);
+        let refused = user.session_minutes == SMART_BREAKS
+            && user.break_shown_at.is_some_and(|t| n - t < breaks::REST_SECS);
         if refused {
             self.set_rhythm(user.id, rhythm(user).kept_going()).await?;
         }
@@ -374,12 +396,14 @@ impl App {
     }
 
     async fn set_rhythm(&self, user_id: i64, r: breaks::Rhythm) -> Result<()> {
-        sqlx::query("UPDATE users SET break_work_min = ?, break_mult = ? WHERE id = ?")
-            .bind(r.work_min)
-            .bind(r.mult)
-            .bind(user_id)
-            .execute(&self.db)
-            .await?;
+        sqlx::query(
+            "UPDATE users SET break_work_min = ?, break_mult = ? WHERE id = ?",
+        )
+        .bind(r.work_min)
+        .bind(r.mult)
+        .bind(user_id)
+        .execute(&self.db)
+        .await?;
         Ok(())
     }
 
@@ -389,13 +413,16 @@ impl App {
     ///
     /// `Internal` if the database fails.
     pub async fn overdue(&self, access: &Access) -> Result<i64> {
-        let ids: Vec<i64> = self.decks(access).await?.into_iter().map(|d| d.id).collect();
+        let ids: Vec<i64> =
+            self.decks(access).await?.into_iter().map(|d| d.id).collect();
         if ids.is_empty() {
             return Ok(0);
         }
         let sql = "SELECT COUNT(*) FROM cards WHERE user_id = ? AND suspended = 0 AND state = 2 AND due <= ?
              AND deck_id IN (SELECT value FROM json_each(?))";
-        let mut q = sqlx::query_scalar(sql).bind(access.user_id()).bind(now() - OVERDUE_SECS);
+        let mut q = sqlx::query_scalar(sql)
+            .bind(access.user_id())
+            .bind(now() - OVERDUE_SECS);
         q = q.bind(crate::service::id_list(&ids));
         Ok(q.fetch_one(&self.db).await?)
     }
@@ -406,7 +433,11 @@ impl App {
     /// # Errors
     ///
     /// `Internal` if the database fails.
-    pub async fn confidence(&self, access: &Access, deck_id: Option<i64>) -> Result<Confidence> {
+    pub async fn confidence(
+        &self,
+        access: &Access,
+        deck_id: Option<i64>,
+    ) -> Result<Confidence> {
         #[derive(sqlx::FromRow)]
         struct Row {
             confidence: i64,
@@ -455,13 +486,19 @@ impl App {
         if let Some((f, t)) = quiet
             && (!(0..24).contains(&f) || !(0..24).contains(&t))
         {
-            return Err(AppError::bad("quiet hours must be whole hours from 0 to 23"));
+            return Err(AppError::bad(
+                "quiet hours must be whole hours from 0 to 23",
+            ));
         }
         if !(SMART_BREAKS..=240).contains(&session_minutes) {
-            return Err(AppError::bad("session length must be -1 (smart breaks), 0 (off) or up to 240 minutes"));
+            return Err(AppError::bad(
+                "session length must be -1 (smart breaks), 0 (off) or up to 240 minutes",
+            ));
         }
         if !(1..=9999).contains(&catch_up_reviews) {
-            return Err(AppError::bad("catch-up reviews must be between 1 and 9999 a day"));
+            return Err(AppError::bad(
+                "catch-up reviews must be between 1 and 9999 a day",
+            ));
         }
         sqlx::query(
             "UPDATE users SET quiet_from = ?, quiet_to = ?, quiet_lifted_until = NULL, session_minutes = ?,
@@ -483,7 +520,11 @@ impl App {
     ///
     /// `Internal` if the database fails.
     pub async fn set_catch_up(&self, user_id: i64, on: bool) -> Result<()> {
-        sqlx::query("UPDATE users SET catch_up = ? WHERE id = ?").bind(on).bind(user_id).execute(&self.db).await?;
+        sqlx::query("UPDATE users SET catch_up = ? WHERE id = ?")
+            .bind(on)
+            .bind(user_id)
+            .execute(&self.db)
+            .await?;
         Ok(())
     }
 }

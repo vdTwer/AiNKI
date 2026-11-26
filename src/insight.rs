@@ -29,7 +29,8 @@ pub struct DeckRetention {
 
 impl DeckRetention {
     pub fn short(&self) -> bool {
-        self.reviews >= MIN_SAMPLE && self.actual.is_some_and(|a| a < self.target - SHORT_BY)
+        self.reviews >= MIN_SAMPLE
+            && self.actual.is_some_and(|a| a < self.target - SHORT_BY)
     }
 }
 
@@ -69,8 +70,16 @@ impl Week {
         let spread = self.reviews > 0 && self.days_studied < 4;
         match (self.attention, self.retention, self.target) {
             (1.., _, _) => Tip::Attention,
-            (_, Some(r), Some(t)) if self.retention_sample >= MIN_SAMPLE && r < t - SHORT_BY => Tip::BelowTarget,
-            (_, Some(r), Some(t)) if self.retention_sample >= 100 && r > t + 0.04 => Tip::AboveTarget,
+            (_, Some(r), Some(t))
+                if self.retention_sample >= MIN_SAMPLE && r < t - SHORT_BY =>
+            {
+                Tip::BelowTarget
+            }
+            (_, Some(r), Some(t))
+                if self.retention_sample >= 100 && r > t + 0.04 =>
+            {
+                Tip::AboveTarget
+            }
             _ if spread => Tip::Spread,
             _ => Tip::Nothing,
         }
@@ -83,10 +92,17 @@ impl App {
     /// # Errors
     ///
     /// `Internal` if the database fails.
-    pub async fn deck_retention(&self, access: &Access) -> Result<Vec<DeckRetention>> {
+    pub async fn deck_retention(
+        &self,
+        access: &Access,
+    ) -> Result<Vec<DeckRetention>> {
         let decks = self.decks(access).await?;
-        let presets: HashMap<i64, f64> =
-            self.list_presets(access).await?.into_iter().map(|p| (p.id, p.desired_retention)).collect();
+        let presets: HashMap<i64, f64> = self
+            .list_presets(access)
+            .await?
+            .into_iter()
+            .map(|p| (p.id, p.desired_retention))
+            .collect();
         let since = access.user.clock().start_of_today() - 30 * 86_400;
         let rows: Vec<(i64, i64, i64)> = sqlx::query_as(
             "SELECT deck_id, COUNT(*), COALESCE(SUM(rating > 1), 0) FROM review_log
@@ -97,7 +113,8 @@ impl App {
         .bind(since)
         .fetch_all(&self.db)
         .await?;
-        let by_deck: HashMap<i64, (i64, i64)> = rows.into_iter().map(|(d, n, ok)| (d, (n, ok))).collect();
+        let by_deck: HashMap<i64, (i64, i64)> =
+            rows.into_iter().map(|(d, n, ok)| (d, (n, ok))).collect();
         Ok(decks
             .into_iter()
             // Put away, so off the list; paused decks still have a record to show.
@@ -121,7 +138,8 @@ impl App {
     ///
     /// `Internal` if the database fails.
     pub async fn week(&self, access: &Access) -> Result<Week> {
-        let attention = num::usize_i64(self.attention(access, None).await?.len());
+        let attention =
+            num::usize_i64(self.attention(access, None).await?.len());
         self.week_with(access, attention).await
     }
 
@@ -130,18 +148,29 @@ impl App {
     /// # Errors
     ///
     /// `Internal` if the database fails.
-    pub async fn week_with(&self, access: &Access, attention: i64) -> Result<Week> {
+    pub async fn week_with(
+        &self,
+        access: &Access,
+        attention: i64,
+    ) -> Result<Week> {
         let clock = access.user.clock();
         let today = clock.today();
         let start = clock.day_start(today - Duration::days(6));
-        let (presets, decks, rows) =
-            tokio::try_join!(self.list_presets(access), self.decks(access), self.answers_since(access, start))?;
-        let presets: HashMap<i64, f64> = presets.into_iter().map(|p| (p.id, p.desired_retention)).collect();
+        let (presets, decks, rows) = tokio::try_join!(
+            self.list_presets(access),
+            self.decks(access),
+            self.answers_since(access, start)
+        )?;
+        let presets: HashMap<i64, f64> =
+            presets.into_iter().map(|p| (p.id, p.desired_retention)).collect();
         // The decks this access sees, with the retention each aims for.
-        let targets: HashMap<i64, f64> =
-            decks.into_iter().map(|d| (d.id, presets.get(&d.preset_id).copied().unwrap_or(0.9))).collect();
+        let targets: HashMap<i64, f64> = decks
+            .into_iter()
+            .map(|d| (d.id, presets.get(&d.preset_id).copied().unwrap_or(0.9)))
+            .collect();
 
-        let (mut reviews, mut ms, mut sample, mut passed, mut target_sum) = (0, 0, 0, 0, 0.0);
+        let (mut reviews, mut ms, mut sample, mut passed, mut target_sum) =
+            (0, 0, 0, 0, 0.0);
         let mut days = HashSet::new();
         let mut new_cards = HashSet::new();
         for r in rows.iter().filter(|r| targets.contains_key(&r.deck_id)) {
@@ -157,7 +186,8 @@ impl App {
                 target_sum += targets.get(&r.deck_id).copied().unwrap_or(0.9);
             }
         }
-        let retention = (sample > 0).then(|| num::i64_f64(passed) / num::i64_f64(sample));
+        let retention =
+            (sample > 0).then(|| num::i64_f64(passed) / num::i64_f64(sample));
         let target = (sample > 0).then(|| target_sum / num::i64_f64(sample));
         let mut week = Week {
             reviews,

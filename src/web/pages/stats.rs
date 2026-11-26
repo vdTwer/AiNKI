@@ -32,7 +32,11 @@ pub(crate) struct StatsPage {
 }
 
 impl StatsPage {
-    async fn load(app: &App, access: &Access, deck: Option<i64>) -> Result<Self, AppError> {
+    async fn load(
+        app: &App,
+        access: &Access,
+        deck: Option<i64>,
+    ) -> Result<Self, AppError> {
         let the_deck = async {
             match deck {
                 Some(id) => app.deck(access, id).await.map(Some),
@@ -50,41 +54,72 @@ impl StatsPage {
         )?;
         let active: Vec<_> = summaries
             .into_iter()
-            .filter(|d| d.deck.status != DeckStatus::Archived && deck.is_none_or(|id| id == d.deck.id))
+            .filter(|d| {
+                d.deck.status != DeckStatus::Archived
+                    && deck.is_none_or(|id| id == d.deck.id)
+            })
             .collect();
         let outlook = app.outlook(access, &active).await?;
-        let total_due = active.iter().map(crate::service::DeckSummary::due_total).sum();
-        let retention =
-            retention.into_iter().filter(|d| d.reviews > 0 && deck.is_none_or(|id| id == d.deck_id)).collect();
+        let total_due =
+            active.iter().map(crate::service::DeckSummary::due_total).sum();
+        let retention = retention
+            .into_iter()
+            .filter(|d| d.reviews > 0 && deck.is_none_or(|id| id == d.deck_id))
+            .collect();
         // The week and the coach speak about everything: all decks only.
         let (week, notes) = if deck.is_none() {
-            let (flagged, overdue, reads) =
-                tokio::try_join!(app.attention(access, None), app.overdue(access), app.coach_reads(access),)?;
+            let (flagged, overdue, reads) = tokio::try_join!(
+                app.attention(access, None),
+                app.overdue(access),
+                app.coach_reads(access),
+            )?;
             let attention = num::usize_i64(flagged.len());
             let week = app.week_with(access, attention).await?;
-            let known = advice::Known { decks: &active, stats: &s, attention: &flagged, overdue };
+            let known = advice::Known {
+                decks: &active,
+                stats: &s,
+                attention: &flagged,
+                overdue,
+            };
             (Some(week), advice::advice_with(access, &known, reads))
         } else {
             (None, vec![])
         };
-        Ok(Self { deck: the_deck, s, cal, sure, week, retention, history, notes, outlook, total_due })
+        Ok(Self {
+            deck: the_deck,
+            s,
+            cal,
+            sure,
+            week,
+            retention,
+            history,
+            notes,
+            outlook,
+            total_due,
+        })
     }
 
     fn this_week(&self) -> Option<f64> {
-        let (total, passed) = self.history.weeks.last().copied().unwrap_or((0, 0));
+        let (total, passed) =
+            self.history.weeks.last().copied().unwrap_or((0, 0));
         (total > 0).then(|| num::i64_f64(passed) / num::i64_f64(total))
     }
 
     /// The decks' average aim.
     fn aim(&self) -> Option<f64> {
         let aims: Vec<f64> = self.retention.iter().map(|r| r.target).collect();
-        (!aims.is_empty()).then(|| aims.iter().sum::<f64>() / num::usize_f64(aims.len()))
+        (!aims.is_empty())
+            .then(|| aims.iter().sum::<f64>() / num::usize_f64(aims.len()))
     }
 
     /// The deck furthest below its aim, if any is.
     fn worst(&self) -> Option<&insight::DeckRetention> {
-        let gap = |r: &insight::DeckRetention| r.actual.unwrap_or(1.0) - r.target;
-        self.retention.iter().filter(|r| r.short()).min_by(|a, b| gap(a).total_cmp(&gap(b)))
+        let gap =
+            |r: &insight::DeckRetention| r.actual.unwrap_or(1.0) - r.target;
+        self.retention
+            .iter()
+            .filter(|r| r.short())
+            .min_by(|a, b| gap(a).total_cmp(&gap(b)))
     }
 
     /// Days with a review among the last seven.
@@ -266,19 +301,33 @@ struct WeekAhead {
 }
 
 impl WeekAhead {
-    fn new(clock: &scheduler::Clock, today_due: i64, outlook: &Outlook) -> Self {
+    fn new(
+        clock: &scheduler::Clock,
+        today_due: i64,
+        outlook: &Outlook,
+    ) -> Self {
         let due = today_due.max(0);
         let today_due = num::i64_f64(due);
-        let days: Vec<(chrono::NaiveDate, f64)> = (outlook.days.iter().enumerate())
-            .map(|(i, &forecast)| {
-                (clock.today() + chrono::Duration::days(num::usize_i64(i)), if i == 0 { today_due } else { forecast })
-            })
-            .collect();
+        let days: Vec<(chrono::NaiveDate, f64)> =
+            (outlook.days.iter().enumerate())
+                .map(|(i, &forecast)| {
+                    (
+                        clock.today()
+                            + chrono::Duration::days(num::usize_i64(i)),
+                        if i == 0 { today_due } else { forecast },
+                    )
+                })
+                .collect();
         let tomorrow = outlook.days[1];
         let week = today_due + outlook.later();
         let (low, high) = outlook.later_range();
         Self {
-            most: days.iter().map(|&(_, n)| num::f64_i64(n.round())).max().unwrap_or(0).max(1),
+            most: days
+                .iter()
+                .map(|&(_, n)| num::f64_i64(n.round()))
+                .max()
+                .unwrap_or(0)
+                .max(1),
             days,
             tomorrow: num::f64_i64(tomorrow.round()),
             tomorrow_settled: (tomorrow - tomorrow.round()).abs() < 0.05,
@@ -289,16 +338,30 @@ impl WeekAhead {
     }
 }
 
-fn week_ahead(user: &User, today_due: i64, outlook: &Outlook, seconds_per_review: Option<f64>) -> Markup {
+fn week_ahead(
+    user: &User,
+    today_due: i64,
+    outlook: &Outlook,
+    seconds_per_review: Option<f64>,
+) -> Markup {
     let clock = user.clock();
     let w = WeekAhead::new(&clock, today_due, outlook);
     let tip = |i: usize, date: chrono::NaiveDate, n: f64| {
         let r = num::f64_i64(n.round());
-        let words = if r == 0 { "nothing due".to_string() } else { count(r, "card") };
+        let words =
+            if r == 0 { "nothing due".to_string() } else { count(r, "card") };
         let about = if i >= 2 && r > 0 { "about " } else { "" };
         format!("{}: {about}{words}", format::short_day(&clock, date))
     };
-    let WeekAhead { days, tomorrow: tomorrow_n, tomorrow_settled, week, range: (low, high), total, most } = w;
+    let WeekAhead {
+        days,
+        tomorrow: tomorrow_n,
+        tomorrow_settled,
+        week,
+        range: (low, high),
+        total,
+        most,
+    } = w;
     html! {
         div.week-ahead {
             section.week aria-label="Next seven days" {
@@ -342,13 +405,14 @@ fn week_ahead(user: &User, today_due: i64, outlook: &Outlook, seconds_per_review
 // What the three big numbers count, on hover.
 pub(crate) const WHY_DUE: &str = "Learned cards whose review falls today or earlier. New cards come on top. The time below uses your average time per review.";
 pub(crate) const WHY_WEEK: &str = "Of the learned cards that came due in the last 7 days, the share you remembered.";
-pub(crate) const WHY_STREAK: &str =
-    "Days in a row with at least one review. Today counts once you study, and doesn't break the streak before then.";
+pub(crate) const WHY_STREAK: &str = "Days in a row with at least one review. Today counts once you study, and doesn't break the streak before then.";
 
 /// Stats open with three numbers to act on; the charts follow.
 fn desk_big3(d: &StatsPage) -> Markup {
-    let (s, this_week, aim, worst, last7) = (&d.s, d.this_week(), d.aim(), d.worst(), d.last7());
-    let minutes = s.seconds_per_review.map(|sec| sec * num::i64_f64(s.due_now) / 60.0);
+    let (s, this_week, aim, worst, last7) =
+        (&d.s, d.this_week(), d.aim(), d.worst(), d.last7());
+    let minutes =
+        s.seconds_per_review.map(|sec| sec * num::i64_f64(s.due_now) / 60.0);
     html! {
     section.big3 {
         div {
@@ -409,7 +473,8 @@ fn desk_charts(user: &User, d: &StatsPage) -> Markup {
 
 fn desk_decks(d: &StatsPage) -> Markup {
     let worst = d.worst();
-    let rows: Vec<_> = d.retention.iter().filter(|r| r.actual.is_some()).collect();
+    let rows: Vec<_> =
+        d.retention.iter().filter(|r| r.actual.is_some()).collect();
     html! {
     @if !rows.is_empty() {
         section.chart-sec {
@@ -435,7 +500,8 @@ fn desk_decks(d: &StatsPage) -> Markup {
 }
 
 fn desk_model(d: &StatsPage) -> Markup {
-    let bins: Vec<(f64, f64, i64)> = d.cal.bins.iter().map(|b| (b.predicted, b.actual, b.reviews)).collect();
+    let bins: Vec<(f64, f64, i64)> =
+        d.cal.bins.iter().map(|b| (b.predicted, b.actual, b.reviews)).collect();
     html! {
     @if d.cal.reviews >= 50 {
         section.chart-sec {

@@ -1,6 +1,9 @@
 //! Stats: counts, forecast, recall and streaks.
 
-#[allow(clippy::wildcard_imports, reason = "an area of the service sees the service's shared imports and types")]
+#[allow(
+    clippy::wildcard_imports,
+    reason = "an area of the service sees the service's shared imports and types"
+)]
 use super::*;
 
 #[derive(Debug, Default, Serialize)]
@@ -36,7 +39,8 @@ impl Stats {
     /// Whole minutes `cards` answers take, rounded up: measured thinking
     /// time once there's enough history, a rough guess before.
     pub fn minutes_for(&self, cards: i64) -> i64 {
-        let seconds = self.seconds_per_review.unwrap_or(Self::GUESS_SECONDS_PER_REVIEW);
+        let seconds =
+            self.seconds_per_review.unwrap_or(Self::GUESS_SECONDS_PER_REVIEW);
         num::f64_i64((num::i64_f64(cards) * seconds / 60.0).ceil())
     }
 }
@@ -58,13 +62,19 @@ impl App {
     ///
     /// - `NotFound` if a deck is given that the access doesn't see.
     /// - `Internal` if the database fails. Also `Internal` if stored FSRS parameters are broken.
-    pub async fn stats(&self, access: &Access, deck_id: Option<i64>) -> Result<Stats> {
+    pub async fn stats(
+        &self,
+        access: &Access,
+        deck_id: Option<i64>,
+    ) -> Result<Stats> {
         let deck_ids: Vec<i64> = match deck_id {
             Some(id) => {
                 self.deck(access, id).await?;
                 vec![id]
             }
-            None => self.decks(access).await?.into_iter().map(|d| d.id).collect(),
+            None => {
+                self.decks(access).await?.into_iter().map(|d| d.id).collect()
+            }
         };
         let mut stats = Stats::default();
         if deck_ids.is_empty() {
@@ -78,7 +88,13 @@ impl App {
         Ok(stats)
     }
 
-    async fn count_cards(&self, access: &Access, deck_ids: &[i64], clock: &Clock, stats: &mut Stats) -> Result<()> {
+    async fn count_cards(
+        &self,
+        access: &Access,
+        deck_ids: &[i64],
+        clock: &Clock,
+        stats: &mut Stats,
+    ) -> Result<()> {
         // Everything is counted in the database: a long-time Anki user has
         // tens of thousands of cards and hundreds of thousands of reviews,
         // and loading them all made the home page take seconds.
@@ -99,7 +115,9 @@ impl App {
             }
             match state {
                 CardState::New => stats.new += n,
-                CardState::Learning | CardState::Relearning => stats.learning += n,
+                CardState::Learning | CardState::Relearning => {
+                    stats.learning += n;
+                }
                 CardState::Review => stats.review += n,
             }
             if state != CardState::New {
@@ -120,39 +138,61 @@ impl App {
         let today = clock.today();
         // Forecast and recall chance: only the few numbers they need.
         let horizon = 14;
-        let horizon_end = clock.day_start(today + Duration::days(num::usize_i64(horizon)));
+        let horizon_end =
+            clock.day_start(today + Duration::days(num::usize_i64(horizon)));
         let sql = "SELECT json_group_array(json_array(deck_id, due, stability, last_review)) FROM cards
              WHERE user_id = ? AND deck_id IN (SELECT value FROM json_each(?)) AND state != 0 AND suspended = 0";
-        let q = sqlx::query_scalar::<_, Json<Vec<(i64, i64, Option<f64>, Option<i64>)>>>(sql)
-            .bind(access.user_id())
-            .bind(id_list(deck_ids));
+        let q = sqlx::query_scalar::<
+            _,
+            Json<Vec<(i64, i64, Option<f64>, Option<i64>)>>,
+        >(sql)
+        .bind(access.user_id())
+        .bind(id_list(deck_ids));
         let Json(learned) = q.fetch_one(&self.db).await?;
         let book = self.param_book(access).await?;
         let decays: HashMap<i64, f32> = deck_ids
             .iter()
-            .map(|&d| scheduler::decay_for(book.for_deck(d)).map(|decay| (d, decay)))
+            .map(|&d| {
+                scheduler::decay_for(book.for_deck(d)).map(|decay| (d, decay))
+            })
             .collect::<std::result::Result<_, _>>()?;
         let mut forecast = vec![0i64; horizon];
         let (mut r_sum, mut r_n) = (0.0, 0);
         for (deck, due, stability, last_review) in learned {
-            let decay = decays.get(&deck).copied().unwrap_or(fsrs::FSRS6_DEFAULT_DECAY);
+            let decay =
+                decays.get(&deck).copied().unwrap_or(fsrs::FSRS6_DEFAULT_DECAY);
             if due < horizon_end {
-                let day = num::i64_usize((clock.date_of(due) - today).num_days().max(0));
+                let day = num::i64_usize(
+                    (clock.date_of(due) - today).num_days().max(0),
+                );
                 if let Some(n) = forecast.get_mut(day) {
                     *n += 1;
                 }
             }
             if let (Some(s), Some(last)) = (stability, last_review) {
-                let elapsed = num::i64_f32((clock.now - last).max(0)) / 86_400.0;
-                let memory = fsrs::MemoryState { stability: num::f64_f32(s), difficulty: 5.0 };
-                r_sum += f64::from(fsrs::current_retrievability(memory, elapsed, decay));
+                let elapsed =
+                    num::i64_f32((clock.now - last).max(0)) / 86_400.0;
+                let memory = fsrs::MemoryState {
+                    stability: num::f64_f32(s),
+                    difficulty: 5.0,
+                };
+                r_sum += f64::from(fsrs::current_retrievability(
+                    memory, elapsed, decay,
+                ));
                 r_n += 1;
             }
         }
         stats.forecast = forecast
             .into_iter()
             .enumerate()
-            .map(|(i, n)| ((today + Duration::days(num::usize_i64(i))).format("%Y-%m-%d").to_string(), n))
+            .map(|(i, n)| {
+                (
+                    (today + Duration::days(num::usize_i64(i)))
+                        .format("%Y-%m-%d")
+                        .to_string(),
+                    n,
+                )
+            })
             .collect();
         if r_n > 0 {
             stats.average_retrievability = Some(r_sum / f64::from(r_n));
@@ -162,7 +202,13 @@ impl App {
     }
 
     /// Answers today and in the last 30 days: counts, minutes, recall.
-    async fn count_answers(&self, access: &Access, deck_ids: &[i64], clock: &Clock, stats: &mut Stats) -> Result<()> {
+    async fn count_answers(
+        &self,
+        access: &Access,
+        deck_ids: &[i64],
+        clock: &Clock,
+        stats: &mut Stats,
+    ) -> Result<()> {
         let today = clock.today();
         let since = |from: i64| {
             let sql = "SELECT COUNT(*), COUNT(DISTINCT card_id), COALESCE(SUM(duration_ms), 0),
@@ -174,7 +220,10 @@ impl App {
             let user_id = access.user_id();
             let deck_ids = deck_ids.to_vec();
             async move {
-                let q = sqlx::query_as::<_, (i64, i64, i64, i64, i64, i64, i64)>(sql)
+                let q =
+                    sqlx::query_as::<_, (i64, i64, i64, i64, i64, i64, i64)>(
+                        sql,
+                    )
                     .bind(user_id)
                     .bind(from)
                     .bind(id_list(&deck_ids));
@@ -184,16 +233,19 @@ impl App {
         let (n, cards, ms, ..) = since(clock.start_of_today()).await?;
         stats.reviews_today = n;
         stats.cards_today = cards;
-        stats.minutes_today = (num::i64_f64(ms) / 60_000.0 * 10.0).round() / 10.0;
+        stats.minutes_today =
+            (num::i64_f64(ms) / 60_000.0 * 10.0).round() / 10.0;
         let (n, _, _, review_total, passed, timed_ms, timed) =
             since(clock.day_start(today - Duration::days(30))).await?;
         stats.reviews_30d = n;
         stats.retention_sample_30d = review_total;
         if review_total > 0 {
-            stats.true_retention_30d = Some(num::i64_f64(passed) / num::i64_f64(review_total));
+            stats.true_retention_30d =
+                Some(num::i64_f64(passed) / num::i64_f64(review_total));
         }
         if timed >= 10 {
-            stats.seconds_per_review = Some(num::i64_f64(timed_ms) / num::i64_f64(timed) / 1000.0);
+            stats.seconds_per_review =
+                Some(num::i64_f64(timed_ms) / num::i64_f64(timed) / 1000.0);
         }
 
         Ok(())
@@ -201,11 +253,19 @@ impl App {
 
     /// Days in a row with a review, up to a year back; today counts once it
     /// has one, and doesn't break the streak before it has.
-    async fn streak(&self, access: &Access, deck_ids: &[i64], clock: &Clock) -> Result<i64> {
+    async fn streak(
+        &self,
+        access: &Access,
+        deck_ids: &[i64],
+        clock: &Clock,
+    ) -> Result<i64> {
         let today = clock.today();
         // One query asks every day of the last year at once: each pair is a
         // day's start and end in the user's zone, so DST is the clock's job.
-        let days = day_bounds(clock, (0..=STREAK_DAYS).map(|back| today - Duration::days(back)));
+        let days = day_bounds(
+            clock,
+            (0..=STREAK_DAYS).map(|back| today - Duration::days(back)),
+        );
         let sql = "SELECT CAST(d.key AS INTEGER) FROM json_each(?) d WHERE EXISTS (SELECT 1 FROM review_log
                 WHERE user_id = ? AND rating > 0 AND reviewed_at >= d.value ->> 0 AND reviewed_at < d.value ->> 1
                 AND deck_id IN (SELECT value FROM json_each(?)))";
@@ -226,13 +286,19 @@ impl App {
     ///
     /// - `NotFound` if a deck is given that the access doesn't see.
     /// - `Internal` if the database fails.
-    pub async fn history(&self, access: &Access, deck_id: Option<i64>) -> Result<History> {
+    pub async fn history(
+        &self,
+        access: &Access,
+        deck_id: Option<i64>,
+    ) -> Result<History> {
         let deck_ids: Vec<i64> = match deck_id {
             Some(id) => {
                 self.deck(access, id).await?;
                 vec![id]
             }
-            None => self.decks(access).await?.into_iter().map(|d| d.id).collect(),
+            None => {
+                self.decks(access).await?.into_iter().map(|d| d.id).collect()
+            }
         };
         let clock = access.user.clock();
         let today = clock.today();
@@ -248,7 +314,10 @@ impl App {
                  WHERE r.rating > 0 AND r.deck_id IN (SELECT value FROM json_each(?))
                  GROUP BY d.key";
             let q = sqlx::query_as::<_, (i64, i64, i64, i64)>(sql)
-                .bind(Json(day_bounds(&clock, (0..HISTORY_DAYS).map(|i| first + Duration::days(i)))))
+                .bind(Json(day_bounds(
+                    &clock,
+                    (0..HISTORY_DAYS).map(|i| first + Duration::days(i)),
+                )))
                 .bind(access.user_id())
                 .bind(id_list(&deck_ids));
             for (i, n, reviews, passed) in q.fetch_all(&self.db).await? {
@@ -266,7 +335,14 @@ impl App {
             days: days
                 .into_iter()
                 .enumerate()
-                .map(|(i, n)| ((first + Duration::days(num::usize_i64(i))).format("%Y-%m-%d").to_string(), n))
+                .map(|(i, n)| {
+                    (
+                        (first + Duration::days(num::usize_i64(i)))
+                            .format("%Y-%m-%d")
+                            .to_string(),
+                        n,
+                    )
+                })
                 .collect(),
             weeks,
         })
@@ -287,7 +363,11 @@ impl App {
     /// The user's own answers from `since` on, oldest first, imports left
     /// out. Read as one JSON array: six weeks are tens of thousands of
     /// answers for a heavy user, and sqlx hands rows over one at a time.
-    pub(crate) async fn answers_since(&self, access: &Access, since: i64) -> Result<Vec<Answer>> {
+    pub(crate) async fn answers_since(
+        &self,
+        access: &Access,
+        since: i64,
+    ) -> Result<Vec<Answer>> {
         type Row = (i64, i64, i64, i64, i64, Option<i64>);
         let Json(rows): Json<Vec<Row>> = sqlx::query_scalar(
             "SELECT json_group_array(json_array(deck_id, card_id, rating, state_before, reviewed_at, duration_ms))
@@ -299,19 +379,45 @@ impl App {
         .fetch_one(&self.db)
         .await?;
         rows.into_iter()
-            .map(|(deck_id, card_id, rating, state, reviewed_at, duration_ms)| {
-                let state_before = CardState::from_stored(state)
-                    .ok_or_else(|| AppError::Internal(anyhow::anyhow!("an answer has the unknown state {state}")))?;
-                Ok(Answer { deck_id, card_id, rating, state_before, reviewed_at, duration_ms })
-            })
+            .map(
+                |(
+                    deck_id,
+                    card_id,
+                    rating,
+                    state,
+                    reviewed_at,
+                    duration_ms,
+                )| {
+                    let state_before = CardState::from_stored(state)
+                        .ok_or_else(|| {
+                            AppError::Internal(anyhow::anyhow!(
+                                "an answer has the unknown state {state}"
+                            ))
+                        })?;
+                    Ok(Answer {
+                        deck_id,
+                        card_id,
+                        rating,
+                        state_before,
+                        reviewed_at,
+                        duration_ms,
+                    })
+                },
+            )
             .collect()
     }
 }
 
 /// Each day's start and end in the user's zone, for queries that count
 /// per day with `json_each`: the clock knows DST and rollover, SQL doesn't.
-fn day_bounds(clock: &Clock, days: impl Iterator<Item = NaiveDate>) -> Vec<(i64, i64)> {
-    days.map(|day| (clock.day_start(day), clock.day_start(day + Duration::days(1)))).collect()
+fn day_bounds(
+    clock: &Clock,
+    days: impl Iterator<Item = NaiveDate>,
+) -> Vec<(i64, i64)> {
+    days.map(|day| {
+        (clock.day_start(day), clock.day_start(day + Duration::days(1)))
+    })
+    .collect()
 }
 
 /// How far back the streak looks, in days.
@@ -337,6 +443,10 @@ mod streak_tests {
         assert_eq!(streak_days(&[1, 2, 3]), 3, "not yet studied today");
         assert_eq!(streak_days(&[0, 1, 2, 4]), 3, "a gap ends it");
         assert_eq!(streak_days(&[2, 3]), 0, "missed yesterday");
-        assert_eq!(streak_days(&(0..400).collect::<Vec<_>>()), 366, "capped at a year");
+        assert_eq!(
+            streak_days(&(0..400).collect::<Vec<_>>()),
+            366,
+            "capped at a year"
+        );
     }
 }

@@ -26,7 +26,8 @@ const GAP_MAX: i32 = 12;
 /// The score of `text` for `query`, higher is better, or None when some
 /// word of the query does not match.
 pub fn score(query: &str, text: &str) -> Option<i32> {
-    let words: Vec<Vec<char>> = query.split_whitespace().map(fold).filter(|w| !w.is_empty()).collect();
+    let words: Vec<Vec<char>> =
+        query.split_whitespace().map(fold).filter(|w| !w.is_empty()).collect();
     if words.is_empty() {
         return None;
     }
@@ -35,7 +36,8 @@ pub fn score(query: &str, text: &str) -> Option<i32> {
     let mut total = 0;
     for w in &words {
         let w = w.get(..MAX_WORD).unwrap_or(w);
-        total += in_order(w, &raw, &folded).or_else(|| with_typos(w, &folded))?;
+        total +=
+            in_order(w, &raw, &folded).or_else(|| with_typos(w, &folded))?;
     }
     Some(total)
 }
@@ -73,7 +75,11 @@ fn is_word_char(c: char) -> bool {
 
 /// What a match at position i is worth beyond MATCH.
 fn position_bonus(raw: &[char], i: usize) -> i32 {
-    let (Some(&prev), Some(&here)) = (i.checked_sub(1).and_then(|p| raw.get(p)), raw.get(i)) else { return START };
+    let (Some(&prev), Some(&here)) =
+        (i.checked_sub(1).and_then(|p| raw.get(p)), raw.get(i))
+    else {
+        return START;
+    };
     if !is_word_char(prev) && is_word_char(here) {
         BOUNDARY
     } else if prev.is_lowercase() && here.is_uppercase() {
@@ -85,7 +91,10 @@ fn position_bonus(raw: &[char], i: usize) -> i32 {
 
 /// Best in-order match of `q` in the text, by dynamic programming over
 /// (query letter, text position). None when the letters are not all there.
-#[expect(clippy::indexing_slicing, reason = "dynamic programming: every index stays inside the tables sized above")]
+#[expect(
+    clippy::indexing_slicing,
+    reason = "dynamic programming: every index stays inside the tables sized above"
+)]
 fn in_order(q: &[char], raw: &[char], t: &[char]) -> Option<i32> {
     let (m, n) = (q.len(), t.len());
     if m > n {
@@ -107,7 +116,11 @@ fn in_order(q: &[char], raw: &[char], t: &[char]) -> Option<i32> {
     for j in 0..n {
         if t[j] == q[0] {
             // Letters skipped before the first match cost a little too.
-            let lead = if j == 0 { 0 } else { (GAP_OPEN + (num::usize_i32(j) - 1) * GAP).min(GAP_MAX) };
+            let lead = if j == 0 {
+                0
+            } else {
+                (GAP_OPEN + (num::usize_i32(j) - 1) * GAP).min(GAP_MAX)
+            };
             prev[j] = MATCH + position_bonus(raw, j) - lead;
         }
     }
@@ -127,7 +140,9 @@ fn in_order(q: &[char], raw: &[char], t: &[char]) -> Option<i32> {
                     best += MATCH + position_bonus(raw, j);
                 }
                 if prev[j - 1] > NONE {
-                    best = best.max(prev[j - 1] + MATCH + RUN + position_bonus(raw, j));
+                    best = best.max(
+                        prev[j - 1] + MATCH + RUN + position_bonus(raw, j),
+                    );
                 }
                 cur[j] = best;
             }
@@ -159,7 +174,8 @@ fn with_typos(q: &[char], t: &[char]) -> Option<i32> {
         }
         let word = word.get(..MAX_WORD).unwrap_or(word);
         if let Some(edits) = prefix_distance(q, word, allowed) {
-            let s = num::usize_i32(q.len()) * MATCH / 2 - num::usize_i32(edits) * 12
+            let s = num::usize_i32(q.len()) * MATCH / 2
+                - num::usize_i32(edits) * 12
                 + if at == 0 { START } else { BOUNDARY };
             best = Some(best.map_or(s, |b| b.max(s)));
         }
@@ -170,7 +186,10 @@ fn with_typos(q: &[char], t: &[char]) -> Option<i32> {
 /// The fewest edits that turn `q` into some prefix of `w` (optimal string
 /// alignment: insert, delete, replace, swap two neighbours), if at most
 /// `allowed`.
-#[expect(clippy::indexing_slicing, reason = "dynamic programming: every index stays inside the tables sized above")]
+#[expect(
+    clippy::indexing_slicing,
+    reason = "dynamic programming: every index stays inside the tables sized above"
+)]
 fn prefix_distance(q: &[char], w: &[char], allowed: usize) -> Option<usize> {
     let (m, n) = (q.len(), w.len());
     if n + allowed < m {
@@ -185,8 +204,9 @@ fn prefix_distance(q: &[char], w: &[char], allowed: usize) -> Option<usize> {
         d[i * width] = i;
         for j in 1..=n {
             let cost = usize::from(q[i - 1] != w[j - 1]);
-            let mut v =
-                (d[(i - 1) * width + j] + 1).min(d[i * width + j - 1] + 1).min(d[(i - 1) * width + j - 1] + cost);
+            let mut v = (d[(i - 1) * width + j] + 1)
+                .min(d[i * width + j - 1] + 1)
+                .min(d[(i - 1) * width + j - 1] + cost);
             if i > 1 && j > 1 && q[i - 1] == w[j - 2] && q[i - 2] == w[j - 1] {
                 v = v.min(d[(i - 2) * width + j - 2] + 1);
             }
@@ -203,7 +223,8 @@ mod tests {
     use super::score;
 
     fn rank<'a>(q: &str, texts: &[&'a str]) -> Vec<&'a str> {
-        let mut scored: Vec<(i32, &str)> = texts.iter().filter_map(|t| score(q, t).map(|s| (s, *t))).collect();
+        let mut scored: Vec<(i32, &str)> =
+            texts.iter().filter_map(|t| score(q, t).map(|s| (s, *t))).collect();
         scored.sort_by_key(|b| std::cmp::Reverse(b.0));
         scored.into_iter().map(|(_, t)| t).collect()
     }

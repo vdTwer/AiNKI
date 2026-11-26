@@ -32,7 +32,9 @@ pub fn routes() -> Router<AppState> {
         .route("/api/v1/cards/{id}", get(get_card))
         .route(
             "/api/v1/images",
-            post(upload_image).layer(DefaultBodyLimit::max(crate::media::MAX_UPLOAD_BYTES + 64 * 1024)),
+            post(upload_image).layer(DefaultBodyLimit::max(
+                crate::media::MAX_UPLOAD_BYTES + 64 * 1024,
+            )),
         )
 }
 
@@ -60,7 +62,10 @@ impl IntoResponse for ApiError {
         };
         let msg = match self.0 {
             AppError::Internal(_) => "internal server error".to_string(),
-            AppError::Unauthorized => "missing or invalid token: send Authorization: Bearer <token>".to_string(),
+            AppError::Unauthorized => {
+                "missing or invalid token: send Authorization: Bearer <token>"
+                    .to_string()
+            }
             e => e.to_string(),
         };
         (status, Json(json!({ "error": msg }))).into_response()
@@ -75,9 +80,16 @@ pub struct Caller(Access);
 impl FromRequestParts<AppState> for Caller {
     type Rejection = ApiError;
 
-    async fn from_request_parts(parts: &mut Parts, app: &AppState) -> Result<Self, Self::Rejection> {
-        let token = crate::mcp::bearer(&parts.headers).ok_or(AppError::Unauthorized)?;
-        app.token_access(token).await.map(Self).map_err(|_| AppError::Unauthorized.into())
+    async fn from_request_parts(
+        parts: &mut Parts,
+        app: &AppState,
+    ) -> Result<Self, Self::Rejection> {
+        let token =
+            crate::mcp::bearer(&parts.headers).ok_or(AppError::Unauthorized)?;
+        app.token_access(token)
+            .await
+            .map(Self)
+            .map_err(|_| AppError::Unauthorized.into())
     }
 }
 
@@ -85,11 +97,18 @@ fn to_json(v: impl serde::Serialize) -> ApiResult {
     Ok(Json(serde_json::to_value(v).map_err(|e| AppError::Internal(e.into()))?))
 }
 
-async fn list_decks(State(app): State<AppState>, Caller(a): Caller) -> ApiResult {
+async fn list_decks(
+    State(app): State<AppState>,
+    Caller(a): Caller,
+) -> ApiResult {
     to_json(app.deck_summaries(&a).await?)
 }
 
-async fn get_deck(State(app): State<AppState>, Caller(a): Caller, Path(id): Path<i64>) -> ApiResult {
+async fn get_deck(
+    State(app): State<AppState>,
+    Caller(a): Caller,
+    Path(id): Path<i64>,
+) -> ApiResult {
     to_json(app.deck(&a, id).await?)
 }
 
@@ -106,7 +125,8 @@ async fn create_deck(
     Caller(a): Caller,
     Json(d): Json<NewDeck>,
 ) -> ApiResult<(StatusCode, Json<Value>)> {
-    let deck = app.create_deck(&a, &d.name, &d.description, d.preset_id).await?;
+    let deck =
+        app.create_deck(&a, &d.name, &d.description, d.preset_id).await?;
     Ok((StatusCode::CREATED, to_json(deck)?))
 }
 
@@ -126,11 +146,21 @@ async fn list_cards(
 ) -> ApiResult {
     // An empty list would hide that the deck isn't there.
     app.deck(&a, id).await?;
-    let filter = CardFilter { deck_id: Some(id), query: p.query, state: p.state, limit: p.limit, offset: p.offset };
+    let filter = CardFilter {
+        deck_id: Some(id),
+        query: p.query,
+        state: p.state,
+        limit: p.limit,
+        offset: p.offset,
+    };
     Ok(Json(app.cards_json(&a, &filter).await?))
 }
 
-async fn get_card(State(app): State<AppState>, Caller(a): Caller, Path(id): Path<i64>) -> ApiResult {
+async fn get_card(
+    State(app): State<AppState>,
+    Caller(a): Caller,
+    Path(id): Path<i64>,
+) -> ApiResult {
     let card = app.card(&a, id).await?;
     Ok(Json(app.card_json(&a, &card, false).await?))
 }
@@ -171,5 +201,8 @@ async fn upload_image(
     body: Bytes,
 ) -> ApiResult<(StatusCode, Json<Value>)> {
     let m = app.store_image(&a, body.to_vec()).await?;
-    Ok((StatusCode::CREATED, Json(json!({ "image_id": m.id, "width": m.width, "height": m.height }))))
+    Ok((
+        StatusCode::CREATED,
+        Json(json!({ "image_id": m.id, "width": m.width, "height": m.height })),
+    ))
 }

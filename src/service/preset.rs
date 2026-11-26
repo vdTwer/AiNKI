@@ -1,6 +1,9 @@
 //! Presets: how decks schedule their cards, and the daily limits.
 
-#[allow(clippy::wildcard_imports, reason = "an area of the service sees the service's shared imports and types")]
+#[allow(
+    clippy::wildcard_imports,
+    reason = "an area of the service sees the service's shared imports and types"
+)]
 use super::*;
 
 /// How a deck with this preset schedules its cards.
@@ -8,8 +11,11 @@ use super::*;
 /// Steps are checked when a preset is saved, so steps that no longer parse
 /// mean a damaged row: that is an internal error, not "no steps".
 pub(crate) fn sched_config_for(p: &Preset, deck: &Deck) -> Result<SchedConfig> {
-    let steps =
-        |s: &str| scheduler::parse_steps(s).map_err(|e| anyhow::anyhow!("preset {} has broken steps {s:?}: {e}", p.id));
+    let steps = |s: &str| {
+        scheduler::parse_steps(s).map_err(|e| {
+            anyhow::anyhow!("preset {} has broken steps {s:?}: {e}", p.id)
+        })
+    };
     Ok(SchedConfig {
         desired_retention: num::f64_f32(p.desired_retention),
         learning_steps: steps(&p.learning_steps)?,
@@ -73,10 +79,12 @@ impl App {
     ///
     /// `Internal` if the database fails.
     pub async fn list_presets(&self, access: &Access) -> Result<Vec<Preset>> {
-        Ok(sqlx::query_as("SELECT * FROM presets WHERE user_id = ? ORDER BY id")
-            .bind(access.user_id())
-            .fetch_all(&self.db)
-            .await?)
+        Ok(sqlx::query_as(
+            "SELECT * FROM presets WHERE user_id = ? ORDER BY id",
+        )
+        .bind(access.user_id())
+        .fetch_all(&self.db)
+        .await?)
     }
 
     /// # Errors
@@ -99,19 +107,27 @@ impl App {
         check_len("preset name", &p.name, MAX_NAME)?;
         check_len("description", &p.description, MAX_DESCRIPTION)?;
         if !(0.70..=0.99).contains(&p.desired_retention) {
-            return Err(AppError::bad("desired retention must be between 0.70 and 0.99"));
+            return Err(AppError::bad(
+                "desired retention must be between 0.70 and 0.99",
+            ));
         }
         if p.new_per_day < 0 || p.reviews_per_day < 0 {
             return Err(AppError::bad("daily limits can't be negative"));
         }
         if p.max_interval < 1 {
-            return Err(AppError::bad("maximum interval must be at least 1 day"));
+            return Err(AppError::bad(
+                "maximum interval must be at least 1 day",
+            ));
         }
         if !(0..=600).contains(&p.time_limit) {
-            return Err(AppError::bad("time limit must be between 0 (none) and 600 seconds"));
+            return Err(AppError::bad(
+                "time limit must be between 0 (none) and 600 seconds",
+            ));
         }
-        let learning = scheduler::parse_steps(&p.learning_steps).map_err(AppError::BadRequest)?;
-        let relearning = scheduler::parse_steps(&p.relearning_steps).map_err(AppError::BadRequest)?;
+        let learning = scheduler::parse_steps(&p.learning_steps)
+            .map_err(AppError::BadRequest)?;
+        let relearning = scheduler::parse_steps(&p.relearning_steps)
+            .map_err(AppError::BadRequest)?;
         p.learning_steps = scheduler::format_steps(&learning);
         p.relearning_steps = scheduler::format_steps(&relearning);
         Ok(())
@@ -158,7 +174,12 @@ impl App {
     /// - `BadRequest` if the template is unknown or a value is out of range (name, retention 0.70–0.99, limits,
     ///   interval, time limit).
     /// - `Internal` if the database fails.
-    pub async fn create_preset(&self, access: &Access, template: Option<&str>, input: PresetInput) -> Result<Preset> {
+    pub async fn create_preset(
+        &self,
+        access: &Access,
+        template: Option<&str>,
+        input: PresetInput,
+    ) -> Result<Preset> {
         access.require_write()?;
         access.require_all_decks()?;
         let t = presets::template(template.unwrap_or("standard"))
@@ -212,7 +233,12 @@ impl App {
     /// - `NotFound` if the preset isn't the user's.
     /// - `BadRequest` if a value is out of range.
     /// - `Internal` if the database fails.
-    pub async fn update_preset(&self, access: &Access, id: i64, input: PresetInput) -> Result<Preset> {
+    pub async fn update_preset(
+        &self,
+        access: &Access,
+        id: i64,
+        input: PresetInput,
+    ) -> Result<Preset> {
         access.require_write()?;
         access.require_all_decks()?;
         let mut p = self.preset(access, id).await?;
@@ -251,8 +277,12 @@ impl App {
         access.require_write()?;
         access.require_all_decks()?;
         self.preset(access, id).await?;
-        let used: i64 =
-            sqlx::query_scalar("SELECT COUNT(*) FROM decks WHERE preset_id = ?").bind(id).fetch_one(&self.db).await?;
+        let used: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM decks WHERE preset_id = ?",
+        )
+        .bind(id)
+        .fetch_one(&self.db)
+        .await?;
         if used > 0 {
             return Err(AppError::bad(format!(
                 "{} still {} this preset; switch {} to another preset first",
@@ -270,10 +300,12 @@ impl App {
     }
 
     pub(crate) async fn default_preset_id(&self, user_id: i64) -> Result<i64> {
-        sqlx::query_scalar("SELECT id FROM presets WHERE user_id = ? ORDER BY id LIMIT 1")
-            .bind(user_id)
-            .fetch_optional(&self.db)
-            .await?
-            .ok_or_else(|| AppError::bad("create a preset first"))
+        sqlx::query_scalar(
+            "SELECT id FROM presets WHERE user_id = ? ORDER BY id LIMIT 1",
+        )
+        .bind(user_id)
+        .fetch_optional(&self.db)
+        .await?
+        .ok_or_else(|| AppError::bad("create a preset first"))
     }
 }

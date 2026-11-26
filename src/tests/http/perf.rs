@@ -29,7 +29,12 @@ const BUDGETS: [(&str, u128); 8] = [
 async fn seed(app: &App, a: &Access) -> i64 {
     let mut decks = Vec::with_capacity(DECKS);
     for n in 0..DECKS {
-        decks.push(app.create_deck(a, &format!("Big::Deck {n}"), "", None).await.unwrap().id);
+        decks.push(
+            app.create_deck(a, &format!("Big::Deck {n}"), "", None)
+                .await
+                .unwrap()
+                .id,
+        );
     }
     let decks_json = serde_json::to_string(&decks).unwrap();
     // Every seventh card has lapsed, a few are due now, most are due later.
@@ -85,7 +90,10 @@ async fn pages_stay_fast_for_a_heavy_user() {
         let path = page.replace("DECK", &deck.to_string());
         let mut times: Vec<u128> = Vec::new();
         for _ in 0..5 {
-            let req = Request::get(&path).header(header::COOKIE, &cookie).body(Body::empty()).unwrap();
+            let req = Request::get(&path)
+                .header(header::COOKIE, &cookie)
+                .body(Body::empty())
+                .unwrap();
             let t = std::time::Instant::now();
             let res = send(&app, req).await;
             assert_eq!(res.status(), StatusCode::OK, "{path}");

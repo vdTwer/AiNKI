@@ -18,7 +18,9 @@ use crate::num;
 /// writes them as literals (`state = 2` is review, `state IN (1, 3)` is
 /// learning or relearning), and so do Anki's files and the migrations.
 /// They never change; `the_stored_numbers_never_change` holds them.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, sqlx::Type)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, sqlx::Type,
+)]
 #[serde(rename_all = "snake_case")]
 #[repr(i64)]
 pub enum CardState {
@@ -81,7 +83,8 @@ impl Rating {
         }
     }
 
-    pub const ALL: [Self; 4] = [Self::Again, Self::Hard, Self::Good, Self::Easy];
+    pub const ALL: [Self; 4] =
+        [Self::Again, Self::Hard, Self::Good, Self::Easy];
 }
 
 /// The scheduling-relevant part of a card.
@@ -113,7 +116,9 @@ impl CardSched {
 
     pub const fn memory(&self) -> Option<MemoryState> {
         match (self.stability, self.difficulty) {
-            (Some(stability), Some(difficulty)) => Some(MemoryState { stability, difficulty }),
+            (Some(stability), Some(difficulty)) => {
+                Some(MemoryState { stability, difficulty })
+            }
             _ => None,
         }
     }
@@ -156,7 +161,8 @@ impl Clock {
 
     /// Unix timestamp at which the given (user-local) day starts.
     pub fn day_start(&self, date: NaiveDate) -> i64 {
-        let naive = date.and_time(NaiveTime::MIN) + Duration::hours(i64::from(self.rollover_hour));
+        let naive = date.and_time(NaiveTime::MIN)
+            + Duration::hours(i64::from(self.rollover_hour));
         match self.tz.from_local_datetime(&naive) {
             chrono::LocalResult::Single(t) => t.timestamp(),
             chrono::LocalResult::Ambiguous(a, _) => a.timestamp(),
@@ -205,11 +211,18 @@ pub fn fsrs_for(params: &[f32]) -> Result<FSRS, fsrs::FSRSError> {
 /// # Errors
 /// Parameters that are not a valid FSRS set.
 pub fn decay_for(params: &[f32]) -> Result<f32, fsrs::FSRSError> {
-    Ok(fsrs::check_and_fill_parameters(params)?.get(20).copied().unwrap_or(fsrs::FSRS6_DEFAULT_DECAY))
+    Ok(fsrs::check_and_fill_parameters(params)?
+        .get(20)
+        .copied()
+        .unwrap_or(fsrs::FSRS6_DEFAULT_DECAY))
 }
 
 /// Probability of recall right now.
-pub fn retrievability(card: &CardSched, decay: f32, clock: &Clock) -> Option<f32> {
+pub fn retrievability(
+    card: &CardSched,
+    decay: f32,
+    clock: &Clock,
+) -> Option<f32> {
     let memory = card.memory()?;
     let last = card.last_review?;
     let elapsed = num::i64_f32((clock.now - last).max(0)) / 86_400.0;
@@ -233,7 +246,8 @@ fn fuzzed_interval(interval: f64, max_interval: i64, seed: f64) -> i64 {
     if interval < 2.5 {
         return num::f64_i64(interval.round()).clamp(1, max_interval.max(1));
     }
-    const RANGES: [(f64, f64, f64); 3] = [(2.5, 7.0, 0.15), (7.0, 20.0, 0.1), (20.0, f64::MAX, 0.05)];
+    const RANGES: [(f64, f64, f64); 3] =
+        [(2.5, 7.0, 0.15), (7.0, 20.0, 0.1), (20.0, f64::MAX, 0.05)];
     let mut delta = 1.0;
     for (start, end, factor) in RANGES {
         delta = factor.mul_add((interval.min(end) - start).max(0.0), delta);
@@ -241,7 +255,8 @@ fn fuzzed_interval(interval: f64, max_interval: i64, seed: f64) -> i64 {
     let mut min_ivl = num::f64_i64((interval - delta).round()).max(2);
     let max_ivl = num::f64_i64((interval + delta).round());
     min_ivl = min_ivl.min(max_ivl);
-    let ivl = min_ivl + num::f64_i64((seed * num::i64_f64(max_ivl - min_ivl + 1)).floor());
+    let ivl = min_ivl
+        + num::f64_i64((seed * num::i64_f64(max_ivl - min_ivl + 1)).floor());
     ivl.clamp(1, max_interval.max(1))
 }
 
@@ -260,7 +275,11 @@ fn effective_max_interval(cfg: &SchedConfig, clock: &Clock) -> i64 {
 /// stay in the steps, `None` to graduate to FSRS. Again starts over, Hard
 /// repeats the step (the first one a bit longer), Good moves on, Easy and
 /// running out of steps graduate.
-fn next_step(rating: Rating, steps: &[i64], step: usize) -> Option<(usize, i64)> {
+fn next_step(
+    rating: Rating,
+    steps: &[i64],
+    step: usize,
+) -> Option<(usize, i64)> {
     match (rating, steps) {
         (_, []) | (Rating::Easy, _) => None,
         (Rating::Again, [first, ..]) => Some((0, *first)),
@@ -268,13 +287,17 @@ fn next_step(rating: Rating, steps: &[i64], step: usize) -> Option<(usize, i64)>
             let idx = step.min(rest.len());
             let delay = match (idx, rest) {
                 // One step: half as long again, but at most a day longer.
-                (0, []) => num::f64_i64(num::i64_f64(*first) * 1.5).min(first + 86_400),
+                (0, []) => {
+                    num::f64_i64(num::i64_f64(*first) * 1.5).min(first + 86_400)
+                }
                 (0, [second, ..]) => i64::midpoint(*first, *second),
                 _ => steps.get(idx).copied().unwrap_or(*first),
             };
             Some((idx, delay))
         }
-        (Rating::Good, _) => steps.get(step + 1).map(|&delay| (step + 1, delay)),
+        (Rating::Good, _) => {
+            steps.get(step + 1).map(|&delay| (step + 1, delay))
+        }
     }
 }
 
@@ -287,9 +310,14 @@ pub fn answer(
     rating: Rating,
     clock: &Clock,
 ) -> anyhow::Result<Outcome> {
-    let elapsed_days = card.last_review.map_or(0, |last| clock.days_between(last, clock.now).max(0));
-    let next =
-        fsrs.next_states(card.memory(), cfg.desired_retention, num::i64_u32(elapsed_days.min(i64::from(u32::MAX))))?;
+    let elapsed_days = card
+        .last_review
+        .map_or(0, |last| clock.days_between(last, clock.now).max(0));
+    let next = fsrs.next_states(
+        card.memory(),
+        cfg.desired_retention,
+        num::i64_u32(elapsed_days.min(i64::from(u32::MAX))),
+    )?;
     let chosen = match rating {
         Rating::Again => &next.again,
         Rating::Hard => &next.hard,
@@ -307,10 +335,12 @@ pub fn answer(
 
     let mut graduated_days = None;
     let mut graduate = |out: &mut CardSched| -> i64 {
-        let mut days = fuzzed_interval(f64::from(chosen.interval), max_interval, seed);
+        let mut days =
+            fuzzed_interval(f64::from(chosen.interval), max_interval, seed);
         // Keep the button order sensible: Easy should never be sooner than Good.
         if rating == Rating::Easy {
-            let good_days = num::f64_i64(f64::from(next.good.interval).round().max(1.0));
+            let good_days =
+                num::f64_i64(f64::from(next.good.interval).round().max(1.0));
             days = days.max((good_days + 1).min(max_interval));
         }
         out.state = CardState::Review;
@@ -324,7 +354,8 @@ pub fn answer(
         CardState::Review if rating == Rating::Again => {
             out.lapses += 1;
             if let Some(&first) = cfg.relearning_steps.first() {
-                (out.state, out.step, out.due) = (CardState::Relearning, 0, clock.now + first);
+                (out.state, out.step, out.due) =
+                    (CardState::Relearning, 0, clock.now + first);
                 first
             } else {
                 graduate(&mut out)
@@ -333,20 +364,38 @@ pub fn answer(
         CardState::Review => graduate(&mut out),
         CardState::New | CardState::Learning | CardState::Relearning => {
             let relearning = card.state == CardState::Relearning;
-            let steps = if relearning { &cfg.relearning_steps } else { &cfg.learning_steps };
-            let step = if card.state == CardState::New { 0 } else { num::i64_usize(card.step.max(0)) };
+            let steps = if relearning {
+                &cfg.relearning_steps
+            } else {
+                &cfg.learning_steps
+            };
+            let step = if card.state == CardState::New {
+                0
+            } else {
+                num::i64_usize(card.step.max(0))
+            };
             match next_step(rating, steps, step) {
                 None => graduate(&mut out),
                 Some((idx, delay)) => {
-                    let state = if relearning { CardState::Relearning } else { CardState::Learning };
-                    (out.state, out.step, out.due) = (state, num::usize_i64(idx), clock.now + delay);
+                    let state = if relearning {
+                        CardState::Relearning
+                    } else {
+                        CardState::Learning
+                    };
+                    (out.state, out.step, out.due) =
+                        (state, num::usize_i64(idx), clock.now + delay);
                     delay
                 }
             }
         }
     };
 
-    Ok(Outcome { card: out, interval_secs, interval_days: graduated_days, elapsed_days })
+    Ok(Outcome {
+        card: out,
+        interval_secs,
+        interval_days: graduated_days,
+        elapsed_days,
+    })
 }
 
 /// The longest learning step; anything longer is FSRS's job anyway.
@@ -357,14 +406,22 @@ pub fn parse_steps(s: &str) -> Result<Vec<i64>, String> {
     s.split(|c: char| c.is_whitespace() || c == ',')
         .filter(|t| !t.is_empty())
         .map(|t| {
-            let (num, unit) = t.split_at(t.find(|c: char| !c.is_ascii_digit() && c != '.').unwrap_or(t.len()));
-            let n: f64 = num.parse().map_err(|_| format!("invalid step '{t}'"))?;
+            let (num, unit) = t.split_at(
+                t.find(|c: char| !c.is_ascii_digit() && c != '.')
+                    .unwrap_or(t.len()),
+            );
+            let n: f64 =
+                num.parse().map_err(|_| format!("invalid step '{t}'"))?;
             let mult = match unit {
                 "s" => 1.0,
                 "" | "m" => 60.0,
                 "h" => 3600.0,
                 "d" => 86_400.0,
-                _ => return Err(format!("invalid unit in step '{t}' (use s, m, h or d)")),
+                _ => {
+                    return Err(format!(
+                        "invalid unit in step '{t}' (use s, m, h or d)"
+                    ));
+                }
             };
             let secs = (n * mult).round();
             if secs <= 0.0 {
@@ -412,7 +469,12 @@ mod tests {
 
     #[test]
     fn the_stored_numbers_never_change() {
-        let states = [CardState::New, CardState::Learning, CardState::Review, CardState::Relearning];
+        let states = [
+            CardState::New,
+            CardState::Learning,
+            CardState::Review,
+            CardState::Relearning,
+        ];
         assert_eq!(states.map(|s| s as i64), [0, 1, 2, 3]);
         assert_eq!([0, 1, 2, 3].map(CardState::from_stored), states.map(Some));
         assert_eq!(CardState::from_stored(4), None);
@@ -443,14 +505,16 @@ mod tests {
         assert_eq!(again.interval_secs, 600);
 
         let c2 = clock(c.now + 600);
-        let good = answer(&fsrs, &cfg(), 1, &again.card, Rating::Good, &c2).unwrap();
+        let good =
+            answer(&fsrs, &cfg(), 1, &again.card, Rating::Good, &c2).unwrap();
         assert_eq!(good.card.state, CardState::Review);
         assert!(good.interval_secs >= 3600);
         assert_eq!(good.card.reps, 2);
 
         // Lapse goes into relearning.
         let c3 = clock(good.card.due + 10);
-        let lapse = answer(&fsrs, &cfg(), 1, &good.card, Rating::Again, &c3).unwrap();
+        let lapse =
+            answer(&fsrs, &cfg(), 1, &good.card, Rating::Again, &c3).unwrap();
         assert_eq!(lapse.card.state, CardState::Relearning);
         assert_eq!(lapse.card.lapses, 1);
         assert!(lapse.card.stability.unwrap() < good.card.stability.unwrap());
@@ -460,7 +524,9 @@ mod tests {
     fn good_on_new_graduates_with_single_step() {
         let fsrs = FSRS::default();
         let c = clock(1_760_000_000);
-        let out = answer(&fsrs, &cfg(), 7, &CardSched::new_card(), Rating::Good, &c).unwrap();
+        let out =
+            answer(&fsrs, &cfg(), 7, &CardSched::new_card(), Rating::Good, &c)
+                .unwrap();
         assert_eq!(out.card.state, CardState::Review);
         assert_eq!(c.days_between(c.now, out.card.due), 2);
     }

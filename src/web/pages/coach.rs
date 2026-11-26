@@ -101,16 +101,25 @@ pub(crate) async fn attention_page(
 
 /// The cards a split starts from: one per item of the back, each with the
 /// original front. Without items, the card itself and an empty one.
-pub(crate) fn split_drafts(card: &Card, items: &[multi::CardItem]) -> Vec<(String, String)> {
+pub(crate) fn split_drafts(
+    card: &Card,
+    items: &[multi::CardItem],
+) -> Vec<(String, String)> {
     let texts: Vec<String> = if items.is_empty() {
-        multi::splits(&card.back).first().and_then(|&how| multi::items(&card.back, how)).unwrap_or_default()
+        multi::splits(&card.back)
+            .first()
+            .and_then(|&how| multi::items(&card.back, how))
+            .unwrap_or_default()
     } else {
         items.iter().map(|i| i.text.clone()).collect()
     };
     if texts.len() >= 2 {
         texts.into_iter().map(|t| (card.front.clone(), t)).collect()
     } else {
-        vec![(card.front.clone(), card.back.clone()), (String::new(), String::new())]
+        vec![
+            (card.front.clone(), card.back.clone()),
+            (String::new(), String::new()),
+        ]
     }
 }
 
@@ -187,18 +196,30 @@ pub(crate) async fn split_submit(
     for n in 0..50 {
         match (f.get(&format!("front_{n}")), f.get(&format!("back_{n}"))) {
             (None, None) => break,
-            (front, back) => drafts.push((front.cloned().unwrap_or_default(), back.cloned().unwrap_or_default())),
+            (front, back) => drafts.push((
+                front.cloned().unwrap_or_default(),
+                back.cloned().unwrap_or_default(),
+            )),
         }
     }
     let keep = f.contains_key("keep");
     match app.split_card(&access, id, drafts.clone(), keep).await {
         Ok(cards) => Ok(redirect_msg(
             format!("/decks/{}", card.deck_id),
-            &format!("Split into {}.", count(num::usize_i64(cards.len()), "card")),
+            &format!(
+                "Split into {}.",
+                count(num::usize_i64(cards.len()), "card")
+            ),
         )),
         Err(e) => {
             let msg = fixable(&e).ok_or(e)?;
-            Ok(form_again(split_view(&user.0, &card, &drafts, keep, Some(&msg))))
+            Ok(form_again(split_view(
+                &user.0,
+                &card,
+                &drafts,
+                keep,
+                Some(&msg),
+            )))
         }
     }
 }

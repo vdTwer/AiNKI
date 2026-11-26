@@ -36,11 +36,17 @@ impl Home {
             app.incoming_shares(access),
             app.coach_reads(access),
         )?;
-        let (archived, decks): (Vec<_>, Vec<_>) =
-            summaries.into_iter().partition(|d| d.deck.status == DeckStatus::Archived);
+        let (archived, decks): (Vec<_>, Vec<_>) = summaries
+            .into_iter()
+            .partition(|d| d.deck.status == DeckStatus::Archived);
         let attention = num::usize_i64(flagged.len());
         let week = app.week_with(access, attention).await?;
-        let known = advice::Known { decks: &decks, stats: &stats, attention: &flagged, overdue };
+        let known = advice::Known {
+            decks: &decks,
+            stats: &stats,
+            attention: &flagged,
+            overdue,
+        };
         let notes = advice::advice_with(access, &known, reads);
         Ok(Self {
             total_due: decks.iter().map(DeckSummary::due_total).sum(),
@@ -61,10 +67,16 @@ impl Home {
         let s = &self.stats;
         let mut facts = Vec::new();
         if self.total_due > 0 {
-            facts.push(format!("About {}", count(s.minutes_for(self.total_due).max(1), "minute")));
+            facts.push(format!(
+                "About {}",
+                count(s.minutes_for(self.total_due).max(1), "minute")
+            ));
         }
         if let Some(r) = s.true_retention_30d {
-            facts.push(format!("{} recalled when due, last 30 days", format::percent(Some(r))));
+            facts.push(format!(
+                "{} recalled when due, last 30 days",
+                format::percent(Some(r))
+            ));
         }
         if s.streak_days > 1 {
             facts.push(format!("{} in a row", count(s.streak_days, "day")));
@@ -73,7 +85,11 @@ impl Home {
     }
 }
 
-pub(crate) async fn home(State(app): State<AppState>, user: WebUser, Flash(msg): Flash) -> WebResult {
+pub(crate) async fn home(
+    State(app): State<AppState>,
+    user: WebUser,
+    Flash(msg): Flash,
+) -> WebResult {
     let h = Home::load(&app, &user.access()).await?;
     let u = &user.0;
     let body = html! {
@@ -84,11 +100,13 @@ pub(crate) async fn home(State(app): State<AppState>, user: WebUser, Flash(msg):
         (home_decks(u, &h))
         (home_footer(&h))
     };
-    Ok(page(Some(Nav::Decks), "Decks", Some(u), Some("home"), body).into_response())
+    Ok(page(Some(Nav::Decks), "Decks", Some(u), Some("home"), body)
+        .into_response())
 }
 
 fn home_today(user: &User, h: &Home) -> Markup {
-    let (decks, total_due, facts, quiet, overdue) = (&h.decks, h.total_due, h.facts(), h.quiet, h.overdue);
+    let (decks, total_due, facts, quiet, overdue) =
+        (&h.decks, h.total_due, h.facts(), h.quiet, h.overdue);
     html! {
     section.today aria-label="Today" {
         p.date { @if user.catch_up { "Catching up · " } (format::long_date(&user.clock())) }
@@ -111,7 +129,8 @@ fn home_today(user: &User, h: &Home) -> Markup {
 }
 
 fn home_side(user: &User, h: &Home) -> Markup {
-    let (decks, week, notes, overdue, attention) = (&h.decks, &h.week, &h.notes, h.overdue, h.attention);
+    let (decks, week, notes, overdue, attention) =
+        (&h.decks, &h.week, &h.notes, h.overdue, h.attention);
     html! {
     @if !decks.is_empty() {
         aside.today-side {
@@ -281,8 +300,13 @@ pub(crate) struct NotNowForm {
 }
 
 /// "Not now" on a coach note: quiet for three days, back where it was.
-pub(crate) async fn coach_not_now(State(app): State<AppState>, user: WebUser, Form(f): Form<NotNowForm>) -> WebResult {
-    let rule = advice::Rule::parse(&f.rule).ok_or_else(|| AppError::bad("unknown note"))?;
+pub(crate) async fn coach_not_now(
+    State(app): State<AppState>,
+    user: WebUser,
+    Form(f): Form<NotNowForm>,
+) -> WebResult {
+    let rule = advice::Rule::parse(&f.rule)
+        .ok_or_else(|| AppError::bad("unknown note"))?;
     app.snooze_advice(&user.access(), rule).await?;
     let back = if f.back.as_deref() == Some("/stats") { "/stats" } else { "/" };
     Ok(redirect_msg(back, "The coach will keep that to itself for three days."))
