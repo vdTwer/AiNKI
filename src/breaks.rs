@@ -92,8 +92,13 @@ impl Default for Rhythm {
 impl Rhythm {
     /// Any stored values, kept in range.
     pub fn new(work_min: f64, mult: f64) -> Self {
-        let ok = |v: f64, (lo, hi): (f64, f64), d: f64| if v.is_finite() { v.clamp(lo, hi) } else { d };
-        Self { work_min: ok(work_min, WORK_RANGE, START_WORK_MIN), mult: ok(mult, MULT_RANGE, 1.0) }
+        let ok = |v: f64, (lo, hi): (f64, f64), d: f64| {
+            if v.is_finite() { v.clamp(lo, hi) } else { d }
+        };
+        Self {
+            work_min: ok(work_min, WORK_RANGE, START_WORK_MIN),
+            mult: ok(mult, MULT_RANGE, 1.0),
+        }
     }
 
     /// Keep going while fresh: longer stretches, shorter breaks.
@@ -139,7 +144,11 @@ pub fn replay(steps: &[Step], watch_from: i64) -> State {
         let (work_ms, rest_ms) = match (s.think_ms, gap_ms) {
             (Some(t), gap) => {
                 let card = t.max(0) + s.answer_ms.unwrap_or(0).max(0);
-                let (work, away_rest) = if away >= AWAY_REST_MS { (card, away) } else { (card + away, 0) };
+                let (work, away_rest) = if away >= AWAY_REST_MS {
+                    (card, away)
+                } else {
+                    (card + away, 0)
+                };
                 // Whatever the gap held beyond the card was rest: the Pause
                 // cover, or time before the card was opened.
                 (work, gap.map_or(0, |g| (g - work).max(away_rest)))
@@ -154,7 +163,8 @@ pub fn replay(steps: &[Step], watch_from: i64) -> State {
             st.breaks += 1;
             st.rested_after = Some(st.worked_min);
             st.worked_min = 0.0;
-            st.slowness *= (-num::i64_f64(rest_ms) / 60_000.0 / RECOVERY_MIN).exp();
+            st.slowness *=
+                (-num::i64_f64(rest_ms) / 60_000.0 / RECOVERY_MIN).exp();
         }
         if s.at <= watch_from {
             st.worked_min = 0.0;
@@ -187,13 +197,15 @@ pub struct Suggestion {
 pub fn suggest(st: &State, r: Rhythm) -> Option<Suggestion> {
     let w = st.worked_min;
     let slowing = st.slowness >= SLOW;
-    let due =
-        w >= LATE * r.work_min || (w >= EARLY * r.work_min && slowing) || (w >= MIN_WORK_MIN && st.slowness >= SLUMP);
+    let due = w >= LATE * r.work_min
+        || (w >= EARLY * r.work_min && slowing)
+        || (w >= MIN_WORK_MIN && st.slowness >= SLUMP);
     if !due {
         return None;
     }
     let k = st.breaks + 1;
-    let long = k.is_multiple_of(LONG_EVERY) || (k % LONG_EVERY == LONG_EVERY - 1 && st.slowness >= SLUMP);
+    let long = k.is_multiple_of(LONG_EVERY)
+        || (k % LONG_EVERY == LONG_EVERY - 1 && st.slowness >= SLUMP);
     let minutes = if long { r.short_min() * LONG_TIMES } else { r.short_min() };
     Some(Suggestion {
         worked: num::f64_i64(w.round()),
@@ -206,7 +218,11 @@ pub fn suggest(st: &State, r: Rhythm) -> Option<Suggestion> {
 /// Was the latest answer the first after a pause the user took on their
 /// own, before any suggestion, with enough work behind it to mean
 /// tiredness? `shown_at` is when a break was last suggested.
-pub fn paused_on_own(st: &State, steps: &[Step], shown_at: Option<i64>) -> bool {
+pub fn paused_on_own(
+    st: &State,
+    steps: &[Step],
+    shown_at: Option<i64>,
+) -> bool {
     let Some(before) = st.rested_after else { return false };
     let [.., prev, last] = steps else { return false };
     let suggested = shown_at.is_some_and(|t| t >= prev.at && t <= last.at);
@@ -216,7 +232,8 @@ pub fn paused_on_own(st: &State, steps: &[Step], shown_at: Option<i64>) -> bool 
 /// For each answer, the mean log front time of its card's earlier answers,
 /// once there were `MIN_HISTORY`.
 pub fn card_usuals(answers: &[(i64, Option<i64>)]) -> Vec<Option<f64>> {
-    let mut seen: std::collections::HashMap<i64, (f64, u32)> = std::collections::HashMap::new();
+    let mut seen: std::collections::HashMap<i64, (f64, u32)> =
+        std::collections::HashMap::new();
     answers
         .iter()
         .map(|&(card, ms)| {
@@ -239,7 +256,10 @@ mod tests {
     struct Noise(u64);
     impl Noise {
         fn next(&mut self) -> f64 {
-            self.0 = self.0.wrapping_mul(6_364_136_223_846_793_005).wrapping_add(1_442_695_040_888_963_407);
+            self.0 = self
+                .0
+                .wrapping_mul(6_364_136_223_846_793_005)
+                .wrapping_add(1_442_695_040_888_963_407);
             num::u64_f64(self.0 >> 11) / num::u64_f64(1u64 << 53)
         }
         /// Roughly normal, from twelve uniforms.
@@ -253,14 +273,25 @@ mod tests {
     /// Cards back to back for `minutes`, each usually 5 s plus 2 s on the
     /// back, with the usual spread. From `slow_from` minutes of work on,
     /// fronts take `slow` (log units) longer.
-    #[expect(clippy::while_float, reason = "simulated minutes only grow; the loop ends")]
-    fn study(seed: u64, start: i64, minutes: f64, slow_from: f64, slow: f64) -> Vec<Step> {
+    #[expect(
+        clippy::while_float,
+        reason = "simulated minutes only grow; the loop ends"
+    )]
+    fn study(
+        seed: u64,
+        start: i64,
+        minutes: f64,
+        slow_from: f64,
+        slow: f64,
+    ) -> Vec<Step> {
         let mut n = Noise(seed);
         let mut out = vec![];
         let (mut t, mut worked) = (start * 1000, 0.0);
         while worked < minutes * 60_000.0 {
             let extra = if worked >= slow_from * 60_000.0 { slow } else { 0.0 };
-            let think = num::f64_i64(USUAL_MS * 0.35f64.mul_add(n.normal(), extra).exp());
+            let think = num::f64_i64(
+                USUAL_MS * 0.35f64.mul_add(n.normal(), extra).exp(),
+            );
             let answer = 2000;
             t += think + answer;
             worked += num::i64_f64(think + answer);
@@ -282,7 +313,9 @@ mod tests {
     #[test]
     fn short_fresh_days_are_left_alone() {
         // 200 fresh days of 20 minutes: at most a few wrong suggestions.
-        let wrong = (0..200).filter(|&seed| due(&study(seed, 0, 20.0, 999.0, 0.0)).is_some()).count();
+        let wrong = (0..200)
+            .filter(|&seed| due(&study(seed, 0, 20.0, 999.0, 0.0)).is_some())
+            .count();
         assert!(wrong <= 6, "{wrong} of 200 interrupted");
     }
 
@@ -291,13 +324,19 @@ mod tests {
         // Fresh all along: no break at 25 minutes, one by 27.5.
         assert!(due(&study(1, 0, 24.0, 999.0, 0.0)).is_none());
         let s = due(&study(1, 0, 27.6, 999.0, 0.0)).expect("by 1.1 stretches");
-        assert_eq!(s, Suggestion { worked: 28, minutes: 5, long: false, slowing: false });
+        assert_eq!(
+            s,
+            Suggestion { worked: 28, minutes: 5, long: false, slowing: false }
+        );
     }
 
     #[test]
     fn slow_answers_bring_the_break_forward() {
         // Clearly slower from minute 5 on: a break soon after minute 10.
-        assert!(due(&study(2, 0, 9.5, 5.0, 0.5)).is_none(), "never before ten minutes");
+        assert!(
+            due(&study(2, 0, 9.5, 5.0, 0.5)).is_none(),
+            "never before ten minutes"
+        );
         let s = due(&study(2, 0, 13.0, 5.0, 0.5)).expect("a slump");
         assert!(s.slowing && s.worked < 22, "{s:?}");
         // A mild slowdown waits for the early end of the stretch.
@@ -327,7 +366,8 @@ mod tests {
         assert_eq!(st.breaks, 2);
         assert!(st.worked_min < 27.0);
         day.extend(study(20, start, 28.0, 999.0, 0.0));
-        let s = suggest(&replay(&day, 0), Rhythm::default()).expect("fourth stretch done");
+        let s = suggest(&replay(&day, 0), Rhythm::default())
+            .expect("fourth stretch done");
         assert!(s.long);
         assert_eq!(s.minutes, 15);
     }
@@ -375,36 +415,57 @@ mod tests {
     #[test]
     fn the_rhythm_learns_and_stays_in_range() {
         let r = Rhythm::default().kept_going();
-        assert!((r.work_min - 27.5).abs() < 1e-9 && (r.mult - 1.0 / 1.1).abs() < 1e-9);
+        assert!(
+            (r.work_min - 27.5).abs() < 1e-9
+                && (r.mult - 1.0 / 1.1).abs() < 1e-9
+        );
         let mut r = Rhythm::default();
         for _ in 0..30 {
             r = r.paused_early();
         }
         assert_eq!(r, Rhythm { work_min: 15.0, mult: 2.5 });
         // Short breaks never go under five minutes before the multiplier.
-        assert_eq!(suggest(&State { worked_min: 17.0, ..State::default() }, r).map(|s| s.minutes), Some(13));
-        assert_eq!(Rhythm::new(f64::NAN, 99.0), Rhythm { work_min: START_WORK_MIN, mult: 2.5 });
+        assert_eq!(
+            suggest(&State { worked_min: 17.0, ..State::default() }, r)
+                .map(|s| s.minutes),
+            Some(13)
+        );
+        assert_eq!(
+            Rhythm::new(f64::NAN, 99.0),
+            Rhythm { work_min: START_WORK_MIN, mult: 2.5 }
+        );
     }
 
     #[test]
     fn own_pauses_are_told_from_suggested_ones() {
         let mut s = study(9, 0, 15.0, 999.0, 0.0);
         let before = s.last().unwrap().at;
-        s.extend(study(9, before + 4 * 60, 0.05, 999.0, 0.0).into_iter().take(1));
+        s.extend(
+            study(9, before + 4 * 60, 0.05, 999.0, 0.0).into_iter().take(1),
+        );
         let st = replay(&s, 0);
         assert!(st.rested_after.is_some());
         assert!(paused_on_own(&st, &s, None));
-        assert!(!paused_on_own(&st, &s, Some(before + 1)), "the break was suggested");
+        assert!(
+            !paused_on_own(&st, &s, Some(before + 1)),
+            "the break was suggested"
+        );
         // A pause after only five minutes says nothing.
         let mut short = study(9, 0, 5.0, 999.0, 0.0);
         let b = short.last().unwrap().at;
-        short.extend(study(9, b + 4 * 60, 0.05, 999.0, 0.0).into_iter().take(1));
+        short
+            .extend(study(9, b + 4 * 60, 0.05, 999.0, 0.0).into_iter().take(1));
         assert!(!paused_on_own(&replay(&short, 0), &short, None));
     }
 
     #[test]
     fn card_usuals_use_only_earlier_answers() {
-        let u = card_usuals(&[(1, Some(1000)), (1, Some(1000)), (2, Some(5)), (1, Some(9999))]);
+        let u = card_usuals(&[
+            (1, Some(1000)),
+            (1, Some(1000)),
+            (2, Some(5)),
+            (1, Some(9999)),
+        ]);
         assert_eq!(u[..3], [None, None, None]);
         assert!(u[3].is_some_and(|v| (v - 1000f64.ln()).abs() < 1e-9));
     }

@@ -15,7 +15,11 @@ pub(crate) fn on_day(clock: &scheduler::Clock, ts: i64) -> String {
 }
 
 /// The open links, each to copy or take back, and when the next one comes.
-pub(crate) fn invite_links(inv: &invites::Invites, base: &str, clock: &scheduler::Clock) -> Markup {
+pub(crate) fn invite_links(
+    inv: &invites::Invites,
+    base: &str,
+    clock: &scheduler::Clock,
+) -> Markup {
     html! {
         @for i in &inv.open {
             div.invite-link {
@@ -72,22 +76,37 @@ pub(crate) async fn invites_page(
     .into_response())
 }
 
-pub(crate) async fn invite_create(State(app): State<AppState>, user: WebUser) -> WebResult {
+pub(crate) async fn invite_create(
+    State(app): State<AppState>,
+    user: WebUser,
+) -> WebResult {
     let to = if user.0.is_admin { "/admin" } else { "/invites" };
     let made = app.create_invite(&user.0).await.map(|_| redirect(to));
     or_back(to, made)
 }
 
-pub(crate) async fn invite_cancel(State(app): State<AppState>, user: WebUser, Path(id): Path<i64>) -> WebResult {
+pub(crate) async fn invite_cancel(
+    State(app): State<AppState>,
+    user: WebUser,
+    Path(id): Path<i64>,
+) -> WebResult {
     let to = if user.0.is_admin { "/admin" } else { "/invites" };
-    let done = app.cancel_invite(&user.0, id).await.map(|()| redirect_msg(to, "The link no longer works."));
+    let done = app
+        .cancel_invite(&user.0, id)
+        .await
+        .map(|()| redirect_msg(to, "The link no longer works."));
     or_back(to, done)
 }
 
 /// The page behind an invite link: the first thing a new person sees.
 /// Quiet on purpose: who invited them, one sentence on what `AiNKI` is, a
 /// name and a password, and one button.
-pub(crate) fn invite_form(token: &str, from: &User, error: Option<&str>, name: &str) -> Markup {
+pub(crate) fn invite_form(
+    token: &str,
+    from: &User,
+    error: Option<&str>,
+    name: &str,
+) -> Markup {
     layout(
         "You're invited",
         None,
@@ -146,7 +165,12 @@ pub(crate) async fn invite_page(
     // Someone with an account opened a link meant for someone new (most
     // likely the one who made it, to see what it looks like): show the page,
     // but signing up would log them out, so say so.
-    let note = user.map(|u| format!("You're logged in as {}. This link is for someone new.", u.0.handle()));
+    let note = user.map(|u| {
+        format!(
+            "You're logged in as {}. This link is for someone new.",
+            u.0.handle()
+        )
+    });
     Ok(invite_form(&token, &from, note.as_deref(), "").into_response())
 }
 
@@ -157,7 +181,11 @@ pub(crate) async fn invite_accept(
     Path(token): Path<String>,
     Form(f): Form<LoginForm>,
 ) -> Response {
-    if app.limiter.check_and_hit(&format!("signup-ip:{ip}"), 10, Duration::from_hours(1)) {
+    if app.limiter.check_and_hit(
+        &format!("signup-ip:{ip}"),
+        10,
+        Duration::from_hours(1),
+    ) {
         return security::too_many_requests(3600);
     }
     let from = match app.open_invite(&token).await {
@@ -166,16 +194,37 @@ pub(crate) async fn invite_accept(
         Err(e) => return WebError(e).into_response(),
     };
     let result = async {
-        let user = app.create_account(&f.username, &f.password, &f.timezone, Some(&token), false).await?;
+        let user = app
+            .create_account(
+                &f.username,
+                &f.password,
+                &f.timezone,
+                Some(&token),
+                false,
+            )
+            .await?;
         let session = app.create_session(user.id).await?;
         Ok::<_, AppError>((user, session))
     }
     .await;
     match result {
         Ok((user, session)) => {
-            let welcome = format!("Your name here is {}. Use it, with your password, to log in.", user.handle());
-            (jar.add(session_cookie(&app, session)).add(flash_cookie(&welcome)), Redirect::to("/")).into_response()
+            let welcome = format!(
+                "Your name here is {}. Use it, with your password, to log in.",
+                user.handle()
+            );
+            (
+                jar.add(session_cookie(&app, session))
+                    .add(flash_cookie(&welcome)),
+                Redirect::to("/"),
+            )
+                .into_response()
         }
-        Err(e) => form_again(invite_form(&token, &from, Some(&capitalize(&e.to_string())), f.username.trim())),
+        Err(e) => form_again(invite_form(
+            &token,
+            &from,
+            Some(&capitalize(&e.to_string())),
+            f.username.trim(),
+        )),
     }
 }

@@ -79,10 +79,12 @@ impl App {
         if user.created_at + WEEK > t {
             return Ok((Some(user.created_at + WEEK), true));
         }
-        let last: Option<i64> = sqlx::query_scalar("SELECT MAX(created_at) FROM invites WHERE user_id = ?")
-            .bind(user.id)
-            .fetch_one(&self.db)
-            .await?;
+        let last: Option<i64> = sqlx::query_scalar(
+            "SELECT MAX(created_at) FROM invites WHERE user_id = ?",
+        )
+        .bind(user.id)
+        .fetch_one(&self.db)
+        .await?;
         Ok((last.map(|l| l + WEEK).filter(|&n| n > t), false))
     }
 
@@ -159,12 +161,18 @@ impl App {
     /// # Errors
     ///
     /// `Internal` if the database fails. An unknown, used or expired invite is `Ok(None)`.
-    pub async fn open_invite(&self, token: &str) -> Result<Option<(Invite, User)>> {
+    pub async fn open_invite(
+        &self,
+        token: &str,
+    ) -> Result<Option<(Invite, User)>> {
         if token.len() != 32 || !token.bytes().all(|b| b.is_ascii_hexdigit()) {
             return Ok(None);
         }
         let invite: Option<Invite> =
-            sqlx::query_as("SELECT * FROM invites WHERE token = ?").bind(token).fetch_optional(&self.db).await?;
+            sqlx::query_as("SELECT * FROM invites WHERE token = ?")
+                .bind(token)
+                .fetch_optional(&self.db)
+                .await?;
         match invite.filter(|i| i.open(now())) {
             Some(i) => {
                 let from = self.user(i.user_id).await?;

@@ -38,7 +38,9 @@ const REVIEWS_PER_NEW_CARD: f64 = 10.0;
 
 /// Every rule the coach knows, in the order it checks them. The first that
 /// fires is the note on the home page.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize,
+)]
 #[serde(rename_all = "snake_case")]
 pub enum Rule {
     ExamClose,
@@ -129,7 +131,8 @@ pub struct Recall {
 
 impl Recall {
     pub fn rate(self) -> Option<f64> {
-        (self.reviews > 0).then(|| num::i64_f64(self.remembered) / num::i64_f64(self.reviews))
+        (self.reviews > 0)
+            .then(|| num::i64_f64(self.remembered) / num::i64_f64(self.reviews))
     }
 
     /// The rate, once there are at least `min` reviews.
@@ -180,7 +183,10 @@ pub struct PresetSignal {
 
 /// Everything the rules look at, gathered once.
 #[derive(Debug, Clone, Default)]
-#[expect(clippy::struct_excessive_bools, reason = "independent facts the rules read")]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "independent facts the rules read"
+)]
 pub struct Signals {
     /// The hour on the user's clock, 0 to 23.
     pub hour: u32,
@@ -245,7 +251,8 @@ pub struct Signals {
 impl Signals {
     /// The usual daily pace, once there are enough study days.
     fn usual(&self) -> Option<f64> {
-        (self.study_days_14 >= MIN_PACE_DAYS && self.usual_per_day > 0.0).then_some(self.usual_per_day)
+        (self.study_days_14 >= MIN_PACE_DAYS && self.usual_per_day > 0.0)
+            .then_some(self.usual_per_day)
     }
 
     fn new_per_day_7d(&self) -> f64 {
@@ -287,7 +294,10 @@ pub struct Advice {
     pub catch_up_toggle: Option<bool>,
 }
 
-#[expect(clippy::unnecessary_wraps, reason = "every note takes an optional link; this keeps the rules short")]
+#[expect(
+    clippy::unnecessary_wraps,
+    reason = "every note takes an optional link; this keeps the rules short"
+)]
 fn link(href: impl Into<String>, label: &str) -> Option<Link> {
     Some(Link { href: href.into(), label: label.into() })
 }
@@ -353,7 +363,10 @@ fn exam_close(s: &Signals) -> Option<Advice> {
     let d = s
         .decks
         .iter()
-        .filter(|d| d.new_left > 0 && d.exam_in_days.is_some_and(|n| (0..=21).contains(&n)))
+        .filter(|d| {
+            d.new_left > 0
+                && d.exam_in_days.is_some_and(|n| (0..=21).contains(&n))
+        })
         .min_by_key(|d| (d.exam_in_days, d.id))?;
     let left = d.exam_in_days.unwrap_or(0);
     let when = match left {
@@ -365,13 +378,18 @@ fn exam_close(s: &Signals) -> Option<Advice> {
     if left <= 3 {
         return Some(note(
             Rule::ExamClose,
-            format!("Your {} exam is {when}. Stop new cards now and review what you already know.", d.name),
+            format!(
+                "Your {} exam is {when}. Stop new cards now and review what you already know.",
+                d.name
+            ),
             link(href, "Open the deck"),
         ));
     }
     let pace = s.deck_preset(d).map_or(0, |p| p.new_per_day);
     // Two days before the exam are for reviewing only.
-    let need = num::f64_i64((num::i64_f64(d.new_left) / num::i64_f64((left - 2).max(1))).ceil());
+    let need = num::f64_i64(
+        (num::i64_f64(d.new_left) / num::i64_f64((left - 2).max(1))).ceil(),
+    );
     if need <= pace {
         return None;
     }
@@ -415,7 +433,8 @@ fn caught_up(s: &Signals) -> Option<Advice> {
         catch_up_toggle: Some(false),
         ..note(
             Rule::CaughtUp,
-            "You caught up. Turn catch-up mode off to get new cards again.".into(),
+            "You caught up. Turn catch-up mode off to get new cards again."
+                .into(),
             link("/settings", "Turn it off"),
         )
     })
@@ -447,7 +466,10 @@ fn leeches(s: &Signals) -> Option<Advice> {
             agree(s.leeches, "is", "are")
         )
     } else {
-        format!("{} ask a lot at once or look like another card. A quick fix saves reviews later.", cards(all))
+        format!(
+            "{} ask a lot at once or look like another card. A quick fix saves reviews later.",
+            cards(all)
+        )
     };
     Some(note(Rule::Leeches, text, link("/attention", "Have a look")))
 }
@@ -460,12 +482,18 @@ fn cause(s: &Signals, deck: Option<&DeckSignal>) -> (String, Option<Link>) {
     let leech_note = s.leeches > 0 || s.other_flags >= 5;
     if let Some(d) = deck.filter(|d| d.flagged > 0 && !leech_note) {
         return (
-            format!("{} in it keep slipping or ask a lot at once.", cards(d.flagged)),
+            format!(
+                "{} in it keep slipping or ask a lot at once.",
+                cards(d.flagged)
+            ),
             link("/attention", "Have a look"),
         );
     }
     let (new_7d, limit) = match deck {
-        Some(d) => (num::i64_f64(d.new_started_7d), s.deck_preset(d).map_or(0, |p| p.new_per_day)),
+        Some(d) => (
+            num::i64_f64(d.new_started_7d),
+            s.deck_preset(d).map_or(0, |p| p.new_per_day),
+        ),
         None => (num::i64_f64(s.new_started_7d), s.new_limit()),
     };
     if limit > 0 && new_7d / 7.0 >= num::i64_f64(limit) * 0.8 {
@@ -489,7 +517,11 @@ fn cause(s: &Signals, deck: Option<&DeckSignal>) -> (String, Option<Link>) {
 
 /// One deck clearly under its target while the rest is fine.
 fn deck_lags(s: &Signals) -> Option<Advice> {
-    let short = |d: &&DeckSignal| d.recall.rate_over(MIN_DECK_SAMPLE).is_some_and(|r| r <= d.target - 0.07);
+    let short = |d: &&DeckSignal| {
+        d.recall
+            .rate_over(MIN_DECK_SAMPLE)
+            .is_some_and(|r| r <= d.target - 0.07)
+    };
     let lagging: Vec<&DeckSignal> = s.decks.iter().filter(short).collect();
     // Several decks short is the whole picture; `below_target` speaks then.
     let [d] = lagging[..] else { return None };
@@ -523,7 +555,11 @@ fn below_target(s: &Signals) -> Option<Advice> {
     let (why, to) = cause(s, None);
     Some(note(
         Rule::BelowTarget,
-        format!("You remembered {} of your cards; you aim for {}. {why}", pct(r), pct(s.target)),
+        format!(
+            "You remembered {} of your cards; you aim for {}. {why}",
+            pct(r),
+            pct(s.target)
+        ),
         to,
     ))
 }
@@ -535,7 +571,9 @@ fn sliding(s: &Signals) -> Option<Advice> {
     if now > before - 0.06 {
         return None;
     }
-    let why = if num::i64_f64(s.new_started_7d) / 7.0 >= 1.0 && s.new_limit() > 0 {
+    let why = if num::i64_f64(s.new_started_7d) / 7.0 >= 1.0
+        && s.new_limit() > 0
+    {
         " Many new cards came in lately; a few calmer days usually bring it back."
     } else if s.days_studied_7 <= 3 {
         " You studied on fewer days; short daily rounds bring it back."
@@ -544,7 +582,11 @@ fn sliding(s: &Signals) -> Option<Advice> {
     };
     Some(note(
         Rule::Sliding,
-        format!("Your recall dropped from {} to {} in two weeks.{why}", pct(before), pct(now)),
+        format!(
+            "Your recall dropped from {} to {} in two weeks.{why}",
+            pct(before),
+            pct(now)
+        ),
         link("/stats", "See your stats"),
     ))
 }
@@ -572,7 +614,8 @@ fn wave_coming(s: &Signals) -> Option<Advice> {
     if s.new_started_7d == 0 || s.next_days.is_empty() {
         return None;
     }
-    let ahead = num::i64_f64(s.next_days.iter().sum::<i64>()) / num::usize_f64(s.next_days.len());
+    let ahead = num::i64_f64(s.next_days.iter().sum::<i64>())
+        / num::usize_f64(s.next_days.len());
     if ahead < usual * 1.3 || ahead - usual < 10.0 {
         return None;
     }
@@ -708,11 +751,10 @@ fn above_target(s: &Signals) -> Option<Advice> {
 }
 
 fn odd_target(s: &Signals) -> Option<Advice> {
-    let p = s
-        .presets
-        .iter()
-        .filter(|p| p.used)
-        .find(|p| (p.desired_retention > 0.95 && !p.has_exam) || p.desired_retention < 0.80)?;
+    let p = s.presets.iter().filter(|p| p.used).find(|p| {
+        (p.desired_retention > 0.95 && !p.has_exam)
+            || p.desired_retention < 0.80
+    })?;
     let text = if p.desired_retention > 0.95 {
         format!(
             "{} aims for {}. Above 95% the reviews grow steeply, about twice those of 90%. Worth it before an exam, rarely otherwise.",
@@ -726,7 +768,11 @@ fn odd_target(s: &Signals) -> Option<Advice> {
             pct(p.desired_retention)
         )
     };
-    Some(note(Rule::OddTarget, text, link(format!("/presets/{}", p.id), "Change it")))
+    Some(note(
+        Rule::OddTarget,
+        text,
+        link(format!("/presets/{}", p.id), "Change it"),
+    ))
 }
 
 fn tight_limit(s: &Signals) -> Option<Advice> {
@@ -740,11 +786,11 @@ fn tight_limit(s: &Signals) -> Option<Advice> {
             link("/presets", "Raise the limit"),
         ));
     }
-    let p = s
-        .presets
-        .iter()
-        .filter(|p| p.used && p.new_per_day > 0)
-        .find(|p| num::i64_f64(p.reviews_per_day) < num::i64_f64(p.new_per_day) * REVIEWS_PER_NEW_CARD)?;
+    let p =
+        s.presets.iter().filter(|p| p.used && p.new_per_day > 0).find(|p| {
+            num::i64_f64(p.reviews_per_day)
+                < num::i64_f64(p.new_per_day) * REVIEWS_PER_NEW_CARD
+        })?;
     Some(note(
         Rule::TightLimit,
         format!(
@@ -768,7 +814,12 @@ fn forgotten_deck(s: &Signals) -> Option<Advice> {
     let weeks = d.days_since_review.unwrap_or(14) / 7;
     Some(note(
         Rule::ForgottenDeck,
-        format!("{} waited {}; {} are due.", d.name, count(weeks, "week"), crate::format::number(d.due)),
+        format!(
+            "{} waited {}; {} are due.",
+            d.name,
+            count(weeks, "week"),
+            crate::format::number(d.due)
+        ),
         link(format!("/decks/{}", d.id), "Open it"),
     ))
 }
@@ -786,7 +837,11 @@ fn median(mut v: Vec<f64>) -> Option<f64> {
     }
     v.sort_by(f64::total_cmp);
     let mid = v.len() / 2;
-    if v.len() % 2 == 1 { v.get(mid).copied() } else { Some(f64::midpoint(*v.get(mid - 1)?, *v.get(mid)?)) }
+    if v.len() % 2 == 1 {
+        v.get(mid).copied()
+    } else {
+        Some(f64::midpoint(*v.get(mid - 1)?, *v.get(mid)?))
+    }
 }
 
 /// Sessions from answer times (oldest first): each one's length in
@@ -797,7 +852,9 @@ pub fn session_lengths(answers: &[(i64, i64)]) -> Vec<f64> {
     for &(at, ms) in answers {
         let end = at + ms.clamp(0, MAX_ANSWER_MS) / 1000;
         start = match start {
-            Some((first, last)) if at - last < SESSION_GAP_SECS => Some((first, end)),
+            Some((first, last)) if at - last < SESSION_GAP_SECS => {
+                Some((first, end))
+            }
             Some((first, last)) => {
                 out.push(num::i64_f64(last - first) / 60.0);
                 Some((at, end))
@@ -830,7 +887,12 @@ impl App {
         let stats = self.stats(access, None).await?;
         let attention = self.attention(access, None).await?;
         let overdue = self.overdue(access).await?;
-        let known = Known { decks: &decks, stats: &stats, attention: &attention, overdue };
+        let known = Known {
+            decks: &decks,
+            stats: &stats,
+            attention: &attention,
+            overdue,
+        };
         self.advice_from(access, &known).await
     }
 
@@ -840,7 +902,11 @@ impl App {
     /// # Errors
     ///
     /// `Internal` if the database fails.
-    pub async fn advice_from(&self, access: &Access, known: &Known<'_>) -> Result<Vec<Advice>> {
+    pub async fn advice_from(
+        &self,
+        access: &Access,
+        known: &Known<'_>,
+    ) -> Result<Vec<Advice>> {
         Ok(advice_with(access, known, self.coach_reads(access).await?))
     }
 
@@ -864,8 +930,13 @@ impl App {
                     .await?;
             Ok::<_, crate::error::AppError>(quiet)
         };
-        let confidence =
-            async { if user.confidence_check { self.confidence(access, None).await.map(Some) } else { Ok(None) } };
+        let confidence = async {
+            if user.confidence_check {
+                self.confidence(access, None).await.map(Some)
+            } else {
+                Ok(None)
+            }
+        };
         let (snoozed, presets, rows, optimizable_reviews, confidence) = tokio::try_join!(
             snoozed,
             self.list_presets(access),
@@ -873,7 +944,13 @@ impl App {
             self.optimizable_reviews(access),
             confidence,
         )?;
-        Ok(CoachReads { snoozed, presets, rows, optimizable_reviews, confidence })
+        Ok(CoachReads {
+            snoozed,
+            presets,
+            rows,
+            optimizable_reviews,
+            confidence,
+        })
     }
 
     /// "Not now": the rule stays quiet for three days.
@@ -882,7 +959,11 @@ impl App {
     ///
     /// - `Forbidden` if the token is read-only.
     /// - `Internal` if the database fails.
-    pub async fn snooze_advice(&self, access: &Access, rule: Rule) -> Result<()> {
+    pub async fn snooze_advice(
+        &self,
+        access: &Access,
+        rule: Rule,
+    ) -> Result<()> {
         access.require_write()?;
         sqlx::query(
             "INSERT INTO coach_snoozes (user_id, rule, until) VALUES (?, ?, ?)
@@ -899,12 +980,21 @@ impl App {
     /// # Errors
     ///
     /// `Internal` if the database fails.
-    pub async fn signals(&self, access: &Access, known: &Known<'_>) -> Result<Signals> {
+    pub async fn signals(
+        &self,
+        access: &Access,
+        known: &Known<'_>,
+    ) -> Result<Signals> {
         Ok(signals_with(access, known, self.coach_reads(access).await?))
     }
 
     /// The rows the coach reads: answers from `since` on, cards due by `now`.
-    async fn coach_rows(&self, access: &Access, since: i64, now: i64) -> Result<Rows> {
+    async fn coach_rows(
+        &self,
+        access: &Access,
+        since: i64,
+        now: i64,
+    ) -> Result<Rows> {
         // Six weeks of answers: recall now and before, pace, sessions.
         let answers = self.answers_since(access, since);
         // The last review of each deck, however long ago.
@@ -923,7 +1013,9 @@ impl App {
         .bind(now)
         .fetch_all(&self.db);
         let (answers, last, uncapped) =
-            tokio::try_join!(answers, async { Ok(last.await?) }, async { Ok(uncapped.await?) })?;
+            tokio::try_join!(answers, async { Ok(last.await?) }, async {
+                Ok(uncapped.await?)
+            })?;
         Ok(Rows { answers, last, uncapped: uncapped.into_iter().collect() })
     }
 }
@@ -939,7 +1031,11 @@ pub struct CoachReads {
 
 /// The coach's notes from what is known and what was read, most important
 /// first. Rules put off with "Not now" stay out. No database.
-pub fn advice_with(access: &Access, known: &Known<'_>, reads: CoachReads) -> Vec<Advice> {
+pub fn advice_with(
+    access: &Access,
+    known: &Known<'_>,
+    reads: CoachReads,
+) -> Vec<Advice> {
     let snoozed = reads.snoozed.clone();
     let mut notes = advise(&signals_with(access, known, reads));
     notes.retain(|n| !snoozed.iter().any(|q| q == n.rule.as_str()));
@@ -947,33 +1043,61 @@ pub fn advice_with(access: &Access, known: &Known<'_>, reads: CoachReads) -> Vec
 }
 
 /// The signals the rules read. No database.
-fn signals_with(access: &Access, known: &Known<'_>, reads: CoachReads) -> Signals {
-    let CoachReads { presets, rows, optimizable_reviews, confidence, .. } = reads;
+fn signals_with(
+    access: &Access,
+    known: &Known<'_>,
+    reads: CoachReads,
+) -> Signals {
+    let CoachReads { presets, rows, optimizable_reviews, confidence, .. } =
+        reads;
     let user = &access.user;
     let clock = user.clock();
     let today = clock.today();
 
-    let target_of: HashMap<i64, f64> = presets.iter().map(|p| (p.id, p.desired_retention)).collect();
-    let deck_target: HashMap<i64, f64> =
-        known.decks.iter().map(|d| (d.deck.id, target_of.get(&d.deck.preset_id).copied().unwrap_or(0.9))).collect();
+    let target_of: HashMap<i64, f64> =
+        presets.iter().map(|p| (p.id, p.desired_retention)).collect();
+    let deck_target: HashMap<i64, f64> = known
+        .decks
+        .iter()
+        .map(|d| {
+            (
+                d.deck.id,
+                target_of.get(&d.deck.preset_id).copied().unwrap_or(0.9),
+            )
+        })
+        .collect();
     let visible: HashSet<i64> = known.decks.iter().map(|d| d.deck.id).collect();
     let ago = |at: i64| (today - clock.date_of(at)).num_days();
 
     let Rows { answers, last, uncapped } = rows;
-    let last: HashMap<i64, i64> = last.into_iter().filter(|(d, _)| visible.contains(d)).collect();
+    let last: HashMap<i64, i64> =
+        last.into_iter().filter(|(d, _)| visible.contains(d)).collect();
     let mut s = Signals {
-        hour: chrono::DateTime::from_timestamp(clock.now, 0).map_or(12, |t| t.with_timezone(&clock.tz).hour()),
+        hour: chrono::DateTime::from_timestamp(clock.now, 0)
+            .map_or(12, |t| t.with_timezone(&clock.tz).hour()),
         quiet: crate::study::quiet_until(user, clock.now).is_some(),
         reviews_today: known.stats.reviews_today,
         overdue: known.overdue,
         catch_up: user.catch_up,
         breaks_on: user.session_minutes != 0,
-        next_days: known.stats.forecast.iter().skip(1).take(7).map(|(_, n)| *n).collect(),
+        next_days: known
+            .stats
+            .forecast
+            .iter()
+            .skip(1)
+            .take(7)
+            .map(|(_, n)| *n)
+            .collect(),
         leeches: num::usize_i64(
-            known.attention.iter().filter(|a| a.flags.iter().any(|f| f.kind == Kind::Leech)).count(),
+            known
+                .attention
+                .iter()
+                .filter(|a| a.flags.iter().any(|f| f.kind == Kind::Leech))
+                .count(),
         ),
         optimizable_reviews,
-        ever_optimized: user.optimized_at.is_some() || user.fsrs_params_updated_at.is_some(),
+        ever_optimized: user.optimized_at.is_some()
+            || user.fsrs_params_updated_at.is_some(),
         auto_optimize: user.auto_optimize,
         days_since_review: last.values().max().map(|at| ago(*at)),
         ..Default::default()
@@ -982,16 +1106,35 @@ fn signals_with(access: &Access, known: &Known<'_>, reads: CoachReads) -> Signal
     if let Some(c) = confidence {
         s.sure = Some(Recall { reviews: c.sure, remembered: c.sure_recalled });
     }
-    let visible_answers: Vec<&Answer> = answers.iter().filter(|r| visible.contains(&r.deck_id)).collect();
-    let tally = Tally::of(&visible_answers, ago, |deck| deck_target.get(&deck).copied().unwrap_or(0.9));
+    let visible_answers: Vec<&Answer> =
+        answers.iter().filter(|r| visible.contains(&r.deck_id)).collect();
+    let tally = Tally::of(&visible_answers, ago, |deck| {
+        deck_target.get(&deck).copied().unwrap_or(0.9)
+    });
     tally.add_to(&mut s, clock.start_of_today(), &deck_target);
-    let per_deck = PerDeck { tally: &tally, target: &deck_target, last: &last, uncapped: &uncapped };
-    s.decks = per_deck.signals(known, user.catch_up, today, ago, &mut s.due_today, &mut s.held_back);
+    let per_deck = PerDeck {
+        tally: &tally,
+        target: &deck_target,
+        last: &last,
+        uncapped: &uncapped,
+    };
+    s.decks = per_deck.signals(
+        known,
+        user.catch_up,
+        today,
+        ago,
+        &mut s.due_today,
+        &mut s.held_back,
+    );
     s.minutes_due = known.stats.minutes_for(s.due_today);
     s.presets = presets
         .iter()
         .map(|p| {
-            let decks: Vec<&DeckSummary> = known.decks.iter().filter(|d| d.deck.preset_id == p.id).collect();
+            let decks: Vec<&DeckSummary> = known
+                .decks
+                .iter()
+                .filter(|d| d.deck.preset_id == p.id)
+                .collect();
             PresetSignal {
                 id: p.id,
                 name: p.name.clone(),
@@ -1037,18 +1180,25 @@ struct Tally {
 
 impl Tally {
     /// `ago` gives an answer's age in days; `target` a deck's aim.
-    fn of(answers: &[&Answer], ago: impl Fn(i64) -> i64, target: impl Fn(i64) -> f64) -> Self {
+    fn of(
+        answers: &[&Answer],
+        ago: impl Fn(i64) -> i64,
+        target: impl Fn(i64) -> f64,
+    ) -> Self {
         let mut t = Self::default();
         for r in answers {
             let ago = ago(r.reviewed_at);
-            if let Some(day) = usize::try_from(ago).ok().and_then(|a| t.per_day.get_mut(a)) {
+            if let Some(day) =
+                usize::try_from(ago).ok().and_then(|a| t.per_day.get_mut(a))
+            {
                 *day += 1;
             }
             if ago < 7 {
                 t.reviews_7 += 1;
                 t.answers_7d.push((r.reviewed_at, r.duration_ms.unwrap_or(0)));
                 if let Some(ms) = r.duration_ms.filter(|ms| *ms > 0) {
-                    t.seconds_7d.push(num::i64_f64(ms.min(MAX_ANSWER_MS)) / 1000.0);
+                    t.seconds_7d
+                        .push(num::i64_f64(ms.min(MAX_ANSWER_MS)) / 1000.0);
                 }
                 if r.state_before == CardState::New {
                     t.new_7d.entry(r.deck_id).or_default().insert(r.card_id);
@@ -1067,31 +1217,58 @@ impl Tally {
                 add(t.recall_deck.entry(r.deck_id).or_default());
                 t.target_sum += target(r.deck_id);
             }
-            add(if ago < 14 { &mut t.recall_recent } else { &mut t.recall_before });
+            add(if ago < 14 {
+                &mut t.recall_recent
+            } else {
+                &mut t.recall_before
+            });
         }
         t
     }
 
     /// Fills in the signals that come from the answers alone.
-    fn add_to(&self, s: &mut Signals, start_today: i64, deck_target: &HashMap<i64, f64>) {
-        let study_days: Vec<f64> = self.per_day.iter().filter(|n| **n > 0).map(|n| num::i64_f64(*n)).collect();
+    fn add_to(
+        &self,
+        s: &mut Signals,
+        start_today: i64,
+        deck_target: &HashMap<i64, f64>,
+    ) {
+        let study_days: Vec<f64> = self
+            .per_day
+            .iter()
+            .filter(|n| **n > 0)
+            .map(|n| num::i64_f64(*n))
+            .collect();
         s.study_days_14 = num::usize_i64(study_days.len());
         s.usual_per_day = median(study_days).unwrap_or(0.0);
-        s.days_studied_7 = num::usize_i64(self.per_day.iter().take(7).filter(|n| **n > 0).count());
+        s.days_studied_7 = num::usize_i64(
+            self.per_day.iter().take(7).filter(|n| **n > 0).count(),
+        );
         s.reviews_7 = self.reviews_7;
-        s.new_started_7d = self.new_7d.values().map(|c| num::usize_i64(c.len())).sum();
-        s.answer_seconds = (self.seconds_7d.len() >= 20).then(|| median(self.seconds_7d.clone())).flatten();
+        s.new_started_7d =
+            self.new_7d.values().map(|c| num::usize_i64(c.len())).sum();
+        s.answer_seconds = (self.seconds_7d.len() >= 20)
+            .then(|| median(self.seconds_7d.clone()))
+            .flatten();
         // Today's session may still be going; only whole ones count.
-        let whole: Vec<(i64, i64)> = self.answers_7d.iter().copied().filter(|(at, _)| *at < start_today).collect();
+        let whole: Vec<(i64, i64)> = self
+            .answers_7d
+            .iter()
+            .copied()
+            .filter(|(at, _)| *at < start_today)
+            .collect();
         let sessions = session_lengths(&whole);
-        s.session_minutes = (sessions.len() >= 3).then(|| median(sessions)).flatten();
-        (s.recall_30d, s.recall_recent, s.recall_before) = (self.recall_30d, self.recall_recent, self.recall_before);
+        s.session_minutes =
+            (sessions.len() >= 3).then(|| median(sessions)).flatten();
+        (s.recall_30d, s.recall_recent, s.recall_before) =
+            (self.recall_30d, self.recall_recent, self.recall_before);
         s.target = if s.recall_30d.reviews > 0 {
             self.target_sum / num::i64_f64(s.recall_30d.reviews)
         } else if deck_target.is_empty() {
             0.9
         } else {
-            deck_target.values().sum::<f64>() / num::usize_f64(deck_target.len())
+            deck_target.values().sum::<f64>()
+                / num::usize_f64(deck_target.len())
         };
     }
 }
@@ -1123,27 +1300,47 @@ impl PerDeck<'_> {
         for a in known.attention {
             *flagged.entry(a.card.deck_id).or_default() += 1;
         }
-        let get = |m: &HashMap<i64, i64>, id: i64| m.get(&id).copied().unwrap_or(0);
+        let get =
+            |m: &HashMap<i64, i64>, id: i64| m.get(&id).copied().unwrap_or(0);
         (known.decks.iter().filter(|d| d.deck.status.is_active()))
             .map(|d| {
                 let id = d.deck.id;
                 *due_today += d.due_total();
                 if !catch_up {
-                    *held_back += (get(self.uncapped, id) - d.review_due).max(0);
+                    *held_back +=
+                        (get(self.uncapped, id) - d.review_due).max(0);
                 }
                 DeckSignal {
                     id,
                     // A nested deck by its own name: "Spanish", not the path.
-                    name: (d.deck.name.rsplit("::").map(str::trim).find(|p| !p.is_empty()))
-                        .unwrap_or(&d.deck.name)
-                        .to_string(),
+                    name: (d
+                        .deck
+                        .name
+                        .rsplit("::")
+                        .map(str::trim)
+                        .find(|p| !p.is_empty()))
+                    .unwrap_or(&d.deck.name)
+                    .to_string(),
                     preset_id: d.deck.preset_id,
-                    recall: self.tally.recall_deck.get(&id).copied().unwrap_or_default(),
+                    recall: self
+                        .tally
+                        .recall_deck
+                        .get(&id)
+                        .copied()
+                        .unwrap_or_default(),
                     target: self.target.get(&id).copied().unwrap_or(0.9),
                     due: d.learning_due + get(self.uncapped, id),
                     new_left: d.new,
-                    new_started_7d: self.tally.new_7d.get(&id).map_or(0, |c| num::usize_i64(c.len())),
-                    exam_in_days: d.deck.exam_date.map(|e| (e - today).num_days()).filter(|n| *n >= 0),
+                    new_started_7d: self
+                        .tally
+                        .new_7d
+                        .get(&id)
+                        .map_or(0, |c| num::usize_i64(c.len())),
+                    exam_in_days: d
+                        .deck
+                        .exam_date
+                        .map(|e| (e - today).num_days())
+                        .filter(|n| *n >= 0),
                     days_since_review: self.last.get(&id).map(|at| ago(*at)),
                     flagged: get(&flagged, id),
                 }
@@ -1261,7 +1458,10 @@ mod tests {
         s.decks[0].exam_in_days = Some(2);
         let a = advise(&s);
         assert_eq!(a[0].rule, Rule::ExamClose);
-        assert!(a[0].text.contains("in 2 days") && a[0].text.contains("Stop new cards"));
+        assert!(
+            a[0].text.contains("in 2 days")
+                && a[0].text.contains("Stop new cards")
+        );
         s.decks[0].exam_in_days = Some(0);
         assert!(advise(&s)[0].text.contains("is today"));
     }
@@ -1335,7 +1535,13 @@ mod tests {
         s.other_flags = 4;
         let a = advise(&s);
         assert_eq!(a[0].rule, Rule::DeckLags);
-        assert!(a[0].text.starts_with("French: you remembered 80%, you aim for 90%. 4 cards"), "{}", a[0].text);
+        assert!(
+            a[0].text.starts_with(
+                "French: you remembered 80%, you aim for 90%. 4 cards"
+            ),
+            "{}",
+            a[0].text
+        );
         // With the leech note above it, the deck note names another cause.
         s.leeches = 1;
         let a = advise(&s);
@@ -1392,7 +1598,11 @@ mod tests {
         s.recall_recent = Recall { reviews: 200, remembered: 168 };
         let a = advise(&s);
         assert_eq!(a[0].rule, Rule::Sliding);
-        assert!(a[0].text.starts_with("Your recall dropped from 91% to 84%"), "{}", a[0].text);
+        assert!(
+            a[0].text.starts_with("Your recall dropped from 91% to 84%"),
+            "{}",
+            a[0].text
+        );
         s.recall_recent = Recall { reviews: 30, remembered: 10 };
         assert_eq!(first(&s), None);
     }
@@ -1450,7 +1660,9 @@ mod tests {
         s.days_since_review = Some(4);
         let a = advise(&s);
         assert_eq!(a[0].rule, Rule::BackAfterGap);
-        assert!(a[0].text.starts_with("Welcome back. 100 cards waited for you, about 20 minutes."));
+        assert!(a[0].text.starts_with(
+            "Welcome back. 100 cards waited for you, about 20 minutes."
+        ));
     }
 
     #[test]
@@ -1521,7 +1733,10 @@ mod tests {
         s.ever_optimized = false;
         s.hour = 23;
         s.leeches = 2;
-        assert_eq!(rules(&s), vec![Rule::Late, Rule::Leeches, Rule::NeverFitted]);
+        assert_eq!(
+            rules(&s),
+            vec![Rule::Late, Rule::Leeches, Rule::NeverFitted]
+        );
     }
 
     #[test]
@@ -1535,14 +1750,22 @@ mod tests {
         s.sure = Some(Recall { reviews: 100, remembered: 70 });
         s.presets[0].reviews_per_day = 50;
         for a in advise(&s) {
-            assert!(!a.text.contains('—') && !a.text.contains(" - "), "{}", a.text);
+            assert!(
+                !a.text.contains('—') && !a.text.contains(" - "),
+                "{}",
+                a.text
+            );
         }
     }
     #[test]
     fn sessions_split_at_ten_minute_pauses() {
         let t = 1_000_000;
         // Two answers a minute apart, then a long pause, then one more.
-        let s = session_lengths(&[(t, 10_000), (t + 60, 30_000), (t + 3600, 5_000)]);
+        let s = session_lengths(&[
+            (t, 10_000),
+            (t + 60, 30_000),
+            (t + 3600, 5_000),
+        ]);
         assert_eq!(s.len(), 2);
         assert!((s[0] - 1.5).abs() < 0.01, "{s:?}");
         // A card left open for an hour counts as a minute.

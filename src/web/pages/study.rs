@@ -175,8 +175,12 @@ pub(crate) async fn study_card(
     let timed_out = revealed && limit > 0 && now() - shown.at > limit + 1;
     let (done, total) = app.session_progress(access, q_deck).await?;
     let leech = app.leech_note(card).await?.is_some();
-    let deck_param = q_deck.map_or_else(Default::default, |d| format!("&deck={d}"));
-    let show_href = format!("/study?card={}&show=1&t={}{}#answer", card.id, shown.at, deck_param);
+    let deck_param =
+        q_deck.map_or_else(Default::default, |d| format!("&deck={d}"));
+    let show_href = format!(
+        "/study?card={}&show=1&t={}{}#answer",
+        card.id, shown.at, deck_param
+    );
     let reveal_form = typed || ask_sure;
     let reveal = if reveal_form {
         reveal_controls(card.id, shown.at, q_deck, revealed, typed, ask_sure)
@@ -192,7 +196,15 @@ pub(crate) async fn study_card(
     let echo = typed_echo(typed, shown.typed.as_deref());
     let timer = timer_box(limit, revealed);
     let timeout = timeout_form(card, shown, q_deck, timed_out, &sure_field);
-    let foot = study_foot(&deck.name, deck.id, done, total, q_deck, Some(card.id), leech);
+    let foot = study_foot(
+        &deck.name,
+        deck.id,
+        done,
+        total,
+        q_deck,
+        Some(card.id),
+        leech,
+    );
     // A multicard asks its items in its own body, with the reveal and the
     // answers inside; a plain card shows its faces and the buttons below.
     let body = if let Some(how) = card.multi {
@@ -206,11 +218,25 @@ pub(crate) async fn study_card(
             echo,
             timed_out,
         };
-        let multi = multi_study(card, how, &app.card_items(card).await?, q_deck, shown, &extras);
+        let multi = multi_study(
+            card,
+            how,
+            &app.card_items(card).await?,
+            q_deck,
+            shown,
+            &extras,
+        );
         html! { (multi) (timer) @if reveal_form { (reveal) } (timeout) (foot) }
     } else {
-        let answers =
-            answer_form(card, shown, q_deck, user.four_buttons, revealed && !timed_out, &previews, &sure_field);
+        let answers = answer_form(
+            card,
+            shown,
+            q_deck,
+            user.four_buttons,
+            revealed && !timed_out,
+            &previews,
+            &sure_field,
+        );
         html! { (card_faces(card, revealed, &echo)) (timer) (reveal) (timeout) (answers) (foot) }
     };
     let body = html! { (flash(msg)) section.study.revealed[revealed].timed-out[timed_out] { (body) } };
@@ -233,7 +259,13 @@ fn card_faces(card: &Card, revealed: bool, echo: &Markup) -> Markup {
 }
 
 /// Shown when a timed card runs out: the answer counts as forgotten.
-fn timeout_form(card: &Card, shown: &Shown, q_deck: Option<i64>, timed_out: bool, sure_field: &Markup) -> Markup {
+fn timeout_form(
+    card: &Card,
+    shown: &Shown,
+    q_deck: Option<i64>,
+    timed_out: bool,
+    sure_field: &Markup,
+) -> Markup {
     html! {
     form.timeout-form method="post" action="/study/answer" hidden[!timed_out] data-stay {
         input type="hidden" name="card" value=(card.id);
@@ -368,14 +400,21 @@ pub(crate) fn reveal_button(href: &str, revealed: bool) -> Markup {
 pub(crate) fn item_md(text: &str) -> Markup {
     let html = markdown::render(text);
     let t = html.trim();
-    let inner = t.strip_prefix("<p>").and_then(|x| x.strip_suffix("</p>")).filter(|x| !x.contains("<p>"));
+    let inner = t
+        .strip_prefix("<p>")
+        .and_then(|x| x.strip_suffix("</p>"))
+        .filter(|x| !x.contains("<p>"));
     PreEscaped(inner.unwrap_or(t).to_string())
 }
 
 /// A multicard's back as it is studied: everything on it in order, every
 /// item a row. Asked items are rows to tap when you remembered them (when
 /// `tap`; the editor's preview only shows them), the others show as known.
-pub(crate) fn multi_back(pieces: &[Piece], asked: &[bool], tap: bool) -> Markup {
+pub(crate) fn multi_back(
+    pieces: &[Piece],
+    asked: &[bool],
+    tap: bool,
+) -> Markup {
     // Items next to each other share one list: a block is text, or items
     // with their numbers.
     type Block<'a> = (Option<&'a str>, Vec<(usize, &'a str)>);
@@ -483,12 +522,19 @@ pub(crate) fn marked_skeleton(back: &str, asked: &[bool]) -> Markup {
 
 /// The back still marks exactly the stored items.
 fn marked_fits(card: &Card, how: Split, items: &[multi::CardItem]) -> bool {
-    how == Split::Marked && multi::items(&card.back, how).is_some_and(|i| i.len() == items.len())
+    how == Split::Marked
+        && multi::items(&card.back, how).is_some_and(|i| i.len() == items.len())
 }
 
 /// A multicard's back for its stored items: marked segments in place when
 /// the back still marks exactly those, else rows (see [`multi_back`]).
-pub(crate) fn multi_answer(card: &Card, how: Split, items: &[multi::CardItem], asked: &[bool], tap: bool) -> Markup {
+pub(crate) fn multi_answer(
+    card: &Card,
+    how: Split,
+    items: &[multi::CardItem],
+    asked: &[bool],
+    tap: bool,
+) -> Markup {
     if marked_fits(card, how, items) {
         return marked_back(&card.back, asked, tap);
     }
@@ -497,9 +543,18 @@ pub(crate) fn multi_answer(card: &Card, how: Split, items: &[multi::CardItem], a
 
 /// The back's pieces for its stored items. Should the back no longer split
 /// into those (it always does after a save), the items alone are shown.
-pub(crate) fn pieces_for(card: &Card, how: Split, items: &[multi::CardItem]) -> Vec<Piece> {
+pub(crate) fn pieces_for(
+    card: &Card,
+    how: Split,
+    items: &[multi::CardItem],
+) -> Vec<Piece> {
     match multi::split(&card.back, how) {
-        Some(p) if p.iter().filter(|p| matches!(p, Piece::Item(_))).count() == items.len() => p,
+        Some(p)
+            if p.iter().filter(|p| matches!(p, Piece::Item(_))).count()
+                == items.len() =>
+        {
+            p
+        }
         _ => items.iter().map(|i| Piece::Item(i.text.clone())).collect(),
     }
 }
@@ -519,7 +574,12 @@ pub(crate) fn multi_study(
     let revealed = shown.revealed;
     let asked = multi::asked(card, items, now());
     let n_asked = asked.iter().filter(|a| **a).count();
-    let known: Vec<&multi::CardItem> = items.iter().zip(&asked).filter(|(_, a)| !**a).map(|(i, _)| i).collect();
+    let known: Vec<&multi::CardItem> = items
+        .iter()
+        .zip(&asked)
+        .filter(|(_, a)| !**a)
+        .map(|(i, _)| i)
+        .collect();
     html! {
         form.list-answer method="post" action="/study/answer" {
             input type="hidden" name="card" value=(card.id);
@@ -572,35 +632,73 @@ pub(crate) async fn study(
     if let (Some(card_id), Some(1)) = (q.card, q.show) {
         let card = app.card(&access, card_id).await?;
         let deck = app.deck(&access, card.deck_id).await?;
-        let shown =
-            Shown { at: q.t.unwrap_or_else(now), revealed: true, sure: q.sure.map(|s| s == 1), typed: q.typed.clone() };
-        return Ok(study_card(&app, &access, &user.0, msg.as_deref(), &card, &deck, q.deck, &shown)
-            .await?
-            .into_response());
+        let shown = Shown {
+            at: q.t.unwrap_or_else(now),
+            revealed: true,
+            sure: q.sure.map(|s| s == 1),
+            typed: q.typed.clone(),
+        };
+        return Ok(study_card(
+            &app,
+            &access,
+            &user.0,
+            msg.as_deref(),
+            &card,
+            &deck,
+            q.deck,
+            &shown,
+        )
+        .await?
+        .into_response());
     }
 
     if let Some(until) = study::quiet_until(&user.0, now()) {
-        return Ok(rest_page(&user.0, msg.as_deref(), q.deck, until).into_response());
+        return Ok(
+            rest_page(&user.0, msg.as_deref(), q.deck, until).into_response()
+        );
     }
     if let Some(due) = app.break_due(&access).await? {
         app.break_shown(user.0.id).await?;
-        return Ok(break_page(&user.0, msg.as_deref(), q.deck, due).into_response());
+        return Ok(
+            break_page(&user.0, msg.as_deref(), q.deck, due).into_response()
+        );
     }
 
     let Some(sc) = app.next_card(&access, q.deck).await? else {
         let end = session_end(&app, &access, q.deck).await?;
         let body = html! { (flash(msg.as_deref())) (end) };
-        return Ok(page(Some(Nav::Study), "Study", Some(&user.0), Some("study-done"), body).into_response());
+        return Ok(page(
+            Some(Nav::Study),
+            "Study",
+            Some(&user.0),
+            Some("study-done"),
+            body,
+        )
+        .into_response());
     };
-    Ok(study_card(&app, &access, &user.0, msg.as_deref(), &sc.card, &sc.deck, q.deck, &Shown::front(now()))
-        .await?
-        .into_response())
+    Ok(study_card(
+        &app,
+        &access,
+        &user.0,
+        msg.as_deref(),
+        &sc.card,
+        &sc.deck,
+        q.deck,
+        &Shown::front(now()),
+    )
+    .await?
+    .into_response())
 }
 
 /// When nothing is left: what today held and when cards come next, or how
 /// to get started when there are no cards at all.
-async fn session_end(app: &App, access: &Access, deck: Option<i64>) -> Result<Markup, AppError> {
-    let any_cards = app.deck_summaries(access).await?.iter().any(|d| d.total > 0);
+async fn session_end(
+    app: &App,
+    access: &Access,
+    deck: Option<i64>,
+) -> Result<Markup, AppError> {
+    let any_cards =
+        app.deck_summaries(access).await?.iter().any(|d| d.total > 0);
     let stats = app.stats(access, deck).await?;
     let next = app.next_review_at(access, deck).await?;
     let clock = access.user.clock();
@@ -641,12 +739,18 @@ async fn session_end(app: &App, access: &Access, deck: Option<i64>) -> Result<Ma
 
 /// "7:00": the time of day of a moment, in the user's zone.
 pub(crate) fn clock_time(clock: &crate::scheduler::Clock, ts: i64) -> String {
-    chrono::DateTime::from_timestamp(ts, 0)
-        .map_or_else(Default::default, |t| t.with_timezone(&clock.tz).format("%-H:%M").to_string())
+    chrono::DateTime::from_timestamp(ts, 0).map_or_else(Default::default, |t| {
+        t.with_timezone(&clock.tz).format("%-H:%M").to_string()
+    })
 }
 
 /// Quiet hours: a rest screen instead of cards.
-pub(crate) fn rest_page(user: &User, msg: Option<&str>, deck: Option<i64>, until: i64) -> Markup {
+pub(crate) fn rest_page(
+    user: &User,
+    msg: Option<&str>,
+    deck: Option<i64>,
+    until: i64,
+) -> Markup {
     page(
         Some(Nav::Study),
         "Quiet hours",
@@ -672,7 +776,12 @@ pub(crate) fn rest_page(user: &User, msg: Option<&str>, deck: Option<i64>, until
 
 /// The session has reached the length set in settings, or with smart
 /// breaks the answers show tiredness.
-pub(crate) fn break_page(user: &User, msg: Option<&str>, deck: Option<i64>, due: study::BreakDue) -> Markup {
+pub(crate) fn break_page(
+    user: &User,
+    msg: Option<&str>,
+    deck: Option<i64>,
+    due: study::BreakDue,
+) -> Markup {
     // "a 6-minute break"
     let length = format!("{}-minute", due.length);
     page(
@@ -713,12 +822,20 @@ pub(crate) fn break_page(user: &User, msg: Option<&str>, deck: Option<i64>, due:
     )
 }
 
-pub(crate) async fn study_anyway(State(app): State<AppState>, user: WebUser, Form(f): Form<DeckForm>) -> WebResult {
+pub(crate) async fn study_anyway(
+    State(app): State<AppState>,
+    user: WebUser,
+    Form(f): Form<DeckForm>,
+) -> WebResult {
     app.lift_quiet(&user.0).await?;
     Ok(redirect(study_url(f.deck)))
 }
 
-pub(crate) async fn study_keep_going(State(app): State<AppState>, user: WebUser, Form(f): Form<DeckForm>) -> WebResult {
+pub(crate) async fn study_keep_going(
+    State(app): State<AppState>,
+    user: WebUser,
+    Form(f): Form<DeckForm>,
+) -> WebResult {
     app.skip_break(&user.0).await?;
     Ok(redirect(study_url(f.deck)))
 }
@@ -749,7 +866,11 @@ pub(crate) struct AnswerForm {
     pub(crate) input: Option<String>,
 }
 
-pub(crate) async fn study_answer(State(app): State<AppState>, user: WebUser, Form(f): Form<AnswerForm>) -> WebResult {
+pub(crate) async fn study_answer(
+    State(app): State<AppState>,
+    user: WebUser,
+    Form(f): Form<AnswerForm>,
+) -> WebResult {
     // Like Anki, cap the counted thinking time at 60 seconds.
     let duration = f.t.map(|t| ((now() - t).clamp(0, 60)) * 1000);
     let access = user.access();
@@ -761,18 +882,52 @@ pub(crate) async fn study_answer(State(app): State<AppState>, user: WebUser, For
     };
     let answered = match f.rating {
         // A timeout misses a multicard's asked items all at once too.
-        _ if timed_out => app.answer_card(&access, f.card, Rating::Again, duration, Some(f.reps)).await,
+        _ if timed_out => {
+            app.answer_card(
+                &access,
+                f.card,
+                Rating::Again,
+                duration,
+                Some(f.reps),
+            )
+            .await
+        }
         Some(r) => {
-            let rating = Rating::from_i64(r).ok_or_else(|| AppError::bad("invalid rating"))?;
-            app.answer_card(&user.access(), f.card, rating, duration, Some(f.reps)).await
+            let rating = Rating::from_i64(r)
+                .ok_or_else(|| AppError::bad("invalid rating"))?;
+            app.answer_card(
+                &user.access(),
+                f.card,
+                rating,
+                duration,
+                Some(f.reps),
+            )
+            .await
         }
         None => {
-            let missed = f.asked.into_iter().filter(|n| !f.recalled.contains(n)).collect();
-            app.answer_list(&user.access(), f.card, missed, duration, Some(f.reps)).await
+            let missed = f
+                .asked
+                .into_iter()
+                .filter(|n| !f.recalled.contains(n))
+                .collect();
+            app.answer_list(
+                &user.access(),
+                f.card,
+                missed,
+                duration,
+                Some(f.reps),
+            )
+            .await
         }
     };
     if answered.is_ok() {
-        let timing = study::Timing::checked(f.think_ms, f.answer_ms, f.away_ms, f.paused_ms, f.input.as_deref());
+        let timing = study::Timing::checked(
+            f.think_ms,
+            f.answer_ms,
+            f.away_ms,
+            f.paused_ms,
+            f.input.as_deref(),
+        );
         app.note_answer(&access, f.card, sure, timed_out, &timing).await?;
         app.note_rest(&access).await?;
     }
@@ -787,12 +942,18 @@ pub(crate) struct DeckForm {
     pub(crate) deck: Option<i64>,
 }
 
-pub(crate) async fn study_undo(State(app): State<AppState>, user: WebUser, Form(f): Form<DeckForm>) -> WebResult {
+pub(crate) async fn study_undo(
+    State(app): State<AppState>,
+    user: WebUser,
+    Form(f): Form<DeckForm>,
+) -> WebResult {
     let restored = app.undo_last(&user.access()).await?;
     let base = study_url(f.deck);
     let sep = if base.contains('?') { '&' } else { '?' };
     Ok(match restored {
-        Some(card) => redirect(format!("{base}{sep}card={}&show=1&t={}", card.id, now())),
+        Some(card) => {
+            redirect(format!("{base}{sep}card={}&show=1&t={}", card.id, now()))
+        }
         None => redirect_msg(base, "Nothing to undo."),
     })
 }

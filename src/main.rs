@@ -3,7 +3,10 @@ use std::{path::PathBuf, str::FromStr, sync::Arc};
 use anyhow::Context;
 use sqlx::{
     SqlitePool,
-    sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions, SqliteSynchronous},
+    sqlite::{
+        SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions,
+        SqliteSynchronous,
+    },
 };
 use tracing_subscriber::EnvFilter;
 
@@ -55,7 +58,11 @@ impl Config {
     /// Served over HTTPS: cookies get the Secure flag and HSTS is sent.
     #[must_use]
     pub fn secure(&self) -> bool {
-        self.secure_cookies || self.public_url.as_deref().is_some_and(|u| u.starts_with("https://"))
+        self.secure_cookies
+            || self
+                .public_url
+                .as_deref()
+                .is_some_and(|u| u.starts_with("https://"))
     }
 
     /// `__Host-` cookies are only accepted over HTTPS, for this exact host,
@@ -69,9 +76,13 @@ impl Config {
 /// Accept only a bare origin like `https://cards.example.com`.
 fn parse_public_url(raw: &str) -> anyhow::Result<String> {
     let url = raw.trim().trim_end_matches('/');
-    let (scheme, host) =
-        url.split_once("://").ok_or_else(|| anyhow::anyhow!("AINKI_PUBLIC_URL must start with https:// or http://"))?;
-    anyhow::ensure!(matches!(scheme, "https" | "http"), "AINKI_PUBLIC_URL must start with https:// or http://");
+    let (scheme, host) = url.split_once("://").ok_or_else(|| {
+        anyhow::anyhow!("AINKI_PUBLIC_URL must start with https:// or http://")
+    })?;
+    anyhow::ensure!(
+        matches!(scheme, "https" | "http"),
+        "AINKI_PUBLIC_URL must start with https:// or http://"
+    );
     anyhow::ensure!(
         !host.is_empty() && !host.contains(['/', '?', '#', '@', ' ']),
         "AINKI_PUBLIC_URL must be just scheme and host, like https://cards.example.com"
@@ -81,21 +92,31 @@ fn parse_public_url(raw: &str) -> anyhow::Result<String> {
 
 impl Config {
     fn from_env() -> anyhow::Result<Self> {
-        let env = |k: &str| std::env::var(k).ok().filter(|v| !v.trim().is_empty());
+        let env =
+            |k: &str| std::env::var(k).ok().filter(|v| !v.trim().is_empty());
         let flag = |k: &str, default: bool| {
-            env(k).map_or(default, |v| matches!(v.to_ascii_lowercase().as_str(), "1" | "true" | "yes" | "on"))
+            env(k).map_or(default, |v| {
+                matches!(
+                    v.to_ascii_lowercase().as_str(),
+                    "1" | "true" | "yes" | "on"
+                )
+            })
         };
         let tz = env("AINKI_TIMEZONE")
             .or_else(|| env("TZ"))
             .filter(|t| t.parse::<chrono_tz::Tz>().is_ok())
             .unwrap_or_else(|| "UTC".into());
         Ok(Self {
-            data_dir: env("AINKI_DATA_DIR").unwrap_or_else(|| "./data".into()).into(),
+            data_dir: env("AINKI_DATA_DIR")
+                .unwrap_or_else(|| "./data".into())
+                .into(),
             bind: env("AINKI_BIND").unwrap_or_else(|| "0.0.0.0:8080".into()),
             allow_signup: flag("AINKI_ALLOW_SIGNUP", false),
             secure_cookies: flag("AINKI_SECURE_COOKIES", false),
             default_timezone: tz,
-            public_url: env("AINKI_PUBLIC_URL").map(|u| parse_public_url(&u)).transpose()?,
+            public_url: env("AINKI_PUBLIC_URL")
+                .map(|u| parse_public_url(&u))
+                .transpose()?,
         })
     }
 }
@@ -117,7 +138,10 @@ impl App {
         if self.config.allow_signup {
             return true;
         }
-        let users: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM users").fetch_one(&self.db).await.unwrap_or(1);
+        let users: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM users")
+            .fetch_one(&self.db)
+            .await
+            .unwrap_or(1);
         users == 0
     }
 
@@ -128,12 +152,23 @@ impl App {
     /// An error if the database or the data folder fails; the caller logs it and tries again on the next round.
     pub async fn cleanup(&self) -> anyhow::Result<()> {
         let t = now();
-        sqlx::query("DELETE FROM sessions WHERE expires_at < ?").bind(t).execute(&self.db).await?;
-        sqlx::query("DELETE FROM oauth_codes WHERE expires_at < ?").bind(t).execute(&self.db).await?;
-        sqlx::query("DELETE FROM oauth_tokens WHERE expires_at < ?").bind(t).execute(&self.db).await?;
+        sqlx::query("DELETE FROM sessions WHERE expires_at < ?")
+            .bind(t)
+            .execute(&self.db)
+            .await?;
+        sqlx::query("DELETE FROM oauth_codes WHERE expires_at < ?")
+            .bind(t)
+            .execute(&self.db)
+            .await?;
+        sqlx::query("DELETE FROM oauth_tokens WHERE expires_at < ?")
+            .bind(t)
+            .execute(&self.db)
+            .await?;
         self.delete_unused_images(t - 86_400).await?;
         self.auto_optimize().await?;
-        if let Ok(mut dir) = tokio::fs::read_dir(self.config.data_dir.join("tmp")).await {
+        if let Ok(mut dir) =
+            tokio::fs::read_dir(self.config.data_dir.join("tmp")).await
+        {
             while let Ok(Some(entry)) = dir.next_entry().await {
                 let old = entry
                     .metadata()
@@ -159,21 +194,26 @@ pub fn now() -> i64 {
 }
 
 async fn open_db(config: &Config) -> anyhow::Result<SqlitePool> {
-    std::fs::create_dir_all(&config.data_dir)
-        .with_context(|| format!("creating data dir {}", config.data_dir.display()))?;
+    std::fs::create_dir_all(&config.data_dir).with_context(|| {
+        format!("creating data dir {}", config.data_dir.display())
+    })?;
     let path = config.data_dir.join("ainki.db");
-    let opts = SqliteConnectOptions::from_str(&format!("sqlite://{}", path.display()))?
-        .create_if_missing(true)
-        .journal_mode(SqliteJournalMode::Wal)
-        // What SQLite recommends with WAL: no disk sync on every commit,
-        // only at checkpoints. A crash can't corrupt the database; at worst
-        // the last moment of writes is lost on a power cut.
-        .synchronous(SqliteSynchronous::Normal)
-        .foreign_keys(true)
-        // Keeps the planner's statistics fresh as decks grow (see below).
-        .optimize_on_close(true, None)
-        .busy_timeout(std::time::Duration::from_secs(10));
-    let pool = SqlitePoolOptions::new().max_connections(8).connect_with(opts).await?;
+    let opts = SqliteConnectOptions::from_str(&format!(
+        "sqlite://{}",
+        path.display()
+    ))?
+    .create_if_missing(true)
+    .journal_mode(SqliteJournalMode::Wal)
+    // What SQLite recommends with WAL: no disk sync on every commit,
+    // only at checkpoints. A crash can't corrupt the database; at worst
+    // the last moment of writes is lost on a power cut.
+    .synchronous(SqliteSynchronous::Normal)
+    .foreign_keys(true)
+    // Keeps the planner's statistics fresh as decks grow (see below).
+    .optimize_on_close(true, None)
+    .busy_timeout(std::time::Duration::from_secs(10));
+    let pool =
+        SqlitePoolOptions::new().max_connections(8).connect_with(opts).await?;
     sqlx::migrate!("./migrations").run(&pool).await?;
     // Table statistics for the query planner. Deck filters bind their ids
     // as one JSON array, whose size the planner can't guess; without
@@ -192,7 +232,10 @@ fn healthcheck(config: &Config) -> anyhow::Result<()> {
     s.write_all(b"GET /healthz HTTP/1.0\r\nHost: localhost\r\n\r\n")?;
     let mut buf = String::new();
     s.read_to_string(&mut buf)?;
-    anyhow::ensure!(buf.starts_with("HTTP/1.0 200") || buf.starts_with("HTTP/1.1 200"), "unhealthy");
+    anyhow::ensure!(
+        buf.starts_with("HTTP/1.0 200") || buf.starts_with("HTTP/1.1 200"),
+        "unhealthy"
+    );
     Ok(())
 }
 
@@ -207,7 +250,10 @@ const USAGE: &str = "usage:
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt()
-        .with_env_filter(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info,sqlx=warn")))
+        .with_env_filter(
+            EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| EnvFilter::new("info,sqlx=warn")),
+        )
         .init();
     let config = Config::from_env()?;
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -222,7 +268,11 @@ async fn main() -> anyhow::Result<()> {
         [] | ["serve"] => serve(app).await,
         ["create-user", name, password] => {
             let user = app
-                .create_user(name, password, &app.config.default_timezone.clone())
+                .create_user(
+                    name,
+                    password,
+                    &app.config.default_timezone.clone(),
+                )
                 .await
                 .map_err(|e| anyhow::anyhow!("{e}"))?;
             println!("created {}", user.handle());
@@ -230,23 +280,47 @@ async fn main() -> anyhow::Result<()> {
         }
         ["create-admin", name, password] => {
             let user = app
-                .create_account(name, password, &app.config.default_timezone.clone(), None, true)
+                .create_account(
+                    name,
+                    password,
+                    &app.config.default_timezone.clone(),
+                    None,
+                    true,
+                )
                 .await
                 .map_err(|e| anyhow::anyhow!("{e}"))?;
-            println!("created admin {}; log in to see the admin panel", user.handle());
+            println!(
+                "created admin {}; log in to see the admin panel",
+                user.handle()
+            );
             Ok(())
         }
         ["reset-password", handle, password] => {
-            let user = app.find_user(handle).await.map_err(|e| anyhow::anyhow!("{e}"))?;
-            app.set_password(user.id, password).await.map_err(|e| anyhow::anyhow!("{e}"))?;
-            sqlx::query("DELETE FROM sessions WHERE user_id = ?").bind(user.id).execute(&app.db).await?;
+            let user = app
+                .find_user(handle)
+                .await
+                .map_err(|e| anyhow::anyhow!("{e}"))?;
+            app.set_password(user.id, password)
+                .await
+                .map_err(|e| anyhow::anyhow!("{e}"))?;
+            sqlx::query("DELETE FROM sessions WHERE user_id = ?")
+                .bind(user.id)
+                .execute(&app.db)
+                .await?;
             println!("password updated for {}", user.handle());
             Ok(())
         }
         ["list-users"] => {
-            let users: Vec<auth::User> = sqlx::query_as("SELECT * FROM users ORDER BY id").fetch_all(&app.db).await?;
+            let users: Vec<auth::User> =
+                sqlx::query_as("SELECT * FROM users ORDER BY id")
+                    .fetch_all(&app.db)
+                    .await?;
             for u in users {
-                println!("{}{}", u.handle(), if u.is_admin { " (admin)" } else { "" });
+                println!(
+                    "{}{}",
+                    u.handle(),
+                    if u.is_admin { " (admin)" } else { "" }
+                );
             }
             Ok(())
         }

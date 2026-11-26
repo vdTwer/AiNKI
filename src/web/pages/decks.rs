@@ -6,7 +6,10 @@
 )]
 use crate::web::*;
 
-pub(crate) fn preset_select(presets: &[crate::service::Preset], selected: Option<i64>) -> Markup {
+pub(crate) fn preset_select(
+    presets: &[crate::service::Preset],
+    selected: Option<i64>,
+) -> Markup {
     html! {
         select name="preset_id" {
             @for p in presets {
@@ -32,11 +35,18 @@ pub(crate) fn goal_words(template: Option<&str>) -> Option<&'static str> {
 
 /// A new deck picks a preset by what it is for. Presets made by hand are
 /// offered by name after the goals.
-pub(crate) fn goal_picker(presets: &[crate::service::Preset], selected: Option<i64>) -> Markup {
+pub(crate) fn goal_picker(
+    presets: &[crate::service::Preset],
+    selected: Option<i64>,
+) -> Markup {
     let order = ["standard", "exam", "language", "relaxed", "maintenance"];
     let mut sorted: Vec<&crate::service::Preset> = presets.iter().collect();
-    sorted
-        .sort_by_key(|p| p.template.as_deref().and_then(|t| order.iter().position(|o| *o == t)).unwrap_or(order.len()));
+    sorted.sort_by_key(|p| {
+        p.template
+            .as_deref()
+            .and_then(|t| order.iter().position(|o| *o == t))
+            .unwrap_or(order.len())
+    });
     html! {
         fieldset.goals {
             legend { "What is this deck for?" }
@@ -98,7 +108,12 @@ pub(crate) fn deck_new_view(
     let selected = draft
         .map(|d| d.preset_id)
         .filter(|id| *id > 0)
-        .or_else(|| presets.iter().find(|p| p.template.as_deref() == Some("standard")).map(|p| p.id))
+        .or_else(|| {
+            presets
+                .iter()
+                .find(|p| p.template.as_deref() == Some("standard"))
+                .map(|p| p.id)
+        })
         .or_else(|| presets.first().map(|p| p.id));
     layout_in(
         Nav::Add,
@@ -116,7 +131,10 @@ pub(crate) fn deck_new_view(
     )
 }
 
-pub(crate) async fn deck_new_page(State(app): State<AppState>, user: WebUser) -> WebResult {
+pub(crate) async fn deck_new_page(
+    State(app): State<AppState>,
+    user: WebUser,
+) -> WebResult {
     let presets = app.list_presets(&user.access()).await?;
     Ok(deck_new_view(&user.0, &presets, None, None).into_response())
 }
@@ -139,10 +157,9 @@ impl DeckCreateForm {
             name: self.name.clone(),
             description: self.description.clone(),
             preset_id: self.preset_id.unwrap_or(0),
-            exam_date: self
-                .exam_date
-                .as_deref()
-                .and_then(|e| chrono::NaiveDate::parse_from_str(e.trim(), "%Y-%m-%d").ok()),
+            exam_date: self.exam_date.as_deref().and_then(|e| {
+                chrono::NaiveDate::parse_from_str(e.trim(), "%Y-%m-%d").ok()
+            }),
             created_at: 0,
             status: crate::service::DeckStatus::Active,
         }
@@ -156,20 +173,33 @@ pub(crate) async fn deck_create(
 ) -> WebResult {
     let access = user.access();
     let result = async {
-        let deck = app.create_deck(&access, &f.name, &f.description, f.preset_id).await?;
-        if let Some(exam) = f.exam_date.as_deref().filter(|e| !e.trim().is_empty()) {
-            app.update_deck(&access, deck.id, None, None, None, Some(exam)).await?;
+        let deck = app
+            .create_deck(&access, &f.name, &f.description, f.preset_id)
+            .await?;
+        if let Some(exam) =
+            f.exam_date.as_deref().filter(|e| !e.trim().is_empty())
+        {
+            app.update_deck(&access, deck.id, None, None, None, Some(exam))
+                .await?;
         }
         Ok::<_, AppError>(deck)
     }
     .await;
     match result {
         // Straight on to filling it.
-        Ok(deck) => Ok(redirect_msg(format!("/cards/new?deck={}", deck.id), "Deck created. Add its first card.")),
+        Ok(deck) => Ok(redirect_msg(
+            format!("/cards/new?deck={}", deck.id),
+            "Deck created. Add its first card.",
+        )),
         Err(e) => {
             let msg = fixable(&e).ok_or(e)?;
             let presets = app.list_presets(&access).await?;
-            Ok(form_again(deck_new_view(&user.0, &presets, Some(&f.draft(0, user.0.id)), Some(&msg))))
+            Ok(form_again(deck_new_view(
+                &user.0,
+                &presets,
+                Some(&f.draft(0, user.0.id)),
+                Some(&msg),
+            )))
         }
     }
 }
@@ -186,9 +216,18 @@ pub(crate) fn deck_merge_view(
     let selected = draft
         .preset_id
         .or_else(|| {
-            draft.decks.first().and_then(|id| decks.iter().find(|d| d.deck.id == *id)).map(|d| d.deck.preset_id)
+            draft
+                .decks
+                .first()
+                .and_then(|id| decks.iter().find(|d| d.deck.id == *id))
+                .map(|d| d.deck.preset_id)
         })
-        .or_else(|| presets.iter().find(|p| p.template.as_deref() == Some("standard")).map(|p| p.id))
+        .or_else(|| {
+            presets
+                .iter()
+                .find(|p| p.template.as_deref() == Some("standard"))
+                .map(|p| p.id)
+        })
         .or_else(|| presets.first().map(|p| p.id));
     layout_in(
         Nav::Add,
@@ -259,11 +298,18 @@ pub(crate) async fn deck_merge_page(
     let access = user.access();
     let decks = app.deck_summaries(&access).await?;
     let presets = app.list_presets(&access).await?;
-    let draft = DeckMergeForm { decks: q.with.into_iter().collect(), ..Default::default() };
+    let draft = DeckMergeForm {
+        decks: q.with.into_iter().collect(),
+        ..Default::default()
+    };
     Ok(deck_merge_view(&user.0, &decks, &presets, &draft, None).into_response())
 }
 
-pub(crate) async fn deck_merge(State(app): State<AppState>, user: WebUser, Form(f): Form<DeckMergeForm>) -> WebResult {
+pub(crate) async fn deck_merge(
+    State(app): State<AppState>,
+    user: WebUser,
+    Form(f): Form<DeckMergeForm>,
+) -> WebResult {
     let access = user.access();
     let input = crate::merge::MergeInput {
         sources: f.decks.clone(),
@@ -276,12 +322,19 @@ pub(crate) async fn deck_merge(State(app): State<AppState>, user: WebUser, Form(
     match app.merge_decks(&access, input).await {
         Ok(m) => {
             let verb = if m.deleted_decks > 0 { "moved" } else { "copied" };
-            let mut msg = format!("Decks merged: {} {verb}.", count(m.cards, "card"));
+            let mut msg =
+                format!("Decks merged: {} {verb}.", count(m.cards, "card"));
             if m.duplicates > 0 {
-                msg.push_str(&format!(" {} left out, already in it once.", count(m.duplicates, "identical card")));
+                msg.push_str(&format!(
+                    " {} left out, already in it once.",
+                    count(m.duplicates, "identical card")
+                ));
             }
             if m.deleted_decks > 0 {
-                msg.push_str(&format!(" {} deleted.", count(m.deleted_decks, "old deck")));
+                msg.push_str(&format!(
+                    " {} deleted.",
+                    count(m.deleted_decks, "old deck")
+                ));
             }
             Ok(redirect_msg(format!("/decks/{}", m.deck.id), &msg))
         }
@@ -289,7 +342,13 @@ pub(crate) async fn deck_merge(State(app): State<AppState>, user: WebUser, Form(
             let msg = fixable(&e).ok_or(e)?;
             let decks = app.deck_summaries(&access).await?;
             let presets = app.list_presets(&access).await?;
-            Ok(form_again(deck_merge_view(&user.0, &decks, &presets, &f, Some(&msg))))
+            Ok(form_again(deck_merge_view(
+                &user.0,
+                &decks,
+                &presets,
+                &f,
+                Some(&msg),
+            )))
         }
     }
 }
@@ -312,7 +371,12 @@ pub(crate) async fn deck_page(
     Query(q): Query<DeckQuery>,
 ) -> WebResult {
     let access = user.access();
-    let summary = app.deck_summaries(&access).await?.into_iter().find(|d| d.deck.id == id).ok_or(AppError::NotFound)?;
+    let summary = app
+        .deck_summaries(&access)
+        .await?
+        .into_iter()
+        .find(|d| d.deck.id == id)
+        .ok_or(AppError::NotFound)?;
     let page = q.page.unwrap_or(0).max(0);
     let per_page = DECK_PAGE_SIZE;
     let (cards, total) = app
@@ -328,7 +392,8 @@ pub(crate) async fn deck_page(
         )
         .await?;
     let d = &summary.deck;
-    let attention = num::usize_i64(app.attention(&access, Some(id)).await?.len());
+    let attention =
+        num::usize_i64(app.attention(&access, Some(id)).await?.len());
     let base = format!(
         "/decks/{id}?q={}&state={}",
         urlenc(q.q.as_deref().unwrap_or("")),
@@ -392,7 +457,14 @@ fn deck_hero(user: &User, summary: &DeckSummary, attention: i64) -> Markup {
     }
 }
 
-fn deck_cards(id: i64, q: &DeckQuery, cards: &[Card], total: i64, page: i64, base: &str) -> Markup {
+fn deck_cards(
+    id: i64,
+    q: &DeckQuery,
+    cards: &[Card],
+    total: i64,
+    page: i64,
+    base: &str,
+) -> Markup {
     let per_page = DECK_PAGE_SIZE;
     html! {
         div.cards-head {
@@ -446,8 +518,16 @@ fn deck_cards(id: i64, q: &DeckQuery, cards: &[Card], total: i64, page: i64, bas
 
 /// One-line plain preview of Markdown text for lists.
 pub(crate) fn truncate(s: &str, n: usize) -> String {
-    let flat: String = s.replace('\n', " ").chars().filter(|c| !matches!(c, '*' | '`' | '#' | '_')).collect();
-    if flat.chars().count() > n { flat.chars().take(n).collect::<String>() + "…" } else { flat }
+    let flat: String = s
+        .replace('\n', " ")
+        .chars()
+        .filter(|c| !matches!(c, '*' | '`' | '#' | '_'))
+        .collect();
+    if flat.chars().count() > n {
+        flat.chars().take(n).collect::<String>() + "…"
+    } else {
+        flat
+    }
 }
 
 /// The edit-deck page; `draft` and `error` when a sent form comes back.
@@ -549,7 +629,9 @@ pub(crate) async fn deck_edit_page(
     Path(id): Path<i64>,
     Flash(msg): Flash,
 ) -> WebResult {
-    Ok(deck_edit_view(&app, &user.0, id, msg.as_deref(), None, None).await?.into_response())
+    Ok(deck_edit_view(&app, &user.0, id, msg.as_deref(), None, None)
+        .await?
+        .into_response())
 }
 
 pub(crate) async fn deck_update(
@@ -572,18 +654,33 @@ pub(crate) async fn deck_update(
         Ok(_) => Ok(redirect_msg(format!("/decks/{id}/edit"), "Deck saved.")),
         Err(e) => {
             let msg = fixable(&e).ok_or(e)?;
-            let page = deck_edit_view(&app, &user.0, id, None, Some(&f.draft(id, user.0.id)), Some(&msg)).await?;
+            let page = deck_edit_view(
+                &app,
+                &user.0,
+                id,
+                None,
+                Some(&f.draft(id, user.0.id)),
+                Some(&msg),
+            )
+            .await?;
             Ok(form_again(page))
         }
     }
 }
 
-pub(crate) async fn deck_delete(State(app): State<AppState>, user: WebUser, Path(id): Path<i64>) -> WebResult {
+pub(crate) async fn deck_delete(
+    State(app): State<AppState>,
+    user: WebUser,
+    Path(id): Path<i64>,
+) -> WebResult {
     or_back(
         format!("/decks/{id}/edit"),
         async {
             let n = app.delete_deck(&user.access(), id).await?;
-            Ok(redirect_msg("/", &format!("Deck deleted, with its {}.", count(n, "card"))))
+            Ok(redirect_msg(
+                "/",
+                &format!("Deck deleted, with its {}.", count(n, "card")),
+            ))
         }
         .await,
     )
@@ -592,7 +689,10 @@ pub(crate) async fn deck_delete(State(app): State<AppState>, user: WebUser, Path
 /// The decks to pick from for a card: archived ones are put away, except
 /// `keep`, the one the card is in or was asked for.
 pub(crate) fn open_decks(decks: Vec<Deck>, keep: Option<i64>) -> Vec<Deck> {
-    decks.into_iter().filter(|d| d.status != DeckStatus::Archived || Some(d.id) == keep).collect()
+    decks
+        .into_iter()
+        .filter(|d| d.status != DeckStatus::Archived || Some(d.id) == keep)
+        .collect()
 }
 
 /// What resting means for a deck, said on its pages.
@@ -601,7 +701,9 @@ pub(crate) const fn rest_words(status: DeckStatus) -> &'static str {
         DeckStatus::Active => {
             "Pausing stops a deck's cards until you resume it; the deck stays on your list. Archiving also puts it away. Progress is kept either way."
         }
-        DeckStatus::Paused => "Paused. Its cards wait, with their progress, until you resume the deck.",
+        DeckStatus::Paused => {
+            "Paused. Its cards wait, with their progress, until you resume the deck."
+        }
         DeckStatus::Archived => {
             "Archived. The deck is put away and its cards wait, with their progress, until you restore it."
         }
@@ -618,23 +720,38 @@ pub(crate) async fn deck_action(
         async {
             let (status, msg) = match action.as_str() {
                 "pause" => (DeckStatus::Paused, "Deck paused."),
-                "archive" => (DeckStatus::Archived, "Deck archived. Find it under archived decks below."),
+                "archive" => (
+                    DeckStatus::Archived,
+                    "Deck archived. Find it under archived decks below.",
+                ),
                 "resume" => (DeckStatus::Active, "Deck back in study."),
                 _ => return Err(AppError::bad("unknown action")),
             };
             app.set_deck_status(&user.access(), id, status).await?;
             // An archived deck leaves the list: home is where it went from.
-            let to = if status == DeckStatus::Archived { "/".to_string() } else { format!("/decks/{id}") };
+            let to = if status == DeckStatus::Archived {
+                "/".to_string()
+            } else {
+                format!("/decks/{id}")
+            };
             Ok(redirect_msg(to, msg))
         }
         .await,
     )
 }
 
-pub(crate) async fn archived_page(State(app): State<AppState>, user: WebUser, Flash(msg): Flash) -> WebResult {
+pub(crate) async fn archived_page(
+    State(app): State<AppState>,
+    user: WebUser,
+    Flash(msg): Flash,
+) -> WebResult {
     let access = user.access();
-    let decks: Vec<_> =
-        app.deck_summaries(&access).await?.into_iter().filter(|d| d.deck.status == DeckStatus::Archived).collect();
+    let decks: Vec<_> = app
+        .deck_summaries(&access)
+        .await?
+        .into_iter()
+        .filter(|d| d.deck.status == DeckStatus::Archived)
+        .collect();
     Ok(layout_in(
         Nav::Decks,
         "Archived decks",
@@ -664,13 +781,20 @@ pub(crate) async fn archived_page(State(app): State<AppState>, user: WebUser, Fl
     .into_response())
 }
 
-pub(crate) async fn deck_export(State(app): State<AppState>, user: WebUser, Path(id): Path<i64>) -> WebResult {
+pub(crate) async fn deck_export(
+    State(app): State<AppState>,
+    user: WebUser,
+    Path(id): Path<i64>,
+) -> WebResult {
     let access = user.access();
     let deck = app.deck(&access, id).await?;
     let csv = app.export_csv(&access, id).await?;
     let name = deck_plain(&deck.name);
     // Plain ASCII for old browsers, the real name (UTF-8) for the rest.
-    let ascii: String = name.chars().map(|c| if c.is_ascii_alphanumeric() { c } else { '_' }).collect();
+    let ascii: String = name
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() { c } else { '_' })
+        .collect();
     Ok((
         [
             (header::CONTENT_TYPE, "text/csv; charset=utf-8".to_string()),

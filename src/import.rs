@@ -58,7 +58,8 @@ pub fn parse_csv(text: &str) -> Result<Vec<(String, String)>> {
     let mut out = Vec::new();
     for (i, rec) in reader.records().enumerate() {
         let rec = rec.map_err(|e| AppError::bad(format!("CSV error: {e}")))?;
-        let front = restore_formula(rec.get(0).unwrap_or("").trim().to_string());
+        let front =
+            restore_formula(rec.get(0).unwrap_or("").trim().to_string());
         let back = restore_formula(rec.get(1).unwrap_or("").trim().to_string());
         if i == 0
             && matches!(front.to_lowercase().as_str(), "front" | "question")
@@ -79,24 +80,35 @@ pub fn parse_csv(text: &str) -> Result<Vec<(String, String)>> {
 /// such cells get a leading apostrophe, which spreadsheets hide and our
 /// importer strips again.
 fn defuse_formula(cell: &str) -> String {
-    if cell.starts_with(['=', '+', '-', '@', '\t', '\r']) { format!("'{cell}") } else { cell.to_string() }
+    if cell.starts_with(['=', '+', '-', '@', '\t', '\r']) {
+        format!("'{cell}")
+    } else {
+        cell.to_string()
+    }
 }
 
 fn restore_formula(cell: String) -> String {
     match cell.strip_prefix('\'') {
-        Some(rest) if rest.starts_with(['=', '+', '-', '@', '\t', '\r']) => rest.to_string(),
+        Some(rest) if rest.starts_with(['=', '+', '-', '@', '\t', '\r']) => {
+            rest.to_string()
+        }
         _ => cell,
     }
 }
 
 fn csv_escape(rows: &[(String, String)]) -> Result<String> {
     let mut w = csv::Writer::from_writer(vec![]);
-    w.write_record(["front", "back"]).map_err(|e| AppError::Internal(e.into()))?;
+    w.write_record(["front", "back"])
+        .map_err(|e| AppError::Internal(e.into()))?;
     for (f, b) in rows {
-        w.write_record([defuse_formula(f), defuse_formula(b)]).map_err(|e| AppError::Internal(e.into()))?;
+        w.write_record([defuse_formula(f), defuse_formula(b)])
+            .map_err(|e| AppError::Internal(e.into()))?;
     }
-    String::from_utf8(w.into_inner().map_err(|e| AppError::Internal(anyhow::anyhow!("{e}")))?)
-        .map_err(|e| AppError::Internal(e.into()))
+    String::from_utf8(
+        w.into_inner()
+            .map_err(|e| AppError::Internal(anyhow::anyhow!("{e}")))?,
+    )
+    .map_err(|e| AppError::Internal(e.into()))
 }
 
 // ----- Anki HTML ----------------------------------------------------------
@@ -118,9 +130,13 @@ fn decode_entities(s: &str) -> String {
                 "apos" | "#39" => Some('\''),
                 "nbsp" => Some(' '),
                 _ if ent.starts_with("#x") || ent.starts_with("#X") => {
-                    u32::from_str_radix(&ent[2..], 16).ok().and_then(char::from_u32)
+                    u32::from_str_radix(&ent[2..], 16)
+                        .ok()
+                        .and_then(char::from_u32)
                 }
-                _ if ent.starts_with('#') => ent[1..].parse().ok().and_then(char::from_u32),
+                _ if ent.starts_with('#') => {
+                    ent[1..].parse().ok().and_then(char::from_u32)
+                }
                 _ => None,
             };
             ch.map(|c| (c, e))
@@ -151,7 +167,11 @@ pub fn anki_html_to_text(html: &str) -> (String, Option<String>) {
         };
         let tag = &rest[start + 1..start + end];
         let lower = tag.to_ascii_lowercase();
-        let name = lower.trim_start_matches('/').split(|c: char| c.is_whitespace() || c == '/').next().unwrap_or("");
+        let name = lower
+            .trim_start_matches('/')
+            .split(|c: char| c.is_whitespace() || c == '/')
+            .next()
+            .unwrap_or("");
         match name {
             "br" | "div" | "p" | "li" | "tr" | "h1" | "h2" | "h3" | "h4" => {
                 if !out.ends_with('\n') && !out.is_empty() {
@@ -162,7 +182,9 @@ pub fn anki_html_to_text(html: &str) -> (String, Option<String>) {
                 if let Some(pos) = lower.find("src=") {
                     let val = &tag[pos + 4..];
                     let src = match val.chars().next() {
-                        Some(q @ ('"' | '\'')) => val[1..].split(q).next().unwrap_or(""),
+                        Some(q @ ('"' | '\'')) => {
+                            val[1..].split(q).next().unwrap_or("")
+                        }
                         _ => val.split_whitespace().next().unwrap_or(""),
                     };
                     if !src.is_empty() {
@@ -183,7 +205,13 @@ pub fn anki_html_to_text(html: &str) -> (String, Option<String>) {
             None => break,
         }
     }
-    let text = text.lines().map(str::trim_end).collect::<Vec<_>>().join("\n").trim().to_string();
+    let text = text
+        .lines()
+        .map(str::trim_end)
+        .collect::<Vec<_>>()
+        .join("\n")
+        .trim()
+        .to_string();
     (text, image)
 }
 
@@ -234,7 +262,11 @@ fn cloze_numbers(text: &str) -> Vec<u32> {
         .filter_map(|(i, _)| {
             let after = &text[i + 3..];
             let n = after.chars().take_while(char::is_ascii_digit).count();
-            if after[n..].starts_with("::") { after[..n].parse().ok() } else { None }
+            if after[n..].starts_with("::") {
+                after[..n].parse().ok()
+            } else {
+                None
+            }
         })
         .collect();
     nums.sort_unstable();
@@ -283,7 +315,10 @@ fn parse_media_entries(buf: &[u8]) -> Vec<String> {
                     let Some(l) = read_varint(entry, &mut p) else { break };
                     let e = p + num::u64_usize(l);
                     if k >> 3 == 1 {
-                        name = String::from_utf8_lossy(entry.get(p..e).unwrap_or_default()).into();
+                        name = String::from_utf8_lossy(
+                            entry.get(p..e).unwrap_or_default(),
+                        )
+                        .into();
                     }
                     p = e;
                 }
@@ -311,7 +346,8 @@ fn read_limited(r: impl Read, limit: u64) -> Option<Vec<u8>> {
 
 fn maybe_zstd(data: Vec<u8>, limit: u64) -> Option<Vec<u8>> {
     if data.starts_with(&[0x28, 0xB5, 0x2F, 0xFD]) {
-        let decoder = zstd::stream::read::Decoder::new(Cursor::new(&data)).ok()?;
+        let decoder =
+            zstd::stream::read::Decoder::new(Cursor::new(&data)).ok()?;
         read_limited(decoder, limit)
     } else {
         Some(data)
@@ -325,15 +361,19 @@ struct Package {
 }
 
 fn read_package(data: &[u8]) -> Result<Package> {
-    let mut zip = zip::ZipArchive::new(Cursor::new(data))
-        .map_err(|_| AppError::bad("not a valid .apkg file (expected a zip archive)"))?;
+    let mut zip = zip::ZipArchive::new(Cursor::new(data)).map_err(|_| {
+        AppError::bad("not a valid .apkg file (expected a zip archive)")
+    })?;
     // Sizes are checked while decompressing, not trusted from the header.
     let mut read = |name: &str, limit: u64| -> Option<Vec<u8>> {
         let f = zip.by_name(name).ok()?;
         read_limited(f, limit)
     };
-    let too_big = || AppError::bad("the Anki collection in this package is too large");
-    let collection = if let Some(raw) = read("collection.anki21b", MAX_COLLECTION_BYTES) {
+    let too_big =
+        || AppError::bad("the Anki collection in this package is too large");
+    let collection = if let Some(raw) =
+        read("collection.anki21b", MAX_COLLECTION_BYTES)
+    {
         maybe_zstd(raw, MAX_COLLECTION_BYTES).ok_or_else(too_big)?
     } else {
         read("collection.anki21", MAX_COLLECTION_BYTES)
@@ -341,25 +381,36 @@ fn read_package(data: &[u8]) -> Result<Package> {
             .ok_or_else(|| AppError::bad("no Anki collection found in the package (or it is too large)"))?
     };
     let index: Vec<(String, String)> = match read("media", 16 * 1024 * 1024) {
-        Some(raw) => match serde_json::from_slice::<HashMap<String, String>>(&raw) {
-            Ok(map) => map.into_iter().collect(),
-            Err(_) => parse_media_entries(&maybe_zstd(raw, 16 * 1024 * 1024).unwrap_or_default())
+        Some(raw) => {
+            match serde_json::from_slice::<HashMap<String, String>>(&raw) {
+                Ok(map) => map.into_iter().collect(),
+                Err(_) => parse_media_entries(
+                    &maybe_zstd(raw, 16 * 1024 * 1024).unwrap_or_default(),
+                )
                 .into_iter()
                 .enumerate()
                 .map(|(i, n)| (i.to_string(), n))
                 .collect(),
-        },
+            }
+        }
         None => vec![],
     };
     let mut media = HashMap::new();
     let mut total = 0u64;
     for (zip_name, file_name) in index {
         let lower = file_name.to_ascii_lowercase();
-        let is_image = [".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp"].iter().any(|e| lower.ends_with(e));
-        if !is_image || media.len() >= MAX_MEDIA_FILES || total >= MAX_MEDIA_TOTAL_BYTES {
+        let is_image = [".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp"]
+            .iter()
+            .any(|e| lower.ends_with(e));
+        if !is_image
+            || media.len() >= MAX_MEDIA_FILES
+            || total >= MAX_MEDIA_TOTAL_BYTES
+        {
             continue;
         }
-        if let Some(bytes) = read(&zip_name, MAX_MEDIA_FILE_BYTES).and_then(|b| maybe_zstd(b, MAX_MEDIA_FILE_BYTES)) {
+        if let Some(bytes) = read(&zip_name, MAX_MEDIA_FILE_BYTES)
+            .and_then(|b| maybe_zstd(b, MAX_MEDIA_FILE_BYTES))
+        {
             total += bytes.len() as u64;
             media.insert(file_name, bytes);
         }
@@ -413,13 +464,15 @@ fn unrecognized<E>(_: E) -> AppError {
 async fn read_collection(path: &std::path::Path) -> Result<AnkiCollection> {
     // The file is untrusted. Read-only, and with trusted_schema off so
     // views or triggers in it can't call functions with side effects.
-    let opts = SqliteConnectOptions::from_str(&format!("sqlite://{}", path.display()))
-        .map_err(|e| AppError::Internal(e.into()))?
-        .read_only(true)
-        .pragma("trusted_schema", "OFF")
-        .pragma("query_only", "ON");
-    let mut conn =
-        sqlx::ConnectOptions::connect(&opts).await.map_err(|_| AppError::bad("could not open the Anki collection"))?;
+    let opts =
+        SqliteConnectOptions::from_str(&format!("sqlite://{}", path.display()))
+            .map_err(|e| AppError::Internal(e.into()))?
+            .read_only(true)
+            .pragma("trusted_schema", "OFF")
+            .pragma("query_only", "ON");
+    let mut conn = sqlx::ConnectOptions::connect(&opts)
+        .await
+        .map_err(|_| AppError::bad("could not open the Anki collection"))?;
     // Every name we read must be a plain table, not a (possibly very
     // expensive) view.
     let views: i64 = sqlx::query_scalar(
@@ -432,17 +485,29 @@ async fn read_collection(path: &std::path::Path) -> Result<AnkiCollection> {
     if views > 0 {
         return Err(unrecognized(()));
     }
-    let col = sqlx::query("SELECT crt, decks FROM col LIMIT 1").fetch_one(&mut conn).await.map_err(unrecognized)?;
+    let col = sqlx::query("SELECT crt, decks FROM col LIMIT 1")
+        .fetch_one(&mut conn)
+        .await
+        .map_err(unrecognized)?;
 
     // Deck names: new schema has a decks table, old one a JSON blob.
-    let rows: Vec<(i64, String)> =
-        sqlx::query_as("SELECT id, name FROM decks").fetch_all(&mut conn).await.unwrap_or_default();
-    let mut deck_names: HashMap<i64, String> =
-        rows.into_iter().map(|(id, name)| (id, name.replace('\x1f', "::"))).collect();
+    let rows: Vec<(i64, String)> = sqlx::query_as("SELECT id, name FROM decks")
+        .fetch_all(&mut conn)
+        .await
+        .unwrap_or_default();
+    let mut deck_names: HashMap<i64, String> = rows
+        .into_iter()
+        .map(|(id, name)| (id, name.replace('\x1f', "::")))
+        .collect();
     if deck_names.is_empty() {
-        deck_names = old_deck_names(&col.try_get::<String, _>("decks").unwrap_or_default());
+        deck_names = old_deck_names(
+            &col.try_get::<String, _>("decks").unwrap_or_default(),
+        );
     }
-    let notes: Vec<(i64, String)> = sqlx::query_as("SELECT id, flds FROM notes").fetch_all(&mut conn).await?;
+    let notes: Vec<(i64, String)> =
+        sqlx::query_as("SELECT id, flds FROM notes")
+            .fetch_all(&mut conn)
+            .await?;
     let cards: Vec<AnkiCard> = sqlx::query_as(
         // A card in a filtered deck keeps its home deck in odid and its real
         // due in odue; it comes home, as it would when Anki empties the deck.
@@ -452,10 +517,11 @@ async fn read_collection(path: &std::path::Path) -> Result<AnkiCollection> {
     )
     .fetch_all(&mut conn)
     .await?;
-    let revs: Vec<AnkiRev> = sqlx::query_as("SELECT id, cid, ease, type FROM revlog ORDER BY id")
-        .fetch_all(&mut conn)
-        .await
-        .unwrap_or_default();
+    let revs: Vec<AnkiRev> =
+        sqlx::query_as("SELECT id, cid, ease, type FROM revlog ORDER BY id")
+            .fetch_all(&mut conn)
+            .await
+            .unwrap_or_default();
     let mut revlog: HashMap<i64, Vec<AnkiRev>> = HashMap::new();
     for r in revs {
         revlog.entry(r.cid).or_default().push(r);
@@ -463,7 +529,12 @@ async fn read_collection(path: &std::path::Path) -> Result<AnkiCollection> {
     Ok(AnkiCollection {
         crt: col.try_get("crt").unwrap_or(0),
         deck_names,
-        notes: notes.into_iter().map(|(id, flds)| (id, flds.split('\x1f').map(String::from).collect())).collect(),
+        notes: notes
+            .into_iter()
+            .map(|(id, flds)| {
+                (id, flds.split('\x1f').map(String::from).collect())
+            })
+            .collect(),
         cards,
         revlog,
     })
@@ -471,8 +542,16 @@ async fn read_collection(path: &std::path::Path) -> Result<AnkiCollection> {
 
 /// Deck names from the JSON blob older collections keep in `col.decks`.
 fn old_deck_names(blob: &str) -> HashMap<i64, String> {
-    let Ok(v) = serde_json::from_str::<HashMap<String, serde_json::Value>>(blob) else { return HashMap::new() };
-    v.into_iter().filter_map(|(id, d)| Some((id.parse().ok()?, d.get("name")?.as_str()?.to_string()))).collect()
+    let Ok(v) =
+        serde_json::from_str::<HashMap<String, serde_json::Value>>(blob)
+    else {
+        return HashMap::new();
+    };
+    v.into_iter()
+        .filter_map(|(id, d)| {
+            Some((id.parse().ok()?, d.get("name")?.as_str()?.to_string()))
+        })
+        .collect()
 }
 
 /// A card's front and back as Anki shows them: a cloze card shows its
@@ -482,7 +561,11 @@ fn card_html(c: &AnkiCard, fields: &[String]) -> (String, String) {
     let f1 = fields.get(1).map_or("", String::as_str);
     if !cloze_numbers(f0).is_empty() {
         let full = render_cloze(f0, None);
-        let back = if f1.trim().is_empty() { full } else { format!("{full}<br><br>{f1}") };
+        let back = if f1.trim().is_empty() {
+            full
+        } else {
+            format!("{full}<br><br>{f1}")
+        };
         (render_cloze(f0, Some(num::i64_u32(c.ord + 1))), back)
     } else if c.ord == 1 && !f1.is_empty() {
         (f1.to_string(), f0.to_string())
@@ -503,7 +586,10 @@ struct LoggedReview {
 /// The reviews worth keeping (learning, review, relearning, filtered),
 /// with what FSRS needs to know about each.
 fn history(revs: &[AnkiRev], clock: &scheduler::Clock) -> Vec<LoggedReview> {
-    let kept: Vec<&AnkiRev> = revs.iter().filter(|r| (1..=4).contains(&r.ease) && r.rtype <= 3).collect();
+    let kept: Vec<&AnkiRev> = revs
+        .iter()
+        .filter(|r| (1..=4).contains(&r.ease) && r.rtype <= 3)
+        .collect();
     let starts_new = kept.first().is_some_and(|r| r.rtype == 0);
     let mut prev: Option<i64> = None;
     (kept.iter().enumerate())
@@ -515,7 +601,8 @@ fn history(revs: &[AnkiRev], clock: &scheduler::Clock) -> Vec<LoggedReview> {
                 2 => CardState::Relearning,
                 _ => CardState::Review,
             };
-            let delta_days = prev.map_or(0, |p| clock.days_between(p, at).max(0));
+            let delta_days =
+                prev.map_or(0, |p| clock.days_between(p, at).max(0));
             prev = Some(at);
             LoggedReview { at, ease: r.ease, state_before, delta_days }
         })
@@ -539,7 +626,12 @@ impl App {
     /// - `NotFound` if the deck isn't the user's or lies outside the token's decks.
     /// - `BadRequest` if a card breaks the card rules.
     /// - `Internal` if the database fails.
-    pub async fn import_csv(&self, access: &Access, deck_id: i64, text: &str) -> Result<ImportReport> {
+    pub async fn import_csv(
+        &self,
+        access: &Access,
+        deck_id: i64,
+        text: &str,
+    ) -> Result<ImportReport> {
         access.require_write()?;
         self.deck(access, deck_id).await?;
         let rows = parse_csv(text)?;
@@ -549,7 +641,13 @@ impl App {
                 report.skipped += 1;
                 continue;
             }
-            self.insert_card(access.user_id(), deck_id, &NewCard::new(&front, &back), "import").await?;
+            self.insert_card(
+                access.user_id(),
+                deck_id,
+                &NewCard::new(&front, &back),
+                "import",
+            )
+            .await?;
             report.cards_imported += 1;
         }
         Ok(report)
@@ -559,7 +657,11 @@ impl App {
     ///
     /// - `NotFound` if the deck isn't the user's or lies outside the token's decks.
     /// - `Internal` if the database fails.
-    pub async fn export_csv(&self, access: &Access, deck_id: i64) -> Result<String> {
+    pub async fn export_csv(
+        &self,
+        access: &Access,
+        deck_id: i64,
+    ) -> Result<String> {
         self.deck(access, deck_id).await?;
         let rows: Vec<(String, String)> =
             sqlx::query_as("SELECT front, back FROM cards WHERE deck_id = ? ORDER BY position, id")
@@ -576,7 +678,11 @@ impl App {
     /// - `Forbidden` if the token is read-only or limited to some decks.
     /// - `BadRequest` if the file is no readable Anki package or is too large.
     /// - `Internal` if the database or the data folder fails.
-    pub async fn import_apkg(&self, access: &Access, data: Vec<u8>) -> Result<ImportReport> {
+    pub async fn import_apkg(
+        &self,
+        access: &Access,
+        data: Vec<u8>,
+    ) -> Result<ImportReport> {
         access.require_write()?;
         access.require_all_decks()?;
         let pkg = tokio::task::spawn_blocking(move || read_package(&data))
@@ -585,7 +691,8 @@ impl App {
 
         let dir = self.config.data_dir.join("tmp");
         tokio::fs::create_dir_all(&dir).await?;
-        let path = dir.join(format!("import-{}.sqlite", uuid::Uuid::new_v4().simple()));
+        let path = dir
+            .join(format!("import-{}.sqlite", uuid::Uuid::new_v4().simple()));
         tokio::fs::write(&path, &pkg.collection).await?;
         let result = self.import_collection(access, &path, pkg.media).await;
         let _ = tokio::fs::remove_file(&path).await;
@@ -628,19 +735,24 @@ impl App {
         let (front_html, back_html) = card_html(c, fields);
         let (front, front_img) = anki_html_to_text(&front_html);
         let (back, back_img) = anki_html_to_text(&back_html);
-        let front_image = self.import_image(access.user_id(), front_img, run).await;
-        let back_image = self.import_image(access.user_id(), back_img, run).await;
+        let front_image =
+            self.import_image(access.user_id(), front_img, run).await;
+        let back_image =
+            self.import_image(access.user_id(), back_img, run).await;
         if front.is_empty() && front_image.is_none() {
             run.report.skipped += 1;
             return Ok(());
         }
         let deck_id = self.import_deck(access, col, c.did, run).await?;
-        let new = NewCard { front_image, back_image, ..NewCard::new(&front, &back) };
-        let card_id = self.insert_card(access.user_id(), deck_id, &new, "import").await?;
+        let new =
+            NewCard { front_image, back_image, ..NewCard::new(&front, &back) };
+        let card_id =
+            self.insert_card(access.user_id(), deck_id, &new, "import").await?;
         run.report.cards_imported += 1;
 
         let clock = access.user.clock();
-        let reviews = history(col.revlog.get(&c.id).map_or(&[], Vec::as_slice), &clock);
+        let reviews =
+            history(col.revlog.get(&c.id).map_or(&[], Vec::as_slice), &clock);
         for r in &reviews {
             sqlx::query(
                 "INSERT INTO review_log (user_id, card_id, deck_id, rating, reviewed_at,
@@ -663,13 +775,22 @@ impl App {
 
     /// Stores an image the first time a name comes up; `None` when the
     /// package lacks it or it isn't an image we take.
-    async fn import_image(&self, user_id: i64, name: Option<String>, run: &mut ImportRun) -> Option<String> {
+    async fn import_image(
+        &self,
+        user_id: i64,
+        name: Option<String>,
+        run: &mut ImportRun,
+    ) -> Option<String> {
         let name = name?;
         if let Some(id) = run.images.get(&name) {
             return id.clone();
         }
         let id = match run.media.get(&name) {
-            Some(bytes) => self.store_image_for(user_id, bytes.clone()).await.ok().map(|m| m.id),
+            Some(bytes) => self
+                .store_image_for(user_id, bytes.clone())
+                .await
+                .ok()
+                .map(|m| m.id),
             None => None,
         };
         if id.is_some() {
@@ -680,16 +801,28 @@ impl App {
     }
 
     /// The deck an Anki deck lands in: one of the same name, else a new one.
-    async fn import_deck(&self, access: &Access, col: &AnkiCollection, did: i64, run: &mut ImportRun) -> Result<i64> {
+    async fn import_deck(
+        &self,
+        access: &Access,
+        col: &AnkiCollection,
+        did: i64,
+        run: &mut ImportRun,
+    ) -> Result<i64> {
         if let Some(id) = run.decks.get(&did) {
             return Ok(*id);
         }
-        let name = col.deck_names.get(&did).cloned().unwrap_or_else(|| "Imported".into());
+        let name = col
+            .deck_names
+            .get(&did)
+            .cloned()
+            .unwrap_or_else(|| "Imported".into());
         let id = if let Some(d) = self.deck_by_name(access, &name).await? {
             d.id
         } else {
             run.report.decks_created.push(name.clone());
-            self.create_deck(access, &name, "Imported from Anki", None).await?.id
+            self.create_deck(access, &name, "Imported from Anki", None)
+                .await?
+                .id
         };
         run.decks.insert(did, id);
         Ok(id)
@@ -714,30 +847,45 @@ impl App {
         };
         if state == CardState::New {
             if c.queue == -1 {
-                sqlx::query("UPDATE cards SET suspended = 1, held = 0 WHERE id = ?")
-                    .bind(card_id)
-                    .execute(&self.db)
-                    .await?;
+                sqlx::query(
+                    "UPDATE cards SET suspended = 1, held = 0 WHERE id = ?",
+                )
+                .bind(card_id)
+                .execute(&self.db)
+                .await?;
             }
             return Ok(());
         }
-        let starts_new = reviews.first().is_some_and(|r| r.state_before == CardState::New);
+        let starts_new =
+            reviews.first().is_some_and(|r| r.state_before == CardState::New);
         let memory = if starts_new {
             let reviews = reviews
                 .iter()
-                .map(|r| fsrs::FSRSReview { rating: num::i64_u32(r.ease), delta_t: num::i64_u32(r.delta_days) })
+                .map(|r| fsrs::FSRSReview {
+                    rating: num::i64_u32(r.ease),
+                    delta_t: num::i64_u32(r.delta_days),
+                })
                 .collect();
             fsrs.memory_state(fsrs::FSRSItem { reviews }, None).ok()
         } else if c.factor > 0 && c.ivl > 0 {
-            fsrs.memory_state_from_sm2(num::i64_f32(c.factor) / 1000.0, num::i64_f32(c.ivl), 0.9).ok()
+            fsrs.memory_state_from_sm2(
+                num::i64_f32(c.factor) / 1000.0,
+                num::i64_f32(c.ivl),
+                0.9,
+            )
+            .ok()
         } else {
             None
         };
         let clock = access.user.clock();
-        let due =
-            if state == CardState::Review { clock.day_start(clock.date_of(col.crt + c.due * 86_400)) } else { now() };
-        let last_review =
-            reviews.last().map(|r| r.at).or_else(|| (state == CardState::Review).then(|| due - c.ivl.max(1) * 86_400));
+        let due = if state == CardState::Review {
+            clock.day_start(clock.date_of(col.crt + c.due * 86_400))
+        } else {
+            now()
+        };
+        let last_review = reviews.last().map(|r| r.at).or_else(|| {
+            (state == CardState::Review).then(|| due - c.ivl.max(1) * 86_400)
+        });
         sqlx::query(
             "UPDATE cards SET state = ?, stability = ?, difficulty = ?, due = ?, last_review = ?,
                 reps = ?, lapses = ?, suspended = MAX(?, held) WHERE id = ?",
@@ -763,7 +911,8 @@ mod tests {
 
     #[test]
     fn csv_formulas_are_defused_and_round_trip() {
-        let rows = vec![("=HYPERLINK(\"http://x\")".to_string(), "-5".to_string())];
+        let rows =
+            vec![("=HYPERLINK(\"http://x\")".to_string(), "-5".to_string())];
         let out = csv_escape(&rows).unwrap();
         assert!(out.contains("'=HYPERLINK"));
         assert!(out.contains("'-5"));
@@ -782,7 +931,10 @@ mod tests {
     #[test]
     fn csv_parsing() {
         let rows = parse_csv("front,back\nhund,dog\n\"a, b\",c\n").unwrap();
-        assert_eq!(rows, vec![("hund".into(), "dog".into()), ("a, b".into(), "c".into())]);
+        assert_eq!(
+            rows,
+            vec![("hund".into(), "dog".into()), ("a, b".into(), "c".into())]
+        );
         let rows = parse_csv("a\tb\nc\td").unwrap();
         assert_eq!(rows.len(), 2);
         let rows = parse_csv("x;y").unwrap();
@@ -791,8 +943,9 @@ mod tests {
 
     #[test]
     fn html_stripping() {
-        let (t, img) =
-            anki_html_to_text("Hello&nbsp;<b>world</b><br>line 2<div><img src=\"cat.jpg\"></div>[sound:x.mp3]&#x41;");
+        let (t, img) = anki_html_to_text(
+            "Hello&nbsp;<b>world</b><br>line 2<div><img src=\"cat.jpg\"></div>[sound:x.mp3]&#x41;",
+        );
         assert_eq!(t, "Hello world\nline 2\nA");
         assert_eq!(img.as_deref(), Some("cat.jpg"));
     }
@@ -801,17 +954,26 @@ mod tests {
     fn cloze() {
         let s = "{{c1::Paris}} is the capital of {{c2::France::country}}";
         assert_eq!(cloze_numbers(s), vec![1, 2]);
-        assert_eq!(render_cloze(s, Some(1)), "**[…]** is the capital of France");
-        assert_eq!(render_cloze(s, Some(2)), "Paris is the capital of **[country]**");
-        assert_eq!(render_cloze(s, None), "**Paris** is the capital of **France**");
+        assert_eq!(
+            render_cloze(s, Some(1)),
+            "**[…]** is the capital of France"
+        );
+        assert_eq!(
+            render_cloze(s, Some(2)),
+            "Paris is the capital of **[country]**"
+        );
+        assert_eq!(
+            render_cloze(s, None),
+            "**Paris** is the capital of **France**"
+        );
     }
 
     #[test]
     fn media_protobuf() {
         // entries { name: "a.png" size: 3 } entries { name: "b.jpg" }
         let buf = [
-            0x0a, 0x09, 0x0a, 0x05, b'a', b'.', b'p', b'n', b'g', 0x10, 0x03, 0x0a, 0x07, 0x0a, 0x05, b'b', b'.', b'j',
-            b'p', b'g',
+            0x0a, 0x09, 0x0a, 0x05, b'a', b'.', b'p', b'n', b'g', 0x10, 0x03,
+            0x0a, 0x07, 0x0a, 0x05, b'b', b'.', b'j', b'p', b'g',
         ];
         assert_eq!(parse_media_entries(&buf), vec!["a.png", "b.jpg"]);
     }

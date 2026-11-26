@@ -21,7 +21,11 @@ pub(crate) const FIND_PLACES: &[(&str, &str, &str)] = &[
     ("New deck", "/decks/new", "create deck"),
     ("Import", "/import", "anki apkg csv upload"),
     ("Stats", "/stats", "statistics progress charts week retention"),
-    ("Settings", "/settings", "preferences options account password quiet hours breaks"),
+    (
+        "Settings",
+        "/settings",
+        "preferences options account password quiet hours breaks",
+    ),
     ("Presets", "/presets", "fsrs retention limits steps"),
     ("Agent access", "/access", "tokens claude mcp api keys"),
     ("Cards to look at", "/attention", "coach leeches attention"),
@@ -48,8 +52,11 @@ pub(crate) fn find_score(q: &str, name: &str, also: &str) -> Option<i32> {
     let by_also = if also.is_empty() {
         None
     } else {
-        let words: Vec<&str> = name.split_whitespace().chain(also.split_whitespace()).collect();
-        q.split_whitespace().map(|qw| words.iter().filter_map(|w| fuzzy::score(qw, w)).max()).sum::<Option<i32>>()
+        let words: Vec<&str> =
+            name.split_whitespace().chain(also.split_whitespace()).collect();
+        q.split_whitespace()
+            .map(|qw| words.iter().filter_map(|w| fuzzy::score(qw, w)).max())
+            .sum::<Option<i32>>()
     };
     by_name.max(by_also)
 }
@@ -61,7 +68,11 @@ pub(crate) fn find_line(text: &str, max: usize) -> String {
         return plain;
     }
     let cut: String = plain.chars().take(max).collect();
-    let cut = cut.rsplit_once(' ').map(|(a, _)| a).filter(|a| a.len() > max / 2).unwrap_or(&cut);
+    let cut = cut
+        .rsplit_once(' ')
+        .map(|(a, _)| a)
+        .filter(|a| a.len() > max / 2)
+        .unwrap_or(&cut);
     format!("{cut}…")
 }
 
@@ -77,12 +88,20 @@ pub(crate) const fn deck_kind(status: DeckStatus) -> &'static str {
 /// The quick find as a page: a search field and what it finds. Works
 /// without JavaScript; with it, `<ainki-find>` (parts.js) opens the same
 /// form in a dialog from anywhere and swaps in `#find-results` as you type.
-pub(crate) async fn find_page(State(app): State<AppState>, user: WebUser, Query(f): Query<FindQuery>) -> WebResult {
+pub(crate) async fn find_page(
+    State(app): State<AppState>,
+    user: WebUser,
+    Query(f): Query<FindQuery>,
+) -> WebResult {
     let access = user.access();
     let q = f.q.trim();
     let q = &q[..q.char_indices().nth(64).map_or(q.len(), |(i, _)| i)];
     let decks = app.decks(&access).await?;
-    let found = if q.is_empty() { browse(&decks) } else { find(q, &decks, &app.card_texts(&access).await?) };
+    let found = if q.is_empty() {
+        browse(&decks)
+    } else {
+        find(q, &decks, &app.card_texts(&access).await?)
+    };
     let body = html! {
         h1 { "Find" }
         (find_form(q))
@@ -124,18 +143,33 @@ fn find_results(q: &str, found: &[Found]) -> Markup {
 
 impl Found {
     fn place(name: &str, href: &str, score: i32) -> Self {
-        Self { kind: "place", title: name.to_string(), sub: String::new(), href: href.to_string(), score }
+        Self {
+            kind: "place",
+            title: name.to_string(),
+            sub: String::new(),
+            href: href.to_string(),
+            score,
+        }
     }
 
     fn deck(d: &Deck, title: String, score: i32) -> Self {
-        Self { kind: "deck", title, sub: deck_kind(d.status).into(), href: format!("/decks/{}", d.id), score }
+        Self {
+            kind: "deck",
+            title,
+            sub: deck_kind(d.status).into(),
+            href: format!("/decks/{}", d.id),
+            score,
+        }
     }
 }
 
 /// Nothing typed yet: the main places, then the decks.
 fn browse(decks: &[Deck]) -> Vec<Found> {
-    let places = FIND_PLACES.iter().filter(|p| matches!(p.1, "/" | "/stats" | "/settings"));
-    let mut found: Vec<Found> = places.map(|(name, href, _)| Found::place(name, href, 0)).collect();
+    let places = FIND_PLACES
+        .iter()
+        .filter(|p| matches!(p.1, "/" | "/stats" | "/settings"));
+    let mut found: Vec<Found> =
+        places.map(|(name, href, _)| Found::place(name, href, 0)).collect();
     found.extend(decks.iter().map(|d| Found::deck(d, deck_plain(&d.name), 0)));
     found.truncate(FIND_MAX);
     found
@@ -144,12 +178,19 @@ fn browse(decks: &[Deck]) -> Vec<Found> {
 /// The best matches for `q` among places, decks and cards. Places
 /// rank above decks on a tie; cards come in by their own
 /// score, at most `FIND_MAX_CARDS` of them.
-fn find(q: &str, decks: &[Deck], cards: &[crate::service::CardText]) -> Vec<Found> {
+fn find(
+    q: &str,
+    decks: &[Deck],
+    cards: &[crate::service::CardText],
+) -> Vec<Found> {
     let mut found: Vec<Found> = FIND_PLACES
         .iter()
-        .filter_map(|(name, href, also)| Some(Found::place(name, href, find_score(q, name, also)? + 4)))
+        .filter_map(|(name, href, also)| {
+            Some(Found::place(name, href, find_score(q, name, also)? + 4))
+        })
         .collect();
-    let names: HashMap<i64, String> = decks.iter().map(|d| (d.id, deck_plain(&d.name))).collect();
+    let names: HashMap<i64, String> =
+        decks.iter().map(|d| (d.id, deck_plain(&d.name))).collect();
     for d in decks {
         let title = names.get(&d.id).cloned().unwrap_or_default();
         if let Some(s) = find_score(q, &title, &d.description) {
@@ -160,7 +201,8 @@ fn find(q: &str, decks: &[Deck], cards: &[crate::service::CardText]) -> Vec<Foun
         .iter()
         .filter_map(|c| {
             // A match on the back alone counts for less.
-            let s = fuzzy::score(q, &c.front).max(fuzzy::score(q, &c.back).map(|s| s - 10))?;
+            let s = fuzzy::score(q, &c.front)
+                .max(fuzzy::score(q, &c.back).map(|s| s - 10))?;
             Some(Found {
                 kind: "card",
                 title: find_line(&c.front, 80),
@@ -191,7 +233,12 @@ mod tests {
 
     #[test]
     fn a_place_comes_first_and_cards_follow_by_score() {
-        let cards = [CardText { id: 7, deck_id: 1, front: "Statistics of memory".into(), back: String::new() }];
+        let cards = [CardText {
+            id: 7,
+            deck_id: 1,
+            front: "Statistics of memory".into(),
+            back: String::new(),
+        }];
         let found = find("stats", &[], &cards);
         assert_eq!(found.first().map(|f| f.href.as_str()), Some("/stats"));
         assert!(found.iter().any(|f| f.href == "/cards/7"));
@@ -200,7 +247,8 @@ mod tests {
 
     #[test]
     fn nothing_typed_lists_the_main_places() {
-        let hrefs: Vec<String> = browse(&[]).into_iter().map(|f| f.href).collect();
+        let hrefs: Vec<String> =
+            browse(&[]).into_iter().map(|f| f.href).collect();
         assert_eq!(hrefs, ["/", "/stats", "/settings"]);
     }
 }

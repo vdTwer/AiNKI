@@ -48,7 +48,10 @@ pub fn base_url(app: &App, headers: &HeaderMap) -> String {
         .or_else(|| headers.get(header::HOST))
         .and_then(|h| h.to_str().ok())
         .unwrap_or("localhost:8080");
-    let proto = headers.get("x-forwarded-proto").and_then(|h| h.to_str().ok()).unwrap_or("http");
+    let proto = headers
+        .get("x-forwarded-proto")
+        .and_then(|h| h.to_str().ok())
+        .unwrap_or("http");
     format!("{proto}://{host}")
 }
 
@@ -77,9 +80,12 @@ impl Client {
 fn same_loopback(registered: &str, requested: &str) -> bool {
     let strip = |u: &str| -> Option<(String, String)> {
         let rest = u.strip_prefix("http://")?;
-        let (hostport, path) = rest.split_once('/').map_or_else(|| (rest, "/".into()), |(h, p)| (h, format!("/{p}")));
+        let (hostport, path) = rest
+            .split_once('/')
+            .map_or_else(|| (rest, "/".into()), |(h, p)| (h, format!("/{p}")));
         let host = hostport.rsplit_once(':').map_or(hostport, |(h, _)| h);
-        matches!(host, "localhost" | "127.0.0.1" | "[::1]").then(|| (host.to_string(), path))
+        matches!(host, "localhost" | "127.0.0.1" | "[::1]")
+            .then(|| (host.to_string(), path))
     };
     matches!((strip(registered), strip(requested)), (Some(a), Some(b)) if a == b)
 }
@@ -94,10 +100,16 @@ fn valid_redirect(uri: &str) -> bool {
         "https" => true,
         // Plain http only for apps on the user's own machine.
         "http" => same_loopback(uri, uri),
-        "javascript" | "data" | "file" | "vbscript" | "about" | "blob" | "filesystem" | "view-source" | "intent"
-        | "ws" | "wss" | "ftp" => false,
+        "javascript" | "data" | "file" | "vbscript" | "about" | "blob"
+        | "filesystem" | "view-source" | "intent" | "ws" | "wss" | "ftp" => {
+            false
+        }
         // Custom schemes for native apps (e.g. com.example.app:/callback).
-        s => s.contains('.') || s.chars().all(|c| c.is_ascii_alphanumeric() || c == '+' || c == '-'),
+        s => {
+            s.contains('.')
+                || s.chars()
+                    .all(|c| c.is_ascii_alphanumeric() || c == '+' || c == '-')
+        }
     }
 }
 
@@ -128,7 +140,11 @@ pub struct OAuthError {
 
 impl OAuthError {
     fn new(error: &'static str, description: impl Into<String>) -> Self {
-        let status = if error == "invalid_client" { StatusCode::UNAUTHORIZED } else { StatusCode::BAD_REQUEST };
+        let status = if error == "invalid_client" {
+            StatusCode::UNAUTHORIZED
+        } else {
+            StatusCode::BAD_REQUEST
+        };
         Self { status, error, description: description.into() }
     }
 }
@@ -136,7 +152,11 @@ impl OAuthError {
 impl From<AppError> for OAuthError {
     fn from(e: AppError) -> Self {
         tracing::error!("oauth: {e}");
-        Self { status: StatusCode::INTERNAL_SERVER_ERROR, error: "server_error", description: "internal error".into() }
+        Self {
+            status: StatusCode::INTERNAL_SERVER_ERROR,
+            error: "server_error",
+            description: "internal error".into(),
+        }
     }
 }
 
@@ -236,8 +256,12 @@ async fn fetch_metadata_document(url: &str) -> Option<MetadataDocument> {
     .ok()?
     .ok()?
     .collect();
-    let Some(&addr) = addrs.first().filter(|_| addrs.iter().all(|a| is_public_ip(a.ip()))) else {
-        tracing::warn!("refusing to fetch client metadata from non-public host {host}");
+    let Some(&addr) =
+        addrs.first().filter(|_| addrs.iter().all(|a| is_public_ip(a.ip())))
+    else {
+        tracing::warn!(
+            "refusing to fetch client metadata from non-public host {host}"
+        );
         return None;
     };
     let client = reqwest::Client::builder()
@@ -247,8 +271,17 @@ async fn fetch_metadata_document(url: &str) -> Option<MetadataDocument> {
         .no_proxy()
         .build()
         .ok()?;
-    let mut resp = client.get(parsed).header("Accept", "application/json").send().await.ok()?;
-    if !resp.status().is_success() || resp.content_length().is_some_and(|l| num::u64_usize(l) > MAX_METADATA_BYTES) {
+    let mut resp = client
+        .get(parsed)
+        .header("Accept", "application/json")
+        .send()
+        .await
+        .ok()?;
+    if !resp.status().is_success()
+        || resp
+            .content_length()
+            .is_some_and(|l| num::u64_usize(l) > MAX_METADATA_BYTES)
+    {
         return None;
     }
     let mut body = Vec::new();
@@ -263,12 +296,18 @@ async fn fetch_metadata_document(url: &str) -> Option<MetadataDocument> {
 
 /// Compare secrets without leaking how many leading bytes matched.
 fn ct_eq(a: &[u8], b: &[u8]) -> bool {
-    a.len() == b.len() && a.iter().zip(b).fold(0u8, |acc, (x, y)| acc | (x ^ y)) == 0
+    a.len() == b.len()
+        && a.iter().zip(b).fold(0u8, |acc, (x, y)| acc | (x ^ y)) == 0
 }
 
 /// Strip control characters and cap the length of client-supplied names.
 fn clean_name(s: &str) -> String {
-    s.chars().filter(|c| !c.is_control()).take(100).collect::<String>().trim().to_string()
+    s.chars()
+        .filter(|c| !c.is_control())
+        .take(100)
+        .collect::<String>()
+        .trim()
+        .to_string()
 }
 
 impl App {
@@ -276,16 +315,36 @@ impl App {
     ///
     /// - `OAuthError` (`invalid_redirect_uri` or `invalid_client_metadata`) if the request breaks RFC 7591's rules.
     /// - `server_error` if the database fails.
-    pub async fn register_client(&self, req: RegistrationRequest) -> Result<Value, OAuthError> {
+    pub async fn register_client(
+        &self,
+        req: RegistrationRequest,
+    ) -> Result<Value, OAuthError> {
         if req.redirect_uris.is_empty() || req.redirect_uris.len() > 20 {
-            return Err(OAuthError::new("invalid_redirect_uri", "give 1 to 20 redirect_uris"));
+            return Err(OAuthError::new(
+                "invalid_redirect_uri",
+                "give 1 to 20 redirect_uris",
+            ));
         }
-        if let Some(bad) = req.redirect_uris.iter().find(|u| u.len() > 2000 || !valid_redirect(u)) {
-            return Err(OAuthError::new("invalid_redirect_uri", format!("redirect URI not allowed: {bad}")));
+        if let Some(bad) = req
+            .redirect_uris
+            .iter()
+            .find(|u| u.len() > 2000 || !valid_redirect(u))
+        {
+            return Err(OAuthError::new(
+                "invalid_redirect_uri",
+                format!("redirect URI not allowed: {bad}"),
+            ));
         }
-        let method = req.token_endpoint_auth_method.as_deref().unwrap_or("none");
-        if !matches!(method, "none" | "client_secret_post" | "client_secret_basic") {
-            return Err(OAuthError::new("invalid_client_metadata", "unsupported token_endpoint_auth_method"));
+        let method =
+            req.token_endpoint_auth_method.as_deref().unwrap_or("none");
+        if !matches!(
+            method,
+            "none" | "client_secret_post" | "client_secret_basic"
+        ) {
+            return Err(OAuthError::new(
+                "invalid_client_metadata",
+                "unsupported token_endpoint_auth_method",
+            ));
         }
         let mut name = clean_name(req.client_name.as_deref().unwrap_or(""));
         if name.is_empty() {
@@ -327,7 +386,10 @@ impl App {
     /// `Internal` if the database fails or a URL client's metadata can't be fetched.
     pub async fn client(&self, client_id: &str) -> Result<Option<Client>> {
         let stored: Option<Client> =
-            sqlx::query_as("SELECT * FROM oauth_clients WHERE id = ?").bind(client_id).fetch_optional(&self.db).await?;
+            sqlx::query_as("SELECT * FROM oauth_clients WHERE id = ?")
+                .bind(client_id)
+                .fetch_optional(&self.db)
+                .await?;
         let is_url = client_id.starts_with("https://");
         match stored {
             Some(c) if !is_url || c.created_at > now() - 86_400 => Ok(Some(c)),
@@ -338,7 +400,11 @@ impl App {
 
     async fn fetch_client_metadata(&self, url: &str) -> Result<Option<Client>> {
         // Anyone can make us fetch a URL here, so bound how often.
-        if self.limiter.check_and_hit("cimd-fetch", 300, std::time::Duration::from_hours(1)) {
+        if self.limiter.check_and_hit(
+            "cimd-fetch",
+            300,
+            std::time::Duration::from_hours(1),
+        ) {
             tracing::warn!("client metadata fetches throttled");
             return Ok(None);
         }
@@ -350,13 +416,25 @@ impl App {
         if doc.client_id != url
             || doc.redirect_uris.is_empty()
             || doc.redirect_uris.len() > 20
-            || !doc.redirect_uris.iter().all(|u| u.len() <= 2000 && valid_redirect(u))
+            || !doc
+                .redirect_uris
+                .iter()
+                .all(|u| u.len() <= 2000 && valid_redirect(u))
         {
             tracing::warn!("invalid OAuth client metadata document at {url}");
             return Ok(None);
         }
-        let host = url.trim_start_matches("https://").split('/').next().unwrap_or(url).to_string();
-        let name = doc.client_name.map(|n| clean_name(&n)).filter(|n| !n.is_empty()).unwrap_or(host);
+        let host = url
+            .trim_start_matches("https://")
+            .split('/')
+            .next()
+            .unwrap_or(url)
+            .to_string();
+        let name = doc
+            .client_name
+            .map(|n| clean_name(&n))
+            .filter(|n| !n.is_empty())
+            .unwrap_or(host);
         sqlx::query(
             "INSERT INTO oauth_clients (id, name, redirect_uris, metadata_url, created_at) VALUES (?, ?, ?, ?, ?)
              ON CONFLICT (id) DO UPDATE SET name = excluded.name, redirect_uris = excluded.redirect_uris,
@@ -369,7 +447,10 @@ impl App {
         .bind(now())
         .execute(&self.db)
         .await?;
-        Ok(sqlx::query_as("SELECT * FROM oauth_clients WHERE id = ?").bind(url).fetch_optional(&self.db).await?)
+        Ok(sqlx::query_as("SELECT * FROM oauth_clients WHERE id = ?")
+            .bind(url)
+            .fetch_optional(&self.db)
+            .await?)
     }
 
     /// # Errors
@@ -408,25 +489,43 @@ impl App {
 
     /// Check client credentials. Public clients (no secret) are fine; PKCE
     /// protects their codes.
-    async fn authenticate_client(&self, client_id: &str, secret: Option<&str>) -> Result<Client, OAuthError> {
-        let client =
-            self.client(client_id).await?.ok_or_else(|| OAuthError::new("invalid_client", "unknown client"))?;
+    async fn authenticate_client(
+        &self,
+        client_id: &str,
+        secret: Option<&str>,
+    ) -> Result<Client, OAuthError> {
+        let client = self.client(client_id).await?.ok_or_else(|| {
+            OAuthError::new("invalid_client", "unknown client")
+        })?;
         if let Some(hash) = &client.secret_hash {
             let given = secret.map_or_else(Default::default, sha256_hex);
             if !ct_eq(given.as_bytes(), hash.as_bytes()) {
-                return Err(OAuthError::new("invalid_client", "wrong client secret"));
+                return Err(OAuthError::new(
+                    "invalid_client",
+                    "wrong client secret",
+                ));
             }
         }
         Ok(client)
     }
 
-    async fn issue_tokens(&self, grant_id: i64, scope: String) -> Result<TokenResponse> {
+    async fn issue_tokens(
+        &self,
+        grant_id: i64,
+        scope: String,
+    ) -> Result<TokenResponse> {
         let access = format!("ainki_at_{}", random_hex(24));
         let refresh = format!("ainki_rt_{}", random_hex(32));
         let mut tx = self.db.begin_with("BEGIN IMMEDIATE").await?;
         // Expired tokens are garbage.
-        sqlx::query("DELETE FROM oauth_tokens WHERE expires_at < ?").bind(now()).execute(&mut *tx).await?;
-        for (token, kind, ttl) in [(&access, "access", ACCESS_TOKEN_SECS), (&refresh, "refresh", REFRESH_TOKEN_SECS)] {
+        sqlx::query("DELETE FROM oauth_tokens WHERE expires_at < ?")
+            .bind(now())
+            .execute(&mut *tx)
+            .await?;
+        for (token, kind, ttl) in [
+            (&access, "access", ACCESS_TOKEN_SECS),
+            (&refresh, "refresh", REFRESH_TOKEN_SECS),
+        ] {
             sqlx::query("INSERT INTO oauth_tokens (token_hash, kind, api_token_id, expires_at) VALUES (?, ?, ?, ?)")
                 .bind(sha256_hex(token))
                 .bind(kind)
@@ -446,10 +545,12 @@ impl App {
     }
 
     async fn grant_scope(&self, grant_id: i64) -> Result<String> {
-        let (w, r): (bool, bool) = sqlx::query_as("SELECT can_write, can_review FROM api_tokens WHERE id = ?")
-            .bind(grant_id)
-            .fetch_one(&self.db)
-            .await?;
+        let (w, r): (bool, bool) = sqlx::query_as(
+            "SELECT can_write, can_review FROM api_tokens WHERE id = ?",
+        )
+        .bind(grant_id)
+        .fetch_one(&self.db)
+        .await?;
         Ok(scope_string(w, r))
     }
 
@@ -469,7 +570,10 @@ impl App {
     ) -> Result<TokenResponse, OAuthError> {
         let client = self.authenticate_client(client_id, client_secret).await?;
         #[derive(sqlx::FromRow)]
-        #[expect(clippy::struct_field_names, reason = "named after the OAuth columns")]
+        #[expect(
+            clippy::struct_field_names,
+            reason = "named after the OAuth columns"
+        )]
         struct Code {
             client_id: String,
             user_id: i64,
@@ -482,20 +586,33 @@ impl App {
             expires_at: i64,
         }
         // Codes are single use: delete on read.
-        let row: Option<Code> = sqlx::query_as("DELETE FROM oauth_codes WHERE code_hash = ? RETURNING *")
-            .bind(sha256_hex(code))
-            .fetch_optional(&self.db)
-            .await?;
-        let invalid = || OAuthError::new("invalid_grant", "invalid or expired authorization code");
+        let row: Option<Code> = sqlx::query_as(
+            "DELETE FROM oauth_codes WHERE code_hash = ? RETURNING *",
+        )
+        .bind(sha256_hex(code))
+        .fetch_optional(&self.db)
+        .await?;
+        let invalid = || {
+            OAuthError::new(
+                "invalid_grant",
+                "invalid or expired authorization code",
+            )
+        };
         let row = row.ok_or_else(invalid)?;
         if row.client_id != client.id || row.expires_at < now() {
             return Err(invalid());
         }
         if redirect_uri.is_some_and(|r| r != row.redirect_uri) {
-            return Err(OAuthError::new("invalid_grant", "redirect_uri does not match"));
+            return Err(OAuthError::new(
+                "invalid_grant",
+                "redirect_uri does not match",
+            ));
         }
         if !pkce_ok(verifier, &row.code_challenge) {
-            return Err(OAuthError::new("invalid_grant", "PKCE verification failed"));
+            return Err(OAuthError::new(
+                "invalid_grant",
+                "PKCE verification failed",
+            ));
         }
         // A grant that fails to parse fails the exchange: before, it became
         // None, which is "all decks".
@@ -517,7 +634,9 @@ impl App {
                 }
                 e => e.into(),
             })?;
-        Ok(self.issue_tokens(grant.id, scope_string(row.can_write, row.can_review)).await?)
+        Ok(self
+            .issue_tokens(grant.id, scope_string(row.can_write, row.can_review))
+            .await?)
     }
 
     /// # Errors
@@ -533,7 +652,9 @@ impl App {
     ) -> Result<TokenResponse, OAuthError> {
         let client = self.authenticate_client(client_id, client_secret).await?;
         let hash = sha256_hex(refresh_token);
-        let invalid = || OAuthError::new("invalid_grant", "invalid or expired refresh token");
+        let invalid = || {
+            OAuthError::new("invalid_grant", "invalid or expired refresh token")
+        };
         // Rotation: the old refresh token is marked used (kept to spot reuse).
         let row: Option<(i64, i64)> = sqlx::query_as(
             "UPDATE oauth_tokens SET kind = 'refresh_used', used_at = ?
@@ -556,13 +677,20 @@ impl App {
             if let Some((grant, used_at)) = used
                 && now() - used_at > REFRESH_REUSE_GRACE_SECS
             {
-                tracing::warn!("refresh token reuse detected; revoking connection {grant}");
-                sqlx::query("UPDATE api_tokens SET revoked_at = ? WHERE id = ?")
-                    .bind(now())
+                tracing::warn!(
+                    "refresh token reuse detected; revoking connection {grant}"
+                );
+                sqlx::query(
+                    "UPDATE api_tokens SET revoked_at = ? WHERE id = ?",
+                )
+                .bind(now())
+                .bind(grant)
+                .execute(&self.db)
+                .await?;
+                sqlx::query("DELETE FROM oauth_tokens WHERE api_token_id = ?")
                     .bind(grant)
                     .execute(&self.db)
                     .await?;
-                sqlx::query("DELETE FROM oauth_tokens WHERE api_token_id = ?").bind(grant).execute(&self.db).await?;
             }
             return Err(invalid());
         };
@@ -571,7 +699,9 @@ impl App {
                 .bind(grant_id)
                 .fetch_optional(&self.db)
                 .await?;
-        if expires_at < now() || owner.flatten().as_deref() != Some(client.id.as_str()) {
+        if expires_at < now()
+            || owner.flatten().as_deref() != Some(client.id.as_str())
+        {
             return Err(invalid());
         }
         let scope = self.grant_scope(grant_id).await?;
@@ -584,17 +714,22 @@ impl App {
     ///
     /// `Internal` if the database fails. An unknown token is no error (RFC 7009).
     pub async fn revoke_oauth_token(&self, token: &str) -> Result<()> {
-        let grant: Option<i64> = sqlx::query_scalar("SELECT api_token_id FROM oauth_tokens WHERE token_hash = ?")
-            .bind(sha256_hex(token))
-            .fetch_optional(&self.db)
-            .await?;
+        let grant: Option<i64> = sqlx::query_scalar(
+            "SELECT api_token_id FROM oauth_tokens WHERE token_hash = ?",
+        )
+        .bind(sha256_hex(token))
+        .fetch_optional(&self.db)
+        .await?;
         if let Some(id) = grant {
             sqlx::query("UPDATE api_tokens SET revoked_at = ? WHERE id = ?")
                 .bind(now())
                 .bind(id)
                 .execute(&self.db)
                 .await?;
-            sqlx::query("DELETE FROM oauth_tokens WHERE api_token_id = ?").bind(id).execute(&self.db).await?;
+            sqlx::query("DELETE FROM oauth_tokens WHERE api_token_id = ?")
+                .bind(id)
+                .execute(&self.db)
+                .await?;
         }
         Ok(())
     }
@@ -613,7 +748,10 @@ fn scope_string(can_write: bool, can_review: bool) -> String {
 
 // ----- HTTP handlers ---------------------------------------------------------
 
-pub async fn protected_resource(State(app): State<AppState>, headers: HeaderMap) -> Json<Value> {
+pub async fn protected_resource(
+    State(app): State<AppState>,
+    headers: HeaderMap,
+) -> Json<Value> {
     let base = base_url(&app, &headers);
     Json(json!({
         "resource": format!("{base}/mcp"),
@@ -624,7 +762,10 @@ pub async fn protected_resource(State(app): State<AppState>, headers: HeaderMap)
     }))
 }
 
-pub async fn authorization_server(State(app): State<AppState>, headers: HeaderMap) -> Json<Value> {
+pub async fn authorization_server(
+    State(app): State<AppState>,
+    headers: HeaderMap,
+) -> Json<Value> {
     let base = base_url(&app, &headers);
     Json(json!({
         "issuer": base,
@@ -651,11 +792,20 @@ pub async fn register(
 ) -> Response {
     // Registration is open by design (MCP clients register themselves), so
     // bound how fast one address can fill the table.
-    if app.limiter.check_and_hit(&format!("oauth-register:{ip}"), 30, std::time::Duration::from_hours(1)) {
+    if app.limiter.check_and_hit(
+        &format!("oauth-register:{ip}"),
+        30,
+        std::time::Duration::from_hours(1),
+    ) {
         return crate::security::too_many_requests(3600);
     }
     match app.register_client(req).await {
-        Ok(v) => (StatusCode::CREATED, [(header::CACHE_CONTROL, "no-store")], Json(v)).into_response(),
+        Ok(v) => (
+            StatusCode::CREATED,
+            [(header::CACHE_CONTROL, "no-store")],
+            Json(v),
+        )
+            .into_response(),
         Err(e) => e.into_response(),
     }
 }
@@ -673,7 +823,10 @@ pub struct AuthorizeParams {
 }
 
 /// Problems that must not be sent to the redirect URI (it may be untrusted).
-fn authorize_error_page(user: Option<&crate::auth::User>, msg: &str) -> Response {
+fn authorize_error_page(
+    user: Option<&crate::auth::User>,
+    msg: &str,
+) -> Response {
     (
         StatusCode::BAD_REQUEST,
         layout(
@@ -721,12 +874,24 @@ async fn check_authorize(
     base: &str,
 ) -> Result<(Client, String), Box<Response>> {
     let Some(client_id) = p.client_id.as_deref() else {
-        return Err(Box::new(authorize_error_page(user, "The request is missing client_id.")));
+        return Err(Box::new(authorize_error_page(
+            user,
+            "The request is missing client_id.",
+        )));
     };
     let client = match app.client(client_id).await {
         Ok(Some(c)) => c,
-        Ok(None) => return Err(Box::new(authorize_error_page(user, "This app isn't registered with AiNKI."))),
-        Err(e) => return Err(Box::new(crate::web::WebError::from(e).into_response())),
+        Ok(None) => {
+            return Err(Box::new(authorize_error_page(
+                user,
+                "This app isn't registered with AiNKI.",
+            )));
+        }
+        Err(e) => {
+            return Err(Box::new(
+                crate::web::WebError::from(e).into_response(),
+            ));
+        }
     };
     let redirects = client.redirects();
     let redirect_uri = match (p.redirect_uri.as_deref(), redirects) {
@@ -747,10 +912,15 @@ async fn check_authorize(
         Err(Box::new(redirect_with(&redirect_uri, &params)))
     };
     if p.response_type.as_deref() != Some("code") {
-        return fail("unsupported_response_type", "only response_type=code is supported");
+        return fail(
+            "unsupported_response_type",
+            "only response_type=code is supported",
+        );
     }
     let challenge_ok = p.code_challenge.as_deref().is_some_and(|c| {
-        (43..=128).contains(&c.len()) && c.chars().all(|ch| ch.is_ascii_alphanumeric() || ch == '-' || ch == '_')
+        (43..=128).contains(&c.len())
+            && c.chars()
+                .all(|ch| ch.is_ascii_alphanumeric() || ch == '-' || ch == '_')
     });
     if !challenge_ok || p.code_challenge_method.as_deref() != Some("S256") {
         return fail("invalid_request", "PKCE with S256 is required");
@@ -772,19 +942,30 @@ pub async fn authorize_page(
 ) -> Response {
     let Some(WebUser(user)) = user else {
         // Log in first, then come back here.
-        return Redirect::to(&format!("/login?next={}", urlenc(&authorize_path(&p)))).into_response();
+        return Redirect::to(&format!(
+            "/login?next={}",
+            urlenc(&authorize_path(&p))
+        ))
+        .into_response();
     };
-    let (client, redirect_uri) = match check_authorize(&app, &p, Some(&user), &base_url(&app, &headers)).await {
-        Ok(v) => v,
-        Err(r) => return *r,
-    };
+    let (client, redirect_uri) =
+        match check_authorize(&app, &p, Some(&user), &base_url(&app, &headers))
+            .await
+        {
+            Ok(v) => v,
+            Err(r) => return *r,
+        };
     let access = crate::auth::Access::web(user.clone());
     let decks = match app.decks(&access).await {
         Ok(d) => d,
         Err(e) => return crate::web::WebError::from(e).into_response(),
     };
-    let target =
-        redirect_uri.split("://").nth(1).and_then(|r| r.split('/').next()).unwrap_or(&redirect_uri).to_string();
+    let target = redirect_uri
+        .split("://")
+        .nth(1)
+        .and_then(|r| r.split('/').next())
+        .unwrap_or(&redirect_uri)
+        .to_string();
     let hidden = |name: &str, v: &Option<String>| {
         html! { @if let Some(v) = v { input type="hidden" name=(name) value=(v); } }
     };
@@ -858,7 +1039,14 @@ pub async fn authorize_submit(
     WebUser(user): WebUser,
     Form(f): Form<ConsentForm>,
 ) -> Response {
-    let (client, redirect_uri) = match check_authorize(&app, &f.params, Some(&user), &base_url(&app, &headers)).await {
+    let (client, redirect_uri) = match check_authorize(
+        &app,
+        &f.params,
+        Some(&user),
+        &base_url(&app, &headers),
+    )
+    .await
+    {
         Ok(v) => v,
         Err(r) => return *r,
     };
@@ -868,9 +1056,16 @@ pub async fn authorize_submit(
         params.push(("error", "access_denied"));
         params.push(("error_description", "the user declined"));
     }
-    let decks = if f.deck_scope.as_deref() == Some("some") { Some(f.decks.clone()) } else { None };
+    let decks = if f.deck_scope.as_deref() == Some("some") {
+        Some(f.decks.clone())
+    } else {
+        None
+    };
     if decks.as_ref().is_some_and(std::vec::Vec::is_empty) {
-        return authorize_error_page(Some(&user), "Pick at least one deck, or allow all decks.");
+        return authorize_error_page(
+            Some(&user),
+            "Pick at least one deck, or allow all decks.",
+        );
     }
     let code;
     if f.decision == "allow" {
@@ -914,7 +1109,8 @@ pub struct TokenRequest {
 fn basic_auth(headers: &HeaderMap) -> Option<(String, String)> {
     let v = headers.get(header::AUTHORIZATION)?.to_str().ok()?;
     let b64 = v.strip_prefix("Basic ").or_else(|| v.strip_prefix("basic "))?;
-    let raw = base64::engine::general_purpose::STANDARD.decode(b64.trim()).ok()?;
+    let raw =
+        base64::engine::general_purpose::STANDARD.decode(b64.trim()).ok()?;
     let s = String::from_utf8(raw).ok()?;
     let (id, secret) = s.split_once(':')?;
     // RFC 6749 2.3.1: both parts are form-urlencoded.
@@ -922,34 +1118,62 @@ fn basic_auth(headers: &HeaderMap) -> Option<(String, String)> {
     Some((dec(id), dec(secret)))
 }
 
-pub async fn token(State(app): State<AppState>, headers: HeaderMap, Form(t): Form<TokenRequest>) -> Response {
+pub async fn token(
+    State(app): State<AppState>,
+    headers: HeaderMap,
+    Form(t): Form<TokenRequest>,
+) -> Response {
     if !resource_ok(t.resource.as_deref(), &base_url(&app, &headers)) {
-        return OAuthError::new("invalid_target", "unknown resource").into_response();
+        return OAuthError::new("invalid_target", "unknown resource")
+            .into_response();
     }
     let (client_id, secret) = match basic_auth(&headers) {
         Some((id, secret)) => (Some(id), Some(secret)),
         None => (t.client_id.clone(), t.client_secret.clone()),
     };
     let Some(client_id) = client_id else {
-        return OAuthError::new("invalid_client", "client_id is required").into_response();
+        return OAuthError::new("invalid_client", "client_id is required")
+            .into_response();
     };
     let result = match t.grant_type.as_str() {
-        "authorization_code" => match (t.code.as_deref(), t.code_verifier.as_deref()) {
-            (Some(code), Some(verifier)) => {
-                app.exchange_code(&client_id, secret.as_deref(), code, t.redirect_uri.as_deref(), verifier).await
+        "authorization_code" => {
+            match (t.code.as_deref(), t.code_verifier.as_deref()) {
+                (Some(code), Some(verifier)) => {
+                    app.exchange_code(
+                        &client_id,
+                        secret.as_deref(),
+                        code,
+                        t.redirect_uri.as_deref(),
+                        verifier,
+                    )
+                    .await
+                }
+                _ => Err(OAuthError::new(
+                    "invalid_request",
+                    "code and code_verifier are required",
+                )),
             }
-            _ => Err(OAuthError::new("invalid_request", "code and code_verifier are required")),
-        },
+        }
         "refresh_token" => match t.refresh_token.as_deref() {
-            Some(rt) => app.refresh_tokens(&client_id, secret.as_deref(), rt).await,
-            None => Err(OAuthError::new("invalid_request", "refresh_token is required")),
+            Some(rt) => {
+                app.refresh_tokens(&client_id, secret.as_deref(), rt).await
+            }
+            None => Err(OAuthError::new(
+                "invalid_request",
+                "refresh_token is required",
+            )),
         },
-        _ => Err(OAuthError::new("unsupported_grant_type", "use authorization_code or refresh_token")),
+        _ => Err(OAuthError::new(
+            "unsupported_grant_type",
+            "use authorization_code or refresh_token",
+        )),
     };
     match result {
-        Ok(tokens) => {
-            ([(header::CACHE_CONTROL, "no-store"), (header::PRAGMA, "no-cache")], Json(tokens)).into_response()
-        }
+        Ok(tokens) => (
+            [(header::CACHE_CONTROL, "no-store"), (header::PRAGMA, "no-cache")],
+            Json(tokens),
+        )
+            .into_response(),
         Err(e) => e.into_response(),
     }
 }
@@ -959,7 +1183,10 @@ pub struct RevokeRequest {
     pub token: String,
 }
 
-pub async fn revoke(State(app): State<AppState>, Form(r): Form<RevokeRequest>) -> Response {
+pub async fn revoke(
+    State(app): State<AppState>,
+    Form(r): Form<RevokeRequest>,
+) -> Response {
     match app.revoke_oauth_token(&r.token).await {
         Ok(()) => StatusCode::OK.into_response(),
         Err(e) => OAuthError::from(e).into_response(),
@@ -978,8 +1205,14 @@ mod tests {
         assert!(!valid_redirect("http://evil.example/cb"));
         assert!(!valid_redirect("javascript:alert(1)"));
         assert!(!valid_redirect("https://a.example/cb#frag"));
-        assert!(same_loopback("http://localhost:1234/cb", "http://localhost:9999/cb"));
-        assert!(!same_loopback("http://localhost:1234/cb", "http://localhost:9999/other"));
+        assert!(same_loopback(
+            "http://localhost:1234/cb",
+            "http://localhost:9999/cb"
+        ));
+        assert!(!same_loopback(
+            "http://localhost:1234/cb",
+            "http://localhost:9999/other"
+        ));
     }
 
     #[test]
@@ -1026,20 +1259,31 @@ mod tests {
         assert!(resource_ok(Some("https://cards.example.com/mcp"), base));
         assert!(resource_ok(Some("https://cards.example.com/"), base));
         assert!(!resource_ok(Some("https://evil.example/mcp"), base));
-        assert!(ct_eq(b"abc", b"abc") && !ct_eq(b"abc", b"abd") && !ct_eq(b"ab", b"abc"));
+        assert!(
+            ct_eq(b"abc", b"abc")
+                && !ct_eq(b"abc", b"abd")
+                && !ct_eq(b"ab", b"abc")
+        );
     }
 
     #[test]
     fn pkce() {
         // RFC 7636 appendix B
-        assert!(pkce_ok("dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk", "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM"));
-        assert!(!pkce_ok("short", "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM"));
+        assert!(pkce_ok(
+            "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk",
+            "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM"
+        ));
+        assert!(!pkce_ok(
+            "short",
+            "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM"
+        ));
     }
 
     #[test]
     fn basic_auth_decoding() {
         let mut h = HeaderMap::new();
-        let v = base64::engine::general_purpose::STANDARD.encode("my%20id:s3cr%2Bt");
+        let v = base64::engine::general_purpose::STANDARD
+            .encode("my%20id:s3cr%2Bt");
         h.insert(header::AUTHORIZATION, format!("Basic {v}").parse().unwrap());
         assert_eq!(basic_auth(&h), Some(("my id".into(), "s3cr+t".into())));
     }

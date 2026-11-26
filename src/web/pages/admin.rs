@@ -22,15 +22,19 @@ struct Node<'a> {
 /// under the one who invited it. An inviter that is gone makes its people
 /// roots.
 fn graph_rows(accounts: &[invites::Account]) -> Vec<Node<'_>> {
-    let ids: std::collections::HashSet<i64> = accounts.iter().map(|a| a.id).collect();
-    let mut children: HashMap<Option<i64>, Vec<&invites::Account>> = HashMap::new();
+    let ids: std::collections::HashSet<i64> =
+        accounts.iter().map(|a| a.id).collect();
+    let mut children: HashMap<Option<i64>, Vec<&invites::Account>> =
+        HashMap::new();
     for a in accounts {
         let parent = a.invited_by.filter(|p| ids.contains(p) && *p != a.id);
         children.entry(parent).or_default().push(a);
     }
     let mut nodes: Vec<Node> = Vec::new();
     let mut stack: Vec<(&invites::Account, usize, Option<usize>)> =
-        children.get(&None).map_or_else(Default::default, |r| r.iter().rev().map(|a| (*a, 0, None)).collect());
+        children.get(&None).map_or_else(Default::default, |r| {
+            r.iter().rev().map(|a| (*a, 0, None)).collect()
+        });
     let mut seen = std::collections::HashSet::new();
     while let Some((a, depth, parent_row)) = stack.pop() {
         if !seen.insert(a.id) {
@@ -55,7 +59,10 @@ pub(crate) fn invite_graph(accounts: &[invites::Account]) -> Markup {
     let y = |r: usize| num::usize_f64(r).mul_add(ROW, TOP);
     let width = nodes
         .iter()
-        .map(|n| num::usize_f64(n.a.handle().len()).mul_add(8.6, x(n.depth) + 16.0) + 110.0)
+        .map(|n| {
+            num::usize_f64(n.a.handle().len()).mul_add(8.6, x(n.depth) + 16.0)
+                + 110.0
+        })
         .fold(320.0_f64, f64::max)
         .ceil();
     let height = (y(nodes.len().max(1)) - ROW + TOP).ceil();
@@ -93,7 +100,11 @@ pub(crate) fn short_date(clock: &scheduler::Clock, ts: i64) -> String {
     match (clock.today() - d).num_days() {
         0 => "Today".into(),
         1 => "Yesterday".into(),
-        _ if chrono::Datelike::year(&d) == chrono::Datelike::year(&clock.today()) => d.format("%-d %b").to_string(),
+        _ if chrono::Datelike::year(&d)
+            == chrono::Datelike::year(&clock.today()) =>
+        {
+            d.format("%-d %b").to_string()
+        }
         _ => d.format("%-d %b %Y").to_string(),
     }
 }
@@ -112,12 +123,23 @@ pub(crate) async fn admin_page(
     let inv = app.invites(u).await?;
     let clock = u.clock();
     let base = oauth::base_url(&app, &headers);
-    let names: HashMap<i64, String> =
-        accounts.iter().map(|a| (a.id, if a.is_admin { "admin".to_string() } else { a.handle() })).collect();
-    let people: Vec<&invites::Account> = accounts.iter().filter(|a| !a.is_admin).collect();
+    let names: HashMap<i64, String> = accounts
+        .iter()
+        .map(|a| {
+            (a.id, if a.is_admin { "admin".to_string() } else { a.handle() })
+        })
+        .collect();
+    let people: Vec<&invites::Account> =
+        accounts.iter().filter(|a| !a.is_admin).collect();
     let month = now() - 30 * 86_400;
-    let new_this_month = num::usize_i64(people.iter().filter(|a| a.created_at >= month).count());
-    let studying = num::usize_i64(people.iter().filter(|a| a.last_review.is_some_and(|t| t >= month)).count());
+    let new_this_month =
+        num::usize_i64(people.iter().filter(|a| a.created_at >= month).count());
+    let studying = num::usize_i64(
+        people
+            .iter()
+            .filter(|a| a.last_review.is_some_and(|t| t >= month))
+            .count(),
+    );
     Ok(page(
         None,
         "Admin",

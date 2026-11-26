@@ -13,15 +13,23 @@ pub(crate) fn safe_next(next: Option<&str>) -> Option<&str> {
     next.filter(|n| {
         n.starts_with('/')
             && n.len() < 4096
-            && !n.chars().any(|c| c.is_control() || c.is_whitespace() || c == '\\')
+            && !n
+                .chars()
+                .any(|c| c.is_control() || c.is_whitespace() || c == '\\')
             && !n.starts_with("//")
     })
 }
 
-pub(crate) fn auth_form(signup: bool, error: Option<&str>, allow_signup: bool, next: Option<&str>) -> Markup {
+pub(crate) fn auth_form(
+    signup: bool,
+    error: Option<&str>,
+    allow_signup: bool,
+    next: Option<&str>,
+) -> Markup {
     let title = if signup { "Sign up" } else { "Log in" };
     let action = if signup { "/signup" } else { "/login" };
-    let next_q = next.map_or_else(Default::default, |n| format!("?next={}", urlenc(n)));
+    let next_q =
+        next.map_or_else(Default::default, |n| format!("?next={}", urlenc(n)));
     layout(
         title,
         None,
@@ -100,7 +108,11 @@ pub(crate) async fn login(
     let ip_key = format!("login-ip:{ip}");
     let user_key = format!("login-user:{}", f.username.trim().to_lowercase());
     if app.limiter.exceeded(&ip_key, LOGIN_FAILURES_PER_IP, LOGIN_WINDOW)
-        || app.limiter.exceeded(&user_key, LOGIN_FAILURES_PER_ACCOUNT, LOGIN_WINDOW)
+        || app.limiter.exceeded(
+            &user_key,
+            LOGIN_FAILURES_PER_ACCOUNT,
+            LOGIN_WINDOW,
+        )
     {
         tracing::warn!("login throttled for {ip} / {}", f.username.trim());
         let page = auth_form(
@@ -109,11 +121,20 @@ pub(crate) async fn login(
             app.signup_open().await,
             next,
         );
-        return (StatusCode::TOO_MANY_REQUESTS, [(header::RETRY_AFTER, "900")], page).into_response();
+        return (
+            StatusCode::TOO_MANY_REQUESTS,
+            [(header::RETRY_AFTER, "900")],
+            page,
+        )
+            .into_response();
     }
     match app.authenticate(&f.username, &f.password).await {
         Ok(user) => match app.create_session(user.id).await {
-            Ok(token) => (jar.add(session_cookie(&app, token)), Redirect::to(next.unwrap_or("/"))).into_response(),
+            Ok(token) => (
+                jar.add(session_cookie(&app, token)),
+                Redirect::to(next.unwrap_or("/")),
+            )
+                .into_response(),
             Err(e) => WebError(e).into_response(),
         },
         Err(e) => {
@@ -121,14 +142,22 @@ pub(crate) async fn login(
             app.limiter.hit(&user_key, LOGIN_WINDOW);
             (
                 StatusCode::UNAUTHORIZED,
-                auth_form(false, Some(&capitalize(&e.to_string())), app.signup_open().await, next),
+                auth_form(
+                    false,
+                    Some(&capitalize(&e.to_string())),
+                    app.signup_open().await,
+                    next,
+                ),
             )
                 .into_response()
         }
     }
 }
 
-pub(crate) async fn signup_page(State(app): State<AppState>, Query(q): Query<NextQuery>) -> Response {
+pub(crate) async fn signup_page(
+    State(app): State<AppState>,
+    Query(q): Query<NextQuery>,
+) -> Response {
     if !app.signup_open().await {
         return redirect("/login");
     }
@@ -144,32 +173,50 @@ pub(crate) async fn signup(
     if !app.signup_open().await {
         return redirect("/login");
     }
-    if app.limiter.check_and_hit(&format!("signup-ip:{ip}"), 10, Duration::from_hours(1)) {
+    if app.limiter.check_and_hit(
+        &format!("signup-ip:{ip}"),
+        10,
+        Duration::from_hours(1),
+    ) {
         return security::too_many_requests(3600);
     }
     let next = safe_next(f.next.as_deref());
     let result = async {
-        let user = app.create_user(&f.username, &f.password, &f.timezone).await?;
+        let user =
+            app.create_user(&f.username, &f.password, &f.timezone).await?;
         let token = app.create_session(user.id).await?;
         Ok::<_, AppError>((user, token))
     }
     .await;
     match result {
         Ok((user, token)) => {
-            let welcome = format!("Welcome! Your username is {}. Use it to log in.", user.handle());
-            (jar.add(session_cookie(&app, token)).add(flash_cookie(&welcome)), Redirect::to(next.unwrap_or("/")))
+            let welcome = format!(
+                "Welcome! Your username is {}. Use it to log in.",
+                user.handle()
+            );
+            (
+                jar.add(session_cookie(&app, token))
+                    .add(flash_cookie(&welcome)),
+                Redirect::to(next.unwrap_or("/")),
+            )
                 .into_response()
         }
-        Err(e) => {
-            (StatusCode::BAD_REQUEST, auth_form(true, Some(&capitalize(&e.to_string())), true, next)).into_response()
-        }
+        Err(e) => (
+            StatusCode::BAD_REQUEST,
+            auth_form(true, Some(&capitalize(&e.to_string())), true, next),
+        )
+            .into_response(),
     }
 }
 
-pub(crate) async fn logout(State(app): State<AppState>, jar: CookieJar) -> Response {
+pub(crate) async fn logout(
+    State(app): State<AppState>,
+    jar: CookieJar,
+) -> Response {
     let name = app.config.session_cookie_name();
     if let Some(c) = jar.get(name) {
         let _ = app.delete_session(c.value()).await;
     }
-    (jar.remove(Cookie::build(name).path("/")), Redirect::to("/login")).into_response()
+    (jar.remove(Cookie::build(name).path("/")), Redirect::to("/login"))
+        .into_response()
 }

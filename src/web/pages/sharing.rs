@@ -23,7 +23,10 @@ pub(crate) async fn deck_share(
             let share = app.share_deck(&user.access(), id, &f.user).await?;
             Ok(redirect_msg(
                 format!("/decks/{id}/edit#share"),
-                &format!("Shared with {}. They'll see it on their home page.", share.to),
+                &format!(
+                    "Shared with {}. They'll see it on their home page.",
+                    share.to
+                ),
             ))
         }
         .await,
@@ -42,7 +45,10 @@ pub(crate) async fn share_action(
             match action.as_str() {
                 "accept" => {
                     let deck = app.accept_share(&access, id).await?;
-                    Ok(redirect_msg(format!("/decks/{}", deck.id), "Shared deck added to your decks."))
+                    Ok(redirect_msg(
+                        format!("/decks/{}", deck.id),
+                        "Shared deck added to your decks.",
+                    ))
                 }
                 "decline" => {
                     app.decline_share(&access, id).await?;
@@ -50,7 +56,10 @@ pub(crate) async fn share_action(
                 }
                 "cancel" => {
                     let deck = app.cancel_share(&access, id).await?;
-                    Ok(redirect_msg(format!("/decks/{deck}/edit#share"), "Share cancelled."))
+                    Ok(redirect_msg(
+                        format!("/decks/{deck}/edit#share"),
+                        "Share cancelled.",
+                    ))
                 }
                 _ => Err(AppError::bad("unknown action")),
             }

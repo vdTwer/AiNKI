@@ -6,7 +6,11 @@
 )]
 use crate::web::*;
 
-pub(crate) async fn import_page(State(app): State<AppState>, user: WebUser, Flash(msg): Flash) -> WebResult {
+pub(crate) async fn import_page(
+    State(app): State<AppState>,
+    user: WebUser,
+    Flash(msg): Flash,
+) -> WebResult {
     let decks = app.decks(&user.access()).await?;
     Ok(layout_in(
         Nav::Add,
@@ -55,7 +59,11 @@ pub(crate) async fn import_page(State(app): State<AppState>, user: WebUser, Flas
     .into_response())
 }
 
-pub(crate) async fn import_upload(State(app): State<AppState>, user: WebUser, mp: Multipart) -> WebResult {
+pub(crate) async fn import_upload(
+    State(app): State<AppState>,
+    user: WebUser,
+    mp: Multipart,
+) -> WebResult {
     let access = user.access();
     let mut fields = match read_multipart(mp).await {
         Ok(f) => f,
@@ -68,12 +76,19 @@ pub(crate) async fn import_upload(State(app): State<AppState>, user: WebUser, mp
     let report = async {
         Ok::<_, AppError>(match text("kind").as_str() {
             "apkg" => {
-                let data = file.filter(|d| !d.is_empty()).ok_or_else(|| AppError::bad("choose a file"))?;
+                let data = file
+                    .filter(|d| !d.is_empty())
+                    .ok_or_else(|| AppError::bad("choose a file"))?;
                 app.import_apkg(&access, data).await?
             }
             "csv" => {
-                let deck: i64 = text("deck").parse().map_err(|_| AppError::bad("pick a deck"))?;
-                let mut body = String::from_utf8_lossy(file.as_deref().unwrap_or_default()).to_string();
+                let deck: i64 = text("deck")
+                    .parse()
+                    .map_err(|_| AppError::bad("pick a deck"))?;
+                let mut body = String::from_utf8_lossy(
+                    file.as_deref().unwrap_or_default(),
+                )
+                .to_string();
                 if body.trim().is_empty() {
                     body = text("text");
                 }
@@ -95,7 +110,8 @@ pub(crate) async fn import_upload(State(app): State<AppState>, user: WebUser, mp
         msg += &format!(", {}", count(report.images_imported, "image"));
     }
     if !report.decks_created.is_empty() {
-        let names: Vec<String> = report.decks_created.iter().map(|n| deck_plain(n)).collect();
+        let names: Vec<String> =
+            report.decks_created.iter().map(|n| deck_plain(n)).collect();
         msg += &format!(". New decks: {}", names.join(", "));
     }
     if report.skipped > 0 {

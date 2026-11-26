@@ -19,7 +19,10 @@ pub const MAX_UPLOAD_BYTES: usize = 15 * 1024 * 1024;
 /// The one size check (and wording) for every image upload.
 pub fn check_size(data: &[u8]) -> Result<(), AppError> {
     if data.len() > MAX_UPLOAD_BYTES {
-        return Err(AppError::bad(format!("images must be smaller than {} MB", MAX_UPLOAD_BYTES / (1024 * 1024))));
+        return Err(AppError::bad(format!(
+            "images must be smaller than {} MB",
+            MAX_UPLOAD_BYTES / (1024 * 1024)
+        )));
     }
     Ok(())
 }
@@ -41,7 +44,10 @@ pub struct Media {
 }
 
 /// Floyd–Steinberg error diffusion to `levels` evenly spaced grays.
-#[expect(clippy::indexing_slicing, reason = "error diffusion: each neighbour is bounds-checked against w and h first")]
+#[expect(
+    clippy::indexing_slicing,
+    reason = "error diffusion: each neighbour is bounds-checked against w and h first"
+)]
 fn dither(img: &mut GrayImage, levels: u8) {
     let (w, h) = img.dimensions();
     let (w, h) = (w as usize, h as usize);
@@ -84,11 +90,15 @@ pub fn process_image(data: &[u8]) -> Result<(Vec<u8>, u32, u32)> {
     limits.max_image_height = Some(MAX_DECODE_DIMENSION);
     limits.max_alloc = Some(256 * 1024 * 1024);
     reader.limits(limits);
-    let broken = |e: image::ImageError| AppError::bad(format!("unsupported or broken image: {e}"));
+    let broken = |e: image::ImageError| {
+        AppError::bad(format!("unsupported or broken image: {e}"))
+    };
     let mut decoder = reader.into_decoder().map_err(broken)?;
     // Phones store photos as the sensor saw them plus a note on how to turn
     // them; without it a portrait photo lies on its side.
-    let orientation = decoder.orientation().unwrap_or(image::metadata::Orientation::NoTransforms);
+    let orientation = decoder
+        .orientation()
+        .unwrap_or(image::metadata::Orientation::NoTransforms);
     let mut img = image::DynamicImage::from_decoder(decoder).map_err(broken)?;
     img.apply_orientation(orientation);
     let img = if img.width() > MAX_DIMENSION || img.height() > MAX_DIMENSION {
@@ -102,8 +112,16 @@ pub fn process_image(data: &[u8]) -> Result<(Vec<u8>, u32, u32)> {
     for (x, y, p) in rgba.enumerate_pixels() {
         let [r, g, b, a] = p.0;
         let a = f32::from(a) / 255.0;
-        let l: f32 = [0.2126, 0.7152, 0.0722].iter().zip([r, g, b]).map(|(w, c)| w * f32::from(c)).sum();
-        gray.put_pixel(x, y, Luma([num::f32_u8(255.0f32.mul_add(1.0 - a, l * a).round())]));
+        let l: f32 = [0.2126, 0.7152, 0.0722]
+            .iter()
+            .zip([r, g, b])
+            .map(|(w, c)| w * f32::from(c))
+            .sum();
+        gray.put_pixel(
+            x,
+            y,
+            Luma([num::f32_u8(255.0f32.mul_add(1.0 - a, l * a).round())]),
+        );
     }
     dither(&mut gray, GRAY_LEVELS);
     let mut out = Vec::new();
@@ -122,16 +140,25 @@ impl App {
     /// - `Forbidden` if the token is read-only.
     /// - `BadRequest` if the data is too large, no image, or broken.
     /// - `Internal` if the database or the data folder fails.
-    pub async fn store_image(&self, access: &Access, data: Vec<u8>) -> Result<Media> {
+    pub async fn store_image(
+        &self,
+        access: &Access,
+        data: Vec<u8>,
+    ) -> Result<Media> {
         access.require_write()?;
         check_size(&data)?;
         self.store_image_for(access.user_id(), data).await
     }
 
-    pub(crate) async fn store_image_for(&self, user_id: i64, data: Vec<u8>) -> Result<Media> {
-        let (png, w, h) = tokio::task::spawn_blocking(move || process_image(&data))
-            .await
-            .map_err(|e| AppError::Internal(e.into()))??;
+    pub(crate) async fn store_image_for(
+        &self,
+        user_id: i64,
+        data: Vec<u8>,
+    ) -> Result<Media> {
+        let (png, w, h) =
+            tokio::task::spawn_blocking(move || process_image(&data))
+                .await
+                .map_err(|e| AppError::Internal(e.into()))??;
         let id = uuid::Uuid::new_v4().simple().to_string();
         let path = self.media_path(&id);
         if let Some(dir) = path.parent() {
@@ -150,7 +177,10 @@ impl App {
         .bind(now())
         .execute(&self.db)
         .await?;
-        Ok(sqlx::query_as("SELECT * FROM media WHERE id = ?").bind(&id).fetch_one(&self.db).await?)
+        Ok(sqlx::query_as("SELECT * FROM media WHERE id = ?")
+            .bind(&id)
+            .fetch_one(&self.db)
+            .await?)
     }
 
     /// An image as seen through `access`: tokens limited to some decks only
@@ -160,8 +190,14 @@ impl App {
     ///
     /// - `NotFound` if the image isn't the user's, or no visible card uses it for a token limited to some decks.
     /// - `Internal` if the database or the data folder fails.
-    pub async fn media_for(&self, access: &Access, id: &str) -> Result<(Media, Vec<u8>)> {
-        if let crate::auth::Actor::Agent { decks: Some(decks), .. } = &access.actor {
+    pub async fn media_for(
+        &self,
+        access: &Access,
+        id: &str,
+    ) -> Result<(Media, Vec<u8>)> {
+        if let crate::auth::Actor::Agent { decks: Some(decks), .. } =
+            &access.actor
+        {
             let deck_ids: Vec<i64> = sqlx::query_scalar(
                 "SELECT deck_id FROM cards WHERE user_id = ? AND (front_image = ? OR back_image = ?)",
             )
@@ -195,7 +231,10 @@ impl App {
         .flatten()
         .collect();
         let old: Vec<String> =
-            sqlx::query_scalar("SELECT id FROM media WHERE created_at < ?").bind(before).fetch_all(&self.db).await?;
+            sqlx::query_scalar("SELECT id FROM media WHERE created_at < ?")
+                .bind(before)
+                .fetch_all(&self.db)
+                .await?;
         let mut n = 0;
         for id in old.into_iter().filter(|id| !used.contains(id)) {
             // Checked again in the delete, in case a card took it up just
@@ -221,13 +260,20 @@ impl App {
     ///
     /// - `NotFound` if the image isn't the user's or its file is gone.
     /// - `Internal` if the database or the data folder fails.
-    pub async fn media(&self, user_id: i64, id: &str) -> Result<(Media, Vec<u8>)> {
-        let m: Media = sqlx::query_as("SELECT * FROM media WHERE id = ? AND user_id = ?")
-            .bind(id)
-            .bind(user_id)
-            .fetch_one(&self.db)
-            .await?;
-        let bytes = tokio::fs::read(self.media_path(&m.id)).await.map_err(|_| AppError::NotFound)?;
+    pub async fn media(
+        &self,
+        user_id: i64,
+        id: &str,
+    ) -> Result<(Media, Vec<u8>)> {
+        let m: Media =
+            sqlx::query_as("SELECT * FROM media WHERE id = ? AND user_id = ?")
+                .bind(id)
+                .bind(user_id)
+                .fetch_one(&self.db)
+                .await?;
+        let bytes = tokio::fs::read(self.media_path(&m.id))
+            .await
+            .map_err(|_| AppError::NotFound)?;
         Ok((m, bytes))
     }
 }
@@ -243,7 +289,11 @@ mod tests {
             *p = image::Rgba([u8::try_from(x % 256).unwrap(), 80, 200, 255]);
         }
         let mut png = Vec::new();
-        img.write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png).unwrap();
+        img.write_to(
+            &mut std::io::Cursor::new(&mut png),
+            image::ImageFormat::Png,
+        )
+        .unwrap();
         let (out, w, h) = process_image(&png).unwrap();
         assert_eq!((w, h), (1200, 600));
         let decoded = image::load_from_memory(&out).unwrap().to_luma8();
@@ -256,7 +306,11 @@ mod tests {
         // Cheap to store, but over the decode limit.
         let img = image::GrayImage::new(MAX_DECODE_DIMENSION + 1, 1);
         let mut png = Vec::new();
-        img.write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png).unwrap();
+        img.write_to(
+            &mut std::io::Cursor::new(&mut png),
+            image::ImageFormat::Png,
+        )
+        .unwrap();
         assert!(png.len() < 100_000);
         assert!(process_image(&png).is_err());
     }
@@ -269,10 +323,19 @@ mod tests {
         let mut jpg = Vec::new();
         let mut enc = image::codecs::jpeg::JpegEncoder::new(&mut jpg);
         // EXIF: big-endian TIFF, one IFD entry: Orientation (0x0112) = 6.
-        let exif: Vec<u8> =
-            vec![b'M', b'M', 0, 42, 0, 0, 0, 8, 0, 1, 0x01, 0x12, 0, 3, 0, 0, 0, 1, 0, 6, 0, 0, 0, 0, 0, 0, 0, 0];
+        let exif: Vec<u8> = vec![
+            b'M', b'M', 0, 42, 0, 0, 0, 8, 0, 1, 0x01, 0x12, 0, 3, 0, 0, 0, 1,
+            0, 6, 0, 0, 0, 0, 0, 0, 0, 0,
+        ];
         image::ImageEncoder::set_exif_metadata(&mut enc, exif).unwrap();
-        image::ImageEncoder::write_image(enc, &img, 4, 2, image::ExtendedColorType::Rgb8).unwrap();
+        image::ImageEncoder::write_image(
+            enc,
+            &img,
+            4,
+            2,
+            image::ExtendedColorType::Rgb8,
+        )
+        .unwrap();
         let (_, w, h) = process_image(&jpg).unwrap();
         assert_eq!((w, h), (2, 4));
     }

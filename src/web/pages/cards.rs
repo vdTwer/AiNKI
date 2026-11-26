@@ -25,8 +25,12 @@ pub(crate) struct CardFormData {
 
 /// Reads a multipart form into field name → bytes. Card and import forms
 /// both come through here, so upload problems read the same.
-pub(crate) async fn read_multipart(mut mp: Multipart) -> Result<HashMap<String, Vec<u8>>, AppError> {
-    let failed = |e: axum::extract::multipart::MultipartError| AppError::bad(format!("upload failed: {e}"));
+pub(crate) async fn read_multipart(
+    mut mp: Multipart,
+) -> Result<HashMap<String, Vec<u8>>, AppError> {
+    let failed = |e: axum::extract::multipart::MultipartError| {
+        AppError::bad(format!("upload failed: {e}"))
+    };
     let mut fields = HashMap::new();
     while let Some(field) = mp.next_field().await.map_err(failed)? {
         let name = field.name().unwrap_or("").to_string();
@@ -37,10 +41,14 @@ pub(crate) async fn read_multipart(mut mp: Multipart) -> Result<HashMap<String, 
 }
 
 pub(crate) fn field_text(fields: &HashMap<String, Vec<u8>>, k: &str) -> String {
-    fields.get(k).map_or_else(Default::default, |v| String::from_utf8_lossy(v).to_string())
+    fields.get(k).map_or_else(Default::default, |v| {
+        String::from_utf8_lossy(v).to_string()
+    })
 }
 
-pub(crate) async fn read_card_form(mp: Multipart) -> Result<CardFormData, AppError> {
+pub(crate) async fn read_card_form(
+    mp: Multipart,
+) -> Result<CardFormData, AppError> {
     let mut fields = read_multipart(mp).await?;
     let text = |k: &str| field_text(&fields, k);
     let deck = text("deck");
@@ -53,7 +61,8 @@ pub(crate) async fn read_card_form(mp: Multipart) -> Result<CardFormData, AppErr
         remove_front_image: fields.contains_key("remove_front_image"),
         remove_back_image: fields.contains_key("remove_back_image"),
         // "list" is what the form sent before multicards.
-        multi: Split::parse(&text("multi")).or_else(|| fields.contains_key("list").then_some(Split::List)),
+        multi: Split::parse(&text("multi"))
+            .or_else(|| fields.contains_key("list").then_some(Split::List)),
         ..Default::default()
     };
     f.front_upload = fields.remove("front_image").filter(|d| !d.is_empty());
@@ -67,10 +76,16 @@ pub(crate) async fn read_card_form(mp: Multipart) -> Result<CardFormData, AppErr
 
 /// The "Add" section: one click to a new card, a new deck, or an import.
 /// Three tabs over the page's title.
-#[expect(clippy::needless_pass_by_value, reason = "maud renders by reference; callers build the markup inline")]
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "maud renders by reference; callers build the markup inline"
+)]
 pub(crate) fn add_head(current: &str, title: &str, notice: Markup) -> Markup {
-    const PLACES: [(&str, &str, &str); 3] =
-        [("card", "/cards/new", "Card"), ("deck", "/decks/new", "Deck"), ("import", "/import", "Import")];
+    const PLACES: [(&str, &str, &str); 3] = [
+        ("card", "/cards/new", "Card"),
+        ("deck", "/decks/new", "Deck"),
+        ("import", "/import", "Import"),
+    ];
     // Merging is a kind of new deck: no tab of its own (it is linked from
     // the new-deck page).
     let tab = if current == "merge" { "deck" } else { current };
@@ -155,9 +170,13 @@ pub(crate) async fn write_hints(
     how: Option<Split>,
     except: Option<i64>,
 ) -> Result<Vec<WriteHint>, AppError> {
-    let mut out: Vec<WriteHint> =
-        coach::write_hints(back, how).into_iter().map(|text| WriteHint { text, href: None }).collect();
-    if let Some(s) = app.similar_cards(access, front, except).await?.into_iter().next() {
+    let mut out: Vec<WriteHint> = coach::write_hints(back, how)
+        .into_iter()
+        .map(|text| WriteHint { text, href: None })
+        .collect();
+    if let Some(s) =
+        app.similar_cards(access, front, except).await?.into_iter().next()
+    {
         out.push(WriteHint {
             text: format!("You have a card like this: “{}”. Cards this alike get mixed up.", truncate(&s.front, 60)),
             href: Some(format!("/cards/{}", s.card_id)),
@@ -275,7 +294,10 @@ pub(crate) async fn card_new_page(
     // The deck from the link, else the one last added to, else the first.
     let deck = match q.deck {
         Some(id) => Some(id),
-        None => app.last_used_deck(&access).await?.or_else(|| decks.first().map(|d| d.id)),
+        None => app
+            .last_used_deck(&access)
+            .await?
+            .or_else(|| decks.first().map(|d| d.id)),
     };
     let draft = CardDraft {
         id: None,
@@ -287,7 +309,8 @@ pub(crate) async fn card_new_page(
         back_image: &None,
         multi: None,
     };
-    Ok(card_new_view(&user.0, &decks, &draft, msg.as_deref(), None).into_response())
+    Ok(card_new_view(&user.0, &decks, &draft, msg.as_deref(), None)
+        .into_response())
 }
 
 /// A picked image can't be put back into a form; say so with the problem.
@@ -295,7 +318,11 @@ pub(crate) fn with_image_hint(msg: String, f: &CardFormData) -> String {
     if f.had_upload { format!("{msg} Choose the image again.") } else { msg }
 }
 
-pub(crate) async fn card_create(State(app): State<AppState>, user: WebUser, mp: Multipart) -> WebResult {
+pub(crate) async fn card_create(
+    State(app): State<AppState>,
+    user: WebUser,
+    mp: Multipart,
+) -> WebResult {
     let access = user.access();
     let mut f = read_card_form(mp).await?;
     let result = async {
@@ -307,7 +334,10 @@ pub(crate) async fn card_create(State(app): State<AppState>, user: WebUser, mp: 
                     return Err(AppError::bad("give the new deck a name"));
                 }
                 if let Some(existing) = app.deck_by_name(&access, name).await? {
-                    msg = format!("Card added to your existing deck {}.", deck_plain(&existing.name));
+                    msg = format!(
+                        "Card added to your existing deck {}.",
+                        deck_plain(&existing.name)
+                    );
                     existing.id
                 } else {
                     msg = "Deck created and card added.".into();
@@ -325,13 +355,20 @@ pub(crate) async fn card_create(State(app): State<AppState>, user: WebUser, mp: 
             Some(d) => Some(app.store_image(&access, d).await?.id),
             None => None,
         };
-        let new = NewCard { front_image, back_image, multi: f.multi, ..NewCard::new(&f.front, &f.back) };
+        let new = NewCard {
+            front_image,
+            back_image,
+            multi: f.multi,
+            ..NewCard::new(&f.front, &f.back)
+        };
         app.create_card(&access, deck, new).await?;
         Ok((deck, msg))
     }
     .await;
     match result {
-        Ok((deck, msg)) => Ok(redirect_msg(format!("/cards/new?deck={deck}"), &msg)),
+        Ok((deck, msg)) => {
+            Ok(redirect_msg(format!("/cards/new?deck={deck}"), &msg))
+        }
         Err(e) => {
             let msg = with_image_hint(fixable(&e).ok_or(e)?, &f);
             let decks = open_decks(app.decks(&access).await?, f.deck);
@@ -345,7 +382,13 @@ pub(crate) async fn card_create(State(app): State<AppState>, user: WebUser, mp: 
                 back_image: &None,
                 multi: f.multi,
             };
-            Ok(form_again(card_new_view(&user.0, &decks, &draft, None, Some(&msg))))
+            Ok(form_again(card_new_view(
+                &user.0,
+                &decks,
+                &draft,
+                None,
+                Some(&msg),
+            )))
         }
     }
 }
@@ -400,7 +443,8 @@ pub(crate) async fn card_view(
         .map(|text| WriteHint { text, href: None })
         .collect();
     let clock = user.clock();
-    let decay = scheduler::decay_for(&app.deck_params(&access, card.deck_id).await?)?;
+    let decay =
+        scheduler::decay_for(&app.deck_params(&access, card.deck_id).await?)?;
     let draft = match sent {
         Some(f) => CardDraft {
             id: Some(card.id),
@@ -408,8 +452,16 @@ pub(crate) async fn card_view(
             new_deck: "",
             front: &f.front,
             back: &f.back,
-            front_image: if f.remove_front_image { &None } else { &card.front_image },
-            back_image: if f.remove_back_image { &None } else { &card.back_image },
+            front_image: if f.remove_front_image {
+                &None
+            } else {
+                &card.front_image
+            },
+            back_image: if f.remove_back_image {
+                &None
+            } else {
+                &card.back_image
+            },
             multi: f.multi,
         },
         None => CardDraft {
@@ -445,7 +497,12 @@ pub(crate) async fn card_view(
     ))
 }
 
-fn card_schedule(card: &Card, items: &[crate::multi::CardItem], decay: f32, clock: &scheduler::Clock) -> Markup {
+fn card_schedule(
+    card: &Card,
+    items: &[crate::multi::CardItem],
+    decay: f32,
+    clock: &scheduler::Clock,
+) -> Markup {
     let r = scheduler::retrievability(&card.sched(), decay, clock);
     html! {
         h2 { "Scheduling" }
@@ -537,7 +594,9 @@ pub(crate) async fn card_page(
     Query(from): Query<CardFrom>,
     Flash(msg): Flash,
 ) -> WebResult {
-    Ok(card_view(&app, &user.0, id, &from, msg.as_deref(), None, None).await?.into_response())
+    Ok(card_view(&app, &user.0, id, &from, msg.as_deref(), None, None)
+        .await?
+        .into_response())
 }
 
 pub(crate) async fn card_update(
@@ -581,10 +640,16 @@ pub(crate) async fn card_update(
     }
     .await;
     match result {
-        Ok(()) => Ok(redirect_msg(from.study_url().unwrap_or_else(|| format!("/cards/{id}")), "Card saved.")),
+        Ok(()) => Ok(redirect_msg(
+            from.study_url().unwrap_or_else(|| format!("/cards/{id}")),
+            "Card saved.",
+        )),
         Err(e) => {
             let msg = with_image_hint(fixable(&e).ok_or(e)?, &f);
-            Ok(form_again(card_view(&app, &user.0, id, &from, None, Some(&f), Some(&msg)).await?))
+            Ok(form_again(
+                card_view(&app, &user.0, id, &from, None, Some(&f), Some(&msg))
+                    .await?,
+            ))
         }
     }
 }
@@ -640,7 +705,11 @@ pub(crate) async fn card_action(
 }
 
 /// The card being written as it will look when studied.
-pub(crate) fn card_preview(front: &str, back: &str, how: Option<Split>) -> Markup {
+pub(crate) fn card_preview(
+    front: &str,
+    back: &str,
+    how: Option<Split>,
+) -> Markup {
     let pieces = how.and_then(|h| multi::split(back, h));
     html! {
         section.face.front { (face(front, None)) }
@@ -672,10 +741,13 @@ pub(crate) async fn card_preview_json(
     user: WebUser,
     Form(f): Form<PreviewForm>,
 ) -> WebResult {
-    let splits: Vec<&str> = multi::splits(&f.back).into_iter().map(Split::as_str).collect();
+    let splits: Vec<&str> =
+        multi::splits(&f.back).into_iter().map(Split::as_str).collect();
     let how = Split::parse(&f.multi);
     let html = card_preview(&f.front, &f.back, how).into_string();
-    let hints = write_hints(&app, &user.access(), &f.front, &f.back, how, f.card).await?;
+    let hints =
+        write_hints(&app, &user.access(), &f.front, &f.back, how, f.card)
+            .await?;
     Ok((
         [(header::CONTENT_TYPE, "application/json")],
         serde_json::json!({ "splits": splits, "html": html, "hints": hint_lines(&hints).into_string() }).to_string(),

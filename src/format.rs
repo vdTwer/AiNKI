@@ -47,7 +47,11 @@ pub fn percent(v: Option<f64>) -> String {
 /// Whole minutes, rounded: "about 3 minutes"; "under a minute" below one.
 pub fn minutes(m: f64) -> String {
     let n = num::f64_i64(m.round());
-    if n < 1 { "under a minute".into() } else { format!("about {}", count(n, "minute")) }
+    if n < 1 {
+        "under a minute".into()
+    } else {
+        format!("about {}", count(n, "minute"))
+    }
 }
 
 /// Short label for a wait, e.g. "10m", "3d", "2.1mo".
@@ -77,8 +81,9 @@ pub fn days(d: i64) -> String {
 /// Machine-readable local time, "2026-10-21 14:30". For MCP answers and
 /// exports; pages use words.
 pub fn iso(ts: i64, clock: &Clock) -> String {
-    chrono::DateTime::from_timestamp(ts, 0)
-        .map_or_else(Default::default, |t| t.with_timezone(&clock.tz).format("%Y-%m-%d %H:%M").to_string())
+    chrono::DateTime::from_timestamp(ts, 0).map_or_else(Default::default, |t| {
+        t.with_timezone(&clock.tz).format("%Y-%m-%d %H:%M").to_string()
+    })
 }
 
 /// "Tuesday, 20 October".
@@ -93,7 +98,9 @@ pub fn day(clock: &Clock, date: chrono::NaiveDate) -> String {
         0 => "today".into(),
         1 => "tomorrow".into(),
         -1 => "yesterday".into(),
-        _ if date.year() == clock.today().year() => date.format("%A, %-d %B").to_string(),
+        _ if date.year() == clock.today().year() => {
+            date.format("%A, %-d %B").to_string()
+        }
         _ => date.format("%A, %-d %B %Y").to_string(),
     }
 }
@@ -112,10 +119,14 @@ pub fn short_day(clock: &Clock, date: chrono::NaiveDate) -> String {
 /// With a time named, "today" is the calendar day, not the study day: at
 /// 23:00, 0:30 is "tomorrow" even if the new study day starts at 4:00.
 pub fn when(clock: &Clock, ts: i64) -> String {
-    let Some(local) = chrono::DateTime::from_timestamp(ts, 0).map(|t| t.with_timezone(&clock.tz)) else {
+    let Some(local) = chrono::DateTime::from_timestamp(ts, 0)
+        .map(|t| t.with_timezone(&clock.tz))
+    else {
         return String::new();
     };
-    let Some(now) = chrono::DateTime::from_timestamp(clock.now, 0).map(|t| t.with_timezone(&clock.tz)) else {
+    let Some(now) = chrono::DateTime::from_timestamp(clock.now, 0)
+        .map(|t| t.with_timezone(&clock.tz))
+    else {
         return String::new();
     };
     let time = local.format("%-H:%M");

@@ -10,7 +10,8 @@ use crate::web::*;
 // consent page.
 const PERM_WRITE: &str = "Add, edit and delete cards and decks";
 const PERM_REVIEW: &str = "Quiz you and record your answers";
-const PERM_ALL_DECKS: &str = "All decks (also lets it create decks, change presets and share)";
+const PERM_ALL_DECKS: &str =
+    "All decks (also lets it create decks, change presets and share)";
 const PERM_SOME_DECKS: &str = "Only these:";
 
 pub(crate) fn mcp_url(app: &AppState, headers: &HeaderMap) -> String {
@@ -77,7 +78,10 @@ fn extension_offer() -> Markup {
     }
 }
 
-fn connected_tokens(tokens: &[(crate::auth::ApiToken, Vec<String>)], clock: &scheduler::Clock) -> Markup {
+fn connected_tokens(
+    tokens: &[(crate::auth::ApiToken, Vec<String>)],
+    clock: &scheduler::Clock,
+) -> Markup {
     html! {
         h2 { "Connected" }
         @if tokens.is_empty() { p.muted { "Nothing connected yet." } }
@@ -161,11 +165,19 @@ pub(crate) async fn token_create(
     Form(f): Form<TokenForm>,
 ) -> WebResult {
     let decks = if f.deck_scope == "all" { None } else { Some(f.decks) };
-    let (token, raw) =
-        match app.create_token(user.0.id, &f.name, f.can_write.is_some(), f.can_review.is_some(), decks).await {
-            Ok(t) => t,
-            Err(e) => return or_back("/access", Err(e)),
-        };
+    let (token, raw) = match app
+        .create_token(
+            user.0.id,
+            &f.name,
+            f.can_write.is_some(),
+            f.can_review.is_some(),
+            decks,
+        )
+        .await
+    {
+        Ok(t) => t,
+        Err(e) => return or_back("/access", Err(e)),
+    };
     let url = mcp_url(&app, &headers);
     let config = serde_json::to_string_pretty(&serde_json::json!({
         "mcpServers": {
@@ -200,7 +212,11 @@ pub(crate) async fn token_create(
     .into_response())
 }
 
-pub(crate) async fn token_revoke(State(app): State<AppState>, user: WebUser, Path(id): Path<i64>) -> WebResult {
+pub(crate) async fn token_revoke(
+    State(app): State<AppState>,
+    user: WebUser,
+    Path(id): Path<i64>,
+) -> WebResult {
     or_back(
         "/access",
         async {

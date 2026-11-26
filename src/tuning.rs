@@ -65,7 +65,9 @@ struct History {
     reviews: Vec<fsrs::FSRSReview>,
 }
 
-fn training_set(histories: &[&History]) -> (Vec<fsrs::FSRSItem>, Vec<i64>, usize) {
+fn training_set(
+    histories: &[&History],
+) -> (Vec<fsrs::FSRSItem>, Vec<i64>, usize) {
     let mut items = Vec::new();
     let mut card_ids = Vec::new();
     let mut used = 0;
@@ -115,12 +117,22 @@ fn fit(
     };
     let (old_loss, new_loss) = (loss(&current), loss(&new));
     Ok(match (old_loss, new_loss) {
-        (Some(o), Some(n)) if n < o => {
-            Fit { parameters: new, changed: true, improvement: Some(f64::from((o - n) / o)), reviews }
-        }
+        (Some(o), Some(n)) if n < o => Fit {
+            parameters: new,
+            changed: true,
+            improvement: Some(f64::from((o - n) / o)),
+            reviews,
+        },
         // A fit that could not be scored at all is kept, as before.
-        (None, Some(_)) => Fit { parameters: new, changed: true, improvement: None, reviews },
-        _ => Fit { parameters: current, changed: false, improvement: Some(0.0), reviews },
+        (None, Some(_)) => {
+            Fit { parameters: new, changed: true, improvement: None, reviews }
+        }
+        _ => Fit {
+            parameters: current,
+            changed: false,
+            improvement: Some(0.0),
+            reviews,
+        },
     })
 }
 
@@ -157,7 +169,8 @@ pub struct Calibration {
     pub reviews: i64,
 }
 
-const BANDS: [(u32, u32); 7] = [(0, 70), (70, 75), (75, 80), (80, 85), (85, 90), (90, 95), (95, 100)];
+const BANDS: [(u32, u32); 7] =
+    [(0, 70), (70, 75), (75, 80), (80, 85), (85, 90), (90, 95), (95, 100)];
 
 /// A learned card as the workload simulation starts from it.
 #[derive(Clone, Copy)]
@@ -188,7 +201,11 @@ struct SimPlan {
 }
 
 impl SimPlan {
-    fn run(&self, filled: &Arc<Vec<f32>>, r: f64) -> std::result::Result<Workload, fsrs::FSRSError> {
+    fn run(
+        &self,
+        filled: &Arc<Vec<f32>>,
+        r: f64,
+    ) -> std::result::Result<Workload, fsrs::FSRSError> {
         let current = (r - self.current).abs() < 0.005;
         let mut config = fsrs::SimulatorConfig {
             deck_size: self.existing.len() + self.to_learn,
@@ -202,7 +219,13 @@ impl SimPlan {
             ..Default::default()
         };
         if config.deck_size == 0 {
-            return Ok(Workload { retention: r, minutes_per_day: 0.0, reviews_per_day: 0.0, remembered: 0.0, current });
+            return Ok(Workload {
+                retention: r,
+                minutes_per_day: 0.0,
+                reviews_per_day: 0.0,
+                remembered: 0.0,
+                current,
+            });
         }
         for c in config.state_rating_costs.iter_mut().flatten() {
             *c *= self.scale;
@@ -220,13 +243,29 @@ impl SimPlan {
                 parameters: filled.clone(),
             })
             .collect();
-        let sim = fsrs::simulate(&config, filled, num::f64_f32(r), Some(42), Some(cards))?;
+        let sim = fsrs::simulate(
+            &config,
+            filled,
+            num::f64_f32(r),
+            Some(42),
+            Some(cards),
+        )?;
         let n = num::usize_f64(self.days.max(1));
         Ok(Workload {
             retention: r,
-            minutes_per_day: sim.cost_per_day.iter().map(|c| f64::from(*c)).sum::<f64>() / 60.0 / n,
-            reviews_per_day: num::usize_f64(sim.review_cnt_per_day.iter().sum::<usize>()) / n,
-            remembered: f64::from(sim.memorized_cnt_per_day.last().copied().unwrap_or(0.0)),
+            minutes_per_day: sim
+                .cost_per_day
+                .iter()
+                .map(|c| f64::from(*c))
+                .sum::<f64>()
+                / 60.0
+                / n,
+            reviews_per_day: num::usize_f64(
+                sim.review_cnt_per_day.iter().sum::<usize>(),
+            ) / n,
+            remembered: f64::from(
+                sim.memorized_cnt_per_day.last().copied().unwrap_or(0.0),
+            ),
             current,
         })
     }
@@ -268,7 +307,11 @@ impl App {
         .await?;
         Ok(ParamBook {
             user: access.user.params(),
-            by_deck: rows.into_iter().map(|(deck, Json(p))| (deck, p)).filter(|(_, p)| !p.is_empty()).collect(),
+            by_deck: rows
+                .into_iter()
+                .map(|(deck, Json(p))| (deck, p))
+                .filter(|(_, p)| !p.is_empty())
+                .collect(),
         })
     }
 
@@ -277,7 +320,11 @@ impl App {
     /// # Errors
     ///
     /// `Internal` if the database fails.
-    pub async fn deck_params(&self, access: &Access, deck_id: i64) -> Result<Vec<f32>> {
+    pub async fn deck_params(
+        &self,
+        access: &Access,
+        deck_id: i64,
+    ) -> Result<Vec<f32>> {
         let own: Option<Json<Vec<f32>>> = sqlx::query_scalar(
             "SELECT p.fsrs_params FROM decks d JOIN presets p ON p.id = d.preset_id WHERE d.id = ? AND d.user_id = ?",
         )
@@ -285,7 +332,10 @@ impl App {
         .bind(access.user_id())
         .fetch_optional(&self.db)
         .await?;
-        Ok(own.map(|Json(p)| p).filter(|p| !p.is_empty()).unwrap_or_else(|| access.user.params()))
+        Ok(own
+            .map(|Json(p)| p)
+            .filter(|p| !p.is_empty())
+            .unwrap_or_else(|| access.user.params()))
     }
 
     async fn histories(&self, user: &User) -> Result<Vec<History>> {
@@ -320,7 +370,8 @@ impl App {
         for (card_id, deck_id, logs) in by_card {
             // Only history after the last reset, and only if it starts from
             // the card being new (otherwise the memory state is unknown).
-            let start = logs.iter().rposition(|l| l.rating == 0).map_or(0, |i| i + 1);
+            let start =
+                logs.iter().rposition(|l| l.rating == 0).map_or(0, |i| i + 1);
             let logs = logs.get(start..).unwrap_or_default();
             if logs.first().is_none_or(|l| l.state_before != CardState::New) {
                 continue;
@@ -328,7 +379,8 @@ impl App {
             let mut reviews = Vec::new();
             let mut prev: Option<i64> = None;
             for l in logs {
-                let delta = prev.map_or(0, |p| clock.days_between(p, l.reviewed_at).max(0));
+                let delta = prev
+                    .map_or(0, |p| clock.days_between(p, l.reviewed_at).max(0));
                 reviews.push(fsrs::FSRSReview {
                     rating: num::i64_u32(l.rating.clamp(1, 4)),
                     delta_t: num::i64_u32(delta),
@@ -365,10 +417,14 @@ impl App {
             ));
         }
         let n_items = items.len();
-        let global = fit_in_background(items, card_ids, user.params(), used).await?.map_err(|e| match e {
-            fsrs::FSRSError::NotEnoughData => AppError::bad("not enough review history yet to optimize; keep studying"),
-            e => e.into(),
-        })?;
+        let global = fit_in_background(items, card_ids, user.params(), used)
+            .await?
+            .map_err(|e| match e {
+                fsrs::FSRSError::NotEnoughData => AppError::bad(
+                    "not enough review history yet to optimize; keep studying",
+                ),
+                e => e.into(),
+            })?;
         let t = now();
         if global.changed {
             sqlx::query("UPDATE users SET fsrs_params = ?, fsrs_params_updated_at = ? WHERE id = ?")
@@ -378,7 +434,9 @@ impl App {
                 .execute(&self.db)
                 .await?;
         }
-        let preset_results = self.optimize_presets(user, &histories, &global.parameters, t).await?;
+        let preset_results = self
+            .optimize_presets(user, &histories, &global.parameters, t)
+            .await?;
         let note = optimize_note(&global, used);
         let reviews_now = self.optimizable_reviews_of(user).await?;
         sqlx::query("UPDATE users SET optimized_at = ?, optimized_reviews = ?, optimize_note = ? WHERE id = ?")
@@ -401,27 +459,39 @@ impl App {
 
     /// Presets with enough reviews get their own parameters, starting from
     /// the user's (`global`); the others drop theirs and use the user's.
-    async fn optimize_presets(&self, user: &User, histories: &[History], global: &[f32], t: i64) -> Result<Vec<Value>> {
+    async fn optimize_presets(
+        &self,
+        user: &User,
+        histories: &[History],
+        global: &[f32],
+        t: i64,
+    ) -> Result<Vec<Value>> {
         #[derive(sqlx::FromRow)]
         struct P {
             id: i64,
             name: String,
             fsrs_params: Json<Vec<f32>>,
         }
-        let presets: Vec<P> = sqlx::query_as("SELECT id, name, fsrs_params FROM presets WHERE user_id = ?")
-            .bind(user.id)
-            .fetch_all(&self.db)
-            .await?;
-        let deck_preset: HashMap<i64, i64> =
-            sqlx::query_as::<_, (i64, i64)>("SELECT id, preset_id FROM decks WHERE user_id = ?")
-                .bind(user.id)
-                .fetch_all(&self.db)
-                .await?
-                .into_iter()
-                .collect();
+        let presets: Vec<P> = sqlx::query_as(
+            "SELECT id, name, fsrs_params FROM presets WHERE user_id = ?",
+        )
+        .bind(user.id)
+        .fetch_all(&self.db)
+        .await?;
+        let deck_preset: HashMap<i64, i64> = sqlx::query_as::<_, (i64, i64)>(
+            "SELECT id, preset_id FROM decks WHERE user_id = ?",
+        )
+        .bind(user.id)
+        .fetch_all(&self.db)
+        .await?
+        .into_iter()
+        .collect();
         let mut results = Vec::new();
         for p in presets {
-            let mine: Vec<&History> = histories.iter().filter(|h| deck_preset.get(&h.deck_id) == Some(&p.id)).collect();
+            let mine: Vec<&History> = histories
+                .iter()
+                .filter(|h| deck_preset.get(&h.deck_id) == Some(&p.id))
+                .collect();
             let reviews: usize = mine.iter().map(|h| h.reviews.len()).sum();
             let Json(own) = p.fsrs_params;
             if reviews < PRESET_MIN_REVIEWS {
@@ -439,7 +509,11 @@ impl App {
             }
             // A preset starts from the user's parameters: its own must beat those.
             let current = if own.is_empty() { global.to_vec() } else { own };
-            let Ok(f) = fit_in_background(items, card_ids, current, used).await? else { continue };
+            let Ok(f) =
+                fit_in_background(items, card_ids, current, used).await?
+            else {
+                continue;
+            };
             if f.changed {
                 sqlx::query("UPDATE presets SET fsrs_params = ?, fsrs_params_updated_at = ? WHERE id = ?")
                     .bind(Json(&f.parameters))
@@ -492,11 +566,16 @@ impl App {
         .await?;
         for user in users {
             let reviews = self.optimizable_reviews_of(&user).await?;
-            if reviews < AUTO_MIN_REVIEWS || reviews - user.optimized_reviews < AUTO_MIN_NEW_REVIEWS {
+            if reviews < AUTO_MIN_REVIEWS
+                || reviews - user.optimized_reviews < AUTO_MIN_NEW_REVIEWS
+            {
                 continue;
             }
             if let Err(e) = self.optimize_user(&user).await {
-                tracing::info!("automatic optimization skipped for user {}: {e:?}", user.id);
+                tracing::info!(
+                    "automatic optimization skipped for user {}: {e:?}",
+                    user.id
+                );
             }
         }
         Ok(())
@@ -510,13 +589,24 @@ impl App {
     ///
     /// - `NotFound` if the preset isn't the user's.
     /// - `Internal` if the database fails or the FSRS parameters are broken.
-    pub async fn workload(&self, access: &Access, preset_id: i64, days: usize) -> Result<Vec<Workload>> {
+    pub async fn workload(
+        &self,
+        access: &Access,
+        preset_id: i64,
+        days: usize,
+    ) -> Result<Vec<Workload>> {
         let preset = self.preset(access, preset_id).await?;
-        let deck_ids: Vec<i64> =
-            self.decks(access).await?.into_iter().filter(|d| d.preset_id == preset_id).map(|d| d.id).collect();
+        let deck_ids: Vec<i64> = self
+            .decks(access)
+            .await?
+            .into_iter()
+            .filter(|d| d.preset_id == preset_id)
+            .map(|d| d.id)
+            .collect();
         let own = preset_params(self, preset_id).await?;
         let params = if own.is_empty() { access.user.params() } else { own };
-        let (existing, new_cards) = self.simulator_cards(access, &deck_ids).await?;
+        let (existing, new_cards) =
+            self.simulator_cards(access, &deck_ids).await?;
         // Thinking time: the simulator's defaults, scaled to the user's own
         // typical time per review once there is enough history.
         let scale = self
@@ -531,21 +621,29 @@ impl App {
             retentions.sort_by(f64::total_cmp);
         }
         let plan = SimPlan {
-            to_learn: new_cards.max(num::i64_usize(preset.new_per_day.max(0)) * days),
+            to_learn: new_cards
+                .max(num::i64_usize(preset.new_per_day.max(0)) * days),
             existing,
             days,
             scale,
             max_ivl: preset.max_interval,
             new_per_day: preset.new_per_day,
             reviews_per_day: preset.reviews_per_day,
-            learning_steps: scheduler::parse_steps(&preset.learning_steps).map_err(AppError::BadRequest)?.len(),
-            relearning_steps: scheduler::parse_steps(&preset.relearning_steps).map_err(AppError::BadRequest)?.len(),
+            learning_steps: scheduler::parse_steps(&preset.learning_steps)
+                .map_err(AppError::BadRequest)?
+                .len(),
+            relearning_steps: scheduler::parse_steps(&preset.relearning_steps)
+                .map_err(AppError::BadRequest)?
+                .len(),
             current,
         };
-        let out = tokio::task::spawn_blocking(move || -> std::result::Result<Vec<Workload>, fsrs::FSRSError> {
-            let filled = Arc::new(fsrs::check_and_fill_parameters(&params)?);
-            retentions.into_iter().map(|r| plan.run(&filled, r)).collect()
-        })
+        let out = tokio::task::spawn_blocking(
+            move || -> std::result::Result<Vec<Workload>, fsrs::FSRSError> {
+                let filled =
+                    Arc::new(fsrs::check_and_fill_parameters(&params)?);
+                retentions.into_iter().map(|r| plan.run(&filled, r)).collect()
+            },
+        )
         .await
         .map_err(|e| AppError::Internal(e.into()))??;
         Ok(out)
@@ -553,7 +651,11 @@ impl App {
 
     /// The learned cards of these decks as the simulator sees them (days
     /// from today), and how many are still new.
-    async fn simulator_cards(&self, access: &Access, deck_ids: &[i64]) -> Result<(Vec<SimCard>, usize)> {
+    async fn simulator_cards(
+        &self,
+        access: &Access,
+        deck_ids: &[i64],
+    ) -> Result<(Vec<SimCard>, usize)> {
         let clock = access.user.clock();
         // state, stability, difficulty, due, last review, lapses
         type Row = (CardState, Option<f64>, Option<f64>, i64, Option<i64>, i64);
@@ -591,13 +693,24 @@ impl App {
     ///
     /// - `NotFound` if a deck is given that the access doesn't see.
     /// - `Internal` if the database fails.
-    pub async fn calibration(&self, access: &Access, deck_id: Option<i64>) -> Result<Calibration> {
+    pub async fn calibration(
+        &self,
+        access: &Access,
+        deck_id: Option<i64>,
+    ) -> Result<Calibration> {
         let book = self.param_book(access).await?;
         let deck_ids: Vec<i64> = match deck_id {
             Some(id) => vec![self.deck(access, id).await?.id],
-            None => self.decks(access).await?.into_iter().map(|d| d.id).collect(),
+            None => {
+                self.decks(access).await?.into_iter().map(|d| d.id).collect()
+            }
         };
-        let mut out = Calibration { bins: vec![], predicted: 0.0, actual: 0.0, reviews: 0 };
+        let mut out = Calibration {
+            bins: vec![],
+            predicted: 0.0,
+            actual: 0.0,
+            reviews: 0,
+        };
         if deck_ids.is_empty() {
             return Ok(out);
         }
@@ -607,19 +720,30 @@ impl App {
              WHERE user_id = ? AND reviewed_at >= ? AND rating > 0 AND state_before = 2
                AND items_asked IS NULL AND prev_card IS NOT NULL AND source != 'import'
                AND deck_id IN (SELECT value FROM json_each(?))";
-        let q = sqlx::query_as::<_, (i64, i64, i64, Option<f64>, Option<i64>)>(sql)
-            .bind(access.user_id())
-            .bind(now() - 365 * 86_400)
-            .bind(id_list(&deck_ids));
+        let q =
+            sqlx::query_as::<_, (i64, i64, i64, Option<f64>, Option<i64>)>(sql)
+                .bind(access.user_id())
+                .bind(now() - 365 * 86_400)
+                .bind(id_list(&deck_ids));
         let mut sums = [(0.0f64, 0i64, 0i64); BANDS.len()];
         for (deck, rating, at, s, last) in q.fetch_all(&self.db).await? {
             let (Some(s), Some(last)) = (s, last) else { continue };
             let elapsed = num::i64_f32((at - last).max(0)) / 86_400.0;
-            let memory = fsrs::MemoryState { stability: num::f64_f32(s), difficulty: 5.0 };
-            let r =
-                f64::from(fsrs::current_retrievability(memory, elapsed, scheduler::decay_for(book.for_deck(deck))?));
-            let pct = num::i64_u32(num::f64_i64((r * 100.0).clamp(0.0, 99.999)));
-            let band = BANDS.iter().position(|(from, to)| pct >= *from && pct < *to).unwrap_or(0);
+            let memory = fsrs::MemoryState {
+                stability: num::f64_f32(s),
+                difficulty: 5.0,
+            };
+            let r = f64::from(fsrs::current_retrievability(
+                memory,
+                elapsed,
+                scheduler::decay_for(book.for_deck(deck))?,
+            ));
+            let pct =
+                num::i64_u32(num::f64_i64((r * 100.0).clamp(0.0, 99.999)));
+            let band = BANDS
+                .iter()
+                .position(|(from, to)| pct >= *from && pct < *to)
+                .unwrap_or(0);
             if let Some(sum) = sums.get_mut(band) {
                 sum.0 += r;
                 sum.1 += i64::from(rating > 1);
@@ -631,8 +755,10 @@ impl App {
             return Ok(out);
         }
         out.reviews = total;
-        out.predicted = sums.iter().map(|s| s.0).sum::<f64>() / num::i64_f64(total);
-        out.actual = num::i64_f64(sums.iter().map(|s| s.1).sum::<i64>()) / num::i64_f64(total);
+        out.predicted =
+            sums.iter().map(|s| s.0).sum::<f64>() / num::i64_f64(total);
+        out.actual = num::i64_f64(sums.iter().map(|s| s.1).sum::<i64>())
+            / num::i64_f64(total);
         out.bins = BANDS
             .iter()
             .zip(sums)
@@ -651,14 +777,25 @@ impl App {
     /// # Errors
     ///
     /// `Internal` if the database fails.
-    pub async fn set_auto_optimize(&self, user_id: i64, on: bool) -> Result<()> {
-        sqlx::query("UPDATE users SET auto_optimize = ? WHERE id = ?").bind(on).bind(user_id).execute(&self.db).await?;
+    pub async fn set_auto_optimize(
+        &self,
+        user_id: i64,
+        on: bool,
+    ) -> Result<()> {
+        sqlx::query("UPDATE users SET auto_optimize = ? WHERE id = ?")
+            .bind(on)
+            .bind(user_id)
+            .execute(&self.db)
+            .await?;
         Ok(())
     }
 }
 
 async fn preset_params(app: &App, preset_id: i64) -> Result<Vec<f32>> {
     let Json(params) =
-        sqlx::query_scalar("SELECT fsrs_params FROM presets WHERE id = ?").bind(preset_id).fetch_one(&app.db).await?;
+        sqlx::query_scalar("SELECT fsrs_params FROM presets WHERE id = ?")
+            .bind(preset_id)
+            .fetch_one(&app.db)
+            .await?;
     Ok(params)
 }
