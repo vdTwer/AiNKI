@@ -34,11 +34,11 @@ test('Stats shows the next seven days, starting today', async ({ page, seed }) =
   await expect(days).toHaveCount(7);
   // Today comes first, in bold, and holds what the page says to study now.
   await expect(days.nth(0)).toHaveClass(/\btoday\b/);
-  await expect(days.nth(0)).toHaveAttribute('title', 'Today: 1 card');
-  await expect(days.nth(1)).toHaveAttribute('title', /^Tomorrow: \d+ cards?$/);
+  await expect(days.nth(0)).toHaveAttribute('data-tip', 'Today: 1 card');
+  await expect(days.nth(1)).toHaveAttribute('data-tip', /^Tomorrow: \d+ cards?$/);
   // Later days are forecasts, and the two cards due in three days are
   // certainly there.
-  await expect(days.nth(3)).toHaveAttribute('title', /^(Mon|Tue|Wed|Thu|Fri|Sat|Sun) \d+: about [2-9] cards$/);
+  await expect(days.nth(3)).toHaveAttribute('data-tip', /^(Mon|Tue|Wed|Thu|Fri|Sat|Sun) \d+: about [2-9] cards$/);
 
   // The busiest day gets the full height; an empty day only a sliver.
   await expect(days.nth(3).locator('.bar')).toHaveAttribute('style', 'height: 100%');
@@ -47,8 +47,8 @@ test('Stats shows the next seven days, starting today', async ({ page, seed }) =
   // The forecast never drops what is already scheduled: four cards.
   const forecast = text.locator('.forecast');
   // Its tooltip gives the forecast, its bounds and why.
-  await expect(forecast).toHaveAttribute('title', /^Forecast: \d+ cards\. Likely \d+ to \d+\. .*come back/);
-  expect(Number((await forecast.getAttribute('title'))!.match(/\d+/)![0])).toBeGreaterThanOrEqual(4);
+  await expect(forecast).toHaveAttribute('data-tip', /^Forecast: \d+ cards\. Likely \d+ to \d+\. .*come back/);
+  expect(Number((await forecast.getAttribute('data-tip'))!.match(/\d+/)![0])).toBeGreaterThanOrEqual(4);
 });
 
 test('a quiet week says so and draws no bars', async ({ page, seed }) => {
@@ -71,6 +71,6 @@ test('cards that come back within the week count too', async ({ page, seed }) =>
   await page.goto('/stats');
   const forecast = page.locator('.week-ahead .forecast');
   await expect(page.locator('.week-ahead p').first()).toContainText(/^1 card tomorrow\./);
-  const n = Number((await forecast.getAttribute('title'))!.match(/\d+/)![0]);
+  const n = Number((await forecast.getAttribute('data-tip'))!.match(/\d+/)![0]);
   expect(n).toBeGreaterThanOrEqual(2);
 });

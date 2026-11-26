@@ -38,7 +38,7 @@ test('stats show charts and, folded, the exact numbers', async ({ page, seed, ac
   expect(await charts.count()).toBeGreaterThanOrEqual(1);
   await expect(page.locator('.desk-stats .week-ahead .week-bars')).toBeVisible();
   for (const chart of await charts.all()) {
-    expect(await chart.locator('title').count(), 'marks carry their numbers').toBeGreaterThan(0);
+    expect(await chart.locator('[data-tip]').count(), 'marks carry their numbers').toBeGreaterThan(0);
   }
   // The exact numbers are folded under the charts.
   const numbers = page.locator('main details.numbers');
@@ -102,10 +102,19 @@ test('the coach says nothing to a new learner', async ({ page, seed }) => {
 test('stats charts and words explain themselves on hover', async ({ page, seed, account }) => {
   await history(seed, account.id);
   await page.goto('/stats');
-  // Native tooltips: every mark has a <title>, every explained word a title.
-  await expect(page.locator('.week-ahead .day').first()).toHaveAttribute('title', /: (\d+ cards?|nothing due)$/);
-  await expect(page.locator('svg.chart .dot title').first()).toHaveText(/\d+ of \d+ remembered/);
-  await expect(page.locator('.desk-stats [title]', { hasText: 'Days in a row' })).toHaveAttribute('title', /at least one review/);
+  // Every mark and explained word carries its words, shown at once on hover.
+  await expect(page.locator('.week-ahead .day').first()).toHaveAttribute('data-tip', /: (\d+ cards?|nothing due)$/);
+  const dot = page.locator('svg.chart .dot').first();
+  await expect(dot).toHaveAttribute('data-tip', /\d+ of \d+ remembered/);
+  await expect(page.locator('.desk-stats [data-tip]', { hasText: 'Days in a row' })).toHaveAttribute('data-tip', /at least one review/);
+  // No late browser tooltip on top of ours.
+  expect(await page.locator('main [title], main svg .dot title').count()).toBe(0);
+  const tip = page.locator('body > .hover-tip');
+  await dot.hover();
+  await expect(tip).toBeVisible();
+  await expect(tip).toHaveText(/\d+ of \d+ remembered/);
+  await page.locator('main h1').hover();
+  await expect(tip).toBeHidden();
 });
 
 test.describe('desktop', () => {
