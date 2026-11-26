@@ -136,6 +136,7 @@ pub fn router(app: AppState) -> Router {
         .route("/oauth/revoke", post(oauth::revoke))
         .layer(DefaultBodyLimit::max(64 * 1024))
         .merge(mcp_routes)
+        .merge(crate::api::routes().layer(DefaultBodyLimit::max(256 * 1024)))
         .layer(cors);
     // Form posts are small; uploads get their own limits below.
     let small = DefaultBodyLimit::max(256 * 1024);

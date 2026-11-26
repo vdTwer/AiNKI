@@ -85,14 +85,17 @@ pub fn service(app: AppState) -> StreamableHttpService<AinkiMcp, NeverSessionMan
     StreamableHttpService::new(move || Ok(AinkiMcp::new(app.clone())), std::sync::Arc::default(), config)
 }
 
-/// Resolve the Bearer token into an [`Access`] for the tools.
-pub async fn auth(State(app): State<AppState>, mut req: Request, next: Next) -> Response {
-    let token = req
-        .headers()
+/// The Bearer token of a request, if it carries one.
+pub fn bearer(headers: &http::HeaderMap) -> Option<&str> {
+    headers
         .get(header::AUTHORIZATION)
         .and_then(|v| v.to_str().ok())
         .and_then(|v| v.strip_prefix("Bearer ").or_else(|| v.strip_prefix("bearer ")))
-        .map(str::to_string);
+}
+
+/// Resolve the Bearer token into an [`Access`] for the tools.
+pub async fn auth(State(app): State<AppState>, mut req: Request, next: Next) -> Response {
+    let token = bearer(req.headers()).map(str::to_string);
     let access = match token {
         Some(t) => app.token_access(&t).await.ok(),
         None => None,
