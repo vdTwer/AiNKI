@@ -28,6 +28,7 @@ pub(crate) async fn access_page(
     let decks = app.decks(&access).await?;
     let clock = user.0.clock();
     let url = mcp_url(&app, &headers);
+    let extension = tokio::fs::try_exists(extension_path(&app)).await.unwrap_or(false);
     Ok(layout_in(
         Nav::Settings,
         "Agent access",
@@ -37,6 +38,7 @@ pub(crate) async fn access_page(
             (parent("/settings", "Settings"))
             h1 { "Agent access" }
             (connect_steps(&url))
+            @if extension { (extension_offer()) }
             (connected_tokens(&tokens, &clock))
             (token_form(&decks))
         },
@@ -61,6 +63,29 @@ fn connect_steps(url: &str) -> Markup {
             }
         }
         p.muted.small { "Any MCP client that supports OAuth connects the same way. Agents can never change your password or settings." }
+    }
+}
+
+/// The signed Firefox extension, if the admin put it in the data folder.
+fn extension_path(app: &AppState) -> std::path::PathBuf {
+    app.config.data_dir.join("ainki.xpi")
+}
+
+fn extension_offer() -> Markup {
+    html! {
+        h2 { "Firefox extension" }
+        p { "Turn selected text and images on any page into cards. Firefox asks before it installs; then connect it with your AiNKI address." }
+        p { a.btn.primary href="/extension.xpi" { "Get the extension" } }
+    }
+}
+
+/// Serves the signed extension. Firefox installs it on click when it comes
+/// as `application/x-xpinstall`.
+pub(crate) async fn extension_file(State(app): State<AppState>, _user: WebUser) -> Response {
+    match tokio::fs::read(extension_path(&app)).await {
+        Ok(bytes) => ([(header::CONTENT_TYPE, "application/x-xpinstall")], bytes).into_response(),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => StatusCode::NOT_FOUND.into_response(),
+        Err(e) => WebError::from(AppError::from(e)).into_response(),
     }
 }
 
