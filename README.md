@@ -38,7 +38,7 @@ Ready to try it? Jump to the [installation instructions](#installation).
 ### Agents
 
 - A full MCP server with 38 tools: decks, cards, images, studying, presets, imports, sharing, the coach and stats.
-- A small REST API to create and read decks and cards, with the same tokens.
+- A small REST API to create and read decks and cards and upload images, with the same tokens.
 - Connecting Claude takes the server's URL and one click, through the standard OAuth 2.1 flow. Clients without OAuth use a hand-made token.
 - Access is scoped: read-only, studying, or editing, and all decks or only some. Agents can never change your password or settings, and their reviews are labelled so you can leave them out of FSRS optimization.
 
@@ -217,7 +217,7 @@ During quiet hours `get_next_card` returns no card, so agents don't quiz you the
 
 ### REST API
 
-A small JSON API for scripts. It only creates and reads; there is no edit or delete. Create a token under **Settings → Agent access** and send it as `Authorization: Bearer <token>`. A token sees only your decks, and only one with write access can create.
+A small JSON API for scripts. It only creates and reads; there is no edit or delete. OAuth clients (like the browser extension) get their token through the same flow as Claude. Others create a token under **Settings → Agent access** and send it as `Authorization: Bearer <token>`. A token sees only your decks, and only one with write access can create.
 
 | Method | Path | Body or query |
 | --- | --- | --- |
@@ -225,8 +225,9 @@ A small JSON API for scripts. It only creates and reads; there is no edit or del
 | `POST` | `/api/v1/decks` | `{ "name", "description"?, "preset_id"? }` |
 | `GET` | `/api/v1/decks/{id}` | |
 | `GET` | `/api/v1/decks/{id}/cards` | `?query=&state=&limit=&offset=` |
-| `POST` | `/api/v1/decks/{id}/cards` | `{ "front", "back"?, "multi"? }` (`marked`, `list`, `sections` or `parts`) |
+| `POST` | `/api/v1/decks/{id}/cards` | `{ "front", "back"?, "multi"?, "front_image_id"?, "back_image_id"? }` (`multi`: `marked`, `list`, `sections` or `parts`) |
 | `GET` | `/api/v1/cards/{id}` | |
+| `POST` | `/api/v1/images` | the image file itself (PNG, JPEG, GIF or WebP, up to 15 MB); answers `{ "image_id", "width", "height" }` |
 
 Creating answers `201` with the new deck or card. Errors answer `400`, `401`, `403`, `404` or `409` with `{ "error": "..." }`.
 
