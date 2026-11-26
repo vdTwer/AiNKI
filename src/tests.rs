@@ -671,6 +671,7 @@ async fn invites_expire_and_admins_have_no_limit() {
 
 mod http {
     mod accounts;
+    mod api;
     mod mcp_tools;
     mod perf;
 

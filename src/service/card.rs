@@ -442,6 +442,44 @@ impl App {
             .collect())
     }
 
+    /// A card as JSON with its scheduling state; multicards carry their
+    /// items, and on a study turn (`studying`) which of them are asked.
+    ///
+    /// # Errors
+    ///
+    /// - `NotFound` if the card's deck lies outside the access.
+    /// - `Internal` if the database or FSRS fails.
+    pub async fn card_json(&self, access: &Access, card: &Card, studying: bool) -> Result<Value> {
+        let clock = access.user.clock();
+        let params = self.deck_params(access, card.deck_id).await?;
+        let decay = crate::scheduler::decay_for(&params)?;
+        let mut v = card.to_json(&clock, decay);
+        if card.multi.is_some() {
+            let items = self.card_items(card).await?;
+            let asked = studying.then(|| crate::multi::asked(card, &items, clock.now));
+            if let Some(o) = v.as_object_mut() {
+                o.insert("items".into(), json!(crate::multi::items_json(&items, asked.as_deref(), &clock, decay)));
+            }
+        }
+        Ok(v)
+    }
+
+    /// One page of [`Self::list_cards`] as JSON: `{ total, cards }`.
+    ///
+    /// # Errors
+    ///
+    /// As [`Self::list_cards`], and `Internal` if FSRS fails.
+    pub async fn cards_json(&self, access: &Access, filter: &CardFilter) -> Result<Value> {
+        let (cards, total) = self.list_cards(access, filter).await?;
+        let clock = access.user.clock();
+        let book = self.param_book(access).await?;
+        let cards = cards
+            .iter()
+            .map(|c| crate::scheduler::decay_for(book.for_deck(c.deck_id)).map(|decay| c.to_json(&clock, decay)))
+            .collect::<Result<Vec<Value>, _>>()?;
+        Ok(json!({ "total": total, "cards": cards }))
+    }
+
     /// # Errors
     ///
     /// - `NotFound` if a deck is given that the access doesn't see.
