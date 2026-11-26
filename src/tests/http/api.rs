@@ -131,3 +131,75 @@ async fn errors_map_to_statuses() {
     assert_eq!(s, StatusCode::UNPROCESSABLE_ENTITY);
     assert_eq!(call(&app, w, "GET", "/api/v1/decks/nope", None).await.0, StatusCode::BAD_REQUEST);
 }
+
+/// Send raw bytes, as the browser extension does with a picture.
+async fn upload(app: &Arc<App>, token: &str, bytes: Vec<u8>) -> (StatusCode, Value) {
+    let req = Request::post("/api/v1/images")
+        .header(header::HOST, "cards.example.com")
+        .header(header::AUTHORIZATION, format!("Bearer {token}"))
+        .header(header::CONTENT_TYPE, "image/png")
+        .body(Body::from(bytes))
+        .unwrap();
+    let res = send(app, req).await;
+    let status = res.status();
+    (status, serde_json::from_str(&text(res).await).unwrap_or(Value::Null))
+}
+
+#[tokio::test]
+async fn images_upload_and_go_on_new_cards() {
+    let app = app().await;
+    let a = user(&app, "kolja").await;
+    let deck = app.create_deck(&a, "Birds", "", None).await.unwrap();
+    let w = token(&app, &a, true).await;
+    let ro = token(&app, &a, false).await;
+
+    let (s, img) = upload(&app, &w, tiny_png()).await;
+    assert_eq!(s, StatusCode::CREATED, "{img}");
+    assert_eq!((img["width"].clone(), img["height"].clone()), (json!(4), json!(4)));
+    let id = img["image_id"].as_str().unwrap().to_string();
+
+    let (s, card) = call(
+        &app,
+        Some(&w),
+        "POST",
+        &format!("/api/v1/decks/{}/cards", deck.id),
+        Some(json!({ "front": "", "back": "Robin", "front_image_id": id })),
+    )
+    .await;
+    assert_eq!(s, StatusCode::CREATED, "{card}");
+    assert_eq!(card["front_image"], json!(id));
+
+    let (s, card) = call(
+        &app,
+        Some(&w),
+        "POST",
+        &format!("/api/v1/decks/{}/cards", deck.id),
+        Some(json!({ "front": "Which bird?", "back_image_id": id })),
+    )
+    .await;
+    assert_eq!(s, StatusCode::CREATED, "{card}");
+    assert_eq!(card["back_image"], json!(id));
+
+    // Photos are bigger than the API's usual 256 KB body limit.
+    let noise = image::RgbImage::from_fn(700, 700, |x, y| {
+        let v = (x.wrapping_mul(2_654_435_761) ^ y.wrapping_mul(40_503)).to_le_bytes();
+        image::Rgb([v[0], v[1], v[2]])
+    });
+    let mut big = Vec::new();
+    noise.write_to(&mut std::io::Cursor::new(&mut big), image::ImageFormat::Png).unwrap();
+    assert!(big.len() > 1024 * 1024, "{}", big.len());
+    assert_eq!(upload(&app, &w, big).await.0, StatusCode::CREATED);
+
+    // Read-only tokens can't upload; junk is refused; ids must be real.
+    assert_eq!(upload(&app, &ro, tiny_png()).await.0, StatusCode::FORBIDDEN);
+    assert_eq!(upload(&app, &w, b"not an image".to_vec()).await.0, StatusCode::BAD_REQUEST);
+    let (s, _) = call(
+        &app,
+        Some(&w),
+        "POST",
+        &format!("/api/v1/decks/{}/cards", deck.id),
+        Some(json!({ "front": "x", "back_image_id": "0123456789abcdef0123456789abcdef" })),
+    )
+    .await;
+    assert!(s == StatusCode::NOT_FOUND || s == StatusCode::BAD_REQUEST, "{s}");
+}
