@@ -1,4 +1,5 @@
-//! A small REST API: create and read decks and cards, nothing else.
+//! A small REST API: create and read decks and cards, and upload images
+//! for new cards. Nothing else.
 //!
 //! It takes the same API tokens as the MCP server (Settings → Agent access)
 //! and calls the same service functions, so a token sees only its user's
@@ -6,10 +7,11 @@
 
 use axum::{
     Json, Router,
-    extract::{FromRequestParts, Path, Query, State},
+    body::Bytes,
+    extract::{DefaultBodyLimit, FromRequestParts, Path, Query, State},
     http::{StatusCode, request::Parts},
     response::{IntoResponse, Response},
-    routing::get,
+    routing::{get, post},
 };
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -28,6 +30,10 @@ pub fn routes() -> Router<AppState> {
         .route("/api/v1/decks/{id}", get(get_deck))
         .route("/api/v1/decks/{id}/cards", get(list_cards).post(create_card))
         .route("/api/v1/cards/{id}", get(get_card))
+        .route(
+            "/api/v1/images",
+            post(upload_image).layer(DefaultBodyLimit::max(crate::media::MAX_UPLOAD_BYTES + 64 * 1024)),
+        )
 }
 
 /// An [`AppError`] as a status and `{ "error": message }`.
@@ -136,6 +142,9 @@ struct NewCardBody {
     back: String,
     /// marked, list, sections or parts
     multi: Option<Split>,
+    /// From `POST /api/v1/images`.
+    front_image_id: Option<String>,
+    back_image_id: Option<String>,
 }
 
 async fn create_card(
@@ -144,6 +153,23 @@ async fn create_card(
     Path(id): Path<i64>,
     Json(c): Json<NewCardBody>,
 ) -> ApiResult<(StatusCode, Json<Value>)> {
-    let card = app.create_card(&a, id, NewCard { multi: c.multi, ..NewCard::new(&c.front, &c.back) }).await?;
+    let new = NewCard {
+        multi: c.multi,
+        front_image: c.front_image_id,
+        back_image: c.back_image_id,
+        ..NewCard::new(&c.front, &c.back)
+    };
+    let card = app.create_card(&a, id, new).await?;
     Ok((StatusCode::CREATED, Json(app.card_json(&a, &card, false).await?)))
+}
+
+/// The request body is the image itself (PNG, JPEG, GIF or WebP); it is
+/// stored as a PNG of at most 1200 px a side.
+async fn upload_image(
+    State(app): State<AppState>,
+    Caller(a): Caller,
+    body: Bytes,
+) -> ApiResult<(StatusCode, Json<Value>)> {
+    let m = app.store_image(&a, body.to_vec()).await?;
+    Ok((StatusCode::CREATED, Json(json!({ "image_id": m.id, "width": m.width, "height": m.height }))))
 }

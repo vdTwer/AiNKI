@@ -37,6 +37,7 @@ pub(crate) async fn access_page(
             (parent("/settings", "Settings"))
             h1 { "Agent access" }
             (connect_steps(&url))
+            (extension_offer())
             (connected_tokens(&tokens, &clock))
             (token_form(&decks))
         },
@@ -61,6 +62,18 @@ fn connect_steps(url: &str) -> Markup {
             }
         }
         p.muted.small { "Any MCP client that supports OAuth connects the same way. Agents can never change your password or settings." }
+    }
+}
+
+/// The signed Firefox extension: each version bump in the extension's
+/// repository publishes a GitHub release with this file.
+const EXTENSION_URL: &str = "https://github.com/vdTwer/AiNKI-Extension/releases/latest/download/ainki.xpi";
+
+fn extension_offer() -> Markup {
+    html! {
+        h2 { "Firefox extension" }
+        p { "Turn selected text and images on any page into cards. Firefox asks before it installs; then connect it with your AiNKI address." }
+        p { a.btn.primary href=(EXTENSION_URL) { "Get the extension" } }
     }
 }
 
