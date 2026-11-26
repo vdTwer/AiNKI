@@ -182,7 +182,6 @@ pub fn router(app: AppState) -> Router {
         .route("/settings/catch-up", post(catch_up_update))
         .route("/settings/reset-params", post(reset_params))
         .route("/access", get(access_page))
-        .route("/extension.xpi", get(pages::tokens::extension_file))
         .route("/access/new", get(|| async { Redirect::to("/access") }).post(token_create))
         .route("/access/{id}/revoke", post(token_revoke))
         // The page used to be called Tokens.
