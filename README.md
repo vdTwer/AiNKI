@@ -236,6 +236,10 @@ curl -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
   -d '{"front": "Hund", "back": "dog"}' https://cards.example.com/api/v1/decks/1/cards
 ```
 
+### Firefox extension
+
+[AiNKI for Firefox](https://github.com/vdTwer/AiNKI-Extension) turns selected text and images into cards. To offer it to your users, get the signed `.xpi` from addons.mozilla.org and copy it to the data folder as `ainki.xpi` (in Docker: `docker compose cp ainki.xpi ainki:/data/ainki.xpi`). **Settings → Agent access** then shows a *Get the extension* button; without the file there is none.
+
 ## Acknowledgements
 
 AiNKI stands on other people's work:
