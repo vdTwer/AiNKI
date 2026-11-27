@@ -15,8 +15,8 @@
   :root {
     color-scheme: light dark;
     --ink: light-dark(#0c0d10, #ececee);
-    --muted: light-dark(#6b6e76, #8d9098);
-    --faint: light-dark(#9a9da4, #6f727a);
+    --muted: light-dark(#6b6e76, #9a9da5);
+    --faint: light-dark(#9a9da4, #80838b);
     --line: light-dark(#e7e7e4, #26282e);
     /* Field borders and the dotted leaders: a step darker than a hairline. */
     --edge: light-dark(#dcdcd8, #34363d);
