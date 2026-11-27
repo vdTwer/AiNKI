@@ -16,7 +16,7 @@
     color-scheme: light dark;
     --ink: light-dark(#0c0d10, #ececee);
     --muted: light-dark(#6b6e76, #9a9da5);
-    --faint: light-dark(#9a9da4, #80838b);
+    --faint: light-dark(#878a91, #80838b);
     --line: light-dark(#e7e7e4, #26282e);
     /* Field borders and the dotted leaders: a step darker than a hairline. */
     --edge: light-dark(#dcdcd8, #34363d);
@@ -374,6 +374,7 @@
     &.cols-4 { --n: 4; }
     & .btn { justify-content: space-between; padding-inline: 1.125rem; }
     & .ivl { font-size: .75rem; font-weight: 400; color: var(--faint); }
+    & .primary .ivl { color: color-mix(in oklab, var(--on-fill) 70%, var(--fill)); }
   }
   @media (width < 24rem) { .answers.cols-4 { --n: 2; } }
   /* On phones the big button waits at the thumb. */
