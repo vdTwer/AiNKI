@@ -26,7 +26,7 @@ pub(crate) async fn settings_page(
             ul.list.links {
                 @for (href, name, sub) in [
                     ("/presets", "Presets", "How much to remember, daily limits"),
-                    ("/access", "Agent access", "Connect Claude and other agents"),
+                    ("/access", "Connected apps", "Claude, the Firefox extension and other apps"),
                     ("/import", "Import", "From Anki or a CSV file"),
                     ("/invites", "Invite someone", "One person a week"),
                 ] {

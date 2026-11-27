@@ -27,7 +27,11 @@ pub(crate) const FIND_PLACES: &[(&str, &str, &str)] = &[
         "preferences options account password quiet hours breaks",
     ),
     ("Presets", "/presets", "fsrs retention limits steps"),
-    ("Agent access", "/access", "tokens claude mcp api keys"),
+    (
+        "Connected apps",
+        "/access",
+        "agent access tokens claude mcp api keys extension",
+    ),
     ("Cards to look at", "/attention", "coach leeches attention"),
 ];
 
