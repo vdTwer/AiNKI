@@ -111,7 +111,7 @@ fn home_today(user: &User, h: &Home) -> Markup {
     section.today aria-label="Today" {
         p.date { @if user.catch_up { "Catching up · " } (format::long_date(&user.clock())) }
         @if total_due > 0 {
-            h1 { span.count { (total_due) " " (format::plural(total_due, "card")) } " to study today" }
+            h1 { span.count { (total_due) " " (format::plural(total_due, "card")) } " today." }
         } @else if !decks.is_empty() {
             h1.all-done { "All done for today" }
         } @else {
@@ -121,7 +121,7 @@ fn home_today(user: &User, h: &Home) -> Markup {
         @if let Some(t) = quiet {
             p.facts { "Quiet hours until " (format::when(&user.clock(), t)) "." }
         } @else if total_due > 0 {
-            p { a.btn.primary.start href="/study" { "Start studying " span.arrow aria-hidden="true" { "→" } } }
+            p { a.btn.primary.start href="/study" { "Study" } }
         }
         (catch_up_note(user, overdue))
     }
@@ -213,6 +213,7 @@ fn home_decks(user: &User, h: &Home) -> Markup {
                                 span.sub { "Exam " (exam_words(user, *exam)) }
                             }
                         }
+                        span.leader aria-hidden="true" {}
                         @if d.due_total() == 0 && d.total > d.suspended {
                             span.num.due.done title="Done for today" { (done_check(13, "done-check")) span.unit { "done for today" } }
                         } @else {

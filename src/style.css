@@ -1,25 +1,38 @@
-/* AiNKI's one look: text in one narrow column, one accent for what you can
-   press, one filled button per page. Light, dark and e-ink share tokens.
-   Modern browsers only: @layer, nesting, light-dark(), :has(), container
-   queries. */
+/* AiNKI's one look: white, ink and one memory blue. Geist for the
+   interface, Geist Mono for numbers and labels in caps, Newsreader for card
+   text only. One column (608px to do things, 880px to read), one ink button
+   per page, hairlines instead of boxes, progress as a segmented bar.
+   Light, dark and e-ink share tokens. Modern browsers only: @layer,
+   nesting, light-dark(), :has(). */
+
+@font-face { font-family: Geist; src: url("/fonts/geist.woff2") format("woff2"); font-weight: 100 900; font-display: swap; }
+@font-face { font-family: "Geist Mono"; src: url("/fonts/geist-mono.woff2") format("woff2"); font-weight: 100 900; font-display: swap; }
+@font-face { font-family: Newsreader; src: url("/fonts/newsreader.woff2") format("woff2"); font-weight: 200 800; font-display: swap; }
 
 @layer base, parts, pages;
 
 @layer base {
   :root {
     color-scheme: light dark;
-    --ink: light-dark(#1c1a1d, #ecebee);
-    --muted: light-dark(#6b6870, #9f9ca6);
-    --faint: light-dark(#84818a, #7c7983);
-    --line: light-dark(#ebe9ee, #2a282e);
-    --bg: light-dark(#fff, #131215);
-    --accent: light-dark(#a8336d, #e58ab8);
-    /* Filled buttons: deeper than the link color in the dark. */
-    --fill: light-dark(#a8336d, #b13a75);
-    --on-fill: #fff;
-    /* A hint of the accent in every quiet surface. */
-    --soft: light-dark(color-mix(in oklab, #a8336d 6%, #fff), color-mix(in oklab, #e58ab8 10%, #131215));
-    --r: .625rem;
+    --ink: light-dark(#0c0d10, #ececee);
+    --muted: light-dark(#6b6e76, #8d9098);
+    --faint: light-dark(#9a9da4, #6f727a);
+    --line: light-dark(#e7e7e4, #26282e);
+    /* Field borders and the dotted leaders: a step darker than a hairline. */
+    --edge: light-dark(#dcdcd8, #34363d);
+    --track: light-dark(#ececea, #22242a);
+    --bg: light-dark(#fff, #0e0f12);
+    /* Memory blue: recall, aims, progress, and links. */
+    --accent: light-dark(#2b4bd6, #7b93ff);
+    /* The page's one filled button is ink. */
+    --fill: var(--ink);
+    --on-fill: var(--bg);
+    --soft: light-dark(#f4f4f2, #17181c);
+    --danger: light-dark(#b42318, #f08a80);
+    --sans: Geist, system-ui, sans-serif;
+    --mono: "Geist Mono", ui-monospace, monospace;
+    --serif: Newsreader, Georgia, serif;
+    --r: 6px;
     --tap: 2.75rem;
     --scale: 1;
   }
@@ -33,19 +46,22 @@
   img, svg { max-width: 100%; }
   button, input, select, textarea { font: inherit; color: inherit; }
 
-  html { font: calc(17px * var(--scale)) / 1.55 system-ui, sans-serif; -webkit-text-size-adjust: 100%; text-rendering: optimizeLegibility; -webkit-font-smoothing: antialiased; }
+  html { font: calc(16px * var(--scale)) / 1.55 var(--sans); -webkit-text-size-adjust: 100%; text-rendering: optimizeLegibility; -webkit-font-smoothing: antialiased; }
   body { background: var(--bg); color: var(--ink); font-variant-numeric: tabular-nums; }
-  main, nav.top { max-width: 40rem; margin-inline: auto; padding-inline: 1.25rem; }
+  main, nav.top { max-width: calc(608px + 2.5rem); margin-inline: auto; padding-inline: 1.25rem; }
+  /* Pages to read (stats, a card, a deck) get the wide column. */
+  body:has(:is(.chart-sec, .big3)) :is(main, nav.top) { max-width: calc(880px + 2.5rem); }
   main { padding-block: 2rem 6rem; }
   :where(main, section, .sheet, .card-area, .chart-sec) > * + * { margin-top: 1rem; }
 
-  h1 { font-size: 1.75rem; line-height: 1.2; font-weight: 650; letter-spacing: -.02em; text-wrap: balance; }
-  h2 { margin-top: 3rem; font-size: 1.0625rem; font-weight: 650; letter-spacing: -.01em; }
+  h1 { font-size: 2rem; line-height: 1.15; font-weight: 500; letter-spacing: -.03em; text-wrap: balance; }
+  /* Section titles are labels: small mono caps. */
+  h2 { margin-top: 3rem; font: 400 .75rem/1.5 var(--mono); letter-spacing: .04em; text-transform: uppercase; color: var(--muted); }
   p, li { text-wrap: pretty; }
   a { color: var(--accent); text-decoration: none; &:hover { text-decoration: underline; text-underline-offset: .2em; } }
   :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   hr { border: 0; border-top: 1px solid var(--line); }
-  code, pre, kbd { font-family: ui-monospace, monospace; font-size: .9em; }
+  code, pre, kbd { font-family: var(--mono); font-size: .9em; }
   pre { white-space: pre-wrap; overflow-wrap: anywhere; background: var(--soft); padding: .75rem; border-radius: var(--r); }
   pre.copy { user-select: all; }
   /* Numbers to copy, each in its own pill; the commas are there for
@@ -54,7 +70,7 @@
     display: flex;
     flex-wrap: wrap;
     gap: .4rem;
-    font-family: ui-monospace, monospace;
+    font-family: var(--mono);
     font-size: .8125rem;
     & .pill { padding: .2rem .55rem; border-radius: 999px; background: var(--soft); font-variant-numeric: tabular-nums; }
     & .sep { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
@@ -62,13 +78,15 @@
   .pills + button { margin-top: .5rem; }
   table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
   th, td { text-align: left; padding: .55rem .75rem .55rem 0; border-bottom: 1px solid var(--line); &:last-child { padding-right: 0; } }
-  thead th { font-size: .75rem; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+  thead th { font: 400 .6875rem var(--mono); letter-spacing: .04em; text-transform: uppercase; color: var(--muted); }
   tbody th { font-weight: 400; }
-  .num { text-align: right; font-variant-numeric: tabular-nums; }
+  /* Numbers are always mono and right-aligned. */
+  .num, .counts, .ivl, .break-clock, .study-foot .count, .big3 .n, dl.stats-inline dd { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+  .num { text-align: right; }
   .muted, .kicker, .sub, .deck-path, .list-known, .list-how { color: var(--muted); }
   .small, .sub, .deck-path { font-size: .875rem; }
   /* The quiet label above a number or a group: small tracked caps. */
-  .kicker, .card-state { font-size: .75rem; font-weight: 600; letter-spacing: .07em; text-transform: uppercase; color: var(--muted); }
+  .kicker, .card-state { font: 400 .6875rem/1.5 var(--mono); letter-spacing: .04em; text-transform: uppercase; color: var(--muted); }
   .sub, .deck-path { display: block; }
   .grow { flex: 1; min-width: 0; overflow-wrap: anywhere; }
   .fit, .graph-wrap, .table-wrap { overflow-x: auto; }
@@ -80,15 +98,19 @@
   /* The menu: the name, then the pages, on one line that scrolls if it must. */
   nav.top {
     display: flex;
-    gap: 1.4rem;
+    gap: 1.5rem;
     overflow-x: auto;
     padding-top: .5rem;
-    font-size: .9375rem;
+    font-size: .875rem;
     & a { flex: none; padding-block: .9rem; color: var(--muted); text-decoration: none; }
     & a:hover, & a[aria-current="page"] { color: var(--ink); }
-    & a[aria-current="page"]:not(.brand) { text-decoration: underline 2px var(--accent); text-underline-offset: .45em; }
-    & a.brand { margin-right: auto; color: var(--ink); font-weight: 750; letter-spacing: -.01em; }
-    & a.brand .i { color: var(--accent); }
+    & a[aria-current="page"]:not(.brand) { font-weight: 500; }
+    & a.brand { display: inline-flex; align-items: center; gap: .5rem; margin-right: auto; color: var(--ink); font-weight: 600; letter-spacing: -.01em; }
+    & .logo { flex: none; }
+  }
+  .logo .dot { fill: var(--accent); }
+  .brand-big { display: flex; flex-direction: column; gap: 1rem; & .logo { width: 28px; height: 28px; } }
+  nav.top {
     @media (width < 30rem) { gap: .8rem; font-size: .875rem; }
   }
 
@@ -112,11 +134,12 @@
       border-radius: var(--r);
       background: var(--fill);
       color: var(--on-fill);
-      font-weight: 600;
-      &:hover { text-decoration: none; background: color-mix(in oklab, var(--fill) 88%, black); }
+      font-weight: 500;
+      &:hover { text-decoration: none; background: color-mix(in oklab, var(--fill) 90%, var(--bg)); }
+      & .ivl { color: color-mix(in oklab, var(--on-fill) 70%, var(--fill)); }
       &:active { transform: translateY(1px); }
     }
-    &.danger { color: light-dark(#a12f2f, #f08080); }
+    &.danger { color: var(--danger); }
     &.wide, &.start { display: flex; width: 100%; }
   }
   button.link { min-height: 0; }
@@ -124,10 +147,11 @@
      submit), each option is a soft block you can hit with a thumb. */
   :is(.answers, .sure-buttons, .pause-cover) .btn:not(.primary), form > button:not(.link, .primary) {
     padding: .55rem 1.4rem;
+    border: 1px solid var(--edge);
     border-radius: var(--r);
-    background: var(--soft);
+    background: var(--bg);
     color: var(--ink);
-    &:hover { text-decoration: none; background: color-mix(in oklab, var(--accent) 12%, var(--bg)); }
+    &:hover { text-decoration: none; border-color: var(--ink); }
   }
   input[type=file] {
     font-size: .875rem;
@@ -136,8 +160,9 @@
       margin-right: .75rem;
       padding: .4rem .9rem;
       border: 0;
+      border: 1px solid var(--edge);
       border-radius: var(--r);
-      background: var(--soft);
+      background: var(--bg);
       color: var(--ink);
       font: inherit;
       cursor: pointer;
@@ -159,12 +184,12 @@
     min-height: var(--tap);
     margin-top: .3rem;
     padding: .5rem .7rem;
-    border: 1px solid color-mix(in oklab, var(--ink) 16%, var(--bg));
+    border: 1px solid var(--edge);
     border-radius: var(--r);
     background: var(--bg);
     font-weight: 400;
     &::placeholder { color: var(--faint); }
-    &:focus { border-color: var(--accent); outline: 3px solid color-mix(in oklab, var(--accent) 18%, transparent); outline-offset: 0; }
+    &:focus { border-color: var(--accent); outline: 0; }
   }
   textarea { resize: vertical; field-sizing: content; min-height: 5rem; }
   fieldset { border: 0; margin: 0 0 1rem; padding: 0; }
@@ -197,17 +222,18 @@
   .form-foot { margin-top: 1.5rem; }
   .form-foot button:not(.primary, .link) {
     padding: .55rem 1.4rem;
+    border: 1px solid var(--edge);
     border-radius: var(--r);
-    background: var(--soft);
+    background: var(--bg);
     color: var(--ink);
-    &:hover { text-decoration: none; background: color-mix(in oklab, var(--accent) 12%, var(--bg)); }
+    &:hover { text-decoration: none; border-color: var(--ink); }
   }
   h1 + p.muted + ul.list { margin-top: 1.5rem; }
   form.logout { margin-top: 1rem; }
   p.build { margin-top: .75rem; }
   details > summary { cursor: pointer; min-height: var(--tap); display: flex; align-items: center; color: var(--accent); }
-  details.danger > summary { color: light-dark(#a12f2f, #f08080); }
-  .notice, .coach, .typed-echo { padding: 1rem 1.15rem; border-radius: var(--r); background: var(--soft); }
+  details.danger > summary { color: var(--danger); }
+  .notice, .coach, .typed-echo { padding: .75rem 0; border-block: 1px solid var(--line); }
   .coach-flag + .coach-flag { border-top: 1px solid var(--line); margin-top: .75rem; padding-top: .75rem; }
 
   /* Lists: hairlines, and a whole row is the link. */
@@ -223,7 +249,7 @@
     display: flex;
     gap: 1.5rem;
     & a { color: var(--muted); text-decoration: none; }
-    & a[aria-current="page"] { color: var(--ink); text-decoration: underline 2px var(--accent); text-underline-offset: .45em; }
+    & a[aria-current="page"] { color: var(--ink); font-weight: 500; }
   }
 
   /* Card text */
@@ -239,8 +265,8 @@
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr));
     gap: 1rem;
-    & dt { font-size: .75rem; font-weight: 600; letter-spacing: .07em; text-transform: uppercase; color: var(--muted); }
-    & dd { font-size: 1.75rem; font-weight: 300; letter-spacing: -.02em; }
+    & dt { font: 400 .6875rem var(--mono); letter-spacing: .04em; text-transform: uppercase; color: var(--muted); }
+    & dd { font-size: 1.75rem; font-weight: 400; letter-spacing: -.03em; }
   }
   dl.kv { display: grid; grid-template-columns: auto 1fr; gap: .3rem 1rem; & dt { color: var(--muted); } }
 
@@ -270,9 +296,22 @@
 
   /* Home */
   .today :is(.date, .facts) { color: var(--muted); }
-  .table-head { display: flex; gap: .75rem; margin-top: 3rem; padding-bottom: .5rem; font-size: .75rem; font-weight: 600; letter-spacing: .07em; text-transform: uppercase; color: var(--muted); }
-  .today h1 { margin-top: .25rem; }
-  .today .start { margin-top: 1.75rem; }
+  .table-head { display: flex; gap: .75rem; margin-top: 3rem; padding-bottom: .25rem; font: 400 .6875rem var(--mono); letter-spacing: .04em; text-transform: uppercase; color: var(--muted); }
+  .today .date { font: 400 .75rem var(--mono); letter-spacing: .04em; text-transform: uppercase; }
+  .today h1 { margin-top: .5rem; font-size: clamp(2.25rem, 1.6rem + 2.5vw, 2.75rem); letter-spacing: -.035em; line-height: 1.1; }
+  .today .start { display: inline-flex; width: auto; margin-top: 1.75rem; }
+  /* Decks: name, a dotted leader, the numbers. */
+  ul.decks {
+    border-top: 0;
+    & li { border-bottom: 0; }
+    & a.row { align-items: baseline; min-height: 2.5rem; padding-block: .35rem; }
+    & .grow { flex: 0 1 auto; }
+    & .leader { flex: 1; min-width: 1rem; border-bottom: 1px dotted var(--edge); }
+    /* "Spanish  Languages": the name first, its parents faint after it. */
+    & .deck-name { display: inline-flex; flex-direction: row-reverse; align-items: baseline; gap: .5rem; }
+    & .deck-path { display: inline; font-size: .8125rem; color: var(--faint); }
+    & .num { min-width: 3ch; }
+  }
   .week-bars {
     display: grid;
     grid-template-columns: repeat(7, 1fr);
@@ -309,18 +348,20 @@
      small, faint and out of the way; the menu steps back to the name. */
   body[data-page="study"]:has(.study) {
     & nav.top a:not(.brand), & .keys-hint { display: none; }
-    & nav.top a.brand { color: var(--faint); font-weight: 600; & .i { color: inherit; } &:hover { color: var(--ink); } }
-    & main { padding-top: clamp(1.5rem, 9vh, 6rem); }
+    & nav.top a.brand { color: var(--faint); font-weight: 600; &:hover { color: var(--ink); } }
+    & nav.top .logo .dot { fill: currentColor; }
+    & main { position: relative; padding-top: clamp(4rem, 14vh, 9rem); }
   }
   .study {
     & .card-state { color: var(--faint); }
-    & .face { font-size: 1.5rem; line-height: 1.4; padding-block: .25rem; overflow-wrap: anywhere; text-wrap: pretty; }
-    & .face.front { font-size: clamp(1.5rem, 1.2rem + 1.4vw, 1.9rem); letter-spacing: -.01em; }
-    & .face.back { font-size: 1.25rem; color: color-mix(in oklab, var(--ink) 86%, var(--bg)); }
-    & .card-area > .face.back { margin-top: 1.5rem; }
-    & hr.divider { width: 2.5rem; margin: 2rem 0 0; border-top: 2px solid color-mix(in oklab, var(--accent) 35%, var(--bg)); }
-    & .reveal { margin-top: 3rem; }
-    & .show, & .answers .btn, & .sure-buttons .btn { min-height: 3.75rem; font-size: 1.0625rem; border-radius: calc(var(--r) * 1.2); }
+    /* Card text is the one place for the serif. */
+    & .face { font-family: var(--serif); font-size: 1.75rem; line-height: 1.3; padding-block: .25rem; overflow-wrap: anywhere; text-wrap: pretty; }
+    & .face.front { font-size: clamp(1.9rem, 1.3rem + 2.4vw, 2.75rem); line-height: 1.15; letter-spacing: -.015em; }
+    & .face.back { color: color-mix(in oklab, var(--ink) 80%, var(--bg)); }
+    & .card-area > .face.back { margin-top: 2rem; }
+    & hr.divider { display: none; }
+    & .reveal { margin-top: 4rem; }
+    & .show, & .answers .btn, & .sure-buttons .btn { min-height: 3.25rem; font-size: 1rem; }
     & .show { display: flex; width: 100%; }
     &.paused .card-area { visibility: hidden; }
   }
@@ -331,16 +372,23 @@
     margin-top: 3rem;
     &.cols-1 { --n: 1; }
     &.cols-4 { --n: 4; }
-    & .btn { flex-direction: column; gap: 0; }
-    & .ivl { font-size: .75rem; font-weight: 400; opacity: .7; }
+    & .btn { justify-content: space-between; padding-inline: 1.125rem; }
+    & .ivl { font-size: .75rem; font-weight: 400; color: var(--faint); }
   }
   @media (width < 24rem) { .answers.cols-4 { --n: 2; } }
   /* On phones the big button waits at the thumb. */
   @media (width < 30rem) {
     .answers, .study .reveal { position: sticky; bottom: 0; margin-inline: -1.25rem; padding: .75rem 1.25rem; background: var(--bg); }
   }
-  .progress, .timer-line, .break-line { height: 2px; margin-top: 2.5rem; background: var(--line); border-radius: 1px; overflow: hidden; }
-  :is(.progress .bar, .timer-fill, .break-fill) { height: 2px; background: var(--accent); }
+  /* Progress is always the segmented bar: 6px blocks, 2px apart. */
+  .progress, .timer-line, .break-line {
+    height: 12px;
+    margin-top: 2.5rem;
+    background: var(--track);
+    overflow: hidden;
+    mask: repeating-linear-gradient(90deg, #000 0 6px, transparent 6px 8px);
+  }
+  :is(.progress .bar, .timer-fill, .break-fill) { height: 100%; background: var(--accent); }
   .timer-fill { width: 100%; }
   .study-meta, .timer-meta { display: flex; justify-content: space-between; gap: 1rem; margin-top: .5rem; font-size: .8125rem; color: var(--muted); & a { color: inherit; } }
   .study-tools, .session-end .end-links { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem 1.5rem; margin-top: 1rem; }
@@ -354,7 +402,9 @@
     margin-top: 4.5rem;
     font-size: .8125rem;
     color: var(--faint);
-    & .progress { position: fixed; inset: 0 0 auto; z-index: 1; margin: 0; border-radius: 0; background: none; }
+    /* Today's progress sits above the card, at the column's left edge. */
+    & .progress { position: absolute; top: 1.5rem; left: 1.25rem; width: 110px; margin: 0; }
+    & .study-meta .deck-path { display: inline; font-size: inherit; color: inherit; }
     & .study-meta { grid-area: meta; margin: 0; color: inherit; justify-content: flex-start; flex-wrap: wrap; gap: 0 .9rem; }
     & .study-tools { grid-area: tools; margin: 0; gap: 0 1.1rem; }
     & .count { min-height: 0; color: inherit; font-size: inherit; &:hover { color: var(--ink); text-decoration: none; } }
@@ -429,7 +479,7 @@
     grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
     gap: 1.5rem;
     & > * { margin: 0; }
-    & .n { font-size: 2.75rem; font-weight: 300; letter-spacing: -.03em; line-height: 1.1; margin-top: .35rem; }
+    & .n { font-size: 2.5rem; font-weight: 400; letter-spacing: -.04em; line-height: 1.1; margin-top: .35rem; }
   }
   .chart-sec, details.numbers { margin-top: 3.5rem; }
   .chart-sec > h2 + p { margin-top: .25rem; }
@@ -437,7 +487,7 @@
     display: block;
     width: 100%;
     height: auto;
-    font: 11px system-ui, sans-serif;
+    font: 11px var(--mono);
     & .grid { stroke: var(--line); }
     & .aim { stroke: var(--muted); stroke-dasharray: 4 4; }
     & .line { fill: none; stroke: var(--accent); stroke-width: 2; stroke-linejoin: round; }
@@ -467,7 +517,7 @@
 
   /* A break runs by itself (parts.js); without script, the links do. */
   ainki-break { display: block; margin-top: 2rem; &:not(:defined) { display: none; } }
-  .break-clock { font-size: 3rem; font-weight: 300; font-variant-numeric: tabular-nums; }
+  .break-clock { font-size: 3rem; font-weight: 400; letter-spacing: -.03em; }
   .break-fill { width: 0; }
 
   /* Quiet hours: one dark screen over everything, a way past in two folds. */
@@ -479,11 +529,11 @@
     place-content: center;
     gap: 1rem;
     padding: 1rem;
-    background: #111114;
-    color: #e4e4e8;
+    background: #0e0f12;
+    color: #ececee;
     color-scheme: dark;
     text-align: center;
-    & h1 { font-size: 2.5rem; font-weight: 300; }
+    & h1 { font-size: 2.75rem; font-weight: 500; letter-spacing: -.035em; }
     & summary { justify-content: center; color: rgb(140 140 150 / .35); }
   }
 }

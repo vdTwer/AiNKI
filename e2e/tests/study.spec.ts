@@ -58,7 +58,7 @@ test('a whole session without a single page load', async ({ page, seed, account 
 
   // Home now says the day is done.
   await page.goto('/');
-  await expect(page.locator('main')).not.toContainText('cards to study today');
+  await expect(page.locator('main')).not.toContainText('cards today');
 });
 
 test('keys: space shows the answer, 1 and 3 rate', async ({ page, seed, account }) => {
