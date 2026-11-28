@@ -82,7 +82,9 @@ pub struct FieldDef {
     pub hint: String,
 }
 
-#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(
+    Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq,
+)]
 #[serde(rename_all = "lowercase")]
 pub enum FieldKind {
     /// One line of text.
@@ -138,7 +140,9 @@ fn clean_path(path: &str) -> Option<String> {
         && path.split('/').all(|seg| {
             !seg.is_empty()
                 && !seg.starts_with('.')
-                && seg.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
+                && seg.chars().all(|c| {
+                    c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-')
+                })
         });
     ok.then(|| path.to_string())
 }
@@ -157,20 +161,25 @@ pub fn read_package(data: &[u8]) -> Result<Package> {
     if data.len() > MAX_PACKAGE_BYTES {
         return Err(bad("the package is larger than 2 MB"));
     }
-    let mut zip = zip::ZipArchive::new(Cursor::new(data)).map_err(|_| bad("this is no .zip file"))?;
+    let mut zip = zip::ZipArchive::new(Cursor::new(data))
+        .map_err(|_| bad("this is no .zip file"))?;
     if zip.len() > MAX_ENTRIES {
         return Err(bad("the package holds too many files"));
     }
     let mut raw: Vec<(String, Vec<u8>)> = Vec::new();
     let mut total = 0usize;
     for i in 0..zip.len() {
-        let mut f = zip.by_index(i).map_err(|_| bad("a file in the package can't be read (is it encrypted?)"))?;
+        let mut f = zip.by_index(i).map_err(|_| {
+            bad("a file in the package can't be read (is it encrypted?)")
+        })?;
         if f.is_dir() {
             continue;
         }
         let shown = f.name().map(|n| n.to_string()).unwrap_or_default();
         if f.is_symlink() {
-            return Err(bad(format!("{shown} is a link; packages hold plain files only")));
+            return Err(bad(format!(
+                "{shown} is a link; packages hold plain files only"
+            )));
         }
         // Leftovers some systems add when zipping.
         if shown.starts_with("__MACOSX/") || shown.ends_with(".DS_Store") {
@@ -180,11 +189,16 @@ pub fn read_package(data: &[u8]) -> Result<Package> {
         // segments only, so no `..`, no leading `/`, no `\`.
         let name = shown;
         if raw.len() >= MAX_FILES {
-            return Err(bad(format!("a package holds at most {MAX_FILES} files")));
+            return Err(bad(format!(
+                "a package holds at most {MAX_FILES} files"
+            )));
         }
         let left = MAX_PACKAGE_BYTES - total;
         let mut body = Vec::new();
-        (&mut f).take(left as u64 + 1).read_to_end(&mut body).map_err(|_| bad(format!("{name} can't be unpacked")))?;
+        (&mut f)
+            .take(left as u64 + 1)
+            .read_to_end(&mut body)
+            .map_err(|_| bad(format!("{name} can't be unpacked")))?;
         if body.len() > left {
             return Err(bad("the package unpacks to more than 2 MB"));
         }
@@ -192,18 +206,24 @@ pub fn read_package(data: &[u8]) -> Result<Package> {
         raw.push((name, body));
     }
     let (manifest, files) = sort_out(raw)?;
-    let manifest = manifest.ok_or_else(|| bad(format!("the package has no {MANIFEST}")))?;
-    let manifest: Manifest = serde_json::from_slice(&manifest).map_err(|e| bad(format!("{MANIFEST}: {e}")))?;
+    let manifest = manifest
+        .ok_or_else(|| bad(format!("the package has no {MANIFEST}")))?;
+    let manifest: Manifest = serde_json::from_slice(&manifest)
+        .map_err(|e| bad(format!("{MANIFEST}: {e}")))?;
     check_manifest(&manifest, &files)?;
     Ok(Package { manifest, files })
 }
 
 /// The unpacked entries as the manifest and the served files, each checked.
-fn sort_out(raw: Vec<(String, Vec<u8>)>) -> Result<(Option<Vec<u8>>, Vec<PackageFile>)> {
+fn sort_out(
+    raw: Vec<(String, Vec<u8>)>,
+) -> Result<(Option<Vec<u8>>, Vec<PackageFile>)> {
     // A zipped folder: everything sits in one top folder with the manifest.
     let prefix = raw
         .iter()
-        .find(|(n, _)| n.ends_with(&format!("/{MANIFEST}")) && n.matches('/').count() == 1)
+        .find(|(n, _)| {
+            n.ends_with(&format!("/{MANIFEST}")) && n.matches('/').count() == 1
+        })
         .filter(|_| !raw.iter().any(|(n, _)| n == MANIFEST))
         .map(|(n, _)| n.trim_end_matches(MANIFEST).to_string());
     let mut files = Vec::new();
@@ -212,7 +232,11 @@ fn sort_out(raw: Vec<(String, Vec<u8>)>) -> Result<(Option<Vec<u8>>, Vec<Package
         let name = match &prefix {
             Some(p) => match name.strip_prefix(p.as_str()) {
                 Some(rest) => rest.to_string(),
-                None => return Err(bad(format!("{name} lies outside the package's folder"))),
+                None => {
+                    return Err(bad(format!(
+                        "{name} lies outside the package's folder"
+                    )));
+                }
             },
             None => name,
         };
@@ -220,7 +244,8 @@ fn sort_out(raw: Vec<(String, Vec<u8>)>) -> Result<(Option<Vec<u8>>, Vec<Package
             manifest = Some(body);
             continue;
         }
-        let path = clean_path(&name).ok_or_else(|| bad(format!("{name} is no allowed file name")))?;
+        let path = clean_path(&name)
+            .ok_or_else(|| bad(format!("{name} is no allowed file name")))?;
         let mime = mime_for(&path)
             .ok_or_else(|| bad(format!("{name}: packages hold .js, .css, .json, .png and .woff2 files only")))?;
         files.push(PackageFile { path, mime, body });
@@ -233,7 +258,9 @@ fn plain_line(what: &str, s: &str, max: usize) -> Result<()> {
         return Err(bad(format!("{MANIFEST}: {what} is empty")));
     }
     if s.chars().count() > max || s.chars().any(char::is_control) {
-        return Err(bad(format!("{MANIFEST}: {what} must be one line of at most {max} characters")));
+        return Err(bad(format!(
+            "{MANIFEST}: {what} must be one line of at most {max} characters"
+        )));
     }
     Ok(())
 }
@@ -241,24 +268,37 @@ fn plain_line(what: &str, s: &str, max: usize) -> Result<()> {
 fn check_manifest(m: &Manifest, files: &[PackageFile]) -> Result<()> {
     plain_line("name", &m.name, 60)?;
     if m.description.chars().count() > 300 {
-        return Err(bad(format!("{MANIFEST}: the description has at most 300 characters")));
+        return Err(bad(format!(
+            "{MANIFEST}: the description has at most 300 characters"
+        )));
     }
-    let has = |p: &str, ext: &str| files.iter().any(|f| f.path == p && f.path.ends_with(ext));
+    let has = |p: &str, ext: &str| {
+        files.iter().any(|f| f.path == p && f.path.ends_with(ext))
+    };
     if !has(&m.module, ".js") && !has(&m.module, ".mjs") {
-        return Err(bad(format!("{MANIFEST}: the module {} is not a .js file in the package", m.module)));
+        return Err(bad(format!(
+            "{MANIFEST}: the module {} is not a .js file in the package",
+            m.module
+        )));
     }
     for s in &m.styles {
         if !has(s, ".css") {
-            return Err(bad(format!("{MANIFEST}: the style sheet {s} is not a .css file in the package")));
+            return Err(bad(format!(
+                "{MANIFEST}: the style sheet {s} is not a .css file in the package"
+            )));
         }
     }
     if m.fields.is_empty() || m.fields.len() > MAX_FIELDS {
-        return Err(bad(format!("{MANIFEST}: a type has 1 to {MAX_FIELDS} fields")));
+        return Err(bad(format!(
+            "{MANIFEST}: a type has 1 to {MAX_FIELDS} fields"
+        )));
     }
     for (i, f) in m.fields.iter().enumerate() {
         let key_ok = f.key.len() <= 32
             && f.key.starts_with(|c: char| c.is_ascii_lowercase())
-            && f.key.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_');
+            && f.key.chars().all(|c| {
+                c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_'
+            });
         if !key_ok {
             return Err(bad(format!(
                 "{MANIFEST}: field key '{}' must be lowercase letters, digits and _, starting with a letter",
@@ -266,23 +306,34 @@ fn check_manifest(m: &Manifest, files: &[PackageFile]) -> Result<()> {
             )));
         }
         if m.fields.iter().take(i).any(|g| g.key == f.key) {
-            return Err(bad(format!("{MANIFEST}: the field key '{}' is used twice", f.key)));
+            return Err(bad(format!(
+                "{MANIFEST}: the field key '{}' is used twice",
+                f.key
+            )));
         }
         plain_line("a field's label", &f.label, 80)?;
         if f.hint.chars().count() > 200 {
-            return Err(bad(format!("{MANIFEST}: a field's hint has at most 200 characters")));
+            return Err(bad(format!(
+                "{MANIFEST}: a field's hint has at most 200 characters"
+            )));
         }
     }
     if !m.fields.iter().any(|f| !f.optional) {
-        return Err(bad(format!("{MANIFEST}: at least one field must be required")));
+        return Err(bad(format!(
+            "{MANIFEST}: at least one field must be required"
+        )));
     }
     for (side, t) in [("front", &m.summary.front), ("back", &m.summary.back)] {
         if t.chars().count() > MAX_TEMPLATE {
-            return Err(bad(format!("{MANIFEST}: the summary's {side} has at most {MAX_TEMPLATE} characters")));
+            return Err(bad(format!(
+                "{MANIFEST}: the summary's {side} has at most {MAX_TEMPLATE} characters"
+            )));
         }
         for key in placeholders(t) {
             if !m.fields.iter().any(|f| f.key == key) {
-                return Err(bad(format!("{MANIFEST}: the summary's {side} names {{{key}}}, which is no field")));
+                return Err(bad(format!(
+                    "{MANIFEST}: the summary's {side} names {{{key}}}, which is no field"
+                )));
             }
         }
     }
@@ -294,9 +345,15 @@ fn check_manifest(m: &Manifest, files: &[PackageFile]) -> Result<()> {
 
 /// The `{key}` names in a template.
 fn placeholders(t: &str) -> impl Iterator<Item = &str> {
-    t.split('{').skip(1).filter_map(|s| s.split_once('}').map(|(k, _)| k)).filter(|k| {
-        !k.is_empty() && k.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
-    })
+    t.split('{')
+        .skip(1)
+        .filter_map(|s| s.split_once('}').map(|(k, _)| k))
+        .filter(|k| {
+            !k.is_empty()
+                && k.chars().all(|c| {
+                    c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_'
+                })
+        })
 }
 
 /// A template with each `{key}` replaced by that field's value.
@@ -325,8 +382,13 @@ pub fn fill(template: &str, fields: &BTreeMap<String, String>) -> String {
 /// # Errors
 ///
 /// `BadRequest`, naming the field, when one breaks a rule.
-pub fn check_fields(m: &Manifest, sent: &BTreeMap<String, String>) -> Result<BTreeMap<String, String>> {
-    if let Some(k) = sent.keys().find(|k| !m.fields.iter().any(|f| &f.key == *k)) {
+pub fn check_fields(
+    m: &Manifest,
+    sent: &BTreeMap<String, String>,
+) -> Result<BTreeMap<String, String>> {
+    if let Some(k) =
+        sent.keys().find(|k| !m.fields.iter().any(|f| &f.key == *k))
+    {
         return Err(bad(format!("{} has no field '{k}'", m.name)));
     }
     let mut out = BTreeMap::new();
@@ -342,7 +404,10 @@ pub fn check_fields(m: &Manifest, sent: &BTreeMap<String, String>) -> Result<BTr
             return Err(bad(format!("{} is one line", f.label)));
         }
         if v.chars().count() > MAX_FIELD_TEXT {
-            return Err(bad(format!("{} is too long (at most {MAX_FIELD_TEXT} characters)", f.label)));
+            return Err(bad(format!(
+                "{} is too long (at most {MAX_FIELD_TEXT} characters)",
+                f.label
+            )));
         }
         out.insert(f.key.clone(), v.replace("\r\n", "\n"));
     }
@@ -358,7 +423,8 @@ pub fn check_response(raw: &str) -> Result<String> {
     if raw.len() > MAX_RESPONSE {
         return Err(bad("the response is too long"));
     }
-    let v: Value = serde_json::from_str(raw).map_err(|_| bad("the response is no JSON"))?;
+    let v: Value = serde_json::from_str(raw)
+        .map_err(|_| bad("the response is no JSON"))?;
     Ok(v.to_string())
 }
 
@@ -392,7 +458,8 @@ impl TryFrom<TypeRow> for CardType {
     type Error = AppError;
 
     fn try_from(r: TypeRow) -> Result<Self> {
-        let manifest = serde_json::from_str(&r.manifest).map_err(|e| AppError::Internal(e.into()))?;
+        let manifest = serde_json::from_str(&r.manifest)
+            .map_err(|e| AppError::Internal(e.into()))?;
         Ok(Self {
             id: r.id,
             token: r.token,
@@ -406,7 +473,8 @@ impl TryFrom<TypeRow> for CardType {
     }
 }
 
-const TYPE_COLUMNS: &str = "t.id, t.token, t.name, t.version, t.manifest, t.bytes, t.created_at,
+const TYPE_COLUMNS: &str =
+    "t.id, t.token, t.name, t.version, t.manifest, t.bytes, t.created_at,
     (SELECT COUNT(*) FROM cards c WHERE c.type_id = t.id) AS cards";
 
 /// A card of a brought type: the type and the card's fields.
@@ -419,8 +487,13 @@ pub struct TypedCard {
 impl TypedCard {
     /// The fields as the frame gets them.
     pub fn fields_json(&self) -> String {
-        Value::Object(self.fields.iter().map(|(k, v)| (k.clone(), Value::String(v.clone()))).collect::<Map<_, _>>())
-            .to_string()
+        Value::Object(
+            self.fields
+                .iter()
+                .map(|(k, v)| (k.clone(), Value::String(v.clone())))
+                .collect::<Map<_, _>>(),
+        )
+        .to_string()
     }
 }
 
@@ -430,23 +503,38 @@ impl App {
     /// - `Forbidden` for a token that may not change the account.
     /// - `BadRequest` for an invalid package, or when the account's quota is used up.
     /// - `Internal` if the database fails.
-    pub async fn upload_card_type(&self, access: &Access, data: &[u8]) -> Result<CardType> {
+    pub async fn upload_card_type(
+        &self,
+        access: &Access,
+        data: &[u8],
+    ) -> Result<CardType> {
         access.require_write()?;
         access.require_all_decks()?;
         let pkg = read_package(data)?;
-        let bytes: i64 = pkg.files.iter().map(|f| f.body.len()).sum::<usize>().try_into().unwrap_or(i64::MAX);
+        let bytes: i64 = pkg
+            .files
+            .iter()
+            .map(|f| f.body.len())
+            .sum::<usize>()
+            .try_into()
+            .unwrap_or(i64::MAX);
         let (count, stored): (i64, i64) =
             sqlx::query_as("SELECT COUNT(*), COALESCE(SUM(bytes), 0) FROM card_types WHERE user_id = ?")
                 .bind(access.user_id())
                 .fetch_one(&self.db)
                 .await?;
         if count >= MAX_TYPES {
-            return Err(bad(format!("an account keeps at most {MAX_TYPES} card types; delete unused ones first")));
+            return Err(bad(format!(
+                "an account keeps at most {MAX_TYPES} card types; delete unused ones first"
+            )));
         }
         if stored + bytes > MAX_STORED_BYTES {
-            return Err(bad("your card types use 20 MB already; delete unused ones first"));
+            return Err(bad(
+                "your card types use 20 MB already; delete unused ones first",
+            ));
         }
-        let manifest = serde_json::to_string(&pkg.manifest).map_err(|e| AppError::Internal(e.into()))?;
+        let manifest = serde_json::to_string(&pkg.manifest)
+            .map_err(|e| AppError::Internal(e.into()))?;
         let mut tx = self.db.begin().await?;
         let id: i64 = sqlx::query_scalar(
             "INSERT INTO card_types (user_id, token, name, version, manifest, bytes, created_at)
@@ -498,7 +586,10 @@ impl App {
     /// # Errors
     ///
     /// `Internal` if the database fails.
-    pub async fn latest_card_types(&self, access: &Access) -> Result<Vec<CardType>> {
+    pub async fn latest_card_types(
+        &self,
+        access: &Access,
+    ) -> Result<Vec<CardType>> {
         let mut all = self.card_types(access).await?;
         all.dedup_by(|b, a| a.name == b.name);
         Ok(all)
@@ -508,7 +599,11 @@ impl App {
     ///
     /// - `NotFound` if it isn't the user's.
     /// - `Internal` if the database fails.
-    pub async fn card_type(&self, access: &Access, id: i64) -> Result<CardType> {
+    pub async fn card_type(
+        &self,
+        access: &Access,
+        id: i64,
+    ) -> Result<CardType> {
         let row: TypeRow =
             sqlx::query_as(&format!("SELECT {TYPE_COLUMNS} FROM card_types t WHERE t.id = ? AND t.user_id = ?"))
                 .bind(id)
@@ -526,7 +621,11 @@ impl App {
     /// - `NotFound` if it isn't the user's.
     /// - `Conflict` while cards use it.
     /// - `Internal` if the database fails.
-    pub async fn delete_card_type(&self, access: &Access, id: i64) -> Result<()> {
+    pub async fn delete_card_type(
+        &self,
+        access: &Access,
+        id: i64,
+    ) -> Result<()> {
         access.require_write()?;
         access.require_all_decks()?;
         let ty = self.card_type(access, id).await?;
@@ -552,10 +651,12 @@ impl App {
     /// - `NotFound` for an unknown token.
     /// - `Internal` if the database fails.
     pub async fn card_type_by_token(&self, token: &str) -> Result<Manifest> {
-        let m: String = sqlx::query_scalar("SELECT manifest FROM card_types WHERE token = ?")
-            .bind(token)
-            .fetch_one(&self.db)
-            .await?;
+        let m: String = sqlx::query_scalar(
+            "SELECT manifest FROM card_types WHERE token = ?",
+        )
+        .bind(token)
+        .fetch_one(&self.db)
+        .await?;
         serde_json::from_str(&m).map_err(|e| AppError::Internal(e.into()))
     }
 
@@ -565,7 +666,11 @@ impl App {
     ///
     /// - `NotFound` for an unknown token or path.
     /// - `Internal` if the database fails.
-    pub async fn card_type_file(&self, token: &str, path: &str) -> Result<(String, Vec<u8>)> {
+    pub async fn card_type_file(
+        &self,
+        token: &str,
+        path: &str,
+    ) -> Result<(String, Vec<u8>)> {
         Ok(sqlx::query_as(
             "SELECT f.mime, f.body FROM card_type_files f JOIN card_types t ON t.id = f.type_id
              WHERE t.token = ? AND f.path = ?",
@@ -584,15 +689,19 @@ impl App {
     /// `Internal` if the database fails or the stored fields are broken.
     pub async fn typed_card(&self, card: &Card) -> Result<Option<TypedCard>> {
         let Some(type_id) = card.type_id else { return Ok(None) };
-        let row: TypeRow = sqlx::query_as(&format!("SELECT {TYPE_COLUMNS} FROM card_types t WHERE t.id = ?"))
-            .bind(type_id)
-            .fetch_one(&self.db)
-            .await?;
-        let fields: Option<String> = sqlx::query_scalar("SELECT fields FROM cards WHERE id = ?")
-            .bind(card.id)
-            .fetch_one(&self.db)
-            .await?;
-        let fields = serde_json::from_str(fields.as_deref().unwrap_or("{}")).map_err(|e| AppError::Internal(e.into()))?;
+        let row: TypeRow = sqlx::query_as(&format!(
+            "SELECT {TYPE_COLUMNS} FROM card_types t WHERE t.id = ?"
+        ))
+        .bind(type_id)
+        .fetch_one(&self.db)
+        .await?;
+        let fields: Option<String> =
+            sqlx::query_scalar("SELECT fields FROM cards WHERE id = ?")
+                .bind(card.id)
+                .fetch_one(&self.db)
+                .await?;
+        let fields = serde_json::from_str(fields.as_deref().unwrap_or("{}"))
+            .map_err(|e| AppError::Internal(e.into()))?;
         Ok(Some(TypedCard { ty: row.try_into()?, fields }))
     }
 
@@ -618,7 +727,14 @@ impl App {
             crate::auth::Actor::Web => "web",
             crate::auth::Actor::Agent { .. } => "agent",
         };
-        let id = self.insert_card(access.user_id(), deck_id, &NewCard::new(&front, &back), source).await?;
+        let id = self
+            .insert_card(
+                access.user_id(),
+                deck_id,
+                &NewCard::new(&front, &back),
+                source,
+            )
+            .await?;
         sqlx::query("UPDATE cards SET type_id = ?, fields = ? WHERE id = ?")
             .bind(type_id)
             .bind(fields_text(&fields))
@@ -636,10 +752,18 @@ impl App {
     /// - `NotFound` if the card isn't the user's.
     /// - `BadRequest` if the card has no type of its own, or a field breaks a rule.
     /// - `Internal` if the database fails.
-    pub async fn update_typed_card(&self, access: &Access, id: i64, fields: &BTreeMap<String, String>) -> Result<Card> {
+    pub async fn update_typed_card(
+        &self,
+        access: &Access,
+        id: i64,
+        fields: &BTreeMap<String, String>,
+    ) -> Result<Card> {
         access.require_write()?;
         let card = self.card(access, id).await?;
-        let typed = self.typed_card(&card).await?.ok_or_else(|| bad("this card has no type of its own"))?;
+        let typed = self
+            .typed_card(&card)
+            .await?
+            .ok_or_else(|| bad("this card has no type of its own"))?;
         let fields = check_fields(&typed.ty.manifest, fields)?;
         let (front, back) = summary(&typed.ty.manifest, &fields)?;
         sqlx::query("UPDATE cards SET front = ?, back = ?, fields = ?, updated_at = ? WHERE id = ? AND user_id = ?")
@@ -661,7 +785,12 @@ impl App {
     ///
     /// - `BadRequest` if it is no JSON or too long.
     /// - `Internal` if the database fails.
-    pub async fn note_response(&self, access: &Access, card_id: i64, raw: &str) -> Result<()> {
+    pub async fn note_response(
+        &self,
+        access: &Access,
+        card_id: i64,
+        raw: &str,
+    ) -> Result<()> {
         let response = check_response(raw)?;
         sqlx::query(
             "UPDATE review_log SET response = ?
@@ -683,7 +812,10 @@ fn fields_text(fields: &BTreeMap<String, String>) -> String {
 }
 
 /// The plain front and back of a typed card.
-fn summary(m: &Manifest, fields: &BTreeMap<String, String>) -> Result<(String, String)> {
+fn summary(
+    m: &Manifest,
+    fields: &BTreeMap<String, String>,
+) -> Result<(String, String)> {
     // An empty optional field leaves no `{key}` behind.
     let mut all = fields.clone();
     for f in &m.fields {
@@ -692,9 +824,13 @@ fn summary(m: &Manifest, fields: &BTreeMap<String, String>) -> Result<(String, S
     let front = fill(&m.summary.front, &all);
     let back = fill(&m.summary.back, &all);
     if front.is_empty() {
-        return Err(bad("the card's summary came out empty; fill in more fields"));
+        return Err(bad(
+            "the card's summary came out empty; fill in more fields",
+        ));
     }
-    if front.chars().count() > MAX_CARD_TEXT || back.chars().count() > MAX_CARD_TEXT {
+    if front.chars().count() > MAX_CARD_TEXT
+        || back.chars().count() > MAX_CARD_TEXT
+    {
         return Err(bad("the card is too long"));
     }
     Ok((front, back))
@@ -730,8 +866,11 @@ mod tests {
     }
 
     fn good(extra: &[(&str, &[u8])]) -> Vec<u8> {
-        let mut files: Vec<(&str, &[u8])> =
-            vec![(MANIFEST, GOOD.as_bytes()), ("chess.js", b"export {}"), ("board.css", b"a{}")];
+        let mut files: Vec<(&str, &[u8])> = vec![
+            (MANIFEST, GOOD.as_bytes()),
+            ("chess.js", b"export {}"),
+            ("board.css", b"a{}"),
+        ];
         files.extend_from_slice(extra);
         zip_of(&files)
     }
@@ -747,12 +886,16 @@ mod tests {
     fn reads_a_package() {
         let p = read_package(&good(&[("img/piece.png", b"\x89PNG")])).unwrap();
         assert_eq!(p.manifest.name, "Chess");
-        let paths: Vec<_> = p.files.iter().map(|f| (f.path.as_str(), f.mime)).collect();
-        assert_eq!(paths, [
-            ("chess.js", "text/javascript; charset=utf-8"),
-            ("board.css", "text/css; charset=utf-8"),
-            ("img/piece.png", "image/png")
-        ]);
+        let paths: Vec<_> =
+            p.files.iter().map(|f| (f.path.as_str(), f.mime)).collect();
+        assert_eq!(
+            paths,
+            [
+                ("chess.js", "text/javascript; charset=utf-8"),
+                ("board.css", "text/css; charset=utf-8"),
+                ("img/piece.png", "image/png")
+            ]
+        );
     }
 
     #[test]
@@ -776,14 +919,27 @@ mod tests {
 
     #[test]
     fn refuses_what_a_browser_would_open_as_a_page() {
-        for name in ["x.html", "x.svg", "x.htm", "x.xml", "x", "x.wasm", "x.JS.html"] {
-            assert!(refused(&good(&[(name, b"<script>")])).contains("only"), "{name}");
+        for name in
+            ["x.html", "x.svg", "x.htm", "x.xml", "x", "x.wasm", "x.JS.html"]
+        {
+            assert!(
+                refused(&good(&[(name, b"<script>")])).contains("only"),
+                "{name}"
+            );
         }
     }
 
     #[test]
     fn refuses_odd_paths() {
-        for name in ["../x.js", "/etc/x.js", "a/../../x.js", ".hidden.js", "a b.js", "a\\b.js", "a/b/c/d/e.js"] {
+        for name in [
+            "../x.js",
+            "/etc/x.js",
+            "a/../../x.js",
+            ".hidden.js",
+            "a b.js",
+            "a\\b.js",
+            "a/b/c/d/e.js",
+        ] {
             assert!(read_package(&good(&[(name, b"")])).is_err(), "{name}");
         }
     }
@@ -795,27 +951,57 @@ mod tests {
         assert!(data.len() < 100_000, "zeros pack small");
         assert!(refused(&data).contains("2 MB"));
         let names: Vec<String> = (0..70).map(|i| format!("f{i}.js")).collect();
-        let files: Vec<(&str, &[u8])> = names.iter().map(|n| (n.as_str(), b"".as_slice())).collect();
+        let files: Vec<(&str, &[u8])> =
+            names.iter().map(|n| (n.as_str(), b"".as_slice())).collect();
         assert!(refused(&good(&files)).contains("at most"));
         assert!(refused(b"not a zip").contains("no .zip"));
     }
 
     #[test]
     fn checks_the_manifest() {
-        let with = |m: &str| zip_of(&[(MANIFEST, m.as_bytes()), ("chess.js", b""), ("board.css", b"")]);
-        assert!(refused(&zip_of(&[("chess.js", b"")])).contains("no card-type.json"));
-        assert!(refused(&with(&GOOD.replace("\"name\"", "\"nmae\""))).contains("unknown field"));
-        assert!(refused(&with(&GOOD.replace("chess.js", "missing.js"))).contains("module"));
-        assert!(refused(&with(&GOOD.replace("{fen}\"", "{fenn}\""))).contains("no field"));
-        assert!(refused(&with(&GOOD.replace("\"moves\"", "\"fen\""))).contains("twice"));
-        assert!(refused(&with(&GOOD.replace("\"note\"", "\"No te\""))).contains("lowercase"));
-        assert!(refused(&with(&GOOD.replace("\"Chess\"", "\"\""))).contains("name is empty"));
+        let with = |m: &str| {
+            zip_of(&[
+                (MANIFEST, m.as_bytes()),
+                ("chess.js", b""),
+                ("board.css", b""),
+            ])
+        };
+        assert!(
+            refused(&zip_of(&[("chess.js", b"")]))
+                .contains("no card-type.json")
+        );
+        assert!(
+            refused(&with(&GOOD.replace("\"name\"", "\"nmae\"")))
+                .contains("unknown field")
+        );
+        assert!(
+            refused(&with(&GOOD.replace("chess.js", "missing.js")))
+                .contains("module")
+        );
+        assert!(
+            refused(&with(&GOOD.replace("{fen}\"", "{fenn}\"")))
+                .contains("no field")
+        );
+        assert!(
+            refused(&with(&GOOD.replace("\"moves\"", "\"fen\"")))
+                .contains("twice")
+        );
+        assert!(
+            refused(&with(&GOOD.replace("\"note\"", "\"No te\"")))
+                .contains("lowercase")
+        );
+        assert!(
+            refused(&with(&GOOD.replace("\"Chess\"", "\"\"")))
+                .contains("name is empty")
+        );
     }
 
     #[test]
     fn fills_the_summary() {
         let f: BTreeMap<String, String> =
-            [("fen".into(), "8/8 w".into()), ("moves".into(), "Nf3".into())].into_iter().collect();
+            [("fen".into(), "8/8 w".into()), ("moves".into(), "Nf3".into())]
+                .into_iter()
+                .collect();
         assert_eq!(fill("Chess: {fen}", &f), "Chess: 8/8 w");
         assert_eq!(fill("{moves}\n\n{note}", &f), "Nf3\n\n{note}");
         assert_eq!(fill("{ {moves}} {", &f), "{ Nf3} {");
@@ -825,20 +1011,51 @@ mod tests {
     fn checks_fields() {
         let m: Manifest = serde_json::from_str(GOOD).unwrap();
         let f = |pairs: &[(&str, &str)]| -> BTreeMap<String, String> {
-            pairs.iter().map(|(k, v)| ((*k).to_string(), (*v).to_string())).collect()
+            pairs
+                .iter()
+                .map(|(k, v)| ((*k).to_string(), (*v).to_string()))
+                .collect()
         };
-        let ok = check_fields(&m, &f(&[("fen", " 8/8 w "), ("moves", "Nf3"), ("note", "")])).unwrap();
+        let ok = check_fields(
+            &m,
+            &f(&[("fen", " 8/8 w "), ("moves", "Nf3"), ("note", "")]),
+        )
+        .unwrap();
         assert_eq!(ok, f(&[("fen", "8/8 w"), ("moves", "Nf3")]));
-        assert!(check_fields(&m, &f(&[("fen", "x")])).is_err(), "moves is required");
-        assert!(check_fields(&m, &f(&[("fen", "a\nb"), ("moves", "x")])).is_err(), "a line");
-        assert!(check_fields(&m, &f(&[("fen", "a"), ("moves", "x"), ("evil", "y")])).is_err());
-        assert!(check_fields(&m, &f(&[("fen", "a"), ("moves", "x"), ("note", "two\nlines")])).is_ok());
+        assert!(
+            check_fields(&m, &f(&[("fen", "x")])).is_err(),
+            "moves is required"
+        );
+        assert!(
+            check_fields(&m, &f(&[("fen", "a\nb"), ("moves", "x")])).is_err(),
+            "a line"
+        );
+        assert!(
+            check_fields(
+                &m,
+                &f(&[("fen", "a"), ("moves", "x"), ("evil", "y")])
+            )
+            .is_err()
+        );
+        assert!(
+            check_fields(
+                &m,
+                &f(&[("fen", "a"), ("moves", "x"), ("note", "two\nlines")])
+            )
+            .is_ok()
+        );
     }
 
     #[test]
     fn responses_are_small_json() {
-        assert_eq!(check_response(r#"{ "move": "Nf3" }"#).unwrap(), r#"{"move":"Nf3"}"#);
+        assert_eq!(
+            check_response(r#"{ "move": "Nf3" }"#).unwrap(),
+            r#"{"move":"Nf3"}"#
+        );
         assert!(check_response("<b>").is_err());
-        assert!(check_response(&format!("\"{}\"", "x".repeat(MAX_RESPONSE))).is_err());
+        assert!(
+            check_response(&format!("\"{}\"", "x".repeat(MAX_RESPONSE)))
+                .is_err()
+        );
     }
 }

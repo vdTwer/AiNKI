@@ -17,9 +17,19 @@ fn main() {
         .ok()
         .filter(|b| !b.trim().is_empty())
         .or_else(|| {
-            let commit = git(&["log", "-1", "--format=%h, %cd", "--date=format:%Y-%m-%d %H:%M"])?;
-            let dirty = git(&["status", "--porcelain", "--untracked-files=no"]).is_some();
-            Some(if dirty { format!("{commit} (with local changes)") } else { commit })
+            let commit = git(&[
+                "log",
+                "-1",
+                "--format=%h, %cd",
+                "--date=format:%Y-%m-%d %H:%M",
+            ])?;
+            let dirty = git(&["status", "--porcelain", "--untracked-files=no"])
+                .is_some();
+            Some(if dirty {
+                format!("{commit} (with local changes)")
+            } else {
+                commit
+            })
         })
         .unwrap_or_else(|| "unknown".into());
     println!("cargo:rustc-env=AINKI_BUILD={build}");

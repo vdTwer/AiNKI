@@ -28,7 +28,18 @@ use crate::{
 const SPLIT_VERSION: i64 = 1;
 
 /// How a multicard's back is split into items.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, sqlx::Type, schemars::JsonSchema)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    Hash,
+    Serialize,
+    Deserialize,
+    sqlx::Type,
+    schemars::JsonSchema,
+)]
 #[serde(rename_all = "lowercase")]
 #[sqlx(type_name = "TEXT", rename_all = "lowercase")]
 pub enum Split {
@@ -45,7 +56,8 @@ pub enum Split {
 }
 
 impl Split {
-    pub const ALL: [Self; 4] = [Self::Marked, Self::List, Self::Sections, Self::Parts];
+    pub const ALL: [Self; 4] =
+        [Self::Marked, Self::List, Self::Sections, Self::Parts];
 
     pub const fn as_str(self) -> &'static str {
         match self {
@@ -130,7 +142,9 @@ pub fn splits(back: &str) -> Vec<Split> {
 /// end tag has the depth of its start.
 fn walk(src: &str, mut f: impl FnMut(usize, &Event, Range<usize>)) {
     let mut depth = 0usize;
-    for (event, range) in Parser::new_ext(src, markdown::options()).into_offset_iter() {
+    for (event, range) in
+        Parser::new_ext(src, markdown::options()).into_offset_iter()
+    {
         match &event {
             Event::Start(_) => {
                 f(depth, &event, range);
@@ -203,14 +217,25 @@ pub fn marks(src: &str) -> Vec<(Range<usize>, String)> {
     let in_code = |at: usize| code.iter().any(|r| r.contains(&at));
     let mut out = Vec::new();
     let mut at = 0;
-    while let Some(open) = src.get(at..).and_then(|rest| rest.find("{{")).map(|i| at + i) {
-        let Some(close) = src.get(open + 2..).and_then(|rest| rest.find("}}")).map(|i| open + 2 + i) else { break };
+    while let Some(open) =
+        src.get(at..).and_then(|rest| rest.find("{{")).map(|i| at + i)
+    {
+        let Some(close) = src
+            .get(open + 2..)
+            .and_then(|rest| rest.find("}}"))
+            .map(|i| open + 2 + i)
+        else {
+            break;
+        };
         let inner = src.get(open + 2..close).unwrap_or("");
         if in_code(open) {
             at = open + 2;
             continue;
         }
-        if inner.contains("{{") || inner.contains("\n\n") || inner.trim().is_empty() {
+        if inner.contains("{{")
+            || inner.contains("\n\n")
+            || inner.trim().is_empty()
+        {
             at = open + 2;
             continue;
         }
@@ -230,7 +255,8 @@ fn sections(src: &str) -> Vec<(Range<usize>, String)> {
         }
     });
     let Some(top) = heads.iter().map(|h| h.0).min() else { return vec![] };
-    let starts: Vec<usize> = heads.iter().filter(|h| h.0 == top).map(|h| h.1).collect();
+    let starts: Vec<usize> =
+        heads.iter().filter(|h| h.0 == top).map(|h| h.1).collect();
     starts
         .iter()
         .enumerate()
@@ -254,7 +280,8 @@ fn parts(src: &str) -> Vec<(Range<usize>, String)> {
     }
     let mut out = Vec::new();
     let mut at = 0;
-    for r in rules.iter().cloned().chain(std::iter::once(src.len()..src.len())) {
+    for r in rules.iter().cloned().chain(std::iter::once(src.len()..src.len()))
+    {
         // The rule after a part goes with it, so it isn't shown as text.
         let text = src[at..r.start].trim();
         if !text.is_empty() {
@@ -288,8 +315,12 @@ fn match_items(old: &[String], new: &[String]) -> Vec<Option<usize>> {
         })
         .collect();
     for ((pos, slot), k) in pick.iter_mut().enumerate().zip(new) {
-        let (Some(o), Some(u)) = (old.get(pos), used.get_mut(pos)) else { continue };
-        let same_start = !k.is_empty() && !o.is_empty() && (o.starts_with(k.as_str()) || k.starts_with(o.as_str()));
+        let (Some(o), Some(u)) = (old.get(pos), used.get_mut(pos)) else {
+            continue;
+        };
+        let same_start = !k.is_empty()
+            && !o.is_empty()
+            && (o.starts_with(k.as_str()) || k.starts_with(o.as_str()));
         if slot.is_none() && !*u && same_start {
             *u = true;
             *slot = Some(pos);
@@ -362,7 +393,9 @@ pub fn asked(card: &Card, items: &[CardItem], now: i64) -> Vec<bool> {
     if matches!(card.card_state(), CardState::New | CardState::Review) {
         return vec![true; items.len()];
     }
-    let Some(first) = items.iter().filter(|i| i.learning()).map(|i| i.due).min() else {
+    let Some(first) =
+        items.iter().filter(|i| i.learning()).map(|i| i.due).min()
+    else {
         return vec![true; items.len()];
     };
     let until = now.max(first + 60);
@@ -382,7 +415,8 @@ fn summarize(items: &[CardItem], card: &CardSched) -> CardSched {
         out.due = 0;
         return out;
     }
-    let learning: Vec<&CardItem> = items.iter().filter(|i| i.learning()).collect();
+    let learning: Vec<&CardItem> =
+        items.iter().filter(|i| i.learning()).collect();
     out.state = if learning.is_empty() {
         CardState::Review
     } else if learning.iter().any(|i| i.card_state() == CardState::Relearning) {
@@ -390,12 +424,13 @@ fn summarize(items: &[CardItem], card: &CardSched) -> CardSched {
     } else {
         CardState::Learning
     };
-    let pool = if learning.is_empty() { items.iter().collect() } else { learning };
+    let pool =
+        if learning.is_empty() { items.iter().collect() } else { learning };
     out.due = pool.iter().map(|i| i.due).min().unwrap_or(0);
-    let weakest = items
-        .iter()
-        .filter(|i| i.stability.is_some())
-        .min_by(|a, b| a.stability.partial_cmp(&b.stability).unwrap_or(Ordering::Equal));
+    let weakest =
+        items.iter().filter(|i| i.stability.is_some()).min_by(|a, b| {
+            a.stability.partial_cmp(&b.stability).unwrap_or(Ordering::Equal)
+        });
     out.stability = weakest.and_then(|i| i.stability).map(num::f64_f32);
     out.difficulty = weakest.and_then(|i| i.difficulty).map(num::f64_f32);
     out
@@ -420,10 +455,12 @@ impl App {
         if card.multi.is_none() {
             return Ok(vec![]);
         }
-        Ok(sqlx::query_as("SELECT * FROM card_items WHERE card_id = ? ORDER BY position, id")
-            .bind(card.id)
-            .fetch_all(&self.db)
-            .await?)
+        Ok(sqlx::query_as(
+            "SELECT * FROM card_items WHERE card_id = ? ORDER BY position, id",
+        )
+        .bind(card.id)
+        .fetch_all(&self.db)
+        .await?)
     }
 
     /// Make the card a multicard split as `multi`, or a plain card again,
@@ -431,45 +468,69 @@ impl App {
     /// their memory, and so does an item that only gained or lost words at
     /// its end; a studied card that becomes a multicard starts every item
     /// from its memory.
-    pub(crate) async fn sync_items(&self, card: &Card, multi: Option<Split>) -> Result<()> {
+    pub(crate) async fn sync_items(
+        &self,
+        card: &Card,
+        multi: Option<Split>,
+    ) -> Result<()> {
         let mut tx = self.db.begin_with("BEGIN IMMEDIATE").await?;
         let Some(how) = multi else {
-            sqlx::query("DELETE FROM card_items WHERE card_id = ?").bind(card.id).execute(&mut *tx).await?;
-            sqlx::query("UPDATE cards SET multi = NULL WHERE id = ?").bind(card.id).execute(&mut *tx).await?;
+            sqlx::query("DELETE FROM card_items WHERE card_id = ?")
+                .bind(card.id)
+                .execute(&mut *tx)
+                .await?;
+            sqlx::query("UPDATE cards SET multi = NULL WHERE id = ?")
+                .bind(card.id)
+                .execute(&mut *tx)
+                .await?;
             tx.commit().await?;
             return Ok(());
         };
         let texts = items(&card.back, how).ok_or_else(|| no_items(how))?;
-        let old: Vec<CardItem> = sqlx::query_as("SELECT * FROM card_items WHERE card_id = ? ORDER BY position, id")
-            .bind(card.id)
-            .fetch_all(&mut *tx)
-            .await?;
+        let old: Vec<CardItem> = sqlx::query_as(
+            "SELECT * FROM card_items WHERE card_id = ? ORDER BY position, id",
+        )
+        .bind(card.id)
+        .fetch_all(&mut *tx)
+        .await?;
         let first_time = old.is_empty();
         let keys: Vec<String> = texts.iter().map(|t| key(t)).collect();
         let old_keys: Vec<String> = old.iter().map(|o| key(&o.text)).collect();
         let pick = match_items(&old_keys, &keys);
         for (pos, (text, picked)) in texts.iter().zip(&pick).enumerate() {
             if let Some(item) = picked.and_then(|n| old.get(n)) {
-                sqlx::query("UPDATE card_items SET position = ?, text = ? WHERE id = ?")
-                    .bind(num::usize_i64(pos))
-                    .bind(text)
-                    .bind(item.id)
-                    .execute(&mut *tx)
-                    .await?;
+                sqlx::query(
+                    "UPDATE card_items SET position = ?, text = ? WHERE id = ?",
+                )
+                .bind(num::usize_i64(pos))
+                .bind(text)
+                .bind(item.id)
+                .execute(&mut *tx)
+                .await?;
             } else {
-                let s = if first_time { card.sched() } else { CardSched::new_card() };
-                insert_item(&mut tx, card.id, num::usize_i64(pos), text, &s).await?;
+                let s = if first_time {
+                    card.sched()
+                } else {
+                    CardSched::new_card()
+                };
+                insert_item(&mut tx, card.id, num::usize_i64(pos), text, &s)
+                    .await?;
             }
         }
         for (n, item) in old.iter().enumerate() {
             if !pick.contains(&Some(n)) {
-                sqlx::query("DELETE FROM card_items WHERE id = ?").bind(item.id).execute(&mut *tx).await?;
+                sqlx::query("DELETE FROM card_items WHERE id = ?")
+                    .bind(item.id)
+                    .execute(&mut *tx)
+                    .await?;
             }
         }
-        let items: Vec<CardItem> = sqlx::query_as("SELECT * FROM card_items WHERE card_id = ? ORDER BY position, id")
-            .bind(card.id)
-            .fetch_all(&mut *tx)
-            .await?;
+        let items: Vec<CardItem> = sqlx::query_as(
+            "SELECT * FROM card_items WHERE card_id = ? ORDER BY position, id",
+        )
+        .bind(card.id)
+        .fetch_all(&mut *tx)
+        .await?;
         let s = summarize(&items, &card.sched());
         sqlx::query(
             "UPDATE cards SET multi = ?, state = ?, step = ?, stability = ?, difficulty = ?, due = ? WHERE id = ?",
@@ -506,15 +567,19 @@ impl App {
         let missed = missed_flags(&asked, missed)?;
         let deck = self.deck(access, card.deck_id).await?;
         let cfg = self.sched_config(access, &deck).await?;
-        let fsrs = scheduler::fsrs_for(&self.deck_params(access, deck.id).await?)?;
+        let fsrs =
+            scheduler::fsrs_for(&self.deck_params(access, deck.id).await?)?;
         let before_items = serde_json::to_string(&items).ok();
-        let item_logs = rate_items(&fsrs, &cfg, &mut items, &asked, &missed, &clock)?;
+        let item_logs =
+            rate_items(&fsrs, &cfg, &mut items, &asked, &missed, &clock)?;
 
         let before = card.sched();
         let n_asked = num::usize_i64(asked.iter().filter(|a| **a).count());
         let n_missed = num::usize_i64(missed.iter().filter(|m| **m).count());
         let c = answered_card(&items, &before, n_missed > 0, clock.now);
-        let elapsed_days = before.last_review.map_or(0, |last| clock.days_between(last, clock.now).max(0));
+        let elapsed_days = before
+            .last_review
+            .map_or(0, |last| clock.days_between(last, clock.now).max(0));
         let interval_secs = (c.due - clock.now).max(0);
 
         let mut tx = self.db.begin_with("BEGIN IMMEDIATE").await?;
@@ -555,7 +620,11 @@ impl App {
         } else {
             format::interval(interval_secs)
         };
-        Ok(AnswerResult { card: self.card(access, card.id).await?, interval_secs, interval })
+        Ok(AnswerResult {
+            card: self.card(access, card.id).await?,
+            interval_secs,
+            interval,
+        })
     }
 
     /// Split every multicard's back again, once after an update that
@@ -567,19 +636,28 @@ impl App {
     ///
     /// `Internal` if the database fails.
     pub async fn resplit_multicards(&self) -> Result<()> {
-        let version: i64 = sqlx::query_scalar("PRAGMA user_version").fetch_one(&self.db).await?;
+        let version: i64 = sqlx::query_scalar("PRAGMA user_version")
+            .fetch_one(&self.db)
+            .await?;
         if version >= SPLIT_VERSION {
             return Ok(());
         }
         let cards: Vec<Card> =
-            sqlx::query_as("SELECT * FROM cards WHERE multi IS NOT NULL").fetch_all(&self.db).await?;
+            sqlx::query_as("SELECT * FROM cards WHERE multi IS NOT NULL")
+                .fetch_all(&self.db)
+                .await?;
         for card in &cards {
             let how = card.multi.filter(|&h| split(&card.back, h).is_some());
             if let Err(e) = self.sync_items(card, how).await {
-                tracing::warn!("card {}: could not split its back again: {e}", card.id);
+                tracing::warn!(
+                    "card {}: could not split its back again: {e}",
+                    card.id
+                );
             }
         }
-        sqlx::query(&format!("PRAGMA user_version = {SPLIT_VERSION}")).execute(&self.db).await?;
+        sqlx::query(&format!("PRAGMA user_version = {SPLIT_VERSION}"))
+            .execute(&self.db)
+            .await?;
         Ok(())
     }
 
@@ -590,8 +668,12 @@ impl App {
         card_id: i64,
         prev_items: &str,
     ) -> Result<()> {
-        let items: Vec<CardItem> = serde_json::from_str(prev_items)
-            .map_err(|e| AppError::Internal(anyhow::anyhow!("card {card_id} has broken item snapshots: {e}")))?;
+        let items: Vec<CardItem> =
+            serde_json::from_str(prev_items).map_err(|e| {
+                AppError::Internal(anyhow::anyhow!(
+                    "card {card_id} has broken item snapshots: {e}"
+                ))
+            })?;
         for i in items {
             sqlx::query(
                 "UPDATE card_items SET state = ?, step = ?, stability = ?, difficulty = ?, due = ?,
@@ -621,12 +703,19 @@ pub fn no_items(how: Split) -> AppError {
         Split::Sections => "sections with headings",
         Split::Parts => "parts between --- lines",
     };
-    AppError::bad(format!("learning item by item this way needs at least two {what} on the back"))
+    AppError::bad(format!(
+        "learning item by item this way needs at least two {what} on the back"
+    ))
 }
 
 /// Items as the MCP API shows them: numbered from 1, with recall chances,
 /// and for a study turn whether each one is asked.
-pub fn items_json(items: &[CardItem], asked: Option<&[bool]>, clock: &Clock, decay: f32) -> Vec<Value> {
+pub fn items_json(
+    items: &[CardItem],
+    asked: Option<&[bool]>,
+    clock: &Clock,
+    decay: f32,
+) -> Vec<Value> {
     items
         .iter()
         .enumerate()
@@ -648,7 +737,12 @@ pub fn items_json(items: &[CardItem], asked: Option<&[bool]>, clock: &Clock, dec
 
 /// The card's schedule after an answer to its items: the items' summary,
 /// one more rep, and a lapse when a learned card missed anything.
-fn answered_card(items: &[CardItem], before: &CardSched, missed_any: bool, now: i64) -> CardSched {
+fn answered_card(
+    items: &[CardItem],
+    before: &CardSched,
+    missed_any: bool,
+    now: i64,
+) -> CardSched {
     let mut c = summarize(items, before);
     c.last_review = Some(now);
     c.reps = before.reps + 1;
@@ -669,9 +763,18 @@ fn rate_items(
     clock: &Clock,
 ) -> Result<Vec<(i64, Rating, CardState)>> {
     let mut logs = Vec::new();
-    for ((item, _), &was_missed) in items.iter_mut().zip(asked).zip(missed).filter(|((_, a), _)| **a) {
+    for ((item, _), &was_missed) in
+        items.iter_mut().zip(asked).zip(missed).filter(|((_, a), _)| **a)
+    {
         let rating = if was_missed { Rating::Again } else { Rating::Good };
-        let out = scheduler::answer(fsrs, cfg, item.id, &item.sched(), rating, clock)?;
+        let out = scheduler::answer(
+            fsrs,
+            cfg,
+            item.id,
+            &item.sched(),
+            rating,
+            clock,
+        )?;
         logs.push((item.id, rating, item.state));
         item.set(&out.card);
     }
@@ -690,7 +793,12 @@ fn missed_flags(asked: &[bool], missed: Missed) -> Result<Vec<bool>> {
             for p in positions {
                 match (asked.get(p), m.get_mut(p)) {
                     (Some(true), Some(slot)) => *slot = true,
-                    _ => return Err(AppError::bad(format!("item {} was not asked this time", p + 1))),
+                    _ => {
+                        return Err(AppError::bad(format!(
+                            "item {} was not asked this time",
+                            p + 1
+                        )));
+                    }
                 }
             }
             Ok(m)
@@ -698,7 +806,13 @@ fn missed_flags(asked: &[bool], missed: Missed) -> Result<Vec<bool>> {
     }
 }
 
-async fn insert_item(tx: &mut Tx<'_>, card_id: i64, position: i64, text: &str, s: &CardSched) -> Result<()> {
+async fn insert_item(
+    tx: &mut Tx<'_>,
+    card_id: i64,
+    position: i64,
+    text: &str,
+    s: &CardSched,
+) -> Result<()> {
     sqlx::query(
         "INSERT INTO card_items (card_id, position, text, state, step, stability, difficulty,
             due, last_review, reps, lapses)
@@ -741,7 +855,12 @@ async fn save_item(tx: &mut Tx<'_>, item: &CardItem) -> Result<()> {
 
 /// One row per asked item, under the card's review: (item, rating, state
 /// before).
-async fn log_item_reviews(tx: &mut Tx<'_>, log_id: i64, logs: &[(i64, Rating, CardState)], now: i64) -> Result<()> {
+async fn log_item_reviews(
+    tx: &mut Tx<'_>,
+    log_id: i64,
+    logs: &[(i64, Rating, CardState)],
+    now: i64,
+) -> Result<()> {
     for &(item_id, rating, state_before) in logs {
         sqlx::query(
             "INSERT INTO item_review_log (review_log_id, item_id, rating, state_before, reviewed_at)
@@ -764,12 +883,23 @@ mod tests {
 
     #[test]
     fn items_keep_their_memory_by_words_then_by_place() {
-        let v = |xs: &[&str]| xs.iter().map(|x| (*x).to_string()).collect::<Vec<_>>();
+        let v = |xs: &[&str]| {
+            xs.iter().map(|x| (*x).to_string()).collect::<Vec<_>>()
+        };
         // Moved items keep theirs; a reworded item at its old place keeps its own.
-        assert_eq!(match_items(&v(&["a", "b", "c"]), &v(&["c", "a"])), [Some(2), Some(0)]);
-        assert_eq!(match_items(&v(&["paris", "rome"]), &v(&["paris", "rome italy"])), [Some(0), Some(1)]);
+        assert_eq!(
+            match_items(&v(&["a", "b", "c"]), &v(&["c", "a"])),
+            [Some(2), Some(0)]
+        );
+        assert_eq!(
+            match_items(&v(&["paris", "rome"]), &v(&["paris", "rome italy"])),
+            [Some(0), Some(1)]
+        );
         // A new item is new, and no stored item is continued twice.
-        assert_eq!(match_items(&v(&["a"]), &v(&["a", "a", "z"])), [Some(0), None, None]);
+        assert_eq!(
+            match_items(&v(&["a"]), &v(&["a", "a", "z"])),
+            [Some(0), None, None]
+        );
         assert_eq!(match_items(&[], &v(&["x"])), [None]);
     }
 
@@ -779,9 +909,16 @@ mod tests {
 
     #[test]
     fn finds_list_items() {
-        let back = "Cohen says:\r\n1. One\r\n2) Two\r\n   still two\r\n\r\n3. Three";
-        assert_eq!(texts(back, Split::List), ["One", "Two\nstill two", "Three"]);
-        assert_eq!(texts("- a\n- b\n  - b1\n  - b2", Split::List), ["a", "b\n- b1\n- b2"]);
+        let back =
+            "Cohen says:\r\n1. One\r\n2) Two\r\n   still two\r\n\r\n3. Three";
+        assert_eq!(
+            texts(back, Split::List),
+            ["One", "Two\nstill two", "Three"]
+        );
+        assert_eq!(
+            texts("- a\n- b\n  - b1\n  - b2", Split::List),
+            ["a", "b\n- b1\n- b2"]
+        );
         assert!(split("1. Only one", Split::List).is_none());
         assert!(split("2026. was a year\nno list", Split::List).is_none());
         assert!(split("1.5 is a number\n2.5 too", Split::List).is_none());
@@ -812,7 +949,8 @@ mod tests {
 
     #[test]
     fn finds_sections_and_parts() {
-        let back = "Intro\n\n## will\nnow\n### detail\nx\n\n## going to\nplanned";
+        let back =
+            "Intro\n\n## will\nnow\n### detail\nx\n\n## going to\nplanned";
         assert_eq!(
             split(back, Split::Sections).unwrap(),
             [
@@ -824,7 +962,12 @@ mod tests {
         assert!(split("# only one\ntext", Split::Sections).is_none());
         let back = "one\n\n---\n\ntwo\nlines\n\n***\n\nthree";
         assert_eq!(texts(back, Split::Parts), ["one", "two\nlines", "three"]);
-        assert!(split(back, Split::Parts).unwrap().iter().all(|p| matches!(p, Piece::Item(_))));
+        assert!(
+            split(back, Split::Parts)
+                .unwrap()
+                .iter()
+                .all(|p| matches!(p, Piece::Item(_)))
+        );
         // Text right above --- is a heading, not a part.
         assert!(split("one\n---\ntwo", Split::Parts).is_none());
         assert_eq!(splits("- a\n- b"), [Split::List]);
@@ -832,9 +975,15 @@ mod tests {
 
     #[test]
     fn finds_marked_segments_inline_and_in_lists() {
-        assert_eq!(texts("Both {{good}} and {{ bad }}.", Split::Marked), ["good", "bad"]);
         assert_eq!(
-            texts("- {{an action in progress}}\n- {{a temporary situation}}, mostly", Split::Marked),
+            texts("Both {{good}} and {{ bad }}.", Split::Marked),
+            ["good", "bad"]
+        );
+        assert_eq!(
+            texts(
+                "- {{an action in progress}}\n- {{a temporary situation}}, mostly",
+                Split::Marked
+            ),
             ["an action in progress", "a temporary situation"]
         );
         // Text around the segments stays, in place.
@@ -866,6 +1015,9 @@ mod tests {
 
     #[test]
     fn keys_ignore_case_and_spacing() {
-        assert_eq!(key("The  Monster Always\nEscapes"), key("the monster always escapes"));
+        assert_eq!(
+            key("The  Monster Always\nEscapes"),
+            key("the monster always escapes")
+        );
     }
 }

@@ -65,7 +65,13 @@ type Content = (String, String, Option<String>, Option<String>, Option<Split>);
 
 impl Source {
     fn content(&self) -> Content {
-        (self.front.clone(), self.back.clone(), self.front_image.clone(), self.back_image.clone(), self.multi)
+        (
+            self.front.clone(),
+            self.back.clone(),
+            self.front_image.clone(),
+            self.back_image.clone(),
+            self.multi,
+        )
     }
 }
 
@@ -79,11 +85,16 @@ impl App {
     /// - `BadRequest` if fewer than two decks are picked, or the name breaks the deck rules.
     /// - `Conflict` if another deck already has the name.
     /// - `Internal` if the database fails.
-    pub async fn merge_decks(&self, access: &Access, input: MergeInput) -> Result<Merged> {
+    pub async fn merge_decks(
+        &self,
+        access: &Access,
+        input: MergeInput,
+    ) -> Result<Merged> {
         access.require_write()?;
         access.require_all_decks()?;
         let mut seen = HashSet::new();
-        let sources: Vec<i64> = input.sources.into_iter().filter(|id| seen.insert(*id)).collect();
+        let sources: Vec<i64> =
+            input.sources.into_iter().filter(|id| seen.insert(*id)).collect();
         if sources.len() < 2 {
             return Err(AppError::bad("pick at least two decks to merge"));
         }
@@ -91,20 +102,39 @@ impl App {
         for id in &sources {
             decks.push(self.deck(access, *id).await?);
         }
-        let first = decks.first().ok_or_else(|| AppError::bad("pick decks to merge"))?;
+        let first = decks
+            .first()
+            .ok_or_else(|| AppError::bad("pick decks to merge"))?;
         let preset_id = input.preset_id.unwrap_or(first.preset_id);
-        let deck = self.create_deck(access, &input.name, &input.description, Some(preset_id)).await?;
-        let how = Fill { keep_progress: input.keep_progress, delete_sources: input.delete_sources };
+        let deck = self
+            .create_deck(
+                access,
+                &input.name,
+                &input.description,
+                Some(preset_id),
+            )
+            .await?;
+        let how = Fill {
+            keep_progress: input.keep_progress,
+            delete_sources: input.delete_sources,
+        };
         match self.fill(access, &deck, &sources, how).await {
             Ok((cards, duplicates)) => {
-                let deleted_decks = if how.delete_sources { num::usize_i64(sources.len()) } else { 0 };
+                let deleted_decks = if how.delete_sources {
+                    num::usize_i64(sources.len())
+                } else {
+                    0
+                };
                 Ok(Merged { deck, cards, duplicates, deleted_decks })
             }
             Err(e) => {
                 // No half-filled deck: the cards went in one transaction,
                 // so only the empty deck is left to take away.
                 if let Err(cleanup) = self.delete_deck(access, deck.id).await {
-                    tracing::error!("merge: removing the empty deck {} failed: {cleanup}", deck.id);
+                    tracing::error!(
+                        "merge: removing the empty deck {} failed: {cleanup}",
+                        deck.id
+                    );
                 }
                 Err(e)
             }
@@ -113,7 +143,13 @@ impl App {
 
     /// Copy (or move) the cards of `sources` into `deck`, all or nothing.
     /// Returns (cards in the new deck, duplicates left out).
-    async fn fill(&self, access: &Access, deck: &Deck, sources: &[i64], how: Fill) -> Result<(i64, i64)> {
+    async fn fill(
+        &self,
+        access: &Access,
+        deck: &Deck,
+        sources: &[i64],
+        how: Fill,
+    ) -> Result<(i64, i64)> {
         let mut tx = self.db.begin_with("BEGIN IMMEDIATE").await?;
         // Each content once: the card in the new deck that holds it.
         let mut kept: HashMap<Content, i64> = HashMap::new();
@@ -150,9 +186,18 @@ impl App {
                     continue;
                 }
                 let id = if how.delete_sources {
-                    self.move_into(&mut tx, access, deck, &card, how.keep_progress, t).await?
+                    self.move_into(
+                        &mut tx,
+                        access,
+                        deck,
+                        &card,
+                        how.keep_progress,
+                        t,
+                    )
+                    .await?
                 } else {
-                    self.copy_card(&mut tx, access, deck, &card, schedule, t).await?
+                    self.copy_card(&mut tx, access, deck, &card, schedule, t)
+                        .await?
                 };
                 kept.insert(card.content(), id);
                 cards += 1;

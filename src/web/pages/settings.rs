@@ -6,7 +6,11 @@
 )]
 use crate::web::*;
 
-pub(crate) async fn settings_page(State(app): State<AppState>, user: WebUser, Flash(msg): Flash) -> WebResult {
+pub(crate) async fn settings_page(
+    State(app): State<AppState>,
+    user: WebUser,
+    Flash(msg): Flash,
+) -> WebResult {
     let access = user.access();
     let u = &user.0;
     let reviews = app.optimizable_reviews(&access).await?;
@@ -186,9 +190,17 @@ pub(crate) async fn settings_update(
         async {
             let settings = Settings {
                 timezone: f.timezone.trim(),
-                rollover_hour: f.rollover_hour.trim().parse().unwrap_or(user.0.rollover_hour),
+                rollover_hour: f
+                    .rollover_hour
+                    .trim()
+                    .parse()
+                    .unwrap_or(user.0.rollover_hour),
                 four_buttons: f.four_buttons.is_some(),
-                font_scale: f.font_scale.trim().parse().unwrap_or(user.0.font_scale),
+                font_scale: f
+                    .font_scale
+                    .trim()
+                    .parse()
+                    .unwrap_or(user.0.font_scale),
                 optimize_include_agent: f.optimize_include_agent.is_some(),
             };
             app.update_settings(user.0.id, &settings).await?;
@@ -216,7 +228,11 @@ pub(crate) async fn password_update(
         return or_back("/settings#password", Err(e));
     }
     let token = app.create_session(user.0.id).await?;
-    Ok((jar.add(session_cookie(&app, token)).add(flash_cookie("Password changed.")), Redirect::to("/settings"))
+    Ok((
+        jar.add(session_cookie(&app, token))
+            .add(flash_cookie("Password changed.")),
+        Redirect::to("/settings"),
+    )
         .into_response())
 }
 
@@ -240,7 +256,10 @@ pub(crate) async fn study_settings_update(
     Form(f): Form<StudySettingsForm>,
 ) -> WebResult {
     let u = &user.0;
-    let quiet = match (f.quiet_from.trim().parse::<i64>(), f.quiet_to.trim().parse::<i64>()) {
+    let quiet = match (
+        f.quiet_from.trim().parse::<i64>(),
+        f.quiet_to.trim().parse::<i64>(),
+    ) {
         (Ok(a), Ok(b)) => Some((a, b)),
         _ => None,
     };
@@ -296,26 +315,43 @@ pub(crate) async fn auto_optimize(
     app.set_auto_optimize(user.0.id, f.on.is_some()).await?;
     Ok(redirect_msg(
         "/settings#fsrs",
-        if f.on.is_some() { "FSRS will be optimized every month." } else { "Automatic optimization is off." },
+        if f.on.is_some() {
+            "FSRS will be optimized every month."
+        } else {
+            "Automatic optimization is off."
+        },
     ))
 }
 
-pub(crate) async fn optimize(State(app): State<AppState>, user: WebUser) -> WebResult {
+pub(crate) async fn optimize(
+    State(app): State<AppState>,
+    user: WebUser,
+) -> WebResult {
     let result = app.optimize_parameters(&user.access()).await;
     let msg = match result {
-        Ok(v) => v.get("note").and_then(serde_json::Value::as_str).unwrap_or("Done.").to_string(),
+        Ok(v) => v
+            .get("note")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or("Done.")
+            .to_string(),
         Err(AppError::BadRequest(m)) => capitalize(&m),
         Err(e) => return Err(e.into()),
     };
     Ok(redirect_msg("/settings#fsrs", &msg))
 }
 
-pub(crate) async fn reset_params(State(app): State<AppState>, user: WebUser) -> WebResult {
+pub(crate) async fn reset_params(
+    State(app): State<AppState>,
+    user: WebUser,
+) -> WebResult {
     or_back(
         "/settings#fsrs",
         async {
             app.reset_parameters(&user.access()).await?;
-            Ok(redirect_msg("/settings#fsrs", "FSRS parameters reset to the defaults."))
+            Ok(redirect_msg(
+                "/settings#fsrs",
+                "FSRS parameters reset to the defaults.",
+            ))
         }
         .await,
     )

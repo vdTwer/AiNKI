@@ -91,14 +91,35 @@ impl App {
     /// # Errors
     ///
     /// `Internal` if the database fails. Also `Internal` if stored FSRS parameters are broken.
-    pub async fn outlook(&self, access: &Access, decks: &[DeckSummary]) -> Result<Outlook> {
+    pub async fn outlook(
+        &self,
+        access: &Access,
+        decks: &[DeckSummary],
+    ) -> Result<Outlook> {
         let clock = access.user.clock();
-        let presets: HashMap<i64, _> = self.list_presets(access).await?.into_iter().map(|p| (p.id, p)).collect();
+        let presets: HashMap<i64, _> = self
+            .list_presets(access)
+            .await?
+            .into_iter()
+            .map(|p| (p.id, p))
+            .collect();
         let book = self.param_book(access).await?;
-        let horizon = clock.day_start(clock.today() + Duration::days(num::usize_i64(DAYS)));
+        let horizon = clock
+            .day_start(clock.today() + Duration::days(num::usize_i64(DAYS)));
         // Read as one JSON array: sqlx hands rows over one by one, which
         // costs more than the query once there are thousands.
-        type Row = (i64, i64, i64, i64, Option<f32>, Option<f32>, i64, Option<i64>, i64, i64);
+        type Row = (
+            i64,
+            i64,
+            i64,
+            i64,
+            Option<f32>,
+            Option<f32>,
+            i64,
+            Option<i64>,
+            i64,
+            i64,
+        );
         let Json(rows): Json<Vec<Row>> = sqlx::query_scalar(
             "SELECT json_group_array(json_array(id, deck_id, state, step, stability, difficulty, due, last_review,
                  reps, lapses))
@@ -109,10 +130,34 @@ impl App {
         .fetch_one(&self.db)
         .await?;
         let mut by_deck: HashMap<i64, Vec<(i64, CardSched)>> = HashMap::new();
-        for (id, deck, state, step, stability, difficulty, due, last_review, reps, lapses) in rows {
-            let state = CardState::from_stored(state)
-                .ok_or_else(|| AppError::Internal(anyhow::anyhow!("card {id} has the unknown state {state}")))?;
-            let sched = CardSched { state, step, stability, difficulty, due, last_review, reps, lapses };
+        for (
+            id,
+            deck,
+            state,
+            step,
+            stability,
+            difficulty,
+            due,
+            last_review,
+            reps,
+            lapses,
+        ) in rows
+        {
+            let state = CardState::from_stored(state).ok_or_else(|| {
+                AppError::Internal(anyhow::anyhow!(
+                    "card {id} has the unknown state {state}"
+                ))
+            })?;
+            let sched = CardSched {
+                state,
+                step,
+                stability,
+                difficulty,
+                due,
+                last_review,
+                reps,
+                lapses,
+            };
             by_deck.entry(deck).or_default().push((id, sched));
         }
         let plans = decks
@@ -166,7 +211,16 @@ pub fn forecast(plans: &[DeckPlan], clock: &Clock) -> anyhow::Result<Outlook> {
     for plan in plans {
         for (id, card) in &plan.cards {
             let mut acc = Acc::default();
-            walk(plan, clock, *id, card, card.due.max(clock.now), 1.0, 0, &mut acc)?;
+            walk(
+                plan,
+                clock,
+                *id,
+                card,
+                card.due.max(clock.now),
+                1.0,
+                0,
+                &mut acc,
+            )?;
             add(&mut total, &acc, 1.0);
         }
         for (day, &n) in plan.new_cards.iter().enumerate() {
@@ -174,8 +228,13 @@ pub fn forecast(plans: &[DeckPlan], clock: &Clock) -> anyhow::Result<Outlook> {
                 continue;
             }
             // New cards are alike, so one walk stands for all of them.
-            let at =
-                if day == 0 { clock.now } else { clock.day_start(clock.today() + Duration::days(num::usize_i64(day))) };
+            let at = if day == 0 {
+                clock.now
+            } else {
+                clock.day_start(
+                    clock.today() + Duration::days(num::usize_i64(day)),
+                )
+            };
             let mut acc = Acc::default();
             walk(plan, clock, 0, &CardSched::new_card(), at, 1.0, 0, &mut acc)?;
             add(&mut total, &acc, f64::from(n));
@@ -207,7 +266,8 @@ fn walk(
     k: u32,
     acc: &mut Acc,
 ) -> anyhow::Result<()> {
-    let day = num::i64_usize((clock.date_of(at) - clock.today()).num_days().max(0));
+    let day =
+        num::i64_usize((clock.date_of(at) - clock.today()).num_days().max(0));
     let Some(slot) = acc.days.get_mut(day) else {
         leaf(acc, p, k);
         return Ok(());
@@ -228,7 +288,8 @@ fn walk(
     let recall = match (card.state, card.memory(), card.last_review) {
         (CardState::Review, Some(memory), Some(last)) => {
             let elapsed = num::i64_f32((at - last).max(0)) / 86_400.0;
-            f64::from(fsrs::current_retrievability(memory, elapsed, plan.decay)).clamp(0.0, 1.0)
+            f64::from(fsrs::current_retrievability(memory, elapsed, plan.decay))
+                .clamp(0.0, 1.0)
         }
         // Learning cards are followed through their steps with Good.
         _ => 1.0,
@@ -262,12 +323,28 @@ fn settle(
 ) -> anyhow::Result<CardSched> {
     let at_clock = |t: i64| Clock::new(t, clock.tz, clock.rollover_hour);
     let day = clock.date_of(at);
-    let mut out = scheduler::answer(&plan.fsrs, &plan.cfg, id, card, rating, &at_clock(at))?.card;
+    let mut out = scheduler::answer(
+        &plan.fsrs,
+        &plan.cfg,
+        id,
+        card,
+        rating,
+        &at_clock(at),
+    )?
+    .card;
     for _ in 0..MAX_STEPS_PER_DAY {
         if out.state == CardState::Review || clock.date_of(out.due) != day {
             return Ok(out);
         }
-        out = scheduler::answer(&plan.fsrs, &plan.cfg, id, &out, Rating::Good, &at_clock(out.due))?.card;
+        out = scheduler::answer(
+            &plan.fsrs,
+            &plan.cfg,
+            id,
+            &out,
+            Rating::Good,
+            &at_clock(out.due),
+        )?
+        .card;
     }
     Ok(out)
 }
@@ -310,14 +387,20 @@ mod tests {
             stability: Some(stability),
             difficulty: Some(5.0),
             due,
-            last_review: Some(due - num::f64_i64(f64::from(stability.max(1.0))) * DAY),
+            last_review: Some(
+                due - num::f64_i64(f64::from(stability.max(1.0))) * DAY,
+            ),
             reps: 3,
             lapses: 0,
         }
     }
 
     fn outlook(cards: Vec<CardSched>, new_cards: [u32; DAYS]) -> Outlook {
-        let cards = cards.into_iter().enumerate().map(|(i, c)| (num::usize_i64(i) + 1, c)).collect();
+        let cards = cards
+            .into_iter()
+            .enumerate()
+            .map(|(i, c)| (num::usize_i64(i) + 1, c))
+            .collect();
         forecast(&[plan(cards, new_cards)], &clock()).unwrap()
     }
 
@@ -339,7 +422,11 @@ mod tests {
     fn a_young_card_comes_back_within_the_week() {
         let o = outlook(vec![learned(1.0, 1)], [0; DAYS]);
         assert!((o.days[1] - 1.0).abs() < 1e-9, "due tomorrow: {:?}", o.days);
-        assert!(o.later() > 1.5, "a one-day card returns more than once: {:?}", o.days);
+        assert!(
+            o.later() > 1.5,
+            "a one-day card returns more than once: {:?}",
+            o.days
+        );
         assert!(o.variance > 0.0);
     }
 
@@ -364,24 +451,40 @@ mod tests {
         let o = outlook(vec![], [0, 0, 5, 0, 0, 0, 0]);
         assert!(o.days[1].abs() < f64::EPSILON);
         assert!((o.days[2] - 5.0).abs() < 1e-9, "{:?}", o.days);
-        assert!(o.days[3..].iter().sum::<f64>() > 0.0, "new cards come back: {:?}", o.days);
+        assert!(
+            o.days[3..].iter().sum::<f64>() > 0.0,
+            "new cards come back: {:?}",
+            o.days
+        );
         assert!((o.floor - 5.0).abs() < 1e-9);
     }
 
     #[test]
     fn the_range_holds_the_mean_and_never_dips_below_the_certain() {
-        let cards = (1..=40).map(|i| learned(1.0 + num::i64_f32(i) / 4.0, i % 6 + 1)).collect();
+        let cards = (1..=40)
+            .map(|i| learned(1.0 + num::i64_f32(i) / 4.0, i % 6 + 1))
+            .collect();
         let o = outlook(cards, [0, 3, 3, 3, 3, 3, 3]);
         let (low, high) = o.later_range();
         let mean = o.later();
-        assert!(num::i64_f64(low) <= mean && mean <= num::i64_f64(high), "{low} {mean} {high}");
-        assert!(num::i64_f64(low) >= o.floor.floor(), "{low} below {}", o.floor);
+        assert!(
+            num::i64_f64(low) <= mean && mean <= num::i64_f64(high),
+            "{low} {mean} {high}"
+        );
+        assert!(
+            num::i64_f64(low) >= o.floor.floor(),
+            "{low} below {}",
+            o.floor
+        );
         assert!(high > low);
     }
 
     #[test]
     fn the_same_inputs_give_the_same_forecast() {
         let cards: Vec<_> = (1..=10).map(|i| learned(2.0, i % 4)).collect();
-        assert_eq!(outlook(cards.clone(), [2; DAYS]), outlook(cards, [2; DAYS]));
+        assert_eq!(
+            outlook(cards.clone(), [2; DAYS]),
+            outlook(cards, [2; DAYS])
+        );
     }
 }

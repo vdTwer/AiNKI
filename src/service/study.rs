@@ -1,6 +1,9 @@
 //! Studying: the next card, answers and undo.
 
-#[allow(clippy::wildcard_imports, reason = "an area of the service sees the service's shared imports and types")]
+#[allow(
+    clippy::wildcard_imports,
+    reason = "an area of the service sees the service's shared imports and types"
+)]
 use super::*;
 
 #[derive(Debug, Serialize)]
@@ -48,7 +51,9 @@ pub(crate) async fn save_answered_card(
     .execute(&mut **tx)
     .await?;
     if updated.rows_affected() == 0 {
-        return Err(AppError::Conflict("this card was already answered".into()));
+        return Err(AppError::Conflict(
+            "this card was already answered".into(),
+        ));
     }
     Ok(())
 }
@@ -56,17 +61,28 @@ pub(crate) async fn save_answered_card(
 /// Whether the next card should be a new one: new cards and reviews are
 /// interleaved so both progress at the same rate through the day.
 fn prefer_new(summaries: &[DeckSummary]) -> bool {
-    let (new_done, new_left, rev_done, rev_left) = summaries.iter().fold((0, 0, 0, 0), |a, s| {
-        (a.0 + s.new_done_today, a.1 + s.new_today, a.2 + s.review_done_today, a.3 + s.review_due)
-    });
+    let (new_done, new_left, rev_done, rev_left) =
+        summaries.iter().fold((0, 0, 0, 0), |a, s| {
+            (
+                a.0 + s.new_done_today,
+                a.1 + s.new_today,
+                a.2 + s.review_done_today,
+                a.3 + s.review_due,
+            )
+        });
     new_left > 0
         && (rev_left == 0
             || (num::i64_f64(new_done) / num::i64_f64(new_done + new_left))
-                <= (num::i64_f64(rev_done) / num::i64_f64((rev_done + rev_left).max(1))))
+                <= (num::i64_f64(rev_done)
+                    / num::i64_f64((rev_done + rev_left).max(1))))
 }
 
 impl App {
-    pub(crate) async fn sched_config(&self, access: &Access, deck: &Deck) -> Result<SchedConfig> {
+    pub(crate) async fn sched_config(
+        &self,
+        access: &Access,
+        deck: &Deck,
+    ) -> Result<SchedConfig> {
         sched_config_for(&self.preset(access, deck.preset_id).await?, deck)
     }
 
@@ -76,7 +92,11 @@ impl App {
     ///
     /// - `NotFound` if a deck is given that the access doesn't see.
     /// - `Internal` if the database fails or a preset is broken.
-    pub async fn next_card(&self, access: &Access, deck_id: Option<i64>) -> Result<Option<StudyCard>> {
+    pub async fn next_card(
+        &self,
+        access: &Access,
+        deck_id: Option<i64>,
+    ) -> Result<Option<StudyCard>> {
         let summaries: Vec<DeckSummary> = self
             .deck_summaries(access)
             .await?
@@ -91,8 +111,16 @@ impl App {
         let remaining: i64 = summaries.iter().map(DeckSummary::due_total).sum();
         let n = now();
         let all_ids: Vec<i64> = summaries.iter().map(|s| s.deck.id).collect();
-        let review_ids: Vec<i64> = summaries.iter().filter(|s| s.review_due > 0).map(|s| s.deck.id).collect();
-        let new_ids: Vec<i64> = summaries.iter().filter(|s| s.new_today > 0).map(|s| s.deck.id).collect();
+        let review_ids: Vec<i64> = summaries
+            .iter()
+            .filter(|s| s.review_due > 0)
+            .map(|s| s.deck.id)
+            .collect();
+        let new_ids: Vec<i64> = summaries
+            .iter()
+            .filter(|s| s.new_today > 0)
+            .map(|s| s.deck.id)
+            .collect();
 
         let pick = |ids: &[i64], cond: &str, order: &str| {
             let sql = format!(
@@ -105,12 +133,15 @@ impl App {
                 if ids.is_empty() {
                     return Ok::<Option<Card>, AppError>(None);
                 }
-                let q = sqlx::query_as::<_, Card>(&sql).bind(user_id).bind(id_list(&ids));
+                let q = sqlx::query_as::<_, Card>(&sql)
+                    .bind(user_id)
+                    .bind(id_list(&ids));
                 Ok(q.bind(n).fetch_optional(&self.db).await?)
             }
         };
 
-        let learning = pick(&all_ids, "state IN (1, 3) AND due <= ?", "due").await?;
+        let learning =
+            pick(&all_ids, "state IN (1, 3) AND due <= ?", "due").await?;
         // Catching up, the cards most likely still remembered come first:
         // the least time gone relative to their stability.
         let review_order = if access.user.catch_up {
@@ -118,8 +149,10 @@ impl App {
         } else {
             "due, id".to_string()
         };
-        let review = pick(&review_ids, "state = 2 AND due <= ?", &review_order).await?;
-        let new = pick(&new_ids, "state = 0 AND ? IS NOT NULL", "position, id").await?;
+        let review =
+            pick(&review_ids, "state = 2 AND due <= ?", &review_order).await?;
+        let new = pick(&new_ids, "state = 0 AND ? IS NOT NULL", "position, id")
+            .await?;
 
         let prefer_new = prefer_new(&summaries);
 
@@ -129,23 +162,38 @@ impl App {
             (None, Some(r), None) => Some(r),
             (None, None, Some(nw)) => Some(nw),
             (None, None, None) => {
-                let ahead = format!("state IN (1, 3) AND due <= ? + {LEARN_AHEAD_SECS}");
+                let ahead = format!(
+                    "state IN (1, 3) AND due <= ? + {LEARN_AHEAD_SECS}"
+                );
                 pick(&all_ids, &ahead, "due").await?
             }
         };
         let Some(card) = chosen else {
             return Ok(None);
         };
-        let deck =
-            summaries.into_iter().find(|s| s.deck.id == card.deck_id).map(|s| s.deck).ok_or(AppError::NotFound)?;
+        let deck = summaries
+            .into_iter()
+            .find(|s| s.deck.id == card.deck_id)
+            .map(|s| s.deck)
+            .ok_or(AppError::NotFound)?;
         let previews = self.previews(access, &card, &deck).await?;
-        Ok(Some(StudyCard { card, deck, previews, remaining: remaining.max(1) }))
+        Ok(Some(StudyCard {
+            card,
+            deck,
+            previews,
+            remaining: remaining.max(1),
+        }))
     }
 
     /// # Errors
     ///
     /// `Internal` if the database fails or the deck's preset or FSRS parameters are broken.
-    pub async fn previews(&self, access: &Access, card: &Card, deck: &Deck) -> Result<Vec<(Rating, String)>> {
+    pub async fn previews(
+        &self,
+        access: &Access,
+        card: &Card,
+        deck: &Deck,
+    ) -> Result<Vec<(Rating, String)>> {
         let cfg = self.sched_config(access, deck).await?;
         let params = self.deck_params(access, deck.id).await?;
         let fsrs = scheduler::fsrs_for(&params)?;
@@ -154,7 +202,8 @@ impl App {
         Rating::ALL
             .iter()
             .map(|&r| {
-                let out = scheduler::answer(&fsrs, &cfg, card.id, &sched, r, &clock)?;
+                let out =
+                    scheduler::answer(&fsrs, &cfg, card.id, &sched, r, &clock)?;
                 Ok((r, out.label()))
             })
             .collect()
@@ -181,12 +230,18 @@ impl App {
         if let Some(reps) = expected_reps
             && reps != card.reps
         {
-            return Err(AppError::Conflict("this card was already answered".into()));
+            return Err(AppError::Conflict(
+                "this card was already answered".into(),
+            ));
         }
         if card.multi.is_some() {
             // A plain rating on a multicard: Again missed every asked item,
             // anything else remembered them all.
-            let missed = if rating == Rating::Again { Missed::All } else { Missed::These(vec![]) };
+            let missed = if rating == Rating::Again {
+                Missed::All
+            } else {
+                Missed::These(vec![])
+            };
             return self.answer_items(access, &card, missed, duration_ms).await;
         }
         let deck = self.deck(access, card.deck_id).await?;
@@ -195,7 +250,8 @@ impl App {
         let fsrs = scheduler::fsrs_for(&params)?;
         let clock = access.user.clock();
         let before = card.sched();
-        let out = scheduler::answer(&fsrs, &cfg, card.id, &before, rating, &clock)?;
+        let out =
+            scheduler::answer(&fsrs, &cfg, card.id, &before, rating, &clock)?;
         let c = &out.card;
 
         let mut tx = self.db.begin_with("BEGIN IMMEDIATE").await?;
@@ -250,14 +306,19 @@ impl App {
         access.require_review()?;
         let card = self.card(access, card_id).await?;
         if card.multi.is_none() {
-            return Err(AppError::bad("this card is not learned item by item; answer it with a rating"));
+            return Err(AppError::bad(
+                "this card is not learned item by item; answer it with a rating",
+            ));
         }
         if let Some(reps) = expected_reps
             && reps != card.reps
         {
-            return Err(AppError::Conflict("this card was already answered".into()));
+            return Err(AppError::Conflict(
+                "this card was already answered".into(),
+            ));
         }
-        self.answer_items(access, &card, Missed::These(missed), duration_ms).await
+        self.answer_items(access, &card, Missed::These(missed), duration_ms)
+            .await
     }
 
     /// Undo the most recent answer made through the same channel (web or
@@ -288,15 +349,21 @@ impl App {
         .await?;
         let Some(last) = last else { return Ok(None) };
         let card = self.card(access, last.card_id).await?;
-        let newest: i64 = sqlx::query_scalar("SELECT MAX(id) FROM review_log WHERE card_id = ?")
-            .bind(card.id)
-            .fetch_one(&self.db)
-            .await?;
+        let newest: i64 = sqlx::query_scalar(
+            "SELECT MAX(id) FROM review_log WHERE card_id = ?",
+        )
+        .bind(card.id)
+        .fetch_one(&self.db)
+        .await?;
         // Imported history has no snapshot to go back to; a snapshot that
         // fails to parse is damage, not "nothing to undo".
         let Some(prev) = last.prev_card.as_deref() else { return Ok(None) };
-        let prev: CardSched = serde_json::from_str(prev)
-            .map_err(|e| AppError::Internal(anyhow::anyhow!("review {} has a broken snapshot: {e}", last.id)))?;
+        let prev: CardSched = serde_json::from_str(prev).map_err(|e| {
+            AppError::Internal(anyhow::anyhow!(
+                "review {} has a broken snapshot: {e}",
+                last.id
+            ))
+        })?;
         if newest != last.id {
             return Ok(None);
         }
@@ -338,17 +405,26 @@ impl App {
     ///
     /// - `NotFound` if a deck is given that the access doesn't see.
     /// - `Internal` if the database fails.
-    pub async fn next_review_at(&self, access: &Access, deck_id: Option<i64>) -> Result<Option<i64>> {
+    pub async fn next_review_at(
+        &self,
+        access: &Access,
+        deck_id: Option<i64>,
+    ) -> Result<Option<i64>> {
         let deck_ids: Vec<i64> = match deck_id {
             Some(id) => vec![self.deck(access, id).await?.id],
-            None => self.decks(access).await?.into_iter().map(|d| d.id).collect(),
+            None => {
+                self.decks(access).await?.into_iter().map(|d| d.id).collect()
+            }
         };
         if deck_ids.is_empty() {
             return Ok(None);
         }
         let sql = "SELECT MIN(due) FROM cards WHERE user_id = ? AND suspended = 0 AND state != 0
              AND due > ? AND deck_id IN (SELECT value FROM json_each(?))";
-        let q = sqlx::query_scalar::<_, Option<i64>>(sql).bind(access.user_id()).bind(now()).bind(id_list(&deck_ids));
+        let q = sqlx::query_scalar::<_, Option<i64>>(sql)
+            .bind(access.user_id())
+            .bind(now())
+            .bind(id_list(&deck_ids));
         Ok(q.fetch_one(&self.db).await?)
     }
 
@@ -356,7 +432,11 @@ impl App {
     ///
     /// - `NotFound` if the card isn't the user's or lies outside the token's decks.
     /// - `Internal` if the database fails.
-    pub async fn card_history(&self, access: &Access, card_id: i64) -> Result<Vec<Value>> {
+    pub async fn card_history(
+        &self,
+        access: &Access,
+        card_id: i64,
+    ) -> Result<Vec<Value>> {
         self.card(access, card_id).await?;
         #[derive(sqlx::FromRow)]
         struct Row {

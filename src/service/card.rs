@@ -1,6 +1,9 @@
 //! Cards: adding, editing, listing and moving them.
 
-#[allow(clippy::wildcard_imports, reason = "an area of the service sees the service's shared imports and types")]
+#[allow(
+    clippy::wildcard_imports,
+    reason = "an area of the service sees the service's shared imports and types"
+)]
 use super::*;
 
 /// A card. Read one with `query_as`; read many with [`CARD_JSON`], which is
@@ -50,13 +53,19 @@ pub(crate) const CARD_JSON: &str = "json_object('id', id, 'user_id', user_id, 'd
     'created_at', created_at, 'updated_at', updated_at, 'multi', multi, 'type_id', type_id)";
 
 /// A card state as stored, a number (the API writes it as a word).
-fn stored_state<'de, D: serde::Deserializer<'de>>(d: D) -> std::result::Result<CardState, D::Error> {
+fn stored_state<'de, D: serde::Deserializer<'de>>(
+    d: D,
+) -> std::result::Result<CardState, D::Error> {
     let n = i64::deserialize(d)?;
-    CardState::from_stored(n).ok_or_else(|| serde::de::Error::custom(format!("unknown card state {n}")))
+    CardState::from_stored(n).ok_or_else(|| {
+        serde::de::Error::custom(format!("unknown card state {n}"))
+    })
 }
 
 /// Booleans as stored: 0 and 1.
-fn stored_bool<'de, D: serde::Deserializer<'de>>(d: D) -> std::result::Result<bool, D::Error> {
+fn stored_bool<'de, D: serde::Deserializer<'de>>(
+    d: D,
+) -> std::result::Result<bool, D::Error> {
     match i64::deserialize(d)? {
         0 => Ok(false),
         1 => Ok(true),
@@ -85,7 +94,11 @@ impl Card {
     /// JSON shape used by the MCP API.
     pub fn to_json(&self, clock: &Clock, decay: f32) -> Value {
         let state = self.card_state();
-        let due = if state == CardState::New { Value::Null } else { json!(crate::format::iso(self.due, clock)) };
+        let due = if state == CardState::New {
+            Value::Null
+        } else {
+            json!(crate::format::iso(self.due, clock))
+        };
         json!({
             "id": self.id,
             "deck_id": self.deck_id,
@@ -165,22 +178,29 @@ impl App {
     /// - `NotFound` if the card isn't the user's or lies outside the token's decks.
     /// - `Internal` if the database fails.
     pub async fn card(&self, access: &Access, id: i64) -> Result<Card> {
-        let card: Card = sqlx::query_as("SELECT * FROM cards WHERE id = ? AND user_id = ?")
-            .bind(id)
-            .bind(access.user_id())
-            .fetch_one(&self.db)
-            .await?;
+        let card: Card =
+            sqlx::query_as("SELECT * FROM cards WHERE id = ? AND user_id = ?")
+                .bind(id)
+                .bind(access.user_id())
+                .fetch_one(&self.db)
+                .await?;
         access.require_deck(card.deck_id)?;
         Ok(card)
     }
 
-    async fn check_media(&self, access: &Access, id: Option<&str>) -> Result<()> {
+    async fn check_media(
+        &self,
+        access: &Access,
+        id: Option<&str>,
+    ) -> Result<()> {
         if let Some(id) = id {
-            let found: Option<String> = sqlx::query_scalar("SELECT id FROM media WHERE id = ? AND user_id = ?")
-                .bind(id)
-                .bind(access.user_id())
-                .fetch_optional(&self.db)
-                .await?;
+            let found: Option<String> = sqlx::query_scalar(
+                "SELECT id FROM media WHERE id = ? AND user_id = ?",
+            )
+            .bind(id)
+            .bind(access.user_id())
+            .fetch_optional(&self.db)
+            .await?;
             if found.is_none() {
                 return Err(AppError::bad(format!("unknown image id '{id}'")));
             }
@@ -195,15 +215,22 @@ impl App {
     /// - `BadRequest` if the front has neither text nor an image, a side is too long, or an image id isn't the
     ///   user's.
     /// - `Internal` if the database fails.
-    pub async fn create_card(&self, access: &Access, deck_id: i64, new: NewCard<'_>) -> Result<Card> {
+    pub async fn create_card(
+        &self,
+        access: &Access,
+        deck_id: i64,
+        new: NewCard<'_>,
+    ) -> Result<Card> {
         access.require_write()?;
         self.deck(access, deck_id).await?;
         if new.front.trim().is_empty() && new.front_image.is_none() {
             return Err(AppError::bad("the front needs text or an image"));
         }
-        let (front, back) = (markdown::tidy(new.front), markdown::tidy(new.back));
+        let (front, back) =
+            (markdown::tidy(new.front), markdown::tidy(new.back));
         if let Some(how) = new.multi {
-            crate::multi::split(&back, how).ok_or_else(|| crate::multi::no_items(how))?;
+            crate::multi::split(&back, how)
+                .ok_or_else(|| crate::multi::no_items(how))?;
         }
         check_len("front", &front, MAX_CARD_TEXT)?;
         check_len("back", &back, MAX_CARD_TEXT)?;
@@ -214,7 +241,8 @@ impl App {
             Actor::Agent { .. } => "agent",
         };
         let tidy = NewCard { front: &front, back: &back, ..new };
-        let id = self.insert_card(access.user_id(), deck_id, &tidy, source).await?;
+        let id =
+            self.insert_card(access.user_id(), deck_id, &tidy, source).await?;
         let card = self.card(access, id).await?;
         if tidy.multi.is_some() {
             self.sync_items(&card, tidy.multi).await?;
@@ -234,7 +262,9 @@ impl App {
     ) -> Result<i64> {
         let t = now();
         // Imports and copies are not validated field by field; cap them here.
-        let cap = |x: &str| -> String { x.trim().chars().take(MAX_CARD_TEXT).collect() };
+        let cap = |x: &str| -> String {
+            x.trim().chars().take(MAX_CARD_TEXT).collect()
+        };
         Ok(sqlx::query_scalar(
             "INSERT INTO cards (user_id, deck_id, front, back, front_image, back_image, position,
                 created_by, created_at, updated_at, suspended, held)
@@ -267,11 +297,22 @@ impl App {
     /// - `BadRequest` if the front has neither text nor an image, a side is too long, or an image id isn't the
     ///   user's.
     /// - `Internal` if the database fails.
-    pub async fn update_card(&self, access: &Access, id: i64, input: CardInput) -> Result<Card> {
+    pub async fn update_card(
+        &self,
+        access: &Access,
+        id: i64,
+        input: CardInput,
+    ) -> Result<Card> {
         access.require_write()?;
         let mut card = self.card(access, id).await?;
-        if card.type_id.is_some() && (input.front.is_some() || input.back.is_some() || input.multi != Patch::Keep) {
-            return Err(AppError::bad("this card's type writes its sides; change its fields instead"));
+        if card.type_id.is_some()
+            && (input.front.is_some()
+                || input.back.is_some()
+                || input.multi != Patch::Keep)
+        {
+            return Err(AppError::bad(
+                "this card's type writes its sides; change its fields instead",
+            ));
         }
         let was = card.multi;
         let multi = input.multi.or(was);
@@ -295,7 +336,8 @@ impl App {
         check_len("front", &card.front, MAX_CARD_TEXT)?;
         check_len("back", &card.back, MAX_CARD_TEXT)?;
         if let Some(how) = multi {
-            crate::multi::split(&card.back, how).ok_or_else(|| crate::multi::no_items(how))?;
+            crate::multi::split(&card.back, how)
+                .ok_or_else(|| crate::multi::no_items(how))?;
         }
         sqlx::query(
             "UPDATE cards SET front = ?, back = ?, front_image = ?, back_image = ?, updated_at = ?
@@ -338,7 +380,12 @@ impl App {
     /// - `NotFound` if the card isn't the user's or lies outside the token's decks, or the same for the target
     ///   deck.
     /// - `Internal` if the database fails.
-    pub async fn move_card(&self, access: &Access, id: i64, deck_id: i64) -> Result<Card> {
+    pub async fn move_card(
+        &self,
+        access: &Access,
+        id: i64,
+        deck_id: i64,
+    ) -> Result<Card> {
         access.require_write()?;
         self.card(access, id).await?;
         // A card moved into a resting deck rests with it; one the deck held
@@ -367,7 +414,12 @@ impl App {
     /// - `Forbidden` if the token is read-only.
     /// - `NotFound` if the card isn't the user's or lies outside the token's decks.
     /// - `Internal` if the database fails.
-    pub async fn set_suspended(&self, access: &Access, id: i64, suspended: bool) -> Result<Card> {
+    pub async fn set_suspended(
+        &self,
+        access: &Access,
+        id: i64,
+        suspended: bool,
+    ) -> Result<Card> {
         access.require_write()?;
         self.card(access, id).await?;
         // By hand: no longer the deck's to wake.
@@ -445,7 +497,12 @@ impl App {
         Ok(all
             .into_iter()
             .filter(|c| access.can_see_deck(c.1))
-            .map(|(id, deck_id, front, back)| CardText { id, deck_id, front, back })
+            .map(|(id, deck_id, front, back)| CardText {
+                id,
+                deck_id,
+                front,
+                back,
+            })
             .collect())
     }
 
@@ -454,41 +511,69 @@ impl App {
     /// - `NotFound` if a deck is given that the access doesn't see.
     /// - `BadRequest` if the state filter is no state.
     /// - `Internal` if the database fails.
-    pub async fn list_cards(&self, access: &Access, filter: &CardFilter) -> Result<(Vec<Card>, i64)> {
+    pub async fn list_cards(
+        &self,
+        access: &Access,
+        filter: &CardFilter,
+    ) -> Result<(Vec<Card>, i64)> {
         let deck_ids: Vec<i64> = match filter.deck_id {
             Some(id) => {
                 self.deck(access, id).await?;
                 vec![id]
             }
-            None => self.decks(access).await?.into_iter().map(|d| d.id).collect(),
+            None => {
+                self.decks(access).await?.into_iter().map(|d| d.id).collect()
+            }
         };
         if deck_ids.is_empty() {
             return Ok((vec![], 0));
         }
-        let mut cond = String::from("user_id = ? AND deck_id IN (SELECT value FROM json_each(?))");
-        let query = filter.query.as_deref().map(str::trim).filter(|q| !q.is_empty());
+        let mut cond = String::from(
+            "user_id = ? AND deck_id IN (SELECT value FROM json_each(?))",
+        );
+        let query =
+            filter.query.as_deref().map(str::trim).filter(|q| !q.is_empty());
         if query.is_some() {
-            cond.push_str(" AND (front LIKE ? ESCAPE '\\' OR back LIKE ? ESCAPE '\\')");
+            cond.push_str(
+                " AND (front LIKE ? ESCAPE '\\' OR back LIKE ? ESCAPE '\\')",
+            );
         }
         match filter.state.as_deref().unwrap_or("") {
             "" | "all" => {}
             "new" => cond.push_str(" AND state = 0 AND suspended = 0"),
-            "learning" => cond.push_str(" AND state IN (1, 3) AND suspended = 0"),
+            "learning" => {
+                cond.push_str(" AND state IN (1, 3) AND suspended = 0")
+            }
             "review" => cond.push_str(" AND state = 2 AND suspended = 0"),
             "relearning" => cond.push_str(" AND state = 3 AND suspended = 0"),
-            "due" => cond.push_str(" AND state != 0 AND suspended = 0 AND due <= ?"),
+            "due" => {
+                cond.push_str(" AND state != 0 AND suspended = 0 AND due <= ?")
+            }
             "suspended" => cond.push_str(" AND suspended = 1"),
-            other => return Err(AppError::bad(format!("unknown state filter '{other}'"))),
+            other => {
+                return Err(AppError::bad(format!(
+                    "unknown state filter '{other}'"
+                )));
+            }
         }
-        let like = query.map(|q| format!("%{}%", q.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_")));
+        let like = query.map(|q| {
+            format!(
+                "%{}%",
+                q.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_")
+            )
+        });
         let due_bound = filter.state.as_deref() == Some("due");
         let limit = filter.limit.unwrap_or(50).clamp(1, 500);
         let offset = filter.offset.unwrap_or(0).max(0);
 
         let count_sql = format!("SELECT COUNT(*) FROM cards WHERE {cond}");
-        let list_sql = format!("SELECT * FROM cards WHERE {cond} ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?");
-        let mut count_q = sqlx::query_scalar::<_, i64>(&count_sql).bind(access.user_id());
-        let mut list_q = sqlx::query_as::<_, Card>(&list_sql).bind(access.user_id());
+        let list_sql = format!(
+            "SELECT * FROM cards WHERE {cond} ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?"
+        );
+        let mut count_q =
+            sqlx::query_scalar::<_, i64>(&count_sql).bind(access.user_id());
+        let mut list_q =
+            sqlx::query_as::<_, Card>(&list_sql).bind(access.user_id());
         count_q = count_q.bind(id_list(&deck_ids));
         list_q = list_q.bind(id_list(&deck_ids));
         if let Some(l) = &like {

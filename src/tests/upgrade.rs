@@ -22,14 +22,38 @@ const LAST_V1_MIGRATION: i64 = 8;
 /// when an applied migration's file has changed, so editing one of these
 /// would take production down on the next deploy.
 const V1_CHECKSUMS: [(i64, &str); 8] = [
-    (1, "7b56961e44764764b6f7c1bef0230709c63bf89e1200dfc7878adc65e9194273a035f0809d818066c9e83d52d34a1985"),
-    (2, "66ca605dff91fa0dce25e4554e9f517e2eb833a0cddb025a8d6d43ba770c0a479fa2727e3f737ad2a1f7897f30cb5455"),
-    (3, "d4234e63bfc8b9bf0f9fd3c2ebeb014eb697691302bfa89547a25feb2783d5782be4e9dcf520d8534ddbd23618f7323e"),
-    (4, "eb84443d45f8ebf270d8edf07bf3636b679744241de56f82e99e90cedee4def97d2502c504152d65b109bfba618438b4"),
-    (5, "45cbf27b4144dc55c1c8fc58f0add2560744c35cfa8d8b007c436b59bee28ac87d345355b0e840e7bc5a48978314a0bf"),
-    (6, "6d7e4798945e3610a527d6e0e2564068de10be897c4199008ad772de6c2e41981c112e91910c748496e01ab939503647"),
-    (7, "688476e24687cbdeca31d56499feee8fcda9b1ae70576b0dcbf2140a413bbd13b3325c0ef2c3b15a352f8a00e61d51f9"),
-    (8, "97bcf35891f2c984e751973f49c280df72e48d8b3137e9f62649f52838a080fc070e75d2784ae41960512aea4b0c9dd3"),
+    (
+        1,
+        "7b56961e44764764b6f7c1bef0230709c63bf89e1200dfc7878adc65e9194273a035f0809d818066c9e83d52d34a1985",
+    ),
+    (
+        2,
+        "66ca605dff91fa0dce25e4554e9f517e2eb833a0cddb025a8d6d43ba770c0a479fa2727e3f737ad2a1f7897f30cb5455",
+    ),
+    (
+        3,
+        "d4234e63bfc8b9bf0f9fd3c2ebeb014eb697691302bfa89547a25feb2783d5782be4e9dcf520d8534ddbd23618f7323e",
+    ),
+    (
+        4,
+        "eb84443d45f8ebf270d8edf07bf3636b679744241de56f82e99e90cedee4def97d2502c504152d65b109bfba618438b4",
+    ),
+    (
+        5,
+        "45cbf27b4144dc55c1c8fc58f0add2560744c35cfa8d8b007c436b59bee28ac87d345355b0e840e7bc5a48978314a0bf",
+    ),
+    (
+        6,
+        "6d7e4798945e3610a527d6e0e2564068de10be897c4199008ad772de6c2e41981c112e91910c748496e01ab939503647",
+    ),
+    (
+        7,
+        "688476e24687cbdeca31d56499feee8fcda9b1ae70576b0dcbf2140a413bbd13b3325c0ef2c3b15a352f8a00e61d51f9",
+    ),
+    (
+        8,
+        "97bcf35891f2c984e751973f49c280df72e48d8b3137e9f62649f52838a080fc070e75d2784ae41960512aea4b0c9dd3",
+    ),
 ];
 
 fn all_migrations() -> Migrator {
@@ -38,20 +62,32 @@ fn all_migrations() -> Migrator {
 
 fn v1_migrations() -> Migrator {
     let all = all_migrations();
-    let v1: Vec<_> = all.migrations.iter().filter(|m| m.version <= LAST_V1_MIGRATION).cloned().collect();
+    let v1: Vec<_> = all
+        .migrations
+        .iter()
+        .filter(|m| m.version <= LAST_V1_MIGRATION)
+        .cloned()
+        .collect();
     Migrator { migrations: Cow::Owned(v1), ..all_migrations() }
 }
 
 async fn v1_database() -> SqlitePool {
-    let opts = SqliteConnectOptions::from_str("sqlite::memory:").unwrap().foreign_keys(true);
-    let db = SqlitePoolOptions::new().max_connections(1).connect_with(opts).await.unwrap();
+    let opts = SqliteConnectOptions::from_str("sqlite::memory:")
+        .unwrap()
+        .foreign_keys(true);
+    let db = SqlitePoolOptions::new()
+        .max_connections(1)
+        .connect_with(opts)
+        .await
+        .unwrap();
     v1_migrations().run(&db).await.unwrap();
     db
 }
 
 fn config() -> Config {
     Config {
-        data_dir: std::env::temp_dir().join(format!("ainki-upgrade-{}", uuid::Uuid::new_v4().simple())),
+        data_dir: std::env::temp_dir()
+            .join(format!("ainki-upgrade-{}", uuid::Uuid::new_v4().simple())),
         bind: "127.0.0.1:0".into(),
         allow_signup: false,
         secure_cookies: false,
@@ -149,7 +185,12 @@ async fn seed_v1(db: &SqlitePool) -> V1 {
     let spanish = deck("Languages::Spanish", presets[2]).await;
     let history = deck("History", presets[4]).await;
 
-    let card = |deck: i64, front: &'static str, back: &'static str, state: i64, due: i64, extra: &'static str| async move {
+    let card = |deck: i64,
+                front: &'static str,
+                back: &'static str,
+                state: i64,
+                due: i64,
+                extra: &'static str| async move {
         let id: i64 = sqlx::query_scalar(
             "INSERT INTO cards (user_id, deck_id, front, back, state, due, created_at, updated_at, position)
              VALUES (?, ?, ?, ?, ?, ?, ?, ?, (SELECT COUNT(*) FROM cards)) RETURNING id",
@@ -166,7 +207,11 @@ async fn seed_v1(db: &SqlitePool) -> V1 {
         .await
         .unwrap();
         if !extra.is_empty() {
-            sqlx::query(&format!("UPDATE cards SET {extra} WHERE id = ?")).bind(id).execute(db).await.unwrap();
+            sqlx::query(&format!("UPDATE cards SET {extra} WHERE id = ?"))
+                .bind(id)
+                .execute(db)
+                .await
+                .unwrap();
         }
         id
     };
@@ -180,7 +225,15 @@ async fn seed_v1(db: &SqlitePool) -> V1 {
         "stability = 12.5, difficulty = 5.1, reps = 4, lapses = 1, last_review = unixepoch() - 13 * 86400",
     )
     .await;
-    let suspended_card = card(history, "Year of the Battle of Hastings", "1066", 0, 0, "suspended = 1").await;
+    let suspended_card = card(
+        history,
+        "Year of the Battle of Hastings",
+        "1066",
+        0,
+        0,
+        "suspended = 1",
+    )
+    .await;
     let list_card = card(
         history,
         "The three estates",
@@ -192,7 +245,9 @@ async fn seed_v1(db: &SqlitePool) -> V1 {
     .await;
 
     // Review history for the plain card, from new.
-    for (i, (rating, state_before)) in [(3, 0), (3, 1), (1, 2), (3, 3)].iter().enumerate() {
+    for (i, (rating, state_before)) in
+        [(3, 0), (3, 1), (1, 2), (3, 3)].iter().enumerate()
+    {
         sqlx::query(
             "INSERT INTO review_log (user_id, card_id, deck_id, rating, reviewed_at, state_before, elapsed_days,
                 scheduled_secs, stability, difficulty, duration_ms, source)
@@ -263,19 +318,38 @@ async fn seed_v1(db: &SqlitePool) -> V1 {
         .await
         .unwrap();
 
-    V1 { user, friend, spanish, renamed_preset: presets[4], review_card, list_card, suspended_card }
+    V1 {
+        user,
+        friend,
+        spanish,
+        renamed_preset: presets[4],
+        review_card,
+        list_card,
+        suspended_card,
+    }
 }
 
 #[test]
 fn v1_migrations_are_unchanged() {
     let all = all_migrations();
     for (version, expected) in V1_CHECKSUMS {
-        let m = all.migrations.iter().find(|m| m.version == version).expect("v1 migration still present");
-        assert_eq!(hex::encode(&*m.checksum), expected, "migration {version:04} differs from the one on main");
+        let m = all
+            .migrations
+            .iter()
+            .find(|m| m.version == version)
+            .expect("v1 migration still present");
+        assert_eq!(
+            hex::encode(&*m.checksum),
+            expected,
+            "migration {version:04} differs from the one on main"
+        );
     }
     // New migrations only come after the v1 ones and are numbered in order.
     let versions: Vec<i64> = all.migrations.iter().map(|m| m.version).collect();
-    assert_eq!(versions, (1..=crate::num::usize_i64(versions.len())).collect::<Vec<_>>());
+    assert_eq!(
+        versions,
+        (1..=crate::num::usize_i64(versions.len())).collect::<Vec<_>>()
+    );
 }
 
 #[tokio::test]
@@ -284,7 +358,9 @@ async fn a_v1_database_upgrades_without_losing_anything() {
     let v1 = seed_v1(&db).await;
     let count = |sql: &'static str| {
         let db = db.clone();
-        async move { sqlx::query_scalar::<_, i64>(sql).fetch_one(&db).await.unwrap() }
+        async move {
+            sqlx::query_scalar::<_, i64>(sql).fetch_one(&db).await.unwrap()
+        }
     };
     let before = [
         count("SELECT COUNT(*) FROM cards").await,
@@ -329,21 +405,31 @@ async fn a_v1_database_upgrades_without_losing_anything() {
     // The old password and the old session still work.
     let user = app.authenticate("kolja#1234", "password123").await.unwrap();
     assert_eq!(user.id, v1.user);
-    assert_eq!(app.session_user("v1-session").await.unwrap().map(|u| u.id), Some(v1.user));
+    assert_eq!(
+        app.session_user("v1-session").await.unwrap().map(|u| u.id),
+        Some(v1.user)
+    );
     // v1 settings are kept; v2 settings start at their defaults.
-    assert_eq!((user.font_scale, user.timezone.0.name()), (110, "Europe/Berlin"));
+    assert_eq!(
+        (user.font_scale, user.timezone.0.name()),
+        (110, "Europe/Berlin")
+    );
     assert!(user.auto_optimize);
     assert!(!user.catch_up && !user.confidence_check && !user.is_admin);
     assert_eq!((user.session_minutes, user.catch_up_reviews), (0, 100));
-    assert_eq!((user.quiet_from, user.quiet_to, user.invited_by), (None, None, None));
+    assert_eq!(
+        (user.quiet_from, user.quiet_to, user.invited_by),
+        (None, None, None)
+    );
 
     // The presets v1 made learn their template by name; renamed ones don't.
-    let templates: Vec<(String, Option<String>)> =
-        sqlx::query_as("SELECT name, template FROM presets WHERE user_id = ? ORDER BY id")
-            .bind(v1.user)
-            .fetch_all(&db)
-            .await
-            .unwrap();
+    let templates: Vec<(String, Option<String>)> = sqlx::query_as(
+        "SELECT name, template FROM presets WHERE user_id = ? ORDER BY id",
+    )
+    .bind(v1.user)
+    .fetch_all(&db)
+    .await
+    .unwrap();
     assert_eq!(
         templates,
         vec![
@@ -369,10 +455,19 @@ async fn a_v1_database_upgrades_without_losing_anything() {
     assert_eq!(next.remaining, 3);
     let list = app.card(&a, v1.list_card).await.unwrap();
     let items = app.card_items(&list).await.unwrap();
-    assert_eq!(items.iter().map(|i| i.text.as_str()).collect::<Vec<_>>(), ["clergy", "nobility", "commoners"]);
-    assert!(items.iter().all(|i| i.reps == 2 && i.stability.is_some()), "items keep their memory");
+    assert_eq!(
+        items.iter().map(|i| i.text.as_str()).collect::<Vec<_>>(),
+        ["clergy", "nobility", "commoners"]
+    );
+    assert!(
+        items.iter().all(|i| i.reps == 2 && i.stability.is_some()),
+        "items keep their memory"
+    );
     assert!(app.card(&a, v1.suspended_card).await.unwrap().suspended);
-    let r = app.answer_card(&a, v1.review_card, Rating::Good, Some(2000), Some(4)).await.unwrap();
+    let r = app
+        .answer_card(&a, v1.review_card, Rating::Good, Some(2000), Some(4))
+        .await
+        .unwrap();
     assert_eq!(r.card.reps, 5);
     app.undo_last(&a).await.unwrap().unwrap();
 

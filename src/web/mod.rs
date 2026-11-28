@@ -10,7 +10,10 @@ use std::{collections::HashMap, time::Duration};
 
 use axum::{
     Router,
-    extract::{DefaultBodyLimit, FromRequestParts, Multipart, Path, Query, RawQuery, State},
+    extract::{
+        DefaultBodyLimit, FromRequestParts, Multipart, Path, Query, RawQuery,
+        State,
+    },
     http::{HeaderMap, HeaderValue, StatusCode, header, request::Parts},
     middleware,
     response::{IntoResponse, Redirect, Response},
@@ -37,7 +40,10 @@ use crate::{
     presets,
     scheduler::{self, CardState, Rating},
     security::{self, ClientIp, Flash},
-    service::{Card, CardFilter, CardInput, Deck, DeckStatus, DeckSummary, NewCard, Patch, PresetInput, Settings},
+    service::{
+        Card, CardFilter, CardInput, Deck, DeckStatus, DeckSummary, NewCard,
+        Patch, PresetInput, Settings,
+    },
     study,
 };
 
@@ -63,10 +69,14 @@ mod pages {
     pub mod tokens;
     pub mod types;
 }
-#[allow(clippy::wildcard_imports, reason = "the router and every page reach every handler by name")]
+#[allow(
+    clippy::wildcard_imports,
+    reason = "the router and every page reach every handler by name"
+)]
 use pages::{
-    admin::*, auth::*, cards::*, coach::*, decks::*, find::*, home::*, import::*, invites::*, media::*, presets::*,
-    settings::*, sharing::*, stats::*, study::*, tokens::*, types::*,
+    admin::*, auth::*, cards::*, coach::*, decks::*, find::*, home::*,
+    import::*, invites::*, media::*, presets::*, settings::*, sharing::*,
+    stats::*, study::*, tokens::*, types::*,
 };
 // The consent page for OAuth clients asks for permissions the same way.
 pub(crate) use pages::tokens::permission_fields;
@@ -89,9 +99,12 @@ pub async fn serve(app: AppState) -> anyhow::Result<()> {
     let router = router(app);
     let listener = tokio::net::TcpListener::bind(&bind).await?;
     tracing::info!("AiNKI listening on http://{bind}");
-    axum::serve(listener, router.into_make_service_with_connect_info::<std::net::SocketAddr>())
-        .with_graceful_shutdown(shutdown_signal())
-        .await?;
+    axum::serve(
+        listener,
+        router.into_make_service_with_connect_info::<std::net::SocketAddr>(),
+    )
+    .with_graceful_shutdown(shutdown_signal())
+    .await?;
     Ok(())
 }
 
@@ -102,7 +115,9 @@ async fn shutdown_signal() {
     };
     #[cfg(unix)]
     let term = async {
-        if let Ok(mut s) = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()) {
+        if let Ok(mut s) = tokio::signal::unix::signal(
+            tokio::signal::unix::SignalKind::terminate(),
+        ) {
             s.recv().await;
         }
     };
@@ -114,7 +129,10 @@ async fn shutdown_signal() {
     }
 }
 
-#[allow(clippy::too_many_lines, reason = "the route table reads best as one list")]
+#[allow(
+    clippy::too_many_lines,
+    reason = "the route table reads best as one list"
+)]
 pub fn router(app: AppState) -> Router {
     let mcp_routes = Router::new()
         .nest_service("/mcp", mcp::service(app.clone()))
@@ -126,12 +144,27 @@ pub fn router(app: AppState) -> Router {
         .allow_origin(tower_http::cors::Any)
         .allow_methods(tower_http::cors::Any)
         .allow_headers(tower_http::cors::Any)
-        .expose_headers([header::WWW_AUTHENTICATE, header::HeaderName::from_static("mcp-session-id")]);
+        .expose_headers([
+            header::WWW_AUTHENTICATE,
+            header::HeaderName::from_static("mcp-session-id"),
+        ]);
     let client_routes = Router::new()
-        .route("/.well-known/oauth-protected-resource", get(oauth::protected_resource))
-        .route("/.well-known/oauth-protected-resource/mcp", get(oauth::protected_resource))
-        .route("/.well-known/oauth-authorization-server", get(oauth::authorization_server))
-        .route("/.well-known/openid-configuration", get(oauth::authorization_server))
+        .route(
+            "/.well-known/oauth-protected-resource",
+            get(oauth::protected_resource),
+        )
+        .route(
+            "/.well-known/oauth-protected-resource/mcp",
+            get(oauth::protected_resource),
+        )
+        .route(
+            "/.well-known/oauth-authorization-server",
+            get(oauth::authorization_server),
+        )
+        .route(
+            "/.well-known/openid-configuration",
+            get(oauth::authorization_server),
+        )
         .route("/oauth/register", post(oauth::register))
         .route("/oauth/token", post(oauth::token))
         .route("/oauth/revoke", post(oauth::revoke))
@@ -140,7 +173,8 @@ pub fn router(app: AppState) -> Router {
         .layer(cors);
     // Form posts are small; uploads get their own limits below.
     let small = DefaultBodyLimit::max(256 * 1024);
-    let card_upload = DefaultBodyLimit::max(2 * media::MAX_UPLOAD_BYTES + 256 * 1024);
+    let card_upload =
+        DefaultBodyLimit::max(2 * media::MAX_UPLOAD_BYTES + 256 * 1024);
     let browser_routes = Router::new()
         .route("/", get(home))
         .route("/login", get(login_page).post(login))
@@ -150,7 +184,10 @@ pub fn router(app: AppState) -> Router {
         .route("/invites/{id}/cancel", post(invite_cancel))
         .route("/invite/{token}", get(invite_page).post(invite_accept))
         .route("/admin", get(admin_page))
-        .route("/oauth/authorize", get(oauth::authorize_page).post(oauth::authorize_submit))
+        .route(
+            "/oauth/authorize",
+            get(oauth::authorize_page).post(oauth::authorize_submit),
+        )
         .route("/study", get(study))
         .route("/study/answer", post(study_answer))
         .route("/study/undo", post(study_undo))
@@ -186,7 +223,10 @@ pub fn router(app: AppState) -> Router {
         .route("/cards/new/typed", post(typed_create))
         .route("/cards/{id}/fields", post(typed_update))
         .route("/access", get(access_page))
-        .route("/access/new", get(|| async { Redirect::to("/access") }).post(token_create))
+        .route(
+            "/access/new",
+            get(|| async { Redirect::to("/access") }).post(token_create),
+        )
         .route("/access/{id}/revoke", post(token_revoke))
         // The page used to be called Tokens.
         .route("/tokens", get(|| async { Redirect::permanent("/access") }))
@@ -195,26 +235,70 @@ pub fn router(app: AppState) -> Router {
         .layer(small)
         .route("/cards/preview", post(card_preview_json))
         .route("/find", get(find_page))
-        .route("/settings/types", get(types_page).post(type_upload).layer(DefaultBodyLimit::max(UPLOAD_LIMIT)))
-        .route("/cards/new", get(card_new_page).post(card_create).layer(card_upload))
-        .route("/cards/{id}", get(card_page).post(card_update).layer(card_upload))
+        .route(
+            "/settings/types",
+            get(types_page)
+                .post(type_upload)
+                .layer(DefaultBodyLimit::max(UPLOAD_LIMIT)),
+        )
+        .route(
+            "/cards/new",
+            get(card_new_page).post(card_create).layer(card_upload),
+        )
+        .route(
+            "/cards/{id}",
+            get(card_page).post(card_update).layer(card_upload),
+        )
         .route(
             "/import",
-            get(import_page).post(import_upload).layer(DefaultBodyLimit::max(import::MAX_IMPORT_BYTES + 1024 * 1024)),
+            get(import_page).post(import_upload).layer(DefaultBodyLimit::max(
+                import::MAX_IMPORT_BYTES + 1024 * 1024,
+            )),
         )
-        .layer(middleware::from_fn_with_state(app.clone(), security::check_origin))
+        .layer(middleware::from_fn_with_state(
+            app.clone(),
+            security::check_origin,
+        ))
         .layer(middleware::from_fn_with_state(app.clone(), renew_session));
     let static_routes = Router::new()
-        .route("/style.css", get(|q: RawQuery| async move { asset(q, "text/css; charset=utf-8", CSS) }))
-        .route("/app.js", get(|q: RawQuery| async move { asset(q, "text/javascript; charset=utf-8", APP_JS) }))
-        .route("/parts.js", get(|q: RawQuery| async move { asset(q, "text/javascript; charset=utf-8", PARTS_JS) }))
-        .route("/favicon.svg", get(|| async { static_file("image/svg+xml", FAVICON_SVG.as_bytes(), false) }))
+        .route(
+            "/style.css",
+            get(|q: RawQuery| async move {
+                asset(q, "text/css; charset=utf-8", CSS)
+            }),
+        )
+        .route(
+            "/app.js",
+            get(|q: RawQuery| async move {
+                asset(q, "text/javascript; charset=utf-8", APP_JS)
+            }),
+        )
+        .route(
+            "/parts.js",
+            get(|q: RawQuery| async move {
+                asset(q, "text/javascript; charset=utf-8", PARTS_JS)
+            }),
+        )
+        .route(
+            "/favicon.svg",
+            get(|| async {
+                static_file("image/svg+xml", FAVICON_SVG.as_bytes(), false)
+            }),
+        )
         // Browsers ask for /favicon.ico on their own; a PNG there works everywhere.
-        .route("/favicon.ico", get(|| async { static_file("image/png", FAVICON_PNG, false) }))
-        .route("/apple-touch-icon.png", get(|| async { static_file("image/png", TOUCH_ICON_PNG, false) }))
+        .route(
+            "/favicon.ico",
+            get(|| async { static_file("image/png", FAVICON_PNG, false) }),
+        )
+        .route(
+            "/apple-touch-icon.png",
+            get(|| async { static_file("image/png", TOUCH_ICON_PNG, false) }),
+        )
         .route(
             "/speculation.json",
-            get(|q: RawQuery| async move { asset(q, "application/speculationrules+json", SPECULATION) }),
+            get(|q: RawQuery| async move {
+                asset(q, "application/speculationrules+json", SPECULATION)
+            }),
         )
         .route("/healthz", get(|| async { "ok" }))
         // Brought card types: the frame they draw in and their files. No
@@ -247,13 +331,19 @@ impl WebUser {
 
 async fn session_from_parts(parts: &Parts, app: &AppState) -> Option<User> {
     let jar = CookieJar::from_headers(&parts.headers);
-    app.session_user(jar.get(app.config.session_cookie_name())?.value()).await.ok().flatten()
+    app.session_user(jar.get(app.config.session_cookie_name())?.value())
+        .await
+        .ok()
+        .flatten()
 }
 
 impl axum::extract::OptionalFromRequestParts<AppState> for WebUser {
     type Rejection = std::convert::Infallible;
 
-    async fn from_request_parts(parts: &mut Parts, app: &AppState) -> Result<Option<Self>, Self::Rejection> {
+    async fn from_request_parts(
+        parts: &mut Parts,
+        app: &AppState,
+    ) -> Result<Option<Self>, Self::Rejection> {
         Ok(session_from_parts(parts, app).await.map(WebUser))
     }
 }
@@ -265,9 +355,12 @@ fn admin_may(path: &str) -> bool {
 
 /// The login page, coming back here afterwards when this was a page view.
 fn login_url(parts: &Parts) -> String {
-    let here = parts.uri.path_and_query().map_or("/", http::uri::PathAndQuery::as_str);
+    let here =
+        parts.uri.path_and_query().map_or("/", http::uri::PathAndQuery::as_str);
     match safe_next(Some(here)) {
-        Some(next) if parts.method == axum::http::Method::GET && next != "/" => {
+        Some(next)
+            if parts.method == axum::http::Method::GET && next != "/" =>
+        {
             format!("/login?next={}", urlenc(next))
         }
         _ => "/login".into(),
@@ -277,10 +370,15 @@ fn login_url(parts: &Parts) -> String {
 impl FromRequestParts<AppState> for WebUser {
     type Rejection = Response;
 
-    async fn from_request_parts(parts: &mut Parts, app: &AppState) -> Result<Self, Self::Rejection> {
+    async fn from_request_parts(
+        parts: &mut Parts,
+        app: &AppState,
+    ) -> Result<Self, Self::Rejection> {
         match session_from_parts(parts, app).await {
             // The admin account has no decks: it sees the admin panel only.
-            Some(user) if user.is_admin && !admin_may(parts.uri.path()) => Err(redirect("/admin")),
+            Some(user) if user.is_admin && !admin_may(parts.uri.path()) => {
+                Err(redirect("/admin"))
+            }
             Some(user) => Ok(Self(user)),
             None => Err(Redirect::to(&login_url(parts)).into_response()),
         }
@@ -305,7 +403,9 @@ impl IntoResponse for WebError {
     fn into_response(self) -> Response {
         let status = match &self.0 {
             AppError::NotFound => StatusCode::NOT_FOUND,
-            AppError::Unauthorized => return Redirect::to("/login").into_response(),
+            AppError::Unauthorized => {
+                return Redirect::to("/login").into_response();
+            }
             AppError::Forbidden(_) => StatusCode::FORBIDDEN,
             AppError::BadRequest(_) => StatusCode::BAD_REQUEST,
             AppError::Conflict(_) => StatusCode::CONFLICT,
@@ -315,7 +415,9 @@ impl IntoResponse for WebError {
             }
         };
         let msg = match &self.0 {
-            AppError::Internal(_) => "Something went wrong on the server.".to_string(),
+            AppError::Internal(_) => {
+                "Something went wrong on the server.".to_string()
+            }
             e => capitalize(&e.to_string()),
         };
         sorry(status, &msg)
@@ -342,7 +444,9 @@ type WebResult<T = Response> = Result<T, WebError>;
 /// Anything else (not found, server trouble) gets the error page.
 fn fixable(e: &AppError) -> Option<String> {
     match e {
-        AppError::BadRequest(m) | AppError::Conflict(m) | AppError::Forbidden(m) => Some(capitalize(m)),
+        AppError::BadRequest(m)
+        | AppError::Conflict(m)
+        | AppError::Forbidden(m) => Some(capitalize(m)),
         _ => None,
     }
 }
@@ -359,7 +463,10 @@ fn form_again(page: Markup) -> Response {
 
 /// For one-button actions: a problem the person can fix goes back to `to`
 /// as a flash message; anything else is the error page.
-fn or_back(to: impl AsRef<str>, result: Result<Response, AppError>) -> WebResult {
+fn or_back(
+    to: impl AsRef<str>,
+    result: Result<Response, AppError>,
+) -> WebResult {
     match result {
         Ok(r) => Ok(r),
         Err(e) => match fixable(&e) {
@@ -393,14 +500,21 @@ fn flash_cookie(msg: &str) -> Cookie<'static> {
 
 /// Redirect and show `msg` on the next page.
 fn redirect_msg(to: impl AsRef<str>, msg: &str) -> Response {
-    (CookieJar::new().add(flash_cookie(msg)), Redirect::to(to.as_ref())).into_response()
+    (CookieJar::new().add(flash_cookie(msg)), Redirect::to(to.as_ref()))
+        .into_response()
 }
 
 pub fn urlenc(s: &str) -> String {
     let mut out = String::new();
     for b in s.bytes() {
         match b {
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => out.push(b as char),
+            b'A'..=b'Z'
+            | b'a'..=b'z'
+            | b'0'..=b'9'
+            | b'-'
+            | b'_'
+            | b'.'
+            | b'~' => out.push(b as char),
             _ => out.push_str(&format!("%{b:02X}")),
         }
     }
@@ -420,13 +534,16 @@ fn asset_version() -> &'static str {
 /// Nested Anki decks arrive as "`Languages::Spanish`". The parents are shown
 /// as a quiet path, the deck's own name last: "Languages › Spanish".
 fn deck_parts(name: &str) -> Vec<&str> {
-    let parts: Vec<&str> = name.split("::").map(str::trim).filter(|p| !p.is_empty()).collect();
+    let parts: Vec<&str> =
+        name.split("::").map(str::trim).filter(|p| !p.is_empty()).collect();
     if parts.is_empty() { vec![name] } else { parts }
 }
 
 fn deck_title(name: &str) -> Markup {
     let parts = deck_parts(name);
-    let Some((leaf, parents)) = parts.split_last() else { return html! { (name) } };
+    let Some((leaf, parents)) = parts.split_last() else {
+        return html! { (name) };
+    };
     html! {
         @if !parents.is_empty() {
             span.deck-path { @for p in parents { (p) span.sep aria-hidden="true" { "›" } } }
@@ -464,13 +581,27 @@ pub fn layout(title: &str, user: Option<&User>, body: Markup) -> Markup {
 }
 
 /// A page under one of the menu entries.
-pub fn layout_in(nav: Nav, title: &str, user: Option<&User>, body: Markup) -> Markup {
+pub fn layout_in(
+    nav: Nav,
+    title: &str,
+    user: Option<&User>,
+    body: Markup,
+) -> Markup {
     page(Some(nav), title, user, None, body)
 }
 
 /// `page_kind` marks special pages for app.js.
-#[expect(clippy::needless_pass_by_value, reason = "maud renders by reference; callers build the markup inline")]
-fn page(nav: Option<Nav>, title: &str, user: Option<&User>, page_kind: Option<&str>, body: Markup) -> Markup {
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "maud renders by reference; callers build the markup inline"
+)]
+fn page(
+    nav: Option<Nav>,
+    title: &str,
+    user: Option<&User>,
+    page_kind: Option<&str>,
+    body: Markup,
+) -> Markup {
     let scale = num::i64_f64(user.map_or(100, |u| u.font_scale)) / 100.0;
     html! {
         (DOCTYPE)
@@ -524,9 +655,23 @@ fn key_sheet() -> Markup {
                 ("P", "Pause: the card waits, and the clock with it"),
             ],
         ),
-        ("Before the answer", &[("S", "Sure"), ("U", "Not sure"), ("Enter", "Check a typed answer")]),
+        (
+            "Before the answer",
+            &[
+                ("S", "Sure"),
+                ("U", "Not sure"),
+                ("Enter", "Check a typed answer"),
+            ],
+        ),
         ("Multicards", &[("1 – 9", "Mark an item as remembered")]),
-        ("Anywhere", &[("/", "Find anything"), ("?", "Show or hide this list"), ("Esc", "Close")]),
+        (
+            "Anywhere",
+            &[
+                ("/", "Find anything"),
+                ("?", "Show or hide this list"),
+                ("Esc", "Close"),
+            ],
+        ),
     ];
     html! {
         div #keys .key-sheet popover {
@@ -634,7 +779,9 @@ async fn renew_session(
     let mut res = next.run(req).await;
     if let Some(c) = jar.get(app.config.session_cookie_name())
         && app.renew_session(c.value()).await.unwrap_or(false)
-        && let Ok(v) = HeaderValue::from_str(&session_cookie(&app, c.value().to_string()).to_string())
+        && let Ok(v) = HeaderValue::from_str(
+            &session_cookie(&app, c.value().to_string()).to_string(),
+        )
     {
         res.headers_mut().append(header::SET_COOKIE, v);
     }
@@ -650,12 +797,30 @@ const fn time_days(days: i64) -> time::Duration {
 /// Every built-in file goes out through here. Fonts never change under a
 /// name and a stylesheet or script asked for with the current ?v= never
 /// changes either, so both are cached for good; anything else revalidates.
-fn static_file(content_type: &'static str, body: &'static [u8], forever: bool) -> Response {
-    let cache = if forever { "public, max-age=31536000, immutable" } else { "no-cache" };
-    ([(header::CONTENT_TYPE, content_type), (header::CACHE_CONTROL, cache)], body).into_response()
+fn static_file(
+    content_type: &'static str,
+    body: &'static [u8],
+    forever: bool,
+) -> Response {
+    let cache = if forever {
+        "public, max-age=31536000, immutable"
+    } else {
+        "no-cache"
+    };
+    (
+        [(header::CONTENT_TYPE, content_type), (header::CACHE_CONTROL, cache)],
+        body,
+    )
+        .into_response()
 }
 
-fn asset(RawQuery(q): RawQuery, content_type: &'static str, body: &'static str) -> Response {
-    let current = q.and_then(|q| q.strip_prefix("v=").map(|v| v == asset_version())).unwrap_or(false);
+fn asset(
+    RawQuery(q): RawQuery,
+    content_type: &'static str,
+    body: &'static str,
+) -> Response {
+    let current = q
+        .and_then(|q| q.strip_prefix("v=").map(|v| v == asset_version()))
+        .unwrap_or(false);
     static_file(content_type, body.as_bytes(), current)
 }

@@ -23,7 +23,11 @@ pub fn render(src: &str) -> String {
     });
     let mut out = String::new();
     html::push_html(&mut out, parser);
-    ammonia::Builder::default().rm_tags(&["img"]).link_rel(Some("noopener noreferrer nofollow")).clean(&out).to_string()
+    ammonia::Builder::default()
+        .rm_tags(&["img"])
+        .link_rel(Some("noopener noreferrer nofollow"))
+        .clean(&out)
+        .to_string()
 }
 
 /// The words of card text without its Markdown, on one line: for lists
@@ -33,7 +37,9 @@ pub fn plain(src: &str) -> String {
     for e in Parser::new_ext(src, options()) {
         match e {
             Event::Text(t) | Event::Code(t) => out.push_str(&t),
-            Event::SoftBreak | Event::HardBreak | Event::End(_) => out.push(' '),
+            Event::SoftBreak | Event::HardBreak | Event::End(_) => {
+                out.push(' ')
+            }
             _ => {}
         }
     }
@@ -61,7 +67,10 @@ pub fn tidy(src: &str) -> String {
         } else if indent(line) < 4 && !t.is_empty() && !is_item(t) {
             // A run of indented items (and their own deeper lines) under it.
             let after = lines.get(n + 1..).unwrap_or_default();
-            let run = after.iter().take_while(|l| indent(l) >= 4 && !l.trim().is_empty()).count();
+            let run = after
+                .iter()
+                .take_while(|l| indent(l) >= 4 && !l.trim().is_empty())
+                .count();
             let block = after.get(..run).unwrap_or_default();
             if block.first().is_some_and(|l| is_item(l.trim_start())) {
                 let cut = block.iter().map(|l| indent(l)).min().unwrap_or(0);
@@ -83,7 +92,10 @@ pub fn tidy(src: &str) -> String {
 
 /// Leading spaces, with a tab as four.
 fn indent(line: &str) -> usize {
-    line.chars().take_while(|c| *c == ' ' || *c == '\t').map(|c| if c == '\t' { 4 } else { 1 }).sum()
+    line.chars()
+        .take_while(|c| *c == ' ' || *c == '\t')
+        .map(|c| if c == '\t' { 4 } else { 1 })
+        .sum()
 }
 
 fn dedent(line: &str, cut: usize) -> String {
@@ -137,7 +149,10 @@ mod tests {
     #[test]
     fn indented_items_under_text_become_a_list() {
         let src = "will\n    - now: I'll help.\n      more\n    - later\n\nkeep\n\n    code block";
-        assert_eq!(tidy(src), "will\n- now: I'll help.\n  more\n- later\n\nkeep\n\n    code block");
+        assert_eq!(
+            tidy(src),
+            "will\n- now: I'll help.\n  more\n- later\n\nkeep\n\n    code block"
+        );
         assert!(render(src).contains("<li>now: I'll help.<br>"));
         // A nested list stays nested.
         let nested = "- a\n    - b";

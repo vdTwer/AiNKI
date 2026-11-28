@@ -4,12 +4,14 @@
 
 use std::collections::BTreeMap;
 
+use crate::types::{
+    CardType, FieldKind, MAX_PACKAGE_BYTES, Manifest, TypedCard,
+};
 #[allow(
     clippy::wildcard_imports,
     reason = "a page sees the shared web plumbing and its sibling pages, as when they were one file"
 )]
 use crate::web::*;
-use crate::types::{CardType, FieldKind, MAX_PACKAGE_BYTES, Manifest, TypedCard};
 
 /// The frame's own rules, on top of its `sandbox` attribute. Scripts and
 /// styles come only from its package (and the bootstrap); it may connect
@@ -24,14 +26,24 @@ const FILE_CSP: &str = "sandbox; default-src 'none'";
 pub(crate) const FRAME_JS: &str = include_str!("../../static/frame.js");
 
 /// Where to read how a package is made.
-const GUIDE: &str = "https://github.com/vdTwer/AiNKI/blob/main/docs/card-types.md";
+const GUIDE: &str =
+    "https://github.com/vdTwer/AiNKI/blob/main/docs/card-types.md";
 
-pub(crate) async fn types_page(State(app): State<AppState>, user: WebUser, Flash(msg): Flash) -> WebResult {
+pub(crate) async fn types_page(
+    State(app): State<AppState>,
+    user: WebUser,
+    Flash(msg): Flash,
+) -> WebResult {
     let types = app.card_types(&user.access()).await?;
     Ok(types_view(&user.0, &types, msg.as_deref(), None).into_response())
 }
 
-fn types_view(user: &User, types: &[CardType], msg: Option<&str>, error: Option<&str>) -> Markup {
+fn types_view(
+    user: &User,
+    types: &[CardType],
+    msg: Option<&str>,
+    error: Option<&str>,
+) -> Markup {
     let clock = user.clock();
     layout_in(
         Nav::Settings,
@@ -82,16 +94,24 @@ fn types_view(user: &User, types: &[CardType], msg: Option<&str>, error: Option<
     )
 }
 
-pub(crate) async fn type_upload(State(app): State<AppState>, user: WebUser, mp: Multipart) -> WebResult {
+pub(crate) async fn type_upload(
+    State(app): State<AppState>,
+    user: WebUser,
+    mp: Multipart,
+) -> WebResult {
     let access = user.access();
     let result = async {
-        let file = read_multipart(mp).await?.remove("file").filter(|d| !d.is_empty());
+        let file =
+            read_multipart(mp).await?.remove("file").filter(|d| !d.is_empty());
         let file = file.ok_or_else(|| AppError::bad("choose a .zip file"))?;
         app.upload_card_type(&access, &file).await
     }
     .await;
     match result {
-        Ok(t) => Ok(redirect_msg("/settings/types", &format!("{} version {} is ready.", t.name, t.version))),
+        Ok(t) => Ok(redirect_msg(
+            "/settings/types",
+            &format!("{} version {} is ready.", t.name, t.version),
+        )),
         Err(e) => {
             let msg = fixable(&e).ok_or(e)?;
             let types = app.card_types(&access).await?;
@@ -100,7 +120,11 @@ pub(crate) async fn type_upload(State(app): State<AppState>, user: WebUser, mp: 
     }
 }
 
-pub(crate) async fn type_delete(State(app): State<AppState>, user: WebUser, Path(id): Path<i64>) -> WebResult {
+pub(crate) async fn type_delete(
+    State(app): State<AppState>,
+    user: WebUser,
+    Path(id): Path<i64>,
+) -> WebResult {
     or_back(
         "/settings/types",
         async {
@@ -114,7 +138,10 @@ pub(crate) async fn type_delete(State(app): State<AppState>, user: WebUser, Path
 /// The chess type, the first one brought, as a .zip to download and upload:
 /// an example of a package, and a way to try one.
 const CHESS: [(&str, &[u8]); 6] = [
-    ("card-type.json", include_bytes!("../../../packages/chess/card-type.json")),
+    (
+        "card-type.json",
+        include_bytes!("../../../packages/chess/card-type.json"),
+    ),
     ("chess.js", include_bytes!("../../../packages/chess/chess.js")),
     ("chess.css", include_bytes!("../../../packages/chess/chess.css")),
     ("board.js", include_bytes!("../../../packages/chess/board.js")),
@@ -124,9 +151,12 @@ const CHESS: [(&str, &[u8]); 6] = [
 
 pub(crate) fn chess_zip() -> Result<Vec<u8>, AppError> {
     use std::io::Write;
-    let fail = |e: &dyn std::fmt::Display| AppError::Internal(anyhow::anyhow!("chess.zip: {e}"));
+    let fail = |e: &dyn std::fmt::Display| {
+        AppError::Internal(anyhow::anyhow!("chess.zip: {e}"))
+    };
     let mut w = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
-    let opts = zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
+    let opts = zip::write::SimpleFileOptions::default()
+        .compression_method(zip::CompressionMethod::Deflated);
     for (name, body) in CHESS {
         w.start_file(name, opts).map_err(|e| fail(&e))?;
         w.write_all(body).map_err(|e| fail(&e))?;
@@ -150,19 +180,29 @@ pub(crate) const UPLOAD_LIMIT: usize = MAX_PACKAGE_BYTES + 64 * 1024;
 
 // ----- the frame ------------------------------------------------------------
 
-fn with_headers(mut res: Response, csp: &'static str, cache: &'static str) -> Response {
+fn with_headers(
+    mut res: Response,
+    csp: &'static str,
+    cache: &'static str,
+) -> Response {
     let h = res.headers_mut();
     h.insert("content-security-policy", HeaderValue::from_static(csp));
     h.insert(header::CACHE_CONTROL, HeaderValue::from_static(cache));
     // The frame's origin is its own (opaque), so its requests for these
     // files are cross-origin and carry no cookies.
-    h.insert(header::ACCESS_CONTROL_ALLOW_ORIGIN, HeaderValue::from_static("*"));
+    h.insert(
+        header::ACCESS_CONTROL_ALLOW_ORIGIN,
+        HeaderValue::from_static("*"),
+    );
     res
 }
 
 /// The page inside the sandboxed frame: the package's styles, then the
 /// bootstrap, which loads the module and talks to the study page.
-pub(crate) async fn type_frame(State(app): State<AppState>, Path(token): Path<String>) -> WebResult {
+pub(crate) async fn type_frame(
+    State(app): State<AppState>,
+    Path(token): Path<String>,
+) -> WebResult {
     let m = app.card_type_by_token(&token).await?;
     let page = html! {
         (maud::DOCTYPE)
@@ -179,7 +219,8 @@ pub(crate) async fn type_frame(State(app): State<AppState>, Path(token): Path<St
         }
     };
     let mut res = with_headers(page.into_response(), FRAME_CSP, "no-cache");
-    res.headers_mut().insert("x-frame-options", HeaderValue::from_static("SAMEORIGIN"));
+    res.headers_mut()
+        .insert("x-frame-options", HeaderValue::from_static("SAMEORIGIN"));
     Ok(res)
 }
 
@@ -195,20 +236,32 @@ pub(crate) async fn type_file(
 ) -> WebResult {
     let (mime, body) = app.card_type_file(&token, &path).await?;
     let mut res = body.into_response();
-    res.headers_mut().insert(header::CONTENT_TYPE, HeaderValue::from_str(&mime).map_err(|e| AppError::Internal(e.into()))?);
+    res.headers_mut().insert(
+        header::CONTENT_TYPE,
+        HeaderValue::from_str(&mime)
+            .map_err(|e| AppError::Internal(e.into()))?,
+    );
     // A version never changes: a new upload gets a new address.
     Ok(with_headers(res, FILE_CSP, "public, max-age=31536000, immutable"))
 }
 
 pub(crate) async fn frame_js(q: RawQuery) -> Response {
     let mut res = asset(q, "text/javascript; charset=utf-8", FRAME_JS);
-    res.headers_mut().insert(header::ACCESS_CONTROL_ALLOW_ORIGIN, HeaderValue::from_static("*"));
+    res.headers_mut().insert(
+        header::ACCESS_CONTROL_ALLOW_ORIGIN,
+        HeaderValue::from_static("*"),
+    );
     res
 }
 
 /// A card's frame: the challenge, or the solution once turned over.
 /// `ainki-card-type` (parts.js) hands it the fields.
-pub(crate) fn type_frame_box(ty: &CardType, fields_json: &str, side: &str, preview: bool) -> Markup {
+pub(crate) fn type_frame_box(
+    ty: &CardType,
+    fields_json: &str,
+    side: &str,
+    preview: bool,
+) -> Markup {
     html! {
         ainki-card-type data-fields=(fields_json) data-side=(side) data-preview[preview] {
             iframe.type-frame sandbox="allow-scripts" src=(format!("/types/{}/frame", ty.token)) title=(ty.name) {}
@@ -225,7 +278,11 @@ pub(crate) fn type_frame_box(ty: &CardType, fields_json: &str, side: &str, previ
 
 /// A typed card on the study page: its frame, with the plain summary for
 /// browsers without JavaScript.
-pub(crate) fn typed_faces(card: &Card, typed: &TypedCard, revealed: bool) -> Markup {
+pub(crate) fn typed_faces(
+    card: &Card,
+    typed: &TypedCard,
+    revealed: bool,
+) -> Markup {
     html! {
         div.card-area.typed {
             (state_tag(card.card_state()))
@@ -239,7 +296,12 @@ pub(crate) fn typed_faces(card: &Card, typed: &TypedCard, revealed: bool) -> Mar
 // ----- writing a card of a brought type ---------------------------------------
 
 /// The deck picker of the card forms.
-pub(crate) fn deck_line(decks: &[Deck], deck: Option<i64>, new_deck: &str, allow_new_deck: bool) -> Markup {
+pub(crate) fn deck_line(
+    decks: &[Deck],
+    deck: Option<i64>,
+    new_deck: &str,
+    allow_new_deck: bool,
+) -> Markup {
     let new_selected = allow_new_deck && (decks.is_empty() || deck.is_none());
     html! {
         div.deck-line {
@@ -277,7 +339,8 @@ pub(crate) struct TypedDraft<'a> {
 
 pub(crate) fn typed_form(decks: &[Deck], d: &TypedDraft) -> Markup {
     let m: &Manifest = &d.ty.manifest;
-    let fields = serde_json::to_string(d.values).unwrap_or_else(|_| "{}".into());
+    let fields =
+        serde_json::to_string(d.values).unwrap_or_else(|_| "{}".into());
     html! {
         form.type-form method="post" action=(d.action) {
             input type="hidden" name="type" value=(d.ty.id);
@@ -307,7 +370,11 @@ pub(crate) fn typed_form(decks: &[Deck], d: &TypedDraft) -> Markup {
 
 /// The fields sent with a typed card's form: `f.<key>` each.
 fn sent_fields(form: &[(String, String)]) -> BTreeMap<String, String> {
-    form.iter().filter_map(|(k, v)| k.strip_prefix("f.").map(|k| (k.to_string(), v.clone()))).collect()
+    form.iter()
+        .filter_map(|(k, v)| {
+            k.strip_prefix("f.").map(|k| (k.to_string(), v.clone()))
+        })
+        .collect()
 }
 
 fn sent(form: &[(String, String)], key: &str) -> Option<String> {
@@ -315,7 +382,11 @@ fn sent(form: &[(String, String)], key: &str) -> Option<String> {
 }
 
 /// The types a new card can have, linked above the Add card form.
-pub(crate) fn type_pick(types: &[CardType], current: Option<i64>, deck: Option<i64>) -> Markup {
+pub(crate) fn type_pick(
+    types: &[CardType],
+    current: Option<i64>,
+    deck: Option<i64>,
+) -> Markup {
     let deck = deck.map_or_else(String::new, |d| format!("deck={d}&"));
     html! {
         @if !types.is_empty() {
@@ -341,7 +412,10 @@ pub(crate) async fn typed_new_page(
     let decks = open_decks(app.decks(&access).await?, deck);
     let deck = match deck {
         Some(id) => Some(id),
-        None => app.last_used_deck(&access).await?.or_else(|| decks.first().map(|d| d.id)),
+        None => app
+            .last_used_deck(&access)
+            .await?
+            .or_else(|| decks.first().map(|d| d.id)),
     };
     let types = app.latest_card_types(&access).await?;
     let values = BTreeMap::new();
@@ -385,20 +459,28 @@ pub(crate) async fn typed_create(
 ) -> WebResult {
     let access = user.access();
     let fields = sent_fields(&form);
-    let type_id: i64 = sent(&form, "type").and_then(|t| t.parse().ok()).ok_or(AppError::NotFound)?;
+    let type_id: i64 = sent(&form, "type")
+        .and_then(|t| t.parse().ok())
+        .ok_or(AppError::NotFound)?;
     let deck_sent = sent(&form, "deck").unwrap_or_default();
     let new_deck = sent(&form, "new_deck").filter(|_| deck_sent == NEW_DECK);
     let result = async {
         let (deck, msg) = match &new_deck {
             Some(name) => deck_for_name(&app, &access, name).await?,
-            None => (deck_sent.parse().map_err(|_| AppError::bad("pick a deck"))?, "Card added.".to_string()),
+            None => (
+                deck_sent.parse().map_err(|_| AppError::bad("pick a deck"))?,
+                "Card added.".to_string(),
+            ),
         };
         app.create_typed_card(&access, deck, type_id, &fields).await?;
         Ok::<_, AppError>((deck, msg))
     }
     .await;
     match result {
-        Ok((deck, msg)) => Ok(redirect_msg(format!("/cards/new?deck={deck}&type={type_id}"), &msg)),
+        Ok((deck, msg)) => Ok(redirect_msg(
+            format!("/cards/new?deck={deck}&type={type_id}"),
+            &msg,
+        )),
         Err(e) => {
             let msg = fixable(&e).ok_or(e)?;
             let ty = app.card_type(&access, type_id).await?;
@@ -414,20 +496,40 @@ pub(crate) async fn typed_create(
                 submit: "Add card",
                 allow_new_deck: true,
             };
-            Ok(form_again(typed_new_view(&user.0, &decks, &types, &draft, None, Some(&msg))))
+            Ok(form_again(typed_new_view(
+                &user.0,
+                &decks,
+                &types,
+                &draft,
+                None,
+                Some(&msg),
+            )))
         }
     }
 }
 
 /// A new deck by name, or the one already called that; with what to say.
-pub(crate) async fn deck_for_name(app: &App, access: &Access, name: &str) -> Result<(i64, String), AppError> {
+pub(crate) async fn deck_for_name(
+    app: &App,
+    access: &Access,
+    name: &str,
+) -> Result<(i64, String), AppError> {
     if name.trim().is_empty() {
         return Err(AppError::bad("give the new deck a name"));
     }
     Ok(if let Some(existing) = app.deck_by_name(access, name).await? {
-        (existing.id, format!("Card added to your existing deck {}.", deck_plain(&existing.name)))
+        (
+            existing.id,
+            format!(
+                "Card added to your existing deck {}.",
+                deck_plain(&existing.name)
+            ),
+        )
     } else {
-        (app.create_deck(access, name, "", None).await?.id, "Deck created and card added.".into())
+        (
+            app.create_deck(access, name, "", None).await?.id,
+            "Deck created and card added.".into(),
+        )
     })
 }
 
@@ -451,11 +553,28 @@ pub(crate) async fn typed_update(
     }
     .await;
     match result {
-        Ok(()) => Ok(redirect_msg(from.study_url().unwrap_or_else(|| format!("/cards/{id}")), "Card saved.")),
+        Ok(()) => Ok(redirect_msg(
+            from.study_url().unwrap_or_else(|| format!("/cards/{id}")),
+            "Card saved.",
+        )),
         Err(e) => {
             let msg = fixable(&e).ok_or(e)?;
-            let sent = TypedSent { deck: sent(&form, "deck").and_then(|d| d.parse().ok()), fields };
-            Ok(form_again(card_view(&app, &user.0, id, &from, None, Sent::Typed(&sent), Some(&msg)).await?))
+            let sent = TypedSent {
+                deck: sent(&form, "deck").and_then(|d| d.parse().ok()),
+                fields,
+            };
+            Ok(form_again(
+                card_view(
+                    &app,
+                    &user.0,
+                    id,
+                    &from,
+                    None,
+                    Sent::Typed(&sent),
+                    Some(&msg),
+                )
+                .await?,
+            ))
         }
     }
 }
@@ -470,7 +589,8 @@ pub(crate) struct TypedSent {
 mod tests {
     #[test]
     fn the_chess_type_is_a_valid_package() {
-        let p = crate::types::read_package(&super::chess_zip().unwrap()).unwrap();
+        let p =
+            crate::types::read_package(&super::chess_zip().unwrap()).unwrap();
         assert_eq!(p.manifest.name, "Chess");
         assert_eq!(p.files.len(), 5);
     }

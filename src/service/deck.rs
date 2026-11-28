@@ -1,6 +1,9 @@
 //! Decks: creating, listing and counting them.
 
-#[allow(clippy::wildcard_imports, reason = "an area of the service sees the service's shared imports and types")]
+#[allow(
+    clippy::wildcard_imports,
+    reason = "an area of the service sees the service's shared imports and types"
+)]
 use super::*;
 
 #[derive(Debug, Clone, sqlx::FromRow, Serialize)]
@@ -19,7 +22,18 @@ pub struct Deck {
 /// Whether a deck is studied. Paused and archived decks rest: their cards
 /// are suspended until the deck is resumed. An archived deck is also put
 /// away, out of the deck list.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, sqlx::Type, schemars::JsonSchema)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    Default,
+    Serialize,
+    Deserialize,
+    sqlx::Type,
+    schemars::JsonSchema,
+)]
 #[serde(rename_all = "lowercase")]
 #[sqlx(type_name = "TEXT", rename_all = "lowercase")]
 pub enum DeckStatus {
@@ -85,9 +99,15 @@ struct DoneToday {
 impl DeckSummary {
     /// A deck's counts from the per-state rows, capped by its preset's
     /// daily limits.
-    fn tally(deck: Deck, preset: Option<&Preset>, rows: &[StateCount], done: &[DoneToday]) -> Self {
+    fn tally(
+        deck: Deck,
+        preset: Option<&Preset>,
+        rows: &[StateCount],
+        done: &[DoneToday],
+    ) -> Self {
         let mut s = Self {
-            preset_name: preset.map_or_else(Default::default, |p| p.name.clone()),
+            preset_name: preset
+                .map_or_else(Default::default, |p| p.name.clone()),
             deck,
             total: 0,
             new: 0,
@@ -109,7 +129,9 @@ impl DeckSummary {
                 // Studying learns ahead, so these count as due too;
                 // otherwise a left session reads "all done" while
                 // studying still has cards to show.
-                CardState::Learning | CardState::Relearning => s.learning_due += r.due_soon,
+                CardState::Learning | CardState::Relearning => {
+                    s.learning_due += r.due_soon
+                }
                 CardState::Review => s.review_due += r.due_now,
             }
         }
@@ -122,7 +144,8 @@ impl DeckSummary {
         }
         if let Some(p) = preset {
             s.new_today = (p.new_per_day - s.new_done_today).clamp(0, s.new);
-            s.review_due = (p.reviews_per_day - s.review_done_today).clamp(0, s.review_due);
+            s.review_due = (p.reviews_per_day - s.review_done_today)
+                .clamp(0, s.review_due);
         }
         s
     }
@@ -171,21 +194,35 @@ impl App {
     /// # Errors
     ///
     /// `Internal` if the database fails.
-    pub async fn deck_by_name(&self, access: &Access, name: &str) -> Result<Option<Deck>> {
-        let deck: Option<Deck> = sqlx::query_as("SELECT * FROM decks WHERE user_id = ? AND name = ? COLLATE NOCASE")
-            .bind(access.user_id())
-            .bind(name.trim())
-            .fetch_optional(&self.db)
-            .await?;
+    pub async fn deck_by_name(
+        &self,
+        access: &Access,
+        name: &str,
+    ) -> Result<Option<Deck>> {
+        let deck: Option<Deck> = sqlx::query_as(
+            "SELECT * FROM decks WHERE user_id = ? AND name = ? COLLATE NOCASE",
+        )
+        .bind(access.user_id())
+        .bind(name.trim())
+        .fetch_optional(&self.db)
+        .await?;
         Ok(deck.filter(|d| access.can_see_deck(d.id)))
     }
 
     /// # Errors
     ///
     /// `Internal` if the database fails.
-    pub async fn deck_summaries(&self, access: &Access) -> Result<Vec<DeckSummary>> {
+    pub async fn deck_summaries(
+        &self,
+        access: &Access,
+    ) -> Result<Vec<DeckSummary>> {
         let decks = self.decks(access).await?;
-        let presets: HashMap<i64, Preset> = self.list_presets(access).await?.into_iter().map(|p| (p.id, p)).collect();
+        let presets: HashMap<i64, Preset> = self
+            .list_presets(access)
+            .await?
+            .into_iter()
+            .map(|p| (p.id, p))
+            .collect();
         let clock = access.user.clock();
         let rows: Vec<StateCount> = sqlx::query_as(
             "SELECT deck_id, state, suspended, COUNT(*) AS cnt, SUM(due <= ?) AS due_now,
@@ -236,7 +273,11 @@ impl App {
     /// # Errors
     ///
     /// `Internal` if the database fails.
-    pub async fn session_progress(&self, access: &Access, deck_id: Option<i64>) -> Result<(i64, i64)> {
+    pub async fn session_progress(
+        &self,
+        access: &Access,
+        deck_id: Option<i64>,
+    ) -> Result<(i64, i64)> {
         let summaries: Vec<DeckSummary> = self
             .deck_summaries(access)
             .await?
@@ -270,7 +311,10 @@ impl App {
         .await?;
 
         let (mut done, mut total, mut touched_due_now) = (0, 0, 0);
-        for t in touched.iter().filter(|t| summaries.iter().any(|s| s.deck.id == t.deck_id)) {
+        for t in touched
+            .iter()
+            .filter(|t| summaries.iter().any(|s| s.deck.id == t.deck_id))
+        {
             total += 1;
             match t.state {
                 CardState::Learning | CardState::Relearning => {
@@ -311,7 +355,9 @@ impl App {
         check_len("deck name", name, MAX_NAME)?;
         check_len("description", description, MAX_DESCRIPTION)?;
         if self.deck_by_name(access, name).await?.is_some() {
-            return Err(AppError::Conflict(format!("a deck called '{name}' already exists")));
+            return Err(AppError::Conflict(format!(
+                "a deck called '{name}' already exists"
+            )));
         }
         let preset_id = match preset_id {
             Some(id) => self.preset(access, id).await?.id,
@@ -361,7 +407,9 @@ impl App {
             if let Some(other) = self.deck_by_name(access, n).await?
                 && other.id != id
             {
-                return Err(AppError::Conflict(format!("a deck called '{n}' already exists")));
+                return Err(AppError::Conflict(format!(
+                    "a deck called '{n}' already exists"
+                )));
             }
             deck.name = n.to_string();
         }
@@ -377,10 +425,9 @@ impl App {
             deck.exam_date = if e.is_empty() {
                 None
             } else {
-                Some(
-                    NaiveDate::parse_from_str(e, "%Y-%m-%d")
-                        .map_err(|_| AppError::bad("exam date must look like 2026-12-31"))?,
-                )
+                Some(NaiveDate::parse_from_str(e, "%Y-%m-%d").map_err(
+                    |_| AppError::bad("exam date must look like 2026-12-31"),
+                )?)
             };
         }
         sqlx::query(
@@ -407,7 +454,10 @@ impl App {
         access.require_all_decks()?;
         self.deck(access, id).await?;
         let cards: i64 =
-            sqlx::query_scalar("SELECT COUNT(*) FROM cards WHERE deck_id = ?").bind(id).fetch_one(&self.db).await?;
+            sqlx::query_scalar("SELECT COUNT(*) FROM cards WHERE deck_id = ?")
+                .bind(id)
+                .fetch_one(&self.db)
+                .await?;
         sqlx::query("DELETE FROM decks WHERE id = ? AND user_id = ?")
             .bind(id)
             .bind(access.user_id())
@@ -425,7 +475,12 @@ impl App {
     /// - `Forbidden` if the token is read-only.
     /// - `NotFound` if the deck isn't the user's or lies outside the token's decks.
     /// - `Internal` if the database fails.
-    pub async fn set_deck_status(&self, access: &Access, id: i64, status: DeckStatus) -> Result<Deck> {
+    pub async fn set_deck_status(
+        &self,
+        access: &Access,
+        id: i64,
+        status: DeckStatus,
+    ) -> Result<Deck> {
         access.require_write()?;
         self.deck(access, id).await?;
         let t = now();
@@ -443,7 +498,12 @@ impl App {
             "UPDATE cards SET suspended = 1, held = 1, updated_at = ?
              WHERE deck_id = ? AND user_id = ? AND suspended = 0"
         };
-        sqlx::query(cards).bind(t).bind(id).bind(access.user_id()).execute(&mut *tx).await?;
+        sqlx::query(cards)
+            .bind(t)
+            .bind(id)
+            .bind(access.user_id())
+            .execute(&mut *tx)
+            .await?;
         tx.commit().await?;
         self.deck(access, id).await
     }

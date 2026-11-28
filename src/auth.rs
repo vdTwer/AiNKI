@@ -34,13 +34,19 @@ impl std::fmt::Display for Zone {
 }
 
 impl Serialize for Zone {
-    fn serialize<S: serde::Serializer>(&self, s: S) -> std::result::Result<S::Ok, S::Error> {
+    fn serialize<S: serde::Serializer>(
+        &self,
+        s: S,
+    ) -> std::result::Result<S::Ok, S::Error> {
         s.serialize_str(self.0.name())
     }
 }
 
 #[derive(Debug, Clone, sqlx::FromRow, Serialize)]
-#[expect(clippy::struct_excessive_bools, reason = "one column per account setting")]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "one column per account setting"
+)]
 pub struct User {
     pub id: i64,
     pub username: String,
@@ -102,7 +108,11 @@ impl User {
     }
 
     pub fn clock(&self) -> crate::scheduler::Clock {
-        crate::scheduler::Clock::new(now(), self.tz(), num::i64_u32(self.rollover_hour.clamp(0, 23)))
+        crate::scheduler::Clock::new(
+            now(),
+            self.tz(),
+            num::i64_u32(self.rollover_hour.clamp(0, 23)),
+        )
     }
 }
 
@@ -162,14 +172,18 @@ impl Access {
 
     pub fn require_write(&self) -> Result<()> {
         match &self.actor {
-            Actor::Agent { can_write: false, .. } => Err(AppError::forbidden("this token is read-only")),
+            Actor::Agent { can_write: false, .. } => {
+                Err(AppError::forbidden("this token is read-only"))
+            }
             _ => Ok(()),
         }
     }
 
     pub fn require_review(&self) -> Result<()> {
         match &self.actor {
-            Actor::Agent { can_review: false, .. } => Err(AppError::forbidden("this token may not submit reviews")),
+            Actor::Agent { can_review: false, .. } => {
+                Err(AppError::forbidden("this token may not submit reviews"))
+            }
             _ => Ok(()),
         }
     }
@@ -182,14 +196,20 @@ impl Access {
     }
 
     pub fn require_deck(&self, deck_id: i64) -> Result<()> {
-        if self.can_see_deck(deck_id) { Ok(()) } else { Err(AppError::NotFound) }
+        if self.can_see_deck(deck_id) {
+            Ok(())
+        } else {
+            Err(AppError::NotFound)
+        }
     }
 
     /// Actions that affect the whole account (creating/deleting decks,
     /// editing presets, optimizing parameters) need an unrestricted token.
     pub fn require_all_decks(&self) -> Result<()> {
         match &self.actor {
-            Actor::Agent { decks: Some(_), .. } => Err(AppError::forbidden("this token is limited to specific decks")),
+            Actor::Agent { decks: Some(_), .. } => Err(AppError::forbidden(
+                "this token is limited to specific decks",
+            )),
             _ => Ok(()),
         }
     }
@@ -204,7 +224,9 @@ pub fn hash_password(password: &str) -> Result<String> {
 }
 
 fn verify_password(password: &str, hash: &str) -> bool {
-    PasswordHash::new(hash).is_ok_and(|h| Argon2::default().verify_password(password.as_bytes(), &h).is_ok())
+    PasswordHash::new(hash).is_ok_and(|h| {
+        Argon2::default().verify_password(password.as_bytes(), &h).is_ok()
+    })
 }
 
 pub(crate) fn sha256_hex(s: &str) -> String {
@@ -220,8 +242,14 @@ pub(crate) fn random_hex(bytes: usize) -> String {
 pub fn validate_username(name: &str) -> Result<()> {
     let ok_len = (2..=32).contains(&name.chars().count());
     // ASCII only, so nobody can pose as "kolja" with a look-alike letter.
-    let ok_chars = name.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '.'));
-    if ok_len && ok_chars { Ok(()) } else { Err(AppError::bad("username must be 2–32 characters: a-z, 0-9, _ - .")) }
+    let ok_chars = name
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '.'));
+    if ok_len && ok_chars {
+        Ok(())
+    } else {
+        Err(AppError::bad("username must be 2–32 characters: a-z, 0-9, _ - ."))
+    }
 }
 
 /// Longer passwords are refused so nobody can make Argon2 hash megabytes.
@@ -262,7 +290,12 @@ impl App {
     /// - `BadRequest` if the username or password breaks the rules (2–32 of a-z, 0-9, `_ - .`; a password of at
     ///   least 8 characters), or every tag of the username is taken.
     /// - `Internal` if the database fails.
-    pub async fn create_user(&self, username: &str, password: &str, timezone: &str) -> Result<User> {
+    pub async fn create_user(
+        &self,
+        username: &str,
+        password: &str,
+        timezone: &str,
+    ) -> Result<User> {
         self.create_account(username, password, timezone, None, false).await
     }
 
@@ -329,10 +362,12 @@ impl App {
 
     /// A free number for `name#1234`: names are shared, the pair is unique.
     async fn free_discriminator(&self, username: &str) -> Result<i64> {
-        let taken: Vec<i64> = sqlx::query_scalar("SELECT discriminator FROM users WHERE username = ? COLLATE NOCASE")
-            .bind(username)
-            .fetch_all(&self.db)
-            .await?;
+        let taken: Vec<i64> = sqlx::query_scalar(
+            "SELECT discriminator FROM users WHERE username = ? COLLATE NOCASE",
+        )
+        .bind(username)
+        .fetch_all(&self.db)
+        .await?;
         if taken.len() >= 9999 {
             return Err(AppError::bad("that username is full, pick another"));
         }
@@ -350,7 +385,10 @@ impl App {
     /// - `NotFound` if there is no such user.
     /// - `Internal` if the database fails.
     pub async fn user(&self, id: i64) -> Result<User> {
-        Ok(sqlx::query_as("SELECT * FROM users WHERE id = ?").bind(id).fetch_one(&self.db).await?)
+        Ok(sqlx::query_as("SELECT * FROM users WHERE id = ?")
+            .bind(id)
+            .fetch_one(&self.db)
+            .await?)
     }
 
     /// # Errors
@@ -379,9 +417,9 @@ impl App {
         match (found.next(), found.next()) {
             (Some(user), None) => Ok(user),
             (None, _) => Err(AppError::NotFound),
-            (Some(_), Some(_)) => {
-                Err(AppError::bad(format!("several users are called {name}; log in with your full name#tag")))
-            }
+            (Some(_), Some(_)) => Err(AppError::bad(format!(
+                "several users are called {name}; log in with your full name#tag"
+            ))),
         }
     }
 
@@ -390,7 +428,11 @@ impl App {
     /// - `BadRequest` ("wrong username or password") if either is wrong, the same message for both so names don't
     ///   leak.
     /// - `Internal` if the database fails.
-    pub async fn authenticate(&self, handle: &str, password: &str) -> Result<User> {
+    pub async fn authenticate(
+        &self,
+        handle: &str,
+        password: &str,
+    ) -> Result<User> {
         let wrong = || AppError::bad("wrong username or password");
         if password.len() > MAX_PASSWORD_BYTES {
             return Err(wrong());
@@ -399,22 +441,36 @@ impl App {
             Ok(u) => u,
             Err(AppError::NotFound) => {
                 let pw = password.to_string();
-                let _ = tokio::task::spawn_blocking(move || verify_password(&pw, dummy_hash())).await;
+                let _ = tokio::task::spawn_blocking(move || {
+                    verify_password(&pw, dummy_hash())
+                })
+                .await;
                 return Err(wrong());
             }
             Err(e) => return Err(e),
         };
         let pw = password.to_string();
         let hash = user.password_hash.clone();
-        let ok = tokio::task::spawn_blocking(move || verify_password(&pw, &hash)).await.unwrap_or(false);
-        if ok { Ok(user) } else { Err(AppError::bad("wrong username or password")) }
+        let ok =
+            tokio::task::spawn_blocking(move || verify_password(&pw, &hash))
+                .await
+                .unwrap_or(false);
+        if ok {
+            Ok(user)
+        } else {
+            Err(AppError::bad("wrong username or password"))
+        }
     }
 
     /// # Errors
     ///
     /// - `BadRequest` if the password is shorter than 8 characters or too long.
     /// - `Internal` if the database fails.
-    pub async fn set_password(&self, user_id: i64, password: &str) -> Result<()> {
+    pub async fn set_password(
+        &self,
+        user_id: i64,
+        password: &str,
+    ) -> Result<()> {
         validate_password(password)?;
         let pw = password.to_string();
         let hash = tokio::task::spawn_blocking(move || hash_password(&pw))
@@ -432,17 +488,27 @@ impl App {
     ///
     /// - `BadRequest` if the current password is wrong or the new one breaks the rules.
     /// - `Internal` if the database fails.
-    pub async fn change_password(&self, user: &User, current: &str, new: &str) -> Result<()> {
+    pub async fn change_password(
+        &self,
+        user: &User,
+        current: &str,
+        new: &str,
+    ) -> Result<()> {
         // Argon2 takes tens of milliseconds: off the request threads, as at login.
         let (pw, hash) = (current.to_string(), user.password_hash.clone());
         let ok = current.len() <= MAX_PASSWORD_BYTES
-            && tokio::task::spawn_blocking(move || verify_password(&pw, &hash)).await.unwrap_or(false);
+            && tokio::task::spawn_blocking(move || verify_password(&pw, &hash))
+                .await
+                .unwrap_or(false);
         if !ok {
             return Err(AppError::bad("current password is wrong"));
         }
         self.set_password(user.id, new).await?;
         // Log out every other browser.
-        sqlx::query("DELETE FROM sessions WHERE user_id = ?").bind(user.id).execute(&self.db).await?;
+        sqlx::query("DELETE FROM sessions WHERE user_id = ?")
+            .bind(user.id)
+            .execute(&self.db)
+            .await?;
         Ok(())
     }
 
@@ -485,10 +551,11 @@ impl App {
     pub async fn renew_session(&self, token: &str) -> Result<bool> {
         let id = sha256_hex(token);
         let t = now();
-        let expires: Option<i64> = sqlx::query_scalar("SELECT expires_at FROM sessions WHERE id = ?")
-            .bind(&id)
-            .fetch_optional(&self.db)
-            .await?;
+        let expires: Option<i64> =
+            sqlx::query_scalar("SELECT expires_at FROM sessions WHERE id = ?")
+                .bind(&id)
+                .fetch_optional(&self.db)
+                .await?;
         let full = t + SESSION_DAYS * 86_400;
         match expires {
             Some(e) if e > t && e < full - 86_400 => {
@@ -507,7 +574,10 @@ impl App {
     ///
     /// `Internal` if the database fails.
     pub async fn delete_session(&self, token: &str) -> Result<()> {
-        sqlx::query("DELETE FROM sessions WHERE id = ?").bind(sha256_hex(token)).execute(&self.db).await?;
+        sqlx::query("DELETE FROM sessions WHERE id = ?")
+            .bind(sha256_hex(token))
+            .execute(&self.db)
+            .await?;
         Ok(())
     }
 
@@ -526,7 +596,11 @@ impl App {
         deck_ids: Option<Vec<i64>>,
     ) -> Result<(ApiToken, String)> {
         let raw = format!("ainki_{}", random_hex(24));
-        let token = self.create_grant(user_id, name, can_write, can_review, deck_ids, &raw, None).await?;
+        let token = self
+            .create_grant(
+                user_id, name, can_write, can_review, deck_ids, &raw, None,
+            )
+            .await?;
         Ok((token, raw))
     }
 
@@ -547,9 +621,14 @@ impl App {
         if name.is_empty() {
             return Err(AppError::bad("give the token a name"));
         }
-        let name: String = name.chars().filter(|c| !c.is_control()).take(100).collect();
+        let name: String =
+            name.chars().filter(|c| !c.is_control()).take(100).collect();
         let name = name.as_str();
-        let prefix = if oauth_client_id.is_some() { "oauth".to_string() } else { secret[..12].to_string() };
+        let prefix = if oauth_client_id.is_some() {
+            "oauth".to_string()
+        } else {
+            secret[..12].to_string()
+        };
         let mut tx = self.db.begin_with("BEGIN IMMEDIATE").await?;
         let id: i64 = sqlx::query_scalar(
             "INSERT INTO api_tokens (user_id, name, token_hash, prefix, can_write, can_review, all_decks,
@@ -569,14 +648,18 @@ impl App {
         .await?;
         if let Some(decks) = &deck_ids {
             if decks.is_empty() {
-                return Err(AppError::bad("pick at least one deck, or allow all decks"));
+                return Err(AppError::bad(
+                    "pick at least one deck, or allow all decks",
+                ));
             }
             for deck in decks {
-                let owned: Option<i64> = sqlx::query_scalar("SELECT id FROM decks WHERE id = ? AND user_id = ?")
-                    .bind(deck)
-                    .bind(user_id)
-                    .fetch_optional(&mut *tx)
-                    .await?;
+                let owned: Option<i64> = sqlx::query_scalar(
+                    "SELECT id FROM decks WHERE id = ? AND user_id = ?",
+                )
+                .bind(deck)
+                .bind(user_id)
+                .fetch_optional(&mut *tx)
+                .await?;
                 if owned.is_none() {
                     return Err(AppError::NotFound);
                 }
@@ -588,13 +671,19 @@ impl App {
             }
         }
         tx.commit().await?;
-        Ok(sqlx::query_as("SELECT * FROM api_tokens WHERE id = ?").bind(id).fetch_one(&self.db).await?)
+        Ok(sqlx::query_as("SELECT * FROM api_tokens WHERE id = ?")
+            .bind(id)
+            .fetch_one(&self.db)
+            .await?)
     }
 
     /// # Errors
     ///
     /// `Internal` if the database fails.
-    pub async fn list_tokens(&self, user_id: i64) -> Result<Vec<(ApiToken, Vec<String>)>> {
+    pub async fn list_tokens(
+        &self,
+        user_id: i64,
+    ) -> Result<Vec<(ApiToken, Vec<String>)>> {
         let tokens: Vec<ApiToken> = sqlx::query_as(
             "SELECT * FROM api_tokens WHERE user_id = ? AND revoked_at IS NULL ORDER BY created_at DESC",
         )
@@ -618,16 +707,25 @@ impl App {
     /// # Errors
     ///
     /// `Internal` if the database fails. Revoking an unknown token, or another user's, does nothing.
-    pub async fn revoke_token(&self, user_id: i64, token_id: i64) -> Result<()> {
-        let n = sqlx::query("UPDATE api_tokens SET revoked_at = ? WHERE id = ? AND user_id = ?")
-            .bind(now())
-            .bind(token_id)
-            .bind(user_id)
-            .execute(&self.db)
-            .await?
-            .rows_affected();
+    pub async fn revoke_token(
+        &self,
+        user_id: i64,
+        token_id: i64,
+    ) -> Result<()> {
+        let n = sqlx::query(
+            "UPDATE api_tokens SET revoked_at = ? WHERE id = ? AND user_id = ?",
+        )
+        .bind(now())
+        .bind(token_id)
+        .bind(user_id)
+        .execute(&self.db)
+        .await?
+        .rows_affected();
         if n > 0 {
-            sqlx::query("DELETE FROM oauth_tokens WHERE api_token_id = ?").bind(token_id).execute(&self.db).await?;
+            sqlx::query("DELETE FROM oauth_tokens WHERE api_token_id = ?")
+                .bind(token_id)
+                .execute(&self.db)
+                .await?;
         }
         Ok(())
     }
@@ -663,21 +761,31 @@ impl App {
         let decks = if token.all_decks {
             None
         } else {
-            let ids: Vec<i64> = sqlx::query_scalar("SELECT deck_id FROM api_token_decks WHERE token_id = ?")
-                .bind(token.id)
-                .fetch_all(&self.db)
-                .await?;
+            let ids: Vec<i64> = sqlx::query_scalar(
+                "SELECT deck_id FROM api_token_decks WHERE token_id = ?",
+            )
+            .bind(token.id)
+            .fetch_all(&self.db)
+            .await?;
             Some(ids.into_iter().collect())
         };
         Ok(Access {
             user: self.user(token.user_id).await?,
-            actor: Actor::Agent { token_id: token.id, can_write: token.can_write, can_review: token.can_review, decks },
+            actor: Actor::Agent {
+                token_id: token.id,
+                can_write: token.can_write,
+                can_review: token.can_review,
+                decks,
+            },
         })
     }
 }
 /// Uses up an invite in the account's transaction, so one link can't make
 /// two accounts. Returns (invite, who invited).
-async fn claim_invite(tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>, token: &str) -> Result<(i64, i64)> {
+async fn claim_invite(
+    tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
+    token: &str,
+) -> Result<(i64, i64)> {
     let row = sqlx::query_as(
         "UPDATE invites SET used_at = ? WHERE token = ? AND used_at IS NULL AND expires_at > ?
          RETURNING id, user_id",
@@ -691,7 +799,10 @@ async fn claim_invite(tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>, token: &str)
 }
 
 /// Every new account starts with the built-in presets.
-async fn insert_template_presets(tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>, user_id: i64) -> Result<()> {
+async fn insert_template_presets(
+    tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
+    user_id: i64,
+) -> Result<()> {
     for t in presets::TEMPLATES {
         sqlx::query(
             "INSERT INTO presets (user_id, name, description, desired_retention, new_per_day,

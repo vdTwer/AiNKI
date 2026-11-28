@@ -64,7 +64,9 @@ pub const MAX_DESCRIPTION: usize = 2_000;
 /// Reject oversized text so one request can't bloat the database or pages.
 fn check_len(what: &str, value: &str, max: usize) -> Result<()> {
     if value.chars().count() > max {
-        Err(AppError::bad(format!("{what} is too long (at most {max} characters)")))
+        Err(AppError::bad(format!(
+            "{what} is too long (at most {max} characters)"
+        )))
     } else {
         Ok(())
     }
