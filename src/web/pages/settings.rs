@@ -28,6 +28,7 @@ pub(crate) async fn settings_page(
                     ("/presets", "Presets", "How much to remember, daily limits"),
                     ("/access", "Connected apps", "Claude, the Firefox extension and other apps"),
                     ("/import", "Import", "From Anki or a CSV file"),
+                    ("/settings/types", "Card types", "Bring your own, like chess"),
                     ("/invites", "Invite someone", "One person a week"),
                 ] {
                     li { a.row href=(href) { span.grow { span { (name) } span.sub.muted.small { (sub) } } span.chev aria-hidden="true" { "›" } } }

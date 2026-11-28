@@ -89,7 +89,7 @@ test('every page, every link', async ({ page, seed, account }) => {
       // Stay inside the account's own pages; downloads and assets are
       // fetched but not walked.
       if (!clean || seen.has(clean) || clean.startsWith('/logout')) continue;
-      if (/\.(csv|css|js|png|svg|ico|woff2)(\?|$)|^\/media\//.test(clean)) {
+      if (/\.(csv|zip|css|js|png|svg|ico|woff2)(\?|$)|^\/media\//.test(clean)) {
         seen.add(clean);
         const r = await page.request.get(clean);
         if (r.status() >= 400) problems.push(`${path} -> ${clean}: ${r.status()}`);

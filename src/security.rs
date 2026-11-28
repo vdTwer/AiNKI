@@ -161,14 +161,15 @@ pub async fn headers(
 ) -> Response {
     let mut res = next.run(req).await;
     let h = res.headers_mut();
-    h.insert("content-security-policy", HeaderValue::from_static(CSP));
+    // A route may set its own: the frame of a brought card type does.
+    h.entry("content-security-policy").or_insert(HeaderValue::from_static(CSP));
     h.insert("x-content-type-options", HeaderValue::from_static("nosniff"));
     // Links fetched on hover, before the click (see web::SPECULATION).
     h.insert(
         "speculation-rules",
         HeaderValue::from_static("\"/speculation.json\""),
     );
-    h.insert("x-frame-options", HeaderValue::from_static("DENY"));
+    h.entry("x-frame-options").or_insert(HeaderValue::from_static("DENY"));
     h.insert("referrer-policy", HeaderValue::from_static("same-origin"));
     h.insert(
         "cross-origin-opener-policy",

@@ -19,6 +19,7 @@ use crate::{
 };
 
 mod anki;
+mod card_types;
 mod concurrency;
 mod merge;
 mod upgrade;
@@ -1611,6 +1612,64 @@ mod http {
         let page = text(res).await;
         assert!(page.contains(&format!("Build {}", env!("AINKI_BUILD"))));
         assert!(page.contains(r#"rel="icon""#));
+    }
+
+    #[tokio::test]
+    async fn a_card_type_frame_is_sealed() {
+        let app = app().await;
+        let a = user(&app, "kolja").await;
+        let ty = app
+            .upload_card_type(&a, &super::card_types::package("export {}"))
+            .await
+            .unwrap();
+        // No login needed: the sandboxed frame sends no cookies.
+        let res = send(
+            &app,
+            Request::get(format!("/types/{}/frame", ty.token))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await;
+        assert_eq!(res.status(), StatusCode::OK);
+        let h = res.headers();
+        let csp = h["content-security-policy"].to_str().unwrap();
+        for rule in [
+            "sandbox allow-scripts;",
+            "default-src 'none'",
+            "connect-src 'none'",
+            "frame-ancestors 'self'",
+        ] {
+            assert!(csp.contains(rule), "{rule} in {csp}");
+        }
+        assert_eq!(h["x-frame-options"], "SAMEORIGIN");
+        let res = send(
+            &app,
+            Request::get(format!("/types/{}/chess.js", ty.token))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await;
+        let h = res.headers();
+        assert_eq!(h[header::CONTENT_TYPE], "text/javascript; charset=utf-8");
+        assert_eq!(h["content-security-policy"], "sandbox; default-src 'none'");
+        assert_eq!(h["x-content-type-options"], "nosniff");
+        assert_eq!(h[header::ACCESS_CONTROL_ALLOW_ORIGIN], "*");
+        for path in ["card-type.json", "../chess.js", "missing.js"] {
+            let res = send(
+                &app,
+                Request::get(format!("/types/{}/{path}", ty.token))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await;
+            assert_eq!(res.status(), StatusCode::NOT_FOUND, "{path}");
+        }
+        let res = send(
+            &app,
+            Request::get("/types/0000/frame").body(Body::empty()).unwrap(),
+        )
+        .await;
+        assert_eq!(res.status(), StatusCode::NOT_FOUND);
     }
 
     #[tokio::test]

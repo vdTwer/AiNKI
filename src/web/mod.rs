@@ -67,6 +67,7 @@ mod pages {
     pub mod stats;
     pub mod study;
     pub mod tokens;
+    pub mod types;
 }
 #[allow(
     clippy::wildcard_imports,
@@ -75,7 +76,7 @@ mod pages {
 use pages::{
     admin::*, auth::*, cards::*, coach::*, decks::*, find::*, home::*,
     import::*, invites::*, media::*, presets::*, settings::*, sharing::*,
-    stats::*, study::*, tokens::*,
+    stats::*, study::*, tokens::*, types::*,
 };
 // The consent page for OAuth clients asks for permissions the same way.
 pub(crate) use pages::tokens::permission_fields;
@@ -221,6 +222,10 @@ pub fn router(app: AppState) -> Router {
         .route("/settings/study", post(study_settings_update))
         .route("/settings/catch-up", post(catch_up_update))
         .route("/settings/reset-params", post(reset_params))
+        .route("/settings/types/{id}/delete", post(type_delete))
+        .route("/settings/types/chess.zip", get(chess_download))
+        .route("/cards/new/typed", post(typed_create))
+        .route("/cards/{id}/fields", post(typed_update))
         .route("/access", get(access_page))
         .route(
             "/access/new",
@@ -234,6 +239,12 @@ pub fn router(app: AppState) -> Router {
         .layer(small)
         .route("/cards/preview", post(card_preview_json))
         .route("/find", get(find_page))
+        .route(
+            "/settings/types",
+            get(types_page)
+                .post(type_upload)
+                .layer(DefaultBodyLimit::max(UPLOAD_LIMIT)),
+        )
         .route(
             "/cards/new",
             get(card_new_page).post(card_create).layer(card_upload),
@@ -272,17 +283,14 @@ pub fn router(app: AppState) -> Router {
                 asset(q, "text/javascript; charset=utf-8", PARTS_JS)
             }),
         )
-        .route(
-            "/fonts/geist.woff2",
-            get(|| async { static_file("font/woff2", FONT_GEIST, false) }),
-        )
+        .route("/fonts/geist.woff2", get(|| async { font_file(FONT_GEIST) }))
         .route(
             "/fonts/geist-mono.woff2",
-            get(|| async { static_file("font/woff2", FONT_MONO, false) }),
+            get(|| async { font_file(FONT_MONO) }),
         )
         .route(
             "/fonts/newsreader.woff2",
-            get(|| async { static_file("font/woff2", FONT_SERIF, false) }),
+            get(|| async { font_file(FONT_SERIF) }),
         )
         .route(
             "/favicon.svg",
@@ -305,7 +313,12 @@ pub fn router(app: AppState) -> Router {
                 asset(q, "application/speculationrules+json", SPECULATION)
             }),
         )
-        .route("/healthz", get(|| async { "ok" }));
+        .route("/healthz", get(|| async { "ok" }))
+        // Brought card types: the frame they draw in and their files. No
+        // login: the sandboxed frame sends no cookies, the token is the key.
+        .route("/types/frame.js", get(frame_js))
+        .route("/types/{token}/frame", get(type_frame))
+        .route("/types/{token}/{*path}", get(type_file));
     Router::new()
         .merge(browser_routes)
         .merge(static_routes)
@@ -526,7 +539,7 @@ pub fn urlenc(s: &str) -> String {
 fn asset_version() -> &'static str {
     static VERSION: std::sync::OnceLock<String> = std::sync::OnceLock::new();
     VERSION.get_or_init(|| {
-        let all = [CSS, APP_JS, PARTS_JS].concat();
+        let all = [CSS, APP_JS, PARTS_JS, FRAME_JS].concat();
         crate::auth::sha256_hex(&all)[..10].to_string()
     })
 }
@@ -812,6 +825,17 @@ const fn time_days(days: i64) -> time::Duration {
 /// Every built-in file goes out through here. Fonts never change under a
 /// name and a stylesheet or script asked for with the current ?v= never
 /// changes either, so both are cached for good; anything else revalidates.
+/// A font, also for the frames of brought card types: their requests are
+/// cross-origin (see `types`), and fonts load only with CORS.
+fn font_file(body: &'static [u8]) -> Response {
+    let mut res = static_file("font/woff2", body, false);
+    res.headers_mut().insert(
+        header::ACCESS_CONTROL_ALLOW_ORIGIN,
+        HeaderValue::from_static("*"),
+    );
+    res
+}
+
 fn static_file(
     content_type: &'static str,
     body: &'static [u8],
