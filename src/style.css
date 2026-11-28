@@ -477,19 +477,20 @@
 
   /* Brought card types: the frame draws the card; it has no box of its own. */
   ainki-card-type { display: block; }
-  .study:focus { outline: none; }
-  label.file.drop { display: grid; gap: .25rem; justify-items: start; }
-  .type-sides { margin-bottom: 1rem !important; }
   .type-frame { display: block; width: 100%; height: 12rem; border: 0; color-scheme: light dark; }
   .typed .type-frame { margin-top: .75rem; }
-  .type-preview { margin-top: 1rem; }
-  .type-sides { margin: .25rem 0 0; color: var(--muted); & [aria-pressed="true"] { color: var(--ink); text-decoration: underline 2px var(--accent); text-underline-offset: .35em; } }
-  nav.type-pick {
-    display: flex; flex-wrap: wrap; gap: .25rem 1rem; margin: -.5rem 0 1rem; font-size: .875rem;
-    & a { color: var(--muted); }
-    & a[aria-current="page"] { color: var(--ink); text-decoration: underline 2px var(--accent); text-underline-offset: .35em; }
+  .type-preview { margin-top: 1.5rem; padding-top: 1.5rem; border-top: 1px solid var(--line); }
+  .study:focus { outline: none; }
+  label.file.drop { display: grid; gap: .25rem; justify-items: start; }
+  /* Picking a type, and a preview's side: like the Add tabs. */
+  :is(nav.type-pick, .type-sides) {
+    display: flex; flex-wrap: wrap; gap: .25rem 1.25rem; font-size: .875rem;
+    & :is(a, button) { min-height: 0; color: var(--muted); text-decoration: none; }
+    & :is(a[aria-current="page"], [aria-pressed="true"]) { color: var(--ink); font-weight: 500; }
   }
-  .type-list li { display: flex; align-items: baseline; gap: 1rem; & .sub { display: block; } & form { margin: 0; } }
+  nav.type-pick { margin-block: -.25rem 1.5rem; }
+  .type-sides { justify-content: center; margin-block: .5rem 1rem; }
+  .type-list li { display: flex; align-items: baseline; gap: 1.25rem; padding-block: .75rem; & .sub { display: block; } & form { margin: 0; } & .version { font: 400 .8125rem var(--mono); color: var(--muted); } }
 
   /* Stats */
   .big3 {

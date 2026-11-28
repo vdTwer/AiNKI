@@ -1,27 +1,28 @@
-/* Chess cards in the study page's own colors (the frame gets them as
-   --ink, --muted, --accent and so on). The board is something you press,
-   so the answer's arrow is the accent; your other move is faint ink. */
+/* Chess cards in AiNKI's look (the frame gets it as --ink, --accent,
+   --mono, --serif and so on): a quiet grey board, memory blue for the
+   answer, mono for moves and labels, the serif for the note. */
 :root {
-  --sq-light: light-dark(#f7f4f1, #8f8880);
-  --sq-dark: light-dark(#ddd5cc, #66605a);
+  --sq-light: light-dark(#f4f4f2, #8b8d93);
+  --sq-dark: light-dark(#dcdcd8, #5f6269);
 }
-.to-move { margin: 0 0 .75rem; text-align: center; font-size: .75rem; font-weight: 600; letter-spacing: .07em; text-transform: uppercase; color: var(--muted); }
-.board { max-width: min(26rem, 100%); margin: 0 auto; border-radius: 6px; overflow: hidden; touch-action: none; }
+.to-move, .line .label { font: 400 .6875rem/1.5 var(--mono, monospace); letter-spacing: .04em; text-transform: uppercase; color: var(--muted); }
+.to-move { margin: 0 0 .75rem; text-align: center; }
+.board { max-width: min(26rem, 100%); margin: 0 auto; border-radius: var(--r, 6px); overflow: hidden; touch-action: none; }
 .cm-chessboard.ainki .board .square.white { fill: var(--sq-light); }
 .cm-chessboard.ainki .board .square.black { fill: var(--sq-dark); }
 .cm-chessboard.ainki .board .border { fill: var(--sq-dark); stroke: none; stroke-width: 0; }
-.cm-chessboard.ainki .coordinates .coordinate { font-size: 7px; fill: var(--muted); }
+.cm-chessboard.ainki .coordinates .coordinate { font-size: 7px; font-family: var(--mono, monospace); }
 .cm-chessboard.ainki .coordinates .coordinate.black, .cm-chessboard.ainki .coordinates .coordinate.white { fill: var(--muted); opacity: .8; }
-.cm-chessboard.ainki .markers .marker.marker-square { fill: var(--accent); opacity: .18; }
+.cm-chessboard.ainki .markers .marker.marker-square { fill: var(--accent); opacity: .16; }
 .cm-chessboard.ainki .markers .marker.marker-dot { fill: var(--accent); opacity: .35; }
 .cm-chessboard .arrow-success .arrow-head, .cm-chessboard .arrow-success .arrow-line { fill: var(--accent); stroke: var(--accent); }
 .cm-chessboard .arrow-danger .arrow-head, .cm-chessboard .arrow-danger .arrow-line { fill: var(--faint); stroke: var(--faint); }
-.line { display: flex; flex-wrap: wrap; justify-content: center; align-items: baseline; gap: .25rem .5rem; margin: 1rem 0 0; font-size: 1.125rem; }
-.line .label { font-size: .75rem; font-weight: 600; letter-spacing: .07em; text-transform: uppercase; color: var(--muted); margin-right: .25rem; }
-.line.yours { margin-top: .25rem; font-size: 1rem; }
-.move { font: inherit; color: var(--ink); background: none; border: 0; padding: .125rem .25rem; border-radius: var(--r, .5rem); }
+.line { display: flex; flex-wrap: wrap; justify-content: center; align-items: baseline; gap: .25rem .5rem; margin: 1.25rem 0 0; font: 400 1.0625rem var(--mono, monospace); }
+.line .label { margin-right: .25rem; }
+.line.yours { margin-top: .25rem; font-size: .9375rem; }
+.move { font: inherit; color: var(--ink); background: none; border: 0; padding: .125rem .35rem; border-radius: var(--r, 6px); }
 button.move { cursor: pointer; color: var(--accent); }
 button.move:hover { background: var(--soft); }
-button.move[aria-pressed="true"] { background: var(--fill); color: var(--on-fill, #fff); }
+button.move[aria-pressed="true"] { background: var(--fill); color: var(--on-fill); }
 .move.other { color: var(--muted); text-decoration: line-through; text-decoration-color: var(--faint); }
-.note { margin: 1rem auto 0; max-width: 32rem; white-space: pre-line; text-align: center; }
+.note { margin: 1.25rem auto 0; max-width: 32rem; white-space: pre-line; text-align: center; font: 1.375rem/1.3 var(--serif, Georgia, serif); color: color-mix(in oklab, var(--ink) 80%, var(--bg)); }
