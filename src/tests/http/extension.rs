@@ -1,4 +1,4 @@
-//! The Agent access page offers the Firefox extension from its latest
+//! The Connected apps page offers the Firefox extension from its latest
 //! GitHub release.
 
 use super::*;

@@ -34,8 +34,8 @@ pub(crate) fn auth_form(
         title,
         None,
         html! {
-            h1.brand-big { "AiNKI" }
-            p.muted { "Flashcards with FSRS spaced repetition." }
+            h1.brand-big { (logo(28)) "AiNKI" }
+            p.muted { "Remember what you learn." }
             h2 { (title) }
             @if let Some(e) = error { p.notice role="alert" { (e) } }
             @if next.is_some_and(|n| n.starts_with("/oauth/")) {

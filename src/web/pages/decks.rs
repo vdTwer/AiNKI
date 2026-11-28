@@ -436,7 +436,7 @@ fn deck_hero(user: &User, summary: &DeckSummary, attention: i64) -> Markup {
                 button.btn.primary type="submit" { (if d.status == DeckStatus::Archived { "Restore deck" } else { "Resume deck" }) }
             }
         } @else if summary.due_total() > 0 {
-            p { a.btn.primary.start href=(format!("/study?deck={id}")) { "Start studying " span.arrow aria-hidden="true" { "→" } } }
+            p { a.btn.primary.start href=(format!("/study?deck={id}")) { "Study" } }
         }
         p.actions.deck-menu id="deck-menu" {
             a.btn href=(&format!("/cards/new?deck={id}")) { "Add card" }

@@ -1,7 +1,7 @@
 //! A small REST API: create and read decks and cards, and upload images
 //! for new cards. Nothing else.
 //!
-//! It takes the same API tokens as the MCP server (Settings → Agent access)
+//! It takes the same API tokens as the MCP server (Settings → Connected apps)
 //! and calls the same service functions, so a token sees only its user's
 //! decks and may write only if it was given write access.
 

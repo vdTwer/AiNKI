@@ -201,7 +201,7 @@ AiNKI must be reachable on a public HTTPS address (set `AINKI_PUBLIC_URL`). Then
 2. Paste `https://<your host>/mcp`.
 3. Click **Connect**, log in to AiNKI, click **Allow**.
 
-On the approval page you choose what Claude may do: add, edit and delete cards and decks; quiz you and record your answers; all decks or only some. Connected apps are listed under **Settings → Agent access**, where you can disconnect them.
+On the approval page you choose what Claude may do: add, edit and delete cards and decks; quiz you and record your answers; all decks or only some. Connected apps are listed under **Settings → Connected apps**, where you can disconnect them.
 
 This is the standard MCP authorization flow (OAuth 2.1 with PKCE, dynamic client registration and client metadata documents), so other MCP clients that support OAuth connect the same way. Claude Code on the same machine can also use a plain `http://localhost` address:
 
@@ -209,7 +209,7 @@ This is the standard MCP authorization flow (OAuth 2.1 with PKCE, dynamic client
 claude mcp add --transport http ainki http://localhost:8080/mcp
 ```
 
-For agents without OAuth support, create a token by hand under **Settings → Agent access** and send it as `Authorization: Bearer <token>`.
+For agents without OAuth support, create a token by hand under **Settings → Connected apps** and send it as `Authorization: Bearer <token>`.
 
 Agents can never change your password or settings, or create tokens. Reviews done through an agent are labelled, and you can leave them out of FSRS optimization.
 
@@ -217,7 +217,7 @@ During quiet hours `get_next_card` returns no card, so agents don't quiz you the
 
 ### REST API
 
-A small JSON API for scripts. It only creates and reads; there is no edit or delete. OAuth clients (like the browser extension) get their token through the same flow as Claude. Others create a token under **Settings → Agent access** and send it as `Authorization: Bearer <token>`. A token sees only your decks, and only one with write access can create.
+A small JSON API for scripts. It only creates and reads; there is no edit or delete. OAuth clients (like the browser extension) get their token through the same flow as Claude. Others create a token under **Settings → Connected apps** and send it as `Authorization: Bearer <token>`. A token sees only your decks, and only one with write access can create.
 
 | Method | Path | Body or query |
 | --- | --- | --- |
@@ -238,7 +238,7 @@ curl -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
 
 ### Firefox extension
 
-[AiNKI for Firefox](https://github.com/vdTwer/AiNKI-Extension) turns selected text and images into cards. **Settings → Agent access** links to its latest signed release. Raising the version in the extension's `manifest.json` releases a new one, and installed copies update themselves.
+[AiNKI for Firefox](https://github.com/vdTwer/AiNKI-Extension) turns selected text and images into cards. **Settings → Connected apps** links to its latest signed release. Raising the version in the extension's `manifest.json` releases a new one, and installed copies update themselves.
 
 ## Acknowledgements
 

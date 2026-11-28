@@ -31,12 +31,12 @@ pub(crate) async fn access_page(
     let url = mcp_url(&app, &headers);
     Ok(layout_in(
         Nav::Settings,
-        "Agent access",
+        "Connected apps",
         Some(&user.0),
         html! {
             (flash(msg.as_deref()))
             (parent("/settings", "Settings"))
-            h1 { "Agent access" }
+            h1 { "Connected apps" }
             (connect_steps(&url))
             (extension_offer())
             (connected_tokens(&tokens, &clock))

@@ -62,26 +62,25 @@ impl Home {
         })
     }
 
-    /// The short line under the headline: time, recall, streak.
-    pub(crate) fn facts(&self) -> Vec<String> {
+    /// The short line under the headline: time, today's recall, streak.
+    /// The recall is what FSRS predicts you'd remember of every learned
+    /// card right now, and leads to Stats.
+    pub(crate) fn facts(&self) -> Option<Markup> {
         let s = &self.stats;
-        let mut facts = Vec::new();
-        if self.total_due > 0 {
-            facts.push(format!(
-                "About {}",
-                count(s.minutes_for(self.total_due).max(1), "minute")
-            ));
+        let minutes = (self.total_due > 0)
+            .then(|| count(s.minutes_for(self.total_due).max(1), "minute"));
+        let recall = s.average_retrievability;
+        let streak = (s.streak_days > 1).then(|| count(s.streak_days, "day"));
+        if minutes.is_none() && recall.is_none() && streak.is_none() {
+            return None;
         }
-        if let Some(r) = s.true_retention_30d {
-            facts.push(format!(
-                "{} recalled when due, last 30 days",
-                format::percent(Some(r))
-            ));
-        }
-        if s.streak_days > 1 {
-            facts.push(format!("{} in a row", count(s.streak_days, "day")));
-        }
-        facts
+        Some(html! {
+            @if let Some(m) = minutes { "About " (m) ". " }
+            @if let Some(r) = recall {
+                "You'd recall " a.recall href="/stats" { (format::percent(Some(r))) } " of everything right now. "
+            }
+            @if let Some(d) = streak { (d) " in a row." }
+        })
     }
 }
 
@@ -111,17 +110,17 @@ fn home_today(user: &User, h: &Home) -> Markup {
     section.today aria-label="Today" {
         p.date { @if user.catch_up { "Catching up · " } (format::long_date(&user.clock())) }
         @if total_due > 0 {
-            h1 { span.count { (total_due) " " (format::plural(total_due, "card")) } " to study today" }
+            h1 { span.count { (total_due) " " (format::plural(total_due, "card")) } " today." }
         } @else if !decks.is_empty() {
             h1.all-done { "All done for today" }
         } @else {
             h1 { "Welcome, " (capitalize(&user.username)) }
         }
-        @if !facts.is_empty() { p.facts { (facts.join(" · ")) } }
+        @if let Some(f) = facts { p.facts { (f) } }
         @if let Some(t) = quiet {
             p.facts { "Quiet hours until " (format::when(&user.clock(), t)) "." }
         } @else if total_due > 0 {
-            p { a.btn.primary.start href="/study" { "Start studying " span.arrow aria-hidden="true" { "→" } } }
+            p { a.btn.primary.start href="/study" { "Study" } }
         }
         (catch_up_note(user, overdue))
     }
@@ -213,6 +212,7 @@ fn home_decks(user: &User, h: &Home) -> Markup {
                                 span.sub { "Exam " (exam_words(user, *exam)) }
                             }
                         }
+                        span.leader aria-hidden="true" {}
                         @if d.due_total() == 0 && d.total > d.suspended {
                             span.num.due.done title="Done for today" { (done_check(13, "done-check")) span.unit { "done for today" } }
                         } @else {
