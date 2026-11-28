@@ -175,7 +175,7 @@ pub fn read_package(data: &[u8]) -> Result<Package> {
         if f.is_dir() {
             continue;
         }
-        let shown = f.name().map(|n| n.to_string()).unwrap_or_default();
+        let shown = f.name().map_or_else(|_| String::new(), |n| n.to_string());
         if f.is_symlink() {
             return Err(bad(format!(
                 "{shown} is a link; packages hold plain files only"
