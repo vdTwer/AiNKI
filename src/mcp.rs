@@ -129,7 +129,7 @@ pub async fn auth(
         (
             StatusCode::UNAUTHORIZED,
             [(header::WWW_AUTHENTICATE, challenge)],
-            "missing or invalid access token: connect through OAuth, or create a token in AiNKI under Settings → Agent access",
+            "missing or invalid access token: connect through OAuth, or create a token in AiNKI under Settings → Connected apps",
         )
             .into_response()
     }

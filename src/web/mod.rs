@@ -90,6 +90,9 @@ const PARTS_JS: &str = include_str!("../static/parts.js");
 pub(crate) const SPECULATION: &str = r#"{"prefetch":[{"where":{"and":[{"href_matches":"/*"},{"not":{"href_matches":["/study*","/*export*","/oauth/*","/find*"]}}]},"eagerness":"moderate"}]}"#;
 // Two cards, Wild Orchid behind Terra Cotta, with the "done" tick.
 const FAVICON_SVG: &str = include_str!("../static/favicon.svg");
+const FONT_GEIST: &[u8] = include_bytes!("../static/fonts/geist.woff2");
+const FONT_MONO: &[u8] = include_bytes!("../static/fonts/geist-mono.woff2");
+const FONT_SERIF: &[u8] = include_bytes!("../static/fonts/newsreader.woff2");
 const FAVICON_PNG: &[u8] = include_bytes!("../static/favicon-32.png");
 const TOUCH_ICON_PNG: &[u8] = include_bytes!("../static/apple-touch-icon.png");
 
@@ -268,6 +271,18 @@ pub fn router(app: AppState) -> Router {
             get(|q: RawQuery| async move {
                 asset(q, "text/javascript; charset=utf-8", PARTS_JS)
             }),
+        )
+        .route(
+            "/fonts/geist.woff2",
+            get(|| async { static_file("font/woff2", FONT_GEIST, false) }),
+        )
+        .route(
+            "/fonts/geist-mono.woff2",
+            get(|| async { static_file("font/woff2", FONT_MONO, false) }),
+        )
+        .route(
+            "/fonts/newsreader.woff2",
+            get(|| async { static_file("font/woff2", FONT_SERIF, false) }),
         )
         .route(
             "/favicon.svg",
@@ -676,7 +691,7 @@ fn main_nav(nav: Option<Nav>) -> Markup {
     let current = |n: Nav| (nav == Some(n)).then_some("page");
     html! {
         nav.top aria-label="Main" {
-            a.brand href="/" data-label="AiNKI" aria-current=[current(Nav::Decks)] { "A" span.i { "i" } "NKI" }
+            a.brand href="/" data-label="AiNKI" aria-current=[current(Nav::Decks)] { (logo(16)) "AiNKI" }
             a href="/study" data-label="Study" aria-current=[current(Nav::Study)] { "Study" }
             a href="/cards/new" data-label="Add" aria-current=[current(Nav::Add)] { "Add" }
             a href="/stats" data-label="Stats" aria-current=[current(Nav::Stats)] { "Stats" }
@@ -710,12 +725,25 @@ fn sleep_wall(u: &User) -> Markup {
     }
 }
 
+/// The mark: one stroke that hops further each time, as the gaps between
+/// reviews grow, ending in a blue dot.
+pub(crate) fn logo(size: u32) -> Markup {
+    html! {
+        svg.logo viewBox="0 0 24 24" width=(size) height=(size) aria-hidden="true" {
+            path d="M2 18 Q 3.5 13 5 18 Q 8 10 11 18 Q 16 4 21 18" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" {}
+            circle.dot cx="21" cy="18" r="2.3" {}
+        }
+    }
+}
+
 /// The "done" tick, drawn with straight strokes and square ends, like the
 /// numbers beside it.
 fn done_check(size: u32, class: &'static str) -> Markup {
+    // 1.75 units at 14 px, thinner in units as the tick grows.
+    let width = (24.5 / f64::from(size)).clamp(1.1, 1.75);
     html! {
-        svg class=(class) viewBox="0 0 24 24" width=(size) height=(size) fill="none" stroke="currentColor" stroke-width=(format!("{:.2}", 52.0 / f64::from(size))) stroke-linecap="square" stroke-linejoin="miter" aria-hidden="true" {
-            path d="M4.5 12.5 9.5 17.5 19.5 6.5" pathLength="1" {}
+        svg class=(class) viewBox="0 0 14 14" width=(size) height=(size) fill="none" stroke="currentColor" stroke-width=(format!("{width:.2}")) stroke-linecap="square" stroke-linejoin="miter" aria-hidden="true" {
+            path d="M2 7.5 5.5 11 12 3" pathLength="1" {}
         }
     }
 }
