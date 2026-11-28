@@ -196,7 +196,7 @@ class AinkiBreak extends HTMLElement {
 class AinkiCardType extends HTMLElement {
   /** @type {Set<AinkiCardType>} */
   static all = new Set();
-  static THEME = ['ink', 'muted', 'faint', 'line', 'bg', 'accent', 'fill', 'on-fill', 'soft', 'r', 'scale'];
+  static THEME = ['ink', 'muted', 'faint', 'line', 'edge', 'track', 'bg', 'accent', 'fill', 'on-fill', 'soft', 'danger', 'sans', 'mono', 'serif', 'r', 'scale'];
   /** @type {HTMLIFrameElement | null} */ frame = null;
   /** @type {string | null} */ response = null;
   side = 'challenge';

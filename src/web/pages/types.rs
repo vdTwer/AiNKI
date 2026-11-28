@@ -73,7 +73,7 @@ fn types_view(
                         @let newest = i == 0 || types.get(i - 1).is_none_or(|p| p.name != t.name);
                         li {
                             div.grow {
-                                span { (t.name) " " span.muted { "version " (t.version) } }
+                                span { (t.name) " " span.version { "v" (t.version) } }
                                 span.sub.muted.small {
                                     (count(t.cards, "card")) " · " ((t.bytes + 1023) / 1024) " KB · added " (format::when(&clock, t.created_at))
                                     @if newest { " · new cards use it" }
@@ -224,10 +224,15 @@ pub(crate) async fn type_frame(
     Ok(res)
 }
 
-/// The frame's defaults: the study page's font and colors (the colors come
-/// with each card), and no background of its own.
-const FRAME_STYLE: &str = ":root { color-scheme: light dark; font: calc(17px * var(--scale, 1)) / 1.55 system-ui, sans-serif; \
-color: var(--ink, CanvasText); } html, body { margin: 0; background: transparent; } body { display: flow-root; overflow: hidden; } \
+/// The frame's defaults: the study page's fonts and colors (the colors and
+/// font stacks come with each card), and no background of its own.
+const FRAME_STYLE: &str = "\
+@font-face { font-family: Geist; src: url(/fonts/geist.woff2) format(woff2); font-weight: 100 900; font-display: swap; } \
+@font-face { font-family: 'Geist Mono'; src: url(/fonts/geist-mono.woff2) format(woff2); font-weight: 100 900; font-display: swap; } \
+@font-face { font-family: Newsreader; src: url(/fonts/newsreader.woff2) format(woff2); font-weight: 200 800; font-display: swap; } \
+:root { color-scheme: light dark; font: calc(16px * var(--scale, 1)) / 1.55 var(--sans, system-ui, sans-serif); \
+color: var(--ink, CanvasText); -webkit-font-smoothing: antialiased; font-variant-numeric: tabular-nums; } \
+html, body { margin: 0; background: transparent; } body { display: flow-root; overflow: hidden; } \
 .type-failed { color: var(--muted, GrayText); font-size: .875rem; }";
 
 pub(crate) async fn type_file(

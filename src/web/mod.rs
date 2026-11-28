@@ -285,15 +285,15 @@ pub fn router(app: AppState) -> Router {
         )
         .route(
             "/fonts/geist.woff2",
-            get(|| async { static_file("font/woff2", FONT_GEIST, false) }),
+            get(|| async { font_file(FONT_GEIST) }),
         )
         .route(
             "/fonts/geist-mono.woff2",
-            get(|| async { static_file("font/woff2", FONT_MONO, false) }),
+            get(|| async { font_file(FONT_MONO) }),
         )
         .route(
             "/fonts/newsreader.woff2",
-            get(|| async { static_file("font/woff2", FONT_SERIF, false) }),
+            get(|| async { font_file(FONT_SERIF) }),
         )
         .route(
             "/favicon.svg",
@@ -828,6 +828,17 @@ const fn time_days(days: i64) -> time::Duration {
 /// Every built-in file goes out through here. Fonts never change under a
 /// name and a stylesheet or script asked for with the current ?v= never
 /// changes either, so both are cached for good; anything else revalidates.
+/// A font, also for the frames of brought card types: their requests are
+/// cross-origin (see `types`), and fonts load only with CORS.
+fn font_file(body: &'static [u8]) -> Response {
+    let mut res = static_file("font/woff2", body, false);
+    res.headers_mut().insert(
+        header::ACCESS_CONTROL_ALLOW_ORIGIN,
+        HeaderValue::from_static("*"),
+    );
+    res
+}
+
 fn static_file(
     content_type: &'static str,
     body: &'static [u8],

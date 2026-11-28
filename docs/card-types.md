@@ -58,10 +58,14 @@ export function solution(fields, response, el) {
 learner always rates the card; a type never grades. Both functions may be
 async.
 
-The page's colors arrive as CSS custom properties: `--ink`, `--muted`,
-`--faint`, `--line`, `--bg`, `--accent`, `--fill`, `--on-fill`, `--soft`,
-`--r` (corner radius). Use them, and the card looks like the rest of AiNKI in
-light and dark mode. The frame grows with its content.
+The page's look arrives as CSS custom properties. Colors: `--ink`,
+`--muted`, `--faint`, `--line` (hairlines), `--edge` (field borders),
+`--track`, `--bg`, `--accent` (memory blue), `--fill` and `--on-fill` (the
+one filled button), `--soft`, `--danger`. Fonts: `--sans` (Geist, the
+frame's default), `--mono` (Geist Mono, for numbers and small caps labels)
+and `--serif` (Newsreader, for card text). And `--r`, the corner radius. Use
+them, and the card looks like the rest of AiNKI in light and dark mode. The
+frame grows with its content.
 
 ## The sandbox
 
