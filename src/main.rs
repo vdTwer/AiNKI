@@ -11,6 +11,7 @@ use sqlx::{
 use tracing_subscriber::EnvFilter;
 
 mod advice;
+mod api;
 mod auth;
 mod breaks;
 mod coach;

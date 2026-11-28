@@ -38,7 +38,7 @@ pub fn plain(src: &str) -> String {
         match e {
             Event::Text(t) | Event::Code(t) => out.push_str(&t),
             Event::SoftBreak | Event::HardBreak | Event::End(_) => {
-                out.push(' ')
+                out.push(' ');
             }
             _ => {}
         }

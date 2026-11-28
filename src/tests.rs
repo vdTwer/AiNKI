@@ -979,6 +979,8 @@ async fn invites_expire_and_admins_have_no_limit() {
 
 mod http {
     mod accounts;
+    mod api;
+    mod extension;
     mod mcp_tools;
     mod perf;
 
@@ -1710,7 +1712,7 @@ mod http {
         assert!(!h.contains_key(header::STRICT_TRANSPORT_SECURITY));
 
         let secure = app_with(|c| {
-            c.public_url = Some("https://cards.example.com".into())
+            c.public_url = Some("https://cards.example.com".into());
         })
         .await;
         let res =

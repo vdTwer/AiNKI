@@ -116,7 +116,7 @@ impl App {
             match state {
                 CardState::New => stats.new += n,
                 CardState::Learning | CardState::Relearning => {
-                    stats.learning += n
+                    stats.learning += n;
                 }
                 CardState::Review => stats.review += n,
             }

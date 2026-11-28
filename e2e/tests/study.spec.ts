@@ -7,7 +7,7 @@ const front = (page: Page) => page.locator('main .study .face.front');
 const back = (page: Page) => page.locator('main .study .face.back');
 const showAnswer = (page: Page) => page.locator('main .study .reveal a.show');
 const answers = (page: Page) => page.locator('main .study form.answers');
-const count = (page: Page) => page.locator('main .study-meta .count');
+const count = (page: Page) => page.locator('main .study-meta .count .of');
 
 async function threeCards(seed: Seed) {
   const deck = await seed.deck('Languages::Spanish');
@@ -58,7 +58,7 @@ test('a whole session without a single page load', async ({ page, seed, account 
 
   // Home now says the day is done.
   await page.goto('/');
-  await expect(page.locator('main')).not.toContainText('cards to study today');
+  await expect(page.locator('main')).not.toContainText('cards today');
 });
 
 test('keys: space shows the answer, 1 and 3 rate', async ({ page, seed, account }) => {
@@ -80,6 +80,29 @@ test('keys: space shows the answer, 1 and 3 rate', async ({ page, seed, account 
 
   const ratings = sql<{ rating: number }>('SELECT rating FROM review_log WHERE user_id = ? ORDER BY id', account.id).map((r) => r.rating);
   expect(ratings).toEqual([1, 3]);
+});
+
+test('keys: Enter shows the answer and means Again, left arrow undoes', async ({ page, seed, account }) => {
+  await threeCards(seed);
+  await page.goto('/study');
+  await markWindow(page);
+
+  const first = (await front(page).innerText()).trim();
+  await page.keyboard.press('Enter');
+  await expect(back(page)).toBeVisible();
+  await page.keyboard.press('Enter'); // Again, never Good
+  await expect(front(page)).not.toHaveText(first);
+  await expect(back(page)).toBeHidden();
+
+  await page.keyboard.press('ArrowLeft');
+  await expect(front(page)).toHaveText(first);
+  await expect(back(page)).toBeVisible();
+  await page.keyboard.press(' '); // Good
+  await expect(back(page)).toBeHidden();
+  await expectSameWindow(page);
+
+  const ratings = sql<{ rating: number }>('SELECT rating FROM review_log WHERE user_id = ? ORDER BY id', account.id).map((r) => r.rating);
+  expect(ratings).toEqual([3]);
 });
 
 test('undo brings the last card back, answer showing', async ({ page, seed, account }) => {
@@ -253,4 +276,24 @@ test('a pause covers the card, and its time is kept apart', async ({ page, seed,
   near(t.answer_ms, 400);
   near(t.paused_ms, 60_000);
   expect(t.away_ms).toBe(0);
+});
+
+test('the count swaps to cards left on click, and stays that way', async ({ page, seed }) => {
+  await threeCards(seed);
+  await page.goto('/study');
+  const foot = page.locator('main .study-meta .count');
+  await expect(foot).toHaveText('1 of 3', { useInnerText: true });
+  await foot.click();
+  await expect(foot).toHaveText('3 cards left', { useInnerText: true });
+  // Kept across answers (no reload) and across page loads.
+  await showAnswer(page).click();
+  await answers(page).getByRole('button', { name: /good/i }).click();
+  await expect(foot).toHaveText('2 cards left', { useInnerText: true });
+  await page.reload();
+  await expect(foot).toHaveText('2 cards left', { useInnerText: true });
+  // Space still shows the answer, not the count again.
+  await page.keyboard.press('Space');
+  await expect(back(page)).toBeVisible();
+  await foot.click();
+  await expect(foot).toHaveText('2 of 3', { useInnerText: true });
 });

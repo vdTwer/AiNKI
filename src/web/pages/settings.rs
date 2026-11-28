@@ -26,7 +26,7 @@ pub(crate) async fn settings_page(
             ul.list.links {
                 @for (href, name, sub) in [
                     ("/presets", "Presets", "How much to remember, daily limits"),
-                    ("/access", "Agent access", "Connect Claude and other agents"),
+                    ("/access", "Connected apps", "Claude, the Firefox extension and other apps"),
                     ("/import", "Import", "From Anki or a CSV file"),
                     ("/settings/types", "Card types", "Bring your own, like chess"),
                     ("/invites", "Invite someone", "One person a week"),
@@ -135,6 +135,7 @@ fn fsrs_section(u: &User, reviews: i64, custom: bool) -> Markup {
                 "Optimizing fits FSRS to your own memory. It helps once you have a few hundred reviews. New parameters are only kept when they predict your reviews better."
             }
         }
+        (params_pills(u, custom))
         div.form-foot.end {
             form method="post" action="/settings/optimize" {
                 button.btn type="submit" { "Optimize now" }
@@ -148,6 +149,28 @@ fn fsrs_section(u: &User, reviews: i64, custom: bool) -> Markup {
                     button.btn.danger type="submit" { "Use defaults" }
                 }
             }
+        }
+    }
+}
+
+/// The 21 weights, each a pill. Copy gives them comma-separated, the way
+/// Anki's FSRS parameters field takes them.
+fn params_pills(u: &User, custom: bool) -> Markup {
+    let raw =
+        if custom { u.params() } else { fsrs::DEFAULT_PARAMETERS.to_vec() };
+    // Older fits have fewer weights; FSRS fills them in the same way.
+    let w = fsrs::check_and_fill_parameters(&raw).unwrap_or(raw);
+    let vals: Vec<String> = w.iter().map(|x| format!("{x:.4}")).collect();
+    html! {
+        details.params {
+            summary { "Show the parameters" }
+            div.pills id="fsrs-weights" {
+                @for (i, v) in vals.iter().enumerate() {
+                    span.pill { (v) }
+                    @if i + 1 < vals.len() { span.sep { ", " } }
+                }
+            }
+            button.link type="button" data-copy="fsrs-weights" hidden { "Copy" }
         }
     }
 }

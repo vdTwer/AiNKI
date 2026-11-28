@@ -70,7 +70,11 @@ pub(crate) fn study_foot(
             }
             div.study-meta {
                 a href=(format!("/decks/{deck_id}")) { (deck_title(deck_name)) }
-                span.count { (position) " of " (total) }
+                // Click to see what is left instead (app.js remembers it).
+                button.link.count type="button" {
+                    span.of { (position) " of " (total) }
+                    span.left { (format::count(total - position + 1, "card")) " left" }
+                }
             }
             div.study-tools {
                 form method="post" action="/study/undo" {

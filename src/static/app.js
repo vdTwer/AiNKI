@@ -29,6 +29,18 @@
     try { tz.value = Intl.DateTimeFormat().resolvedOptions().timeZone; } catch (e) {}
   }
 
+  // Study foot: "14 of 32" and "19 cards left" swap on click, remembered.
+  var countKey = 'ainki.count';
+  try { if (localStorage.getItem(countKey) === 'left') document.documentElement.classList.add('count-left'); } catch (e) {}
+  document.addEventListener('click', function (e) {
+    var count = e.target.closest('.study-foot .count');
+    if (!count) return;
+    // Let go of it, or the next space would swap again instead of revealing.
+    count.blur();
+    var left = document.documentElement.classList.toggle('count-left');
+    try { localStorage.setItem(countKey, left ? 'left' : 'of'); } catch (e2) {}
+  });
+
   // Invite links: a Copy button, where the browser lets us copy.
   Array.prototype.forEach.call(document.querySelectorAll('button[data-copy]'), function (b) {
     var from = document.getElementById(b.getAttribute('data-copy'));
@@ -278,7 +290,54 @@
     for (var f = 0; f < faces.length; f++) {
       if ((faces[f].textContent || '').trim().length > LONG_TEXT) faces[f].classList.add('long');
     }
+    explainers(scope);
   }
+
+  // Explanations: a title (or an SVG mark's <title>) shows at once in a
+  // quiet box by the pointer, instead of the browser's late tooltip.
+  function explainers(scope) {
+    Array.prototype.forEach.call(scope.querySelectorAll('main [title], main svg :not(svg) > title'), function (x) {
+      var el = x.tagName.toLowerCase() === 'title' ? x.parentNode : x;
+      var text = el === x ? x.getAttribute('title') : x.textContent;
+      if (el === x) x.removeAttribute('title'); else x.remove();
+      if (!text) return;
+      el.setAttribute('data-tip', text);
+      if (!el.hasAttribute('aria-label')) el.setAttribute(el.namespaceURI === 'http://www.w3.org/2000/svg' ? 'aria-label' : 'aria-description', text);
+      if (el.namespaceURI === 'http://www.w3.org/2000/svg' && !el.hasAttribute('tabindex')) el.setAttribute('tabindex', '0');
+    });
+  }
+  var tip = null;
+  function showTip(el, x, y) {
+    if (!tip) {
+      tip = document.createElement('div');
+      tip.className = 'hover-tip';
+      tip.setAttribute('aria-hidden', 'true');
+      document.body.appendChild(tip);
+    }
+    tip.textContent = el.getAttribute('data-tip');
+    tip.hidden = false;
+    var w = tip.offsetWidth, h = tip.offsetHeight;
+    var left = Math.min(Math.max(8, x - w / 2), window.innerWidth - w - 8);
+    var top = y - h - 14 < 8 ? y + 22 : y - h - 14;
+    tip.style.left = left + 'px';
+    tip.style.top = top + 'px';
+  }
+  function hideTip() { if (tip) tip.hidden = true; }
+  ['pointermove', 'pointerdown'].forEach(function (t) {
+    document.addEventListener(t, function (e) {
+      var el = e.target.closest && e.target.closest('[data-tip]');
+      if (el) showTip(el, e.clientX, e.clientY); else hideTip();
+    });
+  });
+  document.addEventListener('pointerout', function (e) { if (!e.relatedTarget) hideTip(); });
+  document.addEventListener('focusin', function (e) {
+    var el = e.target.closest && e.target.closest('[data-tip]');
+    if (!el || lastInput !== 'key') return;
+    var r = el.getBoundingClientRect();
+    showTip(el, r.left + r.width / 2, r.top);
+  });
+  document.addEventListener('focusout', hideTip);
+  window.addEventListener('scroll', hideTip, { passive: true });
   setup(document);
 
   // ----- studying without reloads ---------------------------------------------
@@ -616,12 +675,21 @@
   });
 
   // Keyboard: space shows the answer (then means Good, or Done on a list
-  // card), 1-4 answer; on a list card 1-9 mark items as remembered. With
-  // the sure check S and U show the answer, and + adds time to a timed card.
+  // card), Enter shows it too (then means Again), 1-4 answer, left arrow
+  // undoes the last answer; on a list card 1-9 mark items as remembered.
+  // With the sure check S and U show the answer, and + adds time to a
+  // timed card.
   document.addEventListener('keydown', function (e) {
     if (e.ctrlKey || e.metaKey || e.altKey) return;
     var tag = e.target.tagName;
     if ((tag === 'INPUT' && e.target.type !== 'checkbox') || tag === 'TEXTAREA' || tag === 'SELECT') return;
+    if (e.key === 'ArrowLeft' && !paused()) {
+      var undo = document.querySelector('main .study-foot form[action="/study/undo"] button, main .end-links form[action="/study/undo"] button');
+      if (!undo) return;
+      e.preventDefault();
+      if (!busy) undo.click();
+      return;
+    }
     if (!document.querySelector('main .study')) return;
     // Paused, P, Esc, space or Enter carry on and every other key waits.
     if (paused()) {
@@ -632,15 +700,19 @@
     if (e.key === 'p' || e.key === 'P') { pause(); return; }
     // Enter and space on a focused link or button do what it says.
     if ((e.key === ' ' || e.key === 'Enter') && (tag === 'A' || tag === 'BUTTON') && !e.target.matches('.reveal a.show')) return;
-    var k = e.key === ' ' || e.key === 'Enter' ? ' ' : e.key.toLowerCase();
-    if (!/^[ 1-9su+]$/.test(k)) return;
-    var visible = function (key) {
-      var els = document.querySelectorAll('main [data-key="' + key + '"]');
+    var k = e.key === 'Enter' ? 'enter' : e.key.toLowerCase();
+    if (!/^([ 1-9su+]|enter)$/.test(k)) return;
+    var visible = function (sel) {
+      var els = document.querySelectorAll('main ' + sel);
       for (var i = 0; i < els.length; i++) if (!els[i].closest('[hidden]')) return els[i];
       return null;
     };
-    var el = visible(k) || (k === ' ' ? visible('3') : null);
-    if (!el && !/^[ 1-9]$/.test(k)) return;
+    var key = function (c) { return visible('[data-key="' + c + '"]'); };
+    // Enter is Again (or Continue after a timeout) once the answer shows,
+    // and like space before that and on a multicard's Done.
+    var el = k === 'enter' ? visible('button.again') || key(' ')
+      : key(k) || (k === ' ' ? key('3') : null);
+    if (!el && !/^([ 1-9]|enter)$/.test(k)) return;
     e.preventDefault();
     if (busy || !el) return;
     el.click();

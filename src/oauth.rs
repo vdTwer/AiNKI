@@ -10,7 +10,7 @@
 //! - 1-hour access tokens and rotating refresh tokens.
 //!
 //! An approved connection is stored like a manual API token, so it appears
-//! (and can be revoked) on the Agent access page.
+//! (and can be revoked) on the Connected apps page.
 
 use axum::{
     Json,
@@ -888,7 +888,9 @@ async fn check_authorize(
             )));
         }
         Err(e) => {
-            return Err(Box::new(crate::web::WebError::from(e).into_response()));
+            return Err(Box::new(
+                crate::web::WebError::from(e).into_response(),
+            ));
         }
     };
     let redirects = client.redirects();
@@ -994,7 +996,7 @@ pub async fn authorize_page(
                     button.btn type="submit" name="decision" value="deny" { "Cancel" }
                 }
             }
-            p.muted.small { "You can disconnect it any time under Settings → Agent access." }
+            p.muted.small { "You can disconnect it any time under Settings → Connected apps." }
         },
     )
     .into_response()

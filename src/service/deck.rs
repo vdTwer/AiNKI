@@ -130,7 +130,7 @@ impl DeckSummary {
                 // otherwise a left session reads "all done" while
                 // studying still has cards to show.
                 CardState::Learning | CardState::Relearning => {
-                    s.learning_due += r.due_soon
+                    s.learning_due += r.due_soon;
                 }
                 CardState::Review => s.review_due += r.due_now,
             }

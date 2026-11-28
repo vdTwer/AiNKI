@@ -99,20 +99,20 @@ pub fn service(
     )
 }
 
+/// The Bearer token of a request, if it carries one.
+pub fn bearer(headers: &http::HeaderMap) -> Option<&str> {
+    headers.get(header::AUTHORIZATION).and_then(|v| v.to_str().ok()).and_then(
+        |v| v.strip_prefix("Bearer ").or_else(|| v.strip_prefix("bearer ")),
+    )
+}
+
 /// Resolve the Bearer token into an [`Access`] for the tools.
 pub async fn auth(
     State(app): State<AppState>,
     mut req: Request,
     next: Next,
 ) -> Response {
-    let token = req
-        .headers()
-        .get(header::AUTHORIZATION)
-        .and_then(|v| v.to_str().ok())
-        .and_then(|v| {
-            v.strip_prefix("Bearer ").or_else(|| v.strip_prefix("bearer "))
-        })
-        .map(str::to_string);
+    let token = bearer(req.headers()).map(str::to_string);
     let access = match token {
         Some(t) => app.token_access(&t).await.ok(),
         None => None,
@@ -129,7 +129,7 @@ pub async fn auth(
         (
             StatusCode::UNAUTHORIZED,
             [(header::WWW_AUTHENTICATE, challenge)],
-            "missing or invalid access token: connect through OAuth, or create a token in AiNKI under Settings → Agent access",
+            "missing or invalid access token: connect through OAuth, or create a token in AiNKI under Settings → Connected apps",
         )
             .into_response()
     }
@@ -147,37 +147,13 @@ impl AinkiMcp {
         Self { app, tool_router: Self::tool_router() }
     }
 
-    /// A card as JSON; multicards carry their items, and on a study turn
-    /// (`studying`) which of them are asked.
     async fn card_json(
         &self,
         a: &Access,
         card: &crate::service::Card,
         studying: bool,
     ) -> Result<Value, String> {
-        let clock = a.user.clock();
-        let params =
-            self.app.deck_params(a, card.deck_id).await.map_err(err)?;
-        let decay =
-            crate::scheduler::decay_for(&params).map_err(|e| err(e.into()))?;
-        let mut v = card.to_json(&clock, decay);
-        if card.multi.is_some() {
-            let items = self.app.card_items(card).await.map_err(err)?;
-            let asked =
-                studying.then(|| crate::multi::asked(card, &items, clock.now));
-            if let Some(o) = v.as_object_mut() {
-                o.insert(
-                    "items".into(),
-                    json!(crate::multi::items_json(
-                        &items,
-                        asked.as_deref(),
-                        &clock,
-                        decay
-                    )),
-                );
-            }
-        }
-        Ok(v)
+        self.app.card_json(a, card, studying).await.map_err(err)
     }
 }
 
@@ -671,18 +647,7 @@ impl AinkiMcp {
             limit: p.limit,
             offset: p.offset,
         };
-        let (cards, total) =
-            self.app.list_cards(&a, &filter).await.map_err(err)?;
-        let clock = a.user.clock();
-        let book = self.app.param_book(&a).await.map_err(err)?;
-        out(json!({
-            "total": total,
-            "cards": cards
-                .iter()
-                .map(|c| crate::scheduler::decay_for(book.for_deck(c.deck_id)).map(|decay| c.to_json(&clock, decay)))
-                .collect::<Result<Vec<Value>, _>>()
-                .map_err(|e| err(e.into()))?,
-        }))
+        out(self.app.cards_json(&a, &filter).await.map_err(err)?)
     }
 
     #[tool(
