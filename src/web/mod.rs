@@ -283,10 +283,7 @@ pub fn router(app: AppState) -> Router {
                 asset(q, "text/javascript; charset=utf-8", PARTS_JS)
             }),
         )
-        .route(
-            "/fonts/geist.woff2",
-            get(|| async { font_file(FONT_GEIST) }),
-        )
+        .route("/fonts/geist.woff2", get(|| async { font_file(FONT_GEIST) }))
         .route(
             "/fonts/geist-mono.woff2",
             get(|| async { font_file(FONT_MONO) }),
